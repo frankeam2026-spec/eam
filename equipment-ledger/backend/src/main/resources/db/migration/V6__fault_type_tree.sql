@@ -1,0 +1,17 @@
+INSERT INTO eam_base_item (id,item_type,code,name,parent_id,decimal_precision,sort_no,status,deleted) VALUES
+(6001,'FAULT_TYPE','MECHANICAL','机械故障',NULL,0,10,1,0),
+(6002,'FAULT_TYPE','ELECTRICAL','电气故障',NULL,0,20,1,0),
+(6003,'FAULT_TYPE','CONTROL','控制系统',NULL,0,30,1,0),
+(6004,'FAULT_TYPE','LUBRICATION','润滑与液压',NULL,0,40,1,0),
+(6005,'FAULT_TYPE','SAFETY','安全防护',NULL,0,50,1,0),
+(6006,'FAULT_TYPE','OTHER','其他',NULL,0,60,1,0),
+(6011,'FAULT_TYPE','SPINDLE','主轴异常',6001,0,11,1,0),
+(6012,'FAULT_TYPE','BEARING','轴承异常',6001,0,12,1,0),
+(6021,'FAULT_TYPE','MOTOR','电机故障',6002,0,21,1,0),
+(6022,'FAULT_TYPE','POWER','电源异常',6002,0,22,1,0),
+(6031,'FAULT_TYPE','SENSOR','传感器异常',6003,0,31,1,0),
+(6032,'FAULT_TYPE','ALARM','控制报警',6003,0,32,1,0),
+(6041,'FAULT_TYPE','COOLING','冷却系统故障',6004,0,41,1,0),
+(6042,'FAULT_TYPE','HYDRAULIC','液压异常',6004,0,42,1,0),
+(6043,'FAULT_TYPE','PRESSURE','压力异常',6004,0,43,1,0),
+(6051,'FAULT_TYPE','GUARD','防护装置异常',6005,0,51,1,0);

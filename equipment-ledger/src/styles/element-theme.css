@@ -1,0 +1,132 @@
+/* 产品样式变量在这里映射到组件库，弹层与工作区共用同一套主题。 */
+:root {
+  --el-color-primary: var(--brand);
+  --el-color-primary-light-3: color-mix(in srgb, var(--brand), white 30%);
+  --el-color-primary-light-5: color-mix(in srgb, var(--brand), white 50%);
+  --el-color-primary-light-7: color-mix(in srgb, var(--brand), white 70%);
+  --el-color-primary-light-8: color-mix(in srgb, var(--brand), white 80%);
+  --el-color-primary-light-9: var(--brand-soft);
+  --el-color-primary-dark-2: color-mix(in srgb, var(--brand), black 20%);
+  --el-font-size-base: 13px;
+  --el-border-radius-base: 4px;
+  --el-text-color-primary: #334155;
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-secondary);
+  --el-border-color: #dfe5ed;
+  --el-component-size: 34px;
+}
+.el-select,
+.el-input,
+.el-textarea {
+  font-size: 13px;
+}
+.el-select__wrapper {
+  min-height: 34px;
+}
+.eam-tree-select-popper .el-tree-node__content {
+  height: 32px;
+  font-size: 13px;
+}
+.eam-dropdown .el-dropdown-menu__item {
+  font-size: 13px;
+  min-height: 34px;
+}
+.el-switch {
+  --el-switch-on-color: var(--brand);
+}
+.eam-dialog {
+  --el-dialog-padding-primary: 18px;
+  max-width: calc(100vw - 32px);
+}
+.eam-dialog .el-dialog__title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.eam-dialog .el-dialog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #edf0f5;
+}
+.eam-dialog .el-dialog__footer > button {
+  min-width: 100px;
+  height: 36px;
+  font-size: 13px;
+}
+.eam-dialog .el-dialog__footer .el-button + .el-button {
+  margin-left: 0;
+}
+
+.editor-field > .el-input,
+.editor-field > .el-select,
+.editor-field > .el-date-editor {
+  width: 100%;
+  min-width: 0;
+}
+.editor-field .el-input__inner,
+.editor-field .el-input__inner:focus {
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  height: 30px;
+  font-size: 13px;
+}
+.editor-field .el-textarea__inner {
+  font-size: 13px;
+  padding: 8px 10px;
+  min-height: 72px;
+}
+.batch-dialog-content p {
+  color: var(--text-secondary);
+  margin: 0 0 16px;
+}
+.batch-dialog-content label {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.batch-dialog-content label > span {
+  width: 68px;
+  text-align: right;
+}
+.batch-dialog-content label > .tree-select,
+.batch-dialog-content label > select {
+  flex: 1;
+}
+.batch-dialog-content select {
+  height: 34px;
+  border: 1px solid #d9e1ec;
+  border-radius: 4px;
+  padding: 0 10px;
+}
+
+/* Shared visible entry for the advanced filter drawer. */
+.content button.advanced-filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 4px;
+  background: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+}
+.content button.advanced-filter-trigger:hover,
+.content button.advanced-filter-trigger.active {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+.content button.advanced-filter-trigger:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}

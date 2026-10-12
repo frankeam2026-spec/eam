@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import { matchesAdvanced, conditionLabel } from '../src/query/advancedFilters.ts';
+const row = { name: '数控车床', state: '正常', amount: '1250.50', acquiredAt: '2026-10-08', owner: '' };
+const match = conditions => matchesAdvanced(conditions, key => row[key]);
+assert.equal(match([{ field: 'name', operator: 'contains', values: ['车床'] }]), true);
+assert.equal(match([{ field: 'state', operator: 'in', values: ['正常', '故障'] }]), true);
+assert.equal(match([{ field: 'amount', operator: 'range', values: ['1200', '1300'] }]), true);
+assert.equal(match([{ field: 'amount', operator: 'range', values: ['', '1000'] }]), false);
+assert.equal(match([{ field: 'acquiredAt', operator: 'range', values: ['2026-10-01', '2026-10-10'] }]), true);
+assert.equal(match([{ field: 'owner', operator: 'empty', values: [] }]), true);
+assert.equal(match([{ field: 'owner', operator: 'notEmpty', values: [] }]), false);
+assert.equal(match([{ field: 'state', operator: 'in', values: ['故障'] }, { field: 'name', operator: 'contains', values: ['车床'] }]), false);
+assert.equal(match([{ field: 'amount', operator: 'unknown', values: [] }]), false);
+assert.equal(conditionLabel({ field: 'state', operator: 'in', values: ['正常','故障'] }, [{ key: 'state', label: '状态', type: 'choice' }]), '状态 为 正常、故障');
+console.log('PASS: 10 shared filter matching and condition label assertions');

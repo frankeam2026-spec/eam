@@ -1,0 +1,55 @@
+:root {
+  --el-font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', 'Segoe UI', sans-serif;
+  font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', 'Segoe UI', sans-serif;
+  color: #202939;
+  background: #f4f6fa;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  font-size: 13px;
+  --brand: #205cf5;
+  --brand-rgb: 32, 92, 245;
+  --navy: #152440;
+  --text-secondary: #42526b;
+  --muted: var(--text-secondary);
+  --surface: #fff;
+  --success: #16845b;
+  --success-bg: #eaf7f1;
+  --warning: #c96b08;
+  --warning-bg: #fff3e5;
+  --danger: #cf3d48;
+  --danger-bg: #fff0f1;
+  --attention: #0891b2;
+  --attention-bg: #e9f8fb;
+}
+:root[data-theme='navy'] {
+  --brand: #003e96;
+  --brand-rgb: 0, 62, 150;
+  --brand-soft: #eaf1fa;
+}
+:root[data-theme='pink'] {
+  --brand: #e8325a;
+  --brand-rgb: 232, 50, 90;
+  --brand-soft: #fff0f4;
+}
+:root {
+  --sidebar-bg: #f6f7f9;
+  --sidebar-active-bg: var(--brand);
+  --sidebar-accent: var(--brand);
+}
+:root[data-theme='navy'] {
+  --sidebar-bg: #eef2f8;
+  --sidebar-active-bg: #003e96;
+  --sidebar-accent: #003e96;
+}
+:root[data-theme='pink'] {
+  --sidebar-bg: #fff4f6;
+  --sidebar-active-bg: #e8325a;
+  --sidebar-accent: #e8325a;
+}
+:root {
+  --canvas: #f3f5f8;
+  --text: #202938;
+  --line: #e5e9ef;
+  --brand-soft: color-mix(in srgb, var(--brand) 9%, white);
+  --shadow: 0 8px 24px rgba(17, 31, 53, 0.12);
+}

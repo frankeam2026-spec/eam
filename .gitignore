@@ -1,9 +1,22 @@
 .local-runtime/
+equipment-ledger/node_modules/
+equipment-ledger/dist/
+equipment-ledger/backend/target/
+equipment-ledger/backend/data/
+.DS_Store
+
+# Local configuration, generated files and isolated test artifacts
+.env
+.env.*
+!.env.example
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
+*.tsbuildinfo
+equipment-ledger/artifacts/
 **/node_modules/
 **/dist/
 **/target/
-**/artifacts/
-.env
-.env.*
-*.log
-.DS_Store
+**/data/uploads/
