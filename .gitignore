@@ -1,0 +1,9 @@
+.local-runtime/
+**/node_modules/
+**/dist/
+**/target/
+**/artifacts/
+.env
+.env.*
+*.log
+.DS_Store
