@@ -6,6 +6,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import java.util.Map;
 import java.util.HashSet;
@@ -15,12 +17,13 @@ public final class AdvancedFilters {
     private AdvancedFilters() {}
     public enum Kind { TEXT, CHOICE, DATE, NUMBER }
     public record Field<T>(SFunction<T, ?> column, Kind kind) {}
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record Condition(String field, String operator, List<String> values) {}
 
     public static <T> void apply(LambdaQueryWrapper<T> query, String raw,
             Map<String, Field<T>> fields, ObjectMapper json) {
         if (raw == null || raw.isBlank()) return;
-        if (raw.length() > 12000) throw new IllegalArgumentException("高级筛选条件过长");
+        if (raw.length() > 256000) throw new IllegalArgumentException("高级筛选条件过长");
         List<Condition> conditions;
         try {
             conditions = json.readValue(raw, new TypeReference<List<Condition>>() {});
@@ -33,7 +36,7 @@ public final class AdvancedFilters {
         var seen = new HashSet<String>();
         for (Condition c : conditions) {
             if (c == null || !fields.containsKey(c.field()) || !seen.add(c.field())
-                    || c.operator() == null || c.values() == null || c.values().size() > 30) {
+                    || c.operator() == null || c.values() == null || c.values().size() > 2000) {
                 throw new IllegalArgumentException("高级筛选字段无效");
             }
             Field<T> field = fields.get(c.field());
@@ -54,11 +57,11 @@ public final class AdvancedFilters {
                 case "contains", "eq" -> {
                     if (field.kind() != Kind.TEXT || c.values().size() != 1 || c.values().get(0).isBlank())
                         throw new IllegalArgumentException("文本筛选条件无效");
-                    if (c.operator().equals("contains")) query.like(column, c.values().get(0));
+                    if (c.operator().equals("contains")) query.like(column, c.values().get(0).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_"));
                     else query.eq(column, c.values().get(0));
                 }
                 case "in" -> {
-                    if (field.kind() != Kind.CHOICE || c.values().isEmpty() || c.values().stream().anyMatch(String::isBlank))
+                    if ((field.kind() != Kind.CHOICE && field.kind() != Kind.TEXT) || c.values().isEmpty() || c.values().stream().anyMatch(String::isBlank))
                         throw new IllegalArgumentException("多选筛选条件无效");
                     query.in(column, c.values());
                 }
@@ -74,7 +77,11 @@ public final class AdvancedFilters {
                     if (min != null && max != null && compare(min, max) > 0)
                         throw new IllegalArgumentException("起始值不能大于结束值");
                     if (min != null) query.ge(column, min);
-                    if (max != null) query.le(column, max);
+                    if (max != null) {
+                        if (field.kind() == Kind.DATE && upper.length() == 10)
+                            query.lt(column, LocalDate.parse(upper).plusDays(1).atStartOfDay());
+                        else query.le(column, max);
+                    }
                 }
                 default -> throw new IllegalArgumentException("高级筛选匹配方式无效");
             }
@@ -82,8 +89,27 @@ public final class AdvancedFilters {
     }
     private static Comparable<?> value(String raw, Kind kind) {
         try {
-            return kind == Kind.DATE ? LocalDateTime.parse(raw.replace(' ', 'T')) : new BigDecimal(raw);
+            return kind == Kind.DATE ? dateValue(raw) : new BigDecimal(raw);
         } catch (Exception e) { throw new IllegalArgumentException("日期或数值格式无效"); }
+    }
+    private static LocalDateTime dateValue(String raw) {
+        return raw.length() == 10 ? LocalDate.parse(raw).atStartOfDay()
+                : LocalDateTime.parse(raw.replace(' ', 'T'));
+    }
+
+    /** Shared inclusive ranges for already-authorized in-memory query collections. */
+    public static boolean matchesRange(String actual, String lower, String upper, boolean numeric) {
+        if (actual == null || actual.isBlank()) return false;
+        if (numeric) {
+            var v = new BigDecimal(actual);
+            return (lower.isBlank() || v.compareTo(new BigDecimal(lower)) >= 0)
+                    && (upper.isBlank() || v.compareTo(new BigDecimal(upper)) <= 0);
+        }
+        var v = dateValue(actual);
+        return (lower.isBlank() || !v.isBefore(dateValue(lower)))
+                && (upper.isBlank() || (upper.length() == 10
+                    ? v.isBefore(LocalDate.parse(upper).plusDays(1).atStartOfDay())
+                    : !v.isAfter(dateValue(upper))));
     }
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static int compare(Comparable a, Comparable b) { return a.compareTo(b); }

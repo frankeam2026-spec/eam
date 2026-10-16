@@ -156,6 +156,7 @@ export type RequisitionTask = {
   name: string;
 };
 export type RequisitionLine = {
+  materialModel?: string;
   id?: string;
   materialId: string;
   quantity: string;

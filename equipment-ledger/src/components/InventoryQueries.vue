@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import AppListTabs from './common/AppListTabs.vue';
+import AppListToolbar from './common/AppListToolbar.vue';
+import { ElTableColumn } from 'element-plus';
+import { ElCheckbox } from 'element-plus';
+
+import AppBusinessTable from './common/AppBusinessTable.vue';
 import { formatNumber } from '../utils/number';
 
 import { computed, ref, watch } from 'vue';
@@ -311,21 +317,19 @@ async function freeze(row: InventoryQueryRow) {
     if (e !== 'cancel' && e !== 'close') ElMessage.error(message(e));
   }
 }
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => rows.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 <template>
   <section class="inventory-queries">
-    <div class="toolbar">
-      <div class="tabs" aria-label="库存查询">
-        <button
-          v-for="(label, key) in titles"
-          :key="key"
-          :class="{ active: key === kind }"
-          type="button"
-          @click="router.push({ name: 'inventory-queries', params: { kind: key } })"
-        >
-          {{ label }}
-        </button>
-      </div>
+    <AppListTabs
+      :active="kind"
+      :items="Object.entries(titles).map(([key, label]) => ({ key, label }))"
+      @select="router.push({ name: 'inventory-queries', params: { kind: $event } })"
+    />
+    <AppListToolbar class="toolbar">
+      <ElButton @click="router.push('/material-custody')">领用余料</ElButton>
       <form @submit.prevent="search">
         <ListToolbarIcons
           mode="filter"
@@ -338,98 +342,64 @@ async function freeze(row: InventoryQueryRow) {
           >重置</ElButton
         >
       </form>
-    </div>
+    </AppListToolbar>
     <p v-if="error" class="error" role="alert">
       {{ error }}<ElButton text @click="load">重试</ElButton>
     </p>
     <div class="card" :aria-busy="loading">
       <div class="scroll">
-        <table :style="{ minWidth: Math.max(850, columns.length * 125) + 'px' }">
-          <thead>
-            <tr>
-              <th
-                v-for="key in columns"
-                :key="key"
-                :class="{
-                  numeric: [
-                    'quantity',
-                    'reservedQuantity',
-                    'availableQuantity',
-                    'remainingQuantity',
-                    'unitCost',
-                    'remainingCost',
-                    'amount',
-                  ].includes(key),
-                }"
-              >
+        <AppBusinessTable :rows="rows" :pagination="false" :fill="true" :framed="false"
+          ><!-- @vue-generic {TableColumnRow1} -->
+          <ElTableColumn
+            show-overflow-tooltip
+            v-for="key in columns"
+            :min-width="150"
+            :prop="String(key)"
+            :key="String(key)"
+            ><template #header
+              ><div class="table-header-label">
                 {{ fields[kind][key] }}
-              </th>
-              <th
-                v-if="kind === 'balances' && auth.can('inventoryQuery', '冻结')"
-                class="operation"
-              >
-                操作
-              </th>
-            </tr>
-            <tr v-if="filterOpen">
-              <th v-for="key in columns" :key="key">
+              </div>
+              <div v-if="filterOpen" class="table-column-filter" @click.stop>
                 <ElInput
                   v-if="filterable.has(key)"
                   v-model="filters[key]"
                   clearable
                   :placeholder="'筛选' + fields[kind][key]"
-                />
-              </th>
-              <th
-                v-if="kind === 'balances' && auth.can('inventoryQuery', '冻结')"
-                class="operation"
-              ></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in rows" :key="row.id">
-              <td
-                v-for="key in columns"
-                :key="key"
-                :class="{
-                  numeric: [
-                    'quantity',
-                    'reservedQuantity',
-                    'availableQuantity',
-                    'remainingQuantity',
-                    'unitCost',
-                    'remainingCost',
-                    'amount',
-                  ].includes(key),
-                }"
+                /></div></template
+            ><template #default="{ row: row, $index: tableRowIndex }">
+              <ElTag
+                v-if="['stockStatus', 'expiryStatus', 'costStatus'].includes(key) && row[key]"
+                :type="tone(display(row, key))"
+                >{{ display(row, key) }}</ElTag
+              ><ElButton
+                v-else-if="key === 'sourceCode' && row.sourceId"
+                type="primary"
+                link
+                @click="source(row)"
+                >{{ display(row, key) }}</ElButton
+              ><span v-else>{{ display(row, key) }}</span>
+            </template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow1} -->
+          <ElTableColumn
+            v-if="kind === 'balances' && auth.can('inventoryQuery', '冻结')"
+            class-name="operation"
+            fixed="right"
+            :width="170"
+            :min-width="156"
+            :resizable="false"
+            ><template #header><div class="table-header-label">操作</div></template
+            ><template #default="{ row: row, $index: tableRowIndex }">
+              <ElButton
+                type="primary"
+                link
+                :disabled="Number(row.quantity) <= 0"
+                @click="freeze(row)"
+                >{{ row.stockStatus === '冻结' ? '解冻' : '冻结' }}</ElButton
               >
-                <ElTag
-                  v-if="['stockStatus', 'expiryStatus', 'costStatus'].includes(key) && row[key]"
-                  :type="tone(display(row, key))"
-                  >{{ display(row, key) }}</ElTag
-                ><ElButton
-                  v-else-if="key === 'sourceCode' && row.sourceId"
-                  type="primary"
-                  link
-                  @click="source(row)"
-                  >{{ display(row, key) }}</ElButton
-                ><span v-else>{{ display(row, key) }}</span>
-              </td>
-              <td
-                v-if="kind === 'balances' && auth.can('inventoryQuery', '冻结')"
-                class="operation"
-              >
-                <ElButton
-                  type="primary"
-                  link
-                  :disabled="Number(row.quantity) <= 0"
-                  @click="freeze(row)"
-                  >{{ row.stockStatus === '冻结' ? '解冻' : '冻结' }}</ElButton
-                >
-              </td>
-            </tr>
-          </tbody>
-        </table>
+            </template></ElTableColumn
+          ></AppBusinessTable
+        >
         <div v-if="!rows.length" class="empty-state">
           {{ loading ? '正在加载…' : error ? '加载失败，请重试' : '暂无数据' }}
         </div>
@@ -450,13 +420,13 @@ async function freeze(row: InventoryQueryRow) {
           @toggle-columns="columnsOpen = !columnsOpen"
           @export="exportRows"
           ><template #columns
-            ><label v-for="(label, key) in fields[kind]" :key="key"
-              ><input
-                type="checkbox"
-                :checked="columns.includes(key)"
-                :disabled="columns.length === 1 && columns.includes(key)"
-                @change="toggle(key)"
-              />{{ label }}</label
+            ><ElCheckbox
+              v-for="(label, key) in fields[kind]"
+              :key="key"
+              :model-value="columns.includes(key)"
+              :disabled="columns.length === 1 && columns.includes(key)"
+              @change="toggle(key)"
+              >{{ label }}</ElCheckbox
             ></template
           ></ListToolbarIcons
         >
@@ -482,18 +452,10 @@ async function freeze(row: InventoryQueryRow) {
   color: var(--text);
   font-size: 13px;
 }
-.toolbar,
-.toolbar form,
 footer {
   display: flex;
   gap: 12px;
   align-items: center;
-}
-.toolbar {
-  margin-bottom: 0;
-}
-.toolbar form {
-  margin-left: auto;
 }
 .tabs {
   display: flex;
@@ -544,26 +506,8 @@ table {
   border-collapse: separate;
   table-layout: fixed;
 }
-td,
-th {
-  font-size: 13px;
-  height: 44px;
-  padding: 10px 12px;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  border-bottom: 1px solid #e4e9f0;
-}
-th {
-  font-weight: 700;
-  background: #f5f7fb;
-}
-tbody tr:hover {
-  background: #f8faff;
-}
-th.numeric,
-td.numeric {
+.app-business-table :deep(th.numeric),
+.app-business-table :deep(td.numeric) {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -599,13 +543,5 @@ footer {
 :deep(.el-button),
 :deep(.el-input) {
   font-size: 13px;
-}
-@media (max-width: 1000px) {
-  .toolbar {
-    flex-wrap: wrap;
-  }
-  .toolbar form {
-    margin-left: 0;
-  }
 }
 </style>

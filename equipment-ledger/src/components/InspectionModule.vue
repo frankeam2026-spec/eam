@@ -1,4 +1,20 @@
 <script setup lang="ts">
+import AppListToolbar from './common/AppListToolbar.vue';
+import { ElTableColumn } from 'element-plus';
+import AppFilePicker from './common/AppFilePicker.vue';
+import { ElCheckboxGroup } from 'element-plus';
+
+function onTableSort(sort: BusinessSort) {
+  sortKey.value = sort.order ? sort.prop || '' : '';
+  sortAsc.value = sort.order !== 'descending';
+  page.value = 1;
+}
+import type { BusinessSort } from './common/BusinessTable.types';
+function persistTableWidths() {
+  localStorage.setItem('eam-inspection-widths-' + kind.value, JSON.stringify(widths.value));
+}
+import AppBusinessTable from './common/AppBusinessTable.vue';
+import AppIcon from './common/AppIcon.vue';
 import RowMoreActions from './common/RowMoreActions.vue';
 import TaskOrganizationFilter from './common/TaskOrganizationFilter.vue';
 import { maintenanceMenu, inspectionMenu } from '../rolePermissions';
@@ -51,7 +67,8 @@ import MaintenanceStatus from './common/MaintenanceStatus.vue';
 import InspectionProjectEditor from './common/InspectionProjectEditor.vue';
 import InspectionReviewDialog from './common/InspectionReviewDialog.vue';
 import TreeSelect from './TreeSelect.vue';
-import AdvancedFilterDrawer from './common/AdvancedFilterDrawer.vue';
+import FilterConditionPopover from './common/FilterConditionPopover.vue';
+import { useConditionPopover } from '../composables/useConditionPopover';
 import AppliedFilterChips from './common/AppliedFilterChips.vue';
 import { matchesAdvanced, type FilterCondition, type FilterField } from '../query/advancedFilters';
 const uuid = () => crypto.randomUUID();
@@ -203,6 +220,7 @@ function value(row: InspectionDefinition | InspectionTask, key: string): string 
   return r[key] ?? '';
 }
 const organizationFilter = ref('');
+const taskOrganizations = ref<InspectionChoices['organizations']>([]);
 function matchesOrganization(row: { departmentId?: string; companyId?: string }) {
   if (!organizationFilter.value) return true;
   const byId = new Map(choices.value.organizations.map((x) => [x.id, x]));
@@ -338,9 +356,14 @@ async function load() {
       selectedDetails.value = [];
       unsaved.markSaved();
     } else {
-      records.value = isTasks.value
-        ? (await inspectionApi.tasks(daily.value ? 'daily' : 'periodic')).data
-        : (await inspectionApi.list(kind.value)).data;
+      if (isTasks.value) {
+        const result = await inspectionApi.tasks(daily.value ? 'daily' : 'periodic');
+        if (version !== loadVersion) return;
+        records.value = result.data;
+        taskOrganizations.value = result.organizations;
+      } else {
+        records.value = (await inspectionApi.list(kind.value)).data;
+      }
       let saved: string[] = [];
       try {
         saved = JSON.parse(localStorage.getItem('eam-inspection-columns-' + kind.value) || '[]');
@@ -667,15 +690,15 @@ async function deleteType(type: InspectionDefinition) {
     ElMessage.error(e instanceof Error ? e.message : '删除失败');
   }
 }
-const importInput = ref<HTMLInputElement>(),
-  rosterInput = ref<HTMLInputElement>();
-async function importEquipment(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0];
+const importInput = ref<InstanceType<typeof AppFilePicker>>(),
+  rosterInput = ref<InstanceType<typeof AppFilePicker>>();
+async function importEquipment(files: File[]) {
+  const file = files[0];
   if (!file) return;
   try {
     const data = csvRows((await file.text()).replace(/^\uFEFF/, ''));
-    const index = data[0]?.findIndex((h) => ['设备编码', '设备编号'].includes(h)) ?? -1;
-    if (index < 0) throw new Error('CSV 需包含“设备编码”或“设备编号”表头');
+    const index = data[0]?.findIndex((h) => ['设备编号', '设备编号'].includes(h)) ?? -1;
+    if (index < 0) throw new Error('CSV 需包含“设备编号”或“设备编号”表头');
     const ids = data.slice(1).map((r) => {
       const eq = choices.value.equipment.find((e) => e.code === r[index]);
       if (!eq) throw new Error(`设备不存在或无权限：${r[index]}`);
@@ -687,11 +710,10 @@ async function importEquipment(event: Event) {
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : '导入失败');
   } finally {
-    (event.target as HTMLInputElement).value = '';
   }
 }
-async function importRoster(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0];
+async function importRoster(files: File[]) {
+  const file = files[0];
   if (!file) return;
   try {
     const data = csvRows((await file.text()).replace(/^\uFEFF/, ''));
@@ -716,7 +738,6 @@ async function importRoster(event: Event) {
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : '导入失败');
   } finally {
-    (event.target as HTMLInputElement).value = '';
   }
 }
 const reviewOpen = ref(false);
@@ -750,6 +771,43 @@ async function batchReview(body: unknown) {
     busy.value = false;
   }
 }
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => pageRows.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows2 = () => form.value.shifts;
+type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows3 = () => form.value.roster;
+type TableColumnRow3 = NonNullable<ReturnType<typeof tableColumnRows3>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows4 = () => form.value.details;
+type TableColumnRow4 = NonNullable<ReturnType<typeof tableColumnRows4>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows5 = () => equipmentOptions.value;
+type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows6 = () => projectItems.value;
+type TableColumnRow6 = NonNullable<ReturnType<typeof tableColumnRows6>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows7 = () => types.value;
+type TableColumnRow7 = NonNullable<ReturnType<typeof tableColumnRows7>>[number];
+const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter } =
+  useConditionPopover(
+    advancedOpen,
+    () => conditions.value,
+    (value) => {
+      conditions.value = value;
+      page.value = 1;
+      selected.value = [];
+    },
+  );
 </script>
 <template>
   <section class="inspection-page" :class="{ 'inspection-editor': editing }">
@@ -757,30 +815,31 @@ async function batchReview(body: unknown) {
       <TaskOrganizationFilter
         v-if="isTasks"
         v-model="organizationFilter"
-        :organizations="choices.organizations"
+        :organizations="taskOrganizations"
+        :scope-by-records="false"
         :records="records"
       />
       <div class="task-list-content">
         <div v-if="isTasks" class="inspection-queue">
-          <button
+          <ElButton
             v-for="q in ['全部', '我的待执行', '我的待审核']"
             :key="q"
             :class="{ active: queue === q }"
             @click="queue = q"
+            >{{ q }}</ElButton
           >
-            {{ q }}
-          </button>
         </div>
-        <div class="inspection-toolbar">
+        <AppListToolbar class="inspection-toolbar">
           <div class="inspection-toolbar-actions">
             <ElButton v-if="!isTasks && can('新增')" type="primary" @click="open()"
-              >＋ 新增</ElButton
+              ><AppIcon name="Plus" /> 新增</ElButton
             ><ElButton v-if="isTasks" :disabled="!selected.length" @click="openBatchReview"
               >审核</ElButton
             ><span v-if="selected.length">已选 {{ selected.length }} 条</span>
           </div>
           <form class="inspection-search" @submit.prevent="search = keyword.trim()">
             <ListToolbarIcons
+              v-if="!isTasks"
               mode="filter"
               :filter-open="filterOpen"
               :columns-open="false"
@@ -793,142 +852,153 @@ async function batchReview(body: unknown) {
             /><ElButton
               v-if="isTasks"
               :class="{ active: conditions.length }"
-              @click="advancedOpen = true"
-              >筛选器<span v-if="conditions.length">（{{ conditions.length }}）</span></ElButton
+              @click="showFilter($event.currentTarget as HTMLElement)"
+              >添加筛选<span v-if="conditions.length">（{{ conditions.length }}）</span></ElButton
             ><ElButton @click="reset">重置</ElButton>
           </form>
-        </div>
+        </AppListToolbar>
         <AppliedFilterChips
+          editable
+          @edit="(condition, anchor) => showFilter(anchor, condition.field)"
           v-if="isTasks"
           :conditions="conditions"
           :fields="filterFields"
-          @change="conditions = $event"
+          @change="replaceFilters"
         />
         <p v-if="error" class="inspection-error">
           {{ error }} <ElButton text @click="load">重试</ElButton>
         </p>
         <div class="inspection-list-card">
           <div class="inspection-list-scroll">
-            <table class="business-table inspection-list">
-              <colgroup>
-                <col v-if="isTasks" style="width: 44px" />
-                <col
-                  v-for="[key] in shownFields"
-                  :key="key"
-                  :style="{
-                    width:
-                      (widths[key] ||
-                        (['equipmentName', 'name', 'planName'].includes(key)
-                          ? 220
-                          : key.endsWith('At')
-                            ? 180
-                            : 150)) + 'px',
-                  }"
-                />
-                <col style="width: 176px" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th v-if="isTasks">
-                    <input
-                      type="checkbox"
-                      :checked="
-                        pageRows.length > 0 && pageRows.every((r) => selected.includes(r.id))
-                      "
-                      @change="
-                        selected = pageRows.every((r) => selected.includes(r.id))
-                          ? []
-                          : pageRows.map((r) => r.id)
-                      "
-                    />
-                  </th>
-                  <th
-                    v-for="[key, label] in shownFields"
-                    :key="key"
-                    @click="
-                      sortAsc = sortKey === key ? !sortAsc : true;
-                      sortKey = key;
-                    "
-                  >
-                    {{ label }}<span v-if="sortKey === key">{{ sortAsc ? ' ↑' : ' ↓' }}</span
-                    ><i class="inspection-column-resizer" @mousedown="resize($event, key)" />
-                  </th>
-                  <th class="list-action-column">操作</th>
-                </tr>
-                <tr v-if="filterOpen">
-                  <th v-if="isTasks"></th>
-                  <th v-for="[key] in shownFields" :key="key">
+            <AppBusinessTable
+              v-model:selection-ids="selected"
+              :selection-width="48"
+              selection-fixed="left"
+              selection-align="center"
+              :selectable="isTasks"
+              :sortable="true"
+              @sort-change="onTableSort"
+              :rows="pageRows"
+              :pagination="false"
+              :fill="true"
+              :framed="false"
+              class="business-table inspection-list"
+              @column-resize="
+                (key, width) => {
+                  widths[key] = width;
+                  persistTableWidths();
+                }
+              "
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn
+                show-overflow-tooltip
+                :label="label"
+                v-for="[key, label] in shownFields"
+                :prop="key!"
+                :min-width="150"
+                :key="key"
+                :sortable="true ? 'custom' : false"
+                ><template #header
+                  ><span class="business-column-label" :title="label">{{ label }}</span>
+                  <div v-if="filterOpen && !isTasks" class="table-column-filter" @click.stop>
                     <ElSelect
                       v-if="key === 'status'"
                       v-model="columnFilters[key]"
                       clearable
                       placeholder="全部"
                       ><ElOption v-for="s in inspectionStates" :key="s" :value="s" /></ElSelect
-                    ><ElInput v-else v-model="columnFilters[key]" clearable placeholder="筛选" />
-                  </th>
-                  <th class="list-action-column"></th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="r in pageRows" :key="r.id">
-                  <td v-if="isTasks"><input v-model="selected" type="checkbox" :value="r.id" /></td>
-                  <td v-for="[key] in shownFields" :key="key">
-                    <button v-if="key === 'code'" class="inspection-text-button" @click="open(r)">
-                      {{ value(r, key) }}</button
-                    ><MaintenanceStatus
-                      v-else-if="key === 'status'"
-                      :status="String(value(r, key))"
-                    /><span
-                      v-else-if="key === 'enabled'"
-                      class="inspection-enabled"
-                      :class="{ disabled: !(r as InspectionDefinition).enabled }"
-                      >{{ value(r, key) }}</span
-                    ><span v-else :title="String(value(r, key))">{{
-                      String(value(r, key)).replace('T', ' ') || ''
-                    }}</span>
-                  </td>
-                  <td class="list-action-column">
-                    <div class="inspection-row-actions">
-                      <template v-if="isTasks"
-                        ><button class="inspection-text-button" @click="open(r)">
-                          {{
-                            (r as InspectionTask).canReview &&
-                            (r as InspectionTask).status === '待审核'
-                              ? '审核'
-                              : (r as InspectionTask).canExecute &&
-                                  ['未开始', '待执行', '执行中', '审核不通过', '已过期'].includes(
-                                    (r as InspectionTask).status,
-                                  )
-                                ? '执行'
-                                : '查看'
-                          }}
-                        </button></template
-                      ><template v-else
-                        ><button v-if="can('编辑')" class="inspection-text-button" @click="open(r)">
-                          编辑</button
-                        ><button v-if="can('新增')" class="inspection-text-button" @click="copy(r)">
-                          复制</button
-                        ><RowMoreActions
-                          v-if="can('删除') && can('编辑') && can('新增')"
-                          :actions="[{ label: '删除', danger: true, run: () => remove(r) }]"
-                        /><button
-                          v-else-if="can('删除')"
-                          class="inspection-text-button danger"
-                          @click="remove(r)"
-                        >
-                          删除
-                        </button></template
+                    ><ElInput
+                      v-else
+                      v-model="columnFilters[key]"
+                      clearable
+                      placeholder="筛选"
+                    /></div></template
+                ><template #default="{ row: r, $index: tableRowIndex }">
+                  <ElButton
+                    v-if="key === 'code'"
+                    class="inspection-text-button"
+                    @click="open(r)"
+                    type="primary"
+                    link
+                    >{{ value(r, key) }}</ElButton
+                  ><MaintenanceStatus
+                    v-else-if="key === 'status'"
+                    :status="String(value(r, key))"
+                  /><span
+                    v-else-if="key === 'enabled'"
+                    class="inspection-enabled"
+                    :class="{ disabled: !(r as InspectionDefinition).enabled }"
+                    >{{ value(r, key) }}</span
+                  ><span v-else :title="String(value(r, key))">{{
+                    String(value(r, key)).replace('T', ' ') || ''
+                  }}</span>
+                </template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn
+                class-name="list-action-column"
+                fixed="right"
+                :width="170"
+                :min-width="156"
+                :resizable="false"
+                ><template #header><div class="table-header-label">操作</div></template
+                ><template #default="{ row: r, $index: tableRowIndex }">
+                  <div class="inspection-row-actions">
+                    <template v-if="isTasks"
+                      ><ElButton
+                        class="inspection-text-button"
+                        @click="open(r)"
+                        type="primary"
+                        link
+                        >{{
+                          (r as InspectionTask).canReview &&
+                          (r as InspectionTask).status === '待审核'
+                            ? '审核'
+                            : (r as InspectionTask).canExecute &&
+                                ['未开始', '待执行', '执行中', '审核不通过', '已过期'].includes(
+                                  (r as InspectionTask).status,
+                                )
+                              ? '执行'
+                              : '查看'
+                        }}</ElButton
+                      ></template
+                    ><template v-else
+                      ><ElButton
+                        v-if="can('编辑')"
+                        class="inspection-text-button"
+                        @click="open(r)"
+                        type="primary"
+                        link
                       >
-                    </div>
-                  </td>
-                </tr>
-                <tr v-if="!pageRows.length">
-                  <td :colspan="shownFields.length + (isTasks ? 2 : 1)" class="inspection-empty">
-                    {{ loading ? '正在加载…' : '暂无数据' }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                        编辑</ElButton
+                      ><ElButton
+                        v-if="can('新增')"
+                        class="inspection-text-button"
+                        @click="copy(r)"
+                        type="primary"
+                        link
+                      >
+                        复制</ElButton
+                      ><RowMoreActions
+                        v-if="can('删除') && can('编辑') && can('新增')"
+                        :actions="[{ label: '删除', danger: true, run: () => remove(r) }]"
+                      /><ElButton
+                        v-else-if="can('删除')"
+                        class="inspection-text-button danger"
+                        @click="remove(r)"
+                        type="danger"
+                        link
+                      >
+                        删除
+                      </ElButton></template
+                    >
+                  </div>
+                </template></ElTableColumn
+              ><template #empty
+                ><div v-if="!pageRows.length">
+                  {{ loading ? '正在加载…' : '暂无数据' }}
+                </div></template
+              ></AppBusinessTable
+            >
           </div>
           <footer class="inspection-list-footer">
             <span>共 {{ filtered.length }} 条</span
@@ -944,13 +1014,14 @@ async function batchReview(body: unknown) {
               @toggle-columns="columnsOpen = !columnsOpen"
               @export="exportList"
               ><template #columns
-                ><label v-for="[key, label] in fields" :key="key"
-                  ><input
-                    v-model="visibleColumns"
-                    type="checkbox"
-                    :value="key"
+                ><ElCheckboxGroup v-model="visibleColumns"
+                  ><ElCheckbox
+                    v-for="[key, label] in fields"
+                    :key="key"
                     :disabled="visibleColumns.includes(key) && visibleColumns.length === 1"
-                  />{{ label }}</label
+                    :value="key"
+                    >{{ label }}</ElCheckbox
+                  ></ElCheckboxGroup
                 ></template
               ></ListToolbarIcons
             >
@@ -1157,7 +1228,7 @@ async function batchReview(body: unknown) {
                     end: '20:00:00',
                   })
                 "
-                >＋ 新增班次</ElButton
+                ><AppIcon name="Plus" /> 新增班次</ElButton
               >
             </div>
             <div class="inspection-calendar-grid">
@@ -1193,31 +1264,42 @@ async function batchReview(body: unknown) {
                 </p>
               </div>
               <div class="inspection-inline-scroll">
-                <table class="business-table inspection-shift-table">
-                  <thead>
-                    <tr>
-                      <th>班次名称</th>
-                      <th>开始时间</th>
-                      <th>结束时间</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="s in form.shifts" :key="s.id">
-                      <td><ElInput v-model="s.name" placeholder="例如白班" /></td>
-                      <td><ElInput v-model="s.start" type="time" /></td>
-                      <td><ElInput v-model="s.end" type="time" /></td>
-                      <td>
-                        <button
-                          class="inspection-text-button danger"
-                          @click="form.shifts = form.shifts.filter((i) => i.id !== s.id)"
-                        >
-                          删除
-                        </button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                <AppBusinessTable
+                  :rows="form.shifts"
+                  :pagination="false"
+                  :fill="false"
+                  :framed="false"
+                  class="business-table inspection-shift-table"
+                  ><!-- @vue-generic {TableColumnRow2} -->
+                  <ElTableColumn :min-width="210"
+                    ><template #header><div class="table-header-label">班次名称</div></template
+                    ><template #default="{ row: s, $index: tableRowIndex }"
+                      ><ElInput v-model="s.name" placeholder="例如白班" /></template></ElTableColumn
+                  ><!-- @vue-generic {TableColumnRow2} -->
+                  <ElTableColumn :min-width="150"
+                    ><template #header><div class="table-header-label">开始时间</div></template
+                    ><template #default="{ row: s, $index: tableRowIndex }"
+                      ><ElInput v-model="s.start" type="time" /></template></ElTableColumn
+                  ><!-- @vue-generic {TableColumnRow2} -->
+                  <ElTableColumn :min-width="150"
+                    ><template #header><div class="table-header-label">结束时间</div></template
+                    ><template #default="{ row: s, $index: tableRowIndex }"
+                      ><ElInput v-model="s.end" type="time" /></template></ElTableColumn
+                  ><!-- @vue-generic {TableColumnRow2} -->
+                  <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
+                    ><template #header><div class="table-header-label">操作</div></template
+                    ><template #default="{ row: s, $index: tableRowIndex }">
+                      <ElButton
+                        class="inspection-text-button danger"
+                        @click="form.shifts = form.shifts.filter((i) => i.id !== s.id)"
+                        type="danger"
+                        link
+                      >
+                        删除
+                      </ElButton>
+                    </template></ElTableColumn
+                  ></AppBusinessTable
+                >
               </div>
             </div>
           </section>
@@ -1233,8 +1315,8 @@ async function batchReview(body: unknown) {
                     users: [],
                   })
                 "
-                >＋ 新增排班</ElButton
-              ><ElButton @click="rosterInput?.click()">导入排班</ElButton
+                ><AppIcon name="Plus" /> 新增排班</ElButton
+              ><ElButton @click="rosterInput?.open()">导入排班</ElButton
               ><ElButton
                 @click="
                   downloadCsv('排班导入模板', [
@@ -1245,52 +1327,57 @@ async function batchReview(body: unknown) {
                 >下载模板</ElButton
               >
             </div>
-            <input ref="rosterInput" type="file" accept=".csv" hidden @change="importRoster" />
+            <AppFilePicker ref="rosterInput" accept=".csv" hidden @select="importRoster" />
             <div class="inspection-inline-scroll">
-              <table class="business-table inspection-roster-table">
-                <thead>
-                  <tr>
-                    <th>日期</th>
-                    <th>班次</th>
-                    <th>排班人员</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="r in form.roster" :key="r.key">
-                    <td><ElDatePicker v-model="r.date" type="date" value-format="YYYY-MM-DD" /></td>
-                    <td>
-                      <ElSelect v-model="r.shiftId"
-                        ><ElOption
-                          v-for="s in form.shifts"
-                          :key="s.id"
-                          :value="s.id"
-                          :label="s.name"
-                      /></ElSelect>
-                    </td>
-                    <td>
-                      <ElSelect v-model="r.users" multiple filterable
-                        ><ElOption
-                          v-for="u in choices.users"
-                          :key="u.id"
-                          :value="u.id"
-                          :label="u.name + ' · ' + u.department"
-                      /></ElSelect>
-                    </td>
-                    <td>
-                      <button
-                        class="inspection-text-button danger"
-                        @click="form.roster = form.roster.filter((i) => i.key !== r.key)"
-                      >
-                        删除
-                      </button>
-                    </td>
-                  </tr>
-                  <tr v-if="!form.roster.length">
-                    <td colspan="4" class="inspection-empty">暂无排班，可新增或导入</td>
-                  </tr>
-                </tbody>
-              </table>
+              <AppBusinessTable
+                :rows="form.roster"
+                :pagination="false"
+                :fill="false"
+                :framed="false"
+                class="business-table inspection-roster-table"
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150"
+                  ><template #header><div class="table-header-label">日期</div></template
+                  ><template #default="{ row: r, $index: tableRowIndex }"
+                    ><ElDatePicker
+                      v-model="r.date"
+                      type="date"
+                      value-format="YYYY-MM-DD" /></template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150"
+                  ><template #header><div class="table-header-label">班次</div></template
+                  ><template #default="{ row: r, $index: tableRowIndex }">
+                    <ElSelect v-model="r.shiftId"
+                      ><ElOption v-for="s in form.shifts" :key="s.id" :value="s.id" :label="s.name"
+                    /></ElSelect> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150"
+                  ><template #header><div class="table-header-label">排班人员</div></template
+                  ><template #default="{ row: r, $index: tableRowIndex }">
+                    <ElSelect v-model="r.users" multiple filterable
+                      ><ElOption
+                        v-for="u in choices.users"
+                        :key="u.id"
+                        :value="u.id"
+                        :label="u.name + ' · ' + u.department"
+                    /></ElSelect> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
+                  ><template #header><div class="table-header-label">操作</div></template
+                  ><template #default="{ row: r, $index: tableRowIndex }">
+                    <ElButton
+                      class="inspection-text-button danger"
+                      @click="form.roster = form.roster.filter((i) => i.key !== r.key)"
+                      type="danger"
+                      link
+                    >
+                      删除
+                    </ElButton>
+                  </template></ElTableColumn
+                ><template #empty
+                  ><div v-if="!form.roster.length">暂无排班，可新增或导入</div></template
+                ></AppBusinessTable
+              >
             </div>
           </section>
           <section class="inspection-form-card">
@@ -1298,11 +1385,13 @@ async function batchReview(body: unknown) {
               <h3>
                 {{ daily ? '计划设备' : '巡检路线' }} <span>{{ form.details.length }} 台</span>
               </h3>
-              <ElButton type="primary" @click="equipmentPicker">＋ 添加设备</ElButton
+              <ElButton type="primary" @click="equipmentPicker"
+                ><AppIcon name="Plus" /> 添加设备</ElButton
               ><ElButton @click="matchProjects">匹配检查项目</ElButton
-              ><ElButton @click="importInput?.click()">导入设备</ElButton
+              ><ElButton @click="importInput?.open()">导入设备</ElButton
               ><ElDropdown :disabled="!selectedDetails.length" @command="detailCommand"
-                ><ElButton :disabled="!selectedDetails.length">批量操作⌄</ElButton
+                ><ElButton :disabled="!selectedDetails.length"
+                  >批量操作<AppIcon name="Down" /></ElButton
                 ><template #dropdown
                   ><ElDropdownMenu
                     ><ElDropdownItem v-if="daily" command="owners">设置负责人</ElDropdownItem
@@ -1312,127 +1401,138 @@ async function batchReview(body: unknown) {
                 ></ElDropdown
               >
             </div>
-            <input ref="importInput" type="file" accept=".csv" hidden @change="importEquipment" />
+            <AppFilePicker ref="importInput" accept=".csv" hidden @select="importEquipment" />
             <div class="inspection-inline-scroll">
-              <table class="business-table inspection-detail-table">
-                <colgroup>
-                  <col style="width: 44px" />
-                  <col style="width: 52px" />
-                  <col style="width: 170px" />
-                  <col style="width: 190px" />
-                  <col style="width: 160px" />
-                  <col style="width: 150px" />
-                  <col style="width: 190px" />
-                  <col style="width: 260px" />
-                  <col v-if="daily" style="width: 220px" />
-                  <col style="width: 220px" />
-                  <col style="width: 160px" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>
-                      <input
-                        type="checkbox"
-                        :checked="
-                          form.details.length > 0 && selectedDetails.length === form.details.length
-                        "
-                        @change="
-                          selectedDetails =
-                            selectedDetails.length === form.details.length
-                              ? []
-                              : form.details.map((d) => d.key)
-                        "
-                      />
-                    </th>
-                    <th>序号</th>
-                    <th class="detail-code">设备编码</th>
-                    <th class="detail-name">设备名称</th>
-                    <th>所属部门</th>
-                    <th>规格型号</th>
-                    <th>功能位置</th>
-                    <th>检查项目</th>
-                    <th v-if="daily">负责人</th>
-                    <th>审核人</th>
-                    <th class="list-action-column">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(d, index) in form.details" :key="d.key">
-                    <td><input v-model="selectedDetails" type="checkbox" :value="d.key" /></td>
-                    <td>{{ index + 1 }}</td>
-                    <td class="detail-code">{{ eqOf(d)?.code }}</td>
-                    <td class="detail-name">{{ eqOf(d)?.name }}</td>
-                    <td>{{ eqOf(d)?.department }}</td>
-                    <td>{{ eqOf(d)?.model }}</td>
-                    <td>{{ eqOf(d)?.functionLocation || '' }}</td>
-                    <td>
-                      <button class="inspection-project-picker" @click="pickProjects(d)">
-                        {{
-                          d.projectRefs.length
-                            ? d.projectRefs.length + ' 个检查项目'
-                            : '请选择检查项目'
-                        }}<span>选择 ›</span>
-                      </button>
-                    </td>
-                    <td v-if="daily">
-                      <ElSelect
-                        v-model="d.owners"
-                        multiple
-                        filterable
-                        placeholder="沿用计划负责人"
-                        :disabled="form.personMode !== '指定负责人'"
-                        ><ElOption
-                          v-for="u in choices.users"
-                          :key="u.id"
-                          :value="u.id"
-                          :label="u.name"
-                      /></ElSelect>
-                    </td>
-                    <td>
-                      <ElSelect
-                        v-model="d.reviewers"
-                        multiple
-                        filterable
-                        placeholder="沿用计划审核人"
-                        ><ElOption
-                          v-for="u in choices.users"
-                          :key="u.id"
-                          :value="u.id"
-                          :label="u.name"
-                      /></ElSelect>
-                    </td>
-                    <td class="list-action-column">
-                      <div class="inspection-row-actions">
-                        <button
-                          v-if="!daily"
-                          class="inspection-text-button"
-                          :disabled="index === 0"
-                          @click="moveDetail(index, -1)"
-                        >
-                          上移</button
-                        ><button
-                          v-if="!daily"
-                          class="inspection-text-button"
-                          :disabled="index === form.details.length - 1"
-                          @click="moveDetail(index, 1)"
-                        >
-                          下移</button
-                        ><button
-                          class="inspection-text-button danger"
-                          @click="form.details = form.details.filter((i) => i.key !== d.key)"
-                        >
-                          删除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr v-if="!form.details.length">
-                    <td :colspan="daily ? 11 : 10" class="inspection-empty">
-                      请添加设备，系统将匹配设备关联的检查项目
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+              <AppBusinessTable
+                v-model:selection-ids="selectedDetails"
+                :selection-width="48"
+                selection-fixed="left"
+                selection-align="center"
+                selectable
+                row-key="key"
+                :rows="form.details"
+                :pagination="false"
+                :fill="false"
+                :framed="false"
+                class="business-table inspection-detail-table"
+                ><!-- @vue-generic {TableColumnRow4} -->
+                <ElTableColumn :min-width="55" :width="52"
+                  ><template #header><div class="table-header-label">序号</div></template
+                  ><template #default="{ row: d, $index: index }">{{
+                    index + 1
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow4} -->
+                <ElTableColumn :min-width="150" :width="170" class-name="detail-code"
+                  ><template #header><div class="table-header-label">设备编号</div></template
+                  ><template #default="{ row: d, $index: index }">{{
+                    eqOf(d)?.code
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow4} -->
+                <ElTableColumn :min-width="210" :width="190" class-name="detail-name"
+                  ><template #header><div class="table-header-label">设备名称</div></template
+                  ><template #default="{ row: d, $index: index }">{{
+                    eqOf(d)?.name
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow4} -->
+                <ElTableColumn :min-width="150" :width="160"
+                  ><template #header><div class="table-header-label">所属部门</div></template
+                  ><template #default="{ row: d, $index: index }">{{
+                    eqOf(d)?.department
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow4} -->
+                <ElTableColumn :min-width="150" :width="150"
+                  ><template #header><div class="table-header-label">规格型号</div></template
+                  ><template #default="{ row: d, $index: index }">{{
+                    eqOf(d)?.model
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow4} -->
+                <ElTableColumn :min-width="150" :width="190"
+                  ><template #header><div class="table-header-label">位置</div></template
+                  ><template #default="{ row: d, $index: index }">{{
+                    eqOf(d)?.functionLocation || ''
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow4} -->
+                <ElTableColumn :min-width="210" :width="260"
+                  ><template #header><div class="table-header-label">检查项目</div></template
+                  ><template #default="{ row: d, $index: index }">
+                    <ElButton class="inspection-project-picker" @click="pickProjects(d)"
+                      >{{
+                        d.projectRefs.length
+                          ? d.projectRefs.length + ' 个检查项目'
+                          : '请选择检查项目'
+                      }}<span>选择 <AppIcon name="Right" /></span
+                    ></ElButton> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow4} -->
+                <ElTableColumn v-if="daily" :min-width="150" :width="220"
+                  ><template #header><div class="table-header-label">负责人</div></template
+                  ><template #default="{ row: d, $index: index }">
+                    <ElSelect
+                      v-model="d.owners"
+                      multiple
+                      filterable
+                      placeholder="沿用计划负责人"
+                      :disabled="form.personMode !== '指定负责人'"
+                      ><ElOption
+                        v-for="u in choices.users"
+                        :key="u.id"
+                        :value="u.id"
+                        :label="u.name"
+                    /></ElSelect> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow4} -->
+                <ElTableColumn :min-width="150" :width="220"
+                  ><template #header><div class="table-header-label">审核人</div></template
+                  ><template #default="{ row: d, $index: index }">
+                    <ElSelect v-model="d.reviewers" multiple filterable placeholder="沿用计划审核人"
+                      ><ElOption
+                        v-for="u in choices.users"
+                        :key="u.id"
+                        :value="u.id"
+                        :label="u.name"
+                    /></ElSelect> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow4} -->
+                <ElTableColumn
+                  class-name="list-action-column"
+                  fixed="right"
+                  :width="170"
+                  :min-width="156"
+                  :resizable="false"
+                  ><template #header><div class="table-header-label">操作</div></template
+                  ><template #default="{ row: d, $index: index }">
+                    <div class="inspection-row-actions">
+                      <ElButton
+                        v-if="!daily"
+                        class="inspection-text-button"
+                        :disabled="index === 0"
+                        @click="moveDetail(index, -1)"
+                        type="primary"
+                        link
+                      >
+                        上移</ElButton
+                      ><ElButton
+                        v-if="!daily"
+                        class="inspection-text-button"
+                        :disabled="index === form.details.length - 1"
+                        @click="moveDetail(index, 1)"
+                        type="primary"
+                        link
+                      >
+                        下移</ElButton
+                      ><ElButton
+                        class="inspection-text-button danger"
+                        @click="form.details = form.details.filter((i) => i.key !== d.key)"
+                        type="danger"
+                        link
+                      >
+                        删除
+                      </ElButton>
+                    </div>
+                  </template></ElTableColumn
+                ><template #empty
+                  ><div v-if="!form.details.length">
+                    请添加设备，系统将匹配设备关联的检查项目
+                  </div></template
+                ></AppBusinessTable
+              >
             </div>
           </section>
         </template>
@@ -1445,10 +1545,13 @@ async function batchReview(body: unknown) {
         ><ElButton type="primary" :loading="busy" @click="save">保存</ElButton></AppFormFooter
       >
     </template>
-    <AdvancedFilterDrawer
+    <FilterConditionPopover
+      :anchor="filterAnchor"
+      :field-key="editingFilter"
+      :placement="editingFilter ? 'bottom-start' : 'bottom-end'"
       v-model="advancedOpen"
       :conditions="conditions"
-      @apply="conditions = $event"
+      @confirm="confirmFilter"
       :fields="filterFields"
     />
     <AppDialog v-model="equipmentOpen" title="选择设备" width="1000px"
@@ -1464,35 +1567,50 @@ async function batchReview(body: unknown) {
         />
       </div>
       <div class="inspection-picker-scroll">
-        <table class="business-table inspection-picker-table">
-          <thead>
-            <tr>
-              <th>选择</th>
-              <th>设备编号</th>
-              <th>设备名称</th>
-              <th>规格型号</th>
-              <th>所属部门</th>
-              <th>类别</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="e in equipmentOptions" :key="e.id">
-              <td>
-                <input
-                  v-model="pickedEquipment"
-                  type="checkbox"
-                  :value="e.id"
-                  :disabled="form.details.some((d) => d.equipmentId === e.id)"
-                />
-              </td>
-              <td>{{ e.code }}</td>
-              <td>{{ e.name }}</td>
-              <td>{{ e.model }}</td>
-              <td>{{ e.department }}</td>
-              <td>{{ e.category }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <AppBusinessTable
+          v-model:selection-ids="pickedEquipment"
+          :selection-width="48"
+          selection-fixed="left"
+          selection-align="center"
+          selectable
+          :can-select-row="(e) => !form.details.some((d) => d.equipmentId === e.id)"
+          :rows="equipmentOptions"
+          :pagination="false"
+          :fill="false"
+          :framed="false"
+          class="business-table inspection-picker-table"
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">设备编号</div></template
+            ><template #default="{ row: e, $index: tableRowIndex }">{{
+              e.code
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="210"
+            ><template #header><div class="table-header-label">设备名称</div></template
+            ><template #default="{ row: e, $index: tableRowIndex }">{{
+              e.name
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">规格型号</div></template
+            ><template #default="{ row: e, $index: tableRowIndex }">{{
+              e.model
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">所属部门</div></template
+            ><template #default="{ row: e, $index: tableRowIndex }">{{
+              e.department
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">类别</div></template
+            ><template #default="{ row: e, $index: tableRowIndex }">{{
+              e.category
+            }}</template></ElTableColumn
+          ></AppBusinessTable
+        >
       </div>
       <template #footer
         ><div class="inspection-dialog-actions">
@@ -1512,71 +1630,59 @@ async function batchReview(body: unknown) {
       </div>
       <div class="inspection-project-dialog">
         <aside>
-          <button
+          <ElButton
             v-for="st in projectStandards"
             :key="st.id"
             :class="{ active: projectStandardId === st.id }"
             @click="projectStandardId = st.id"
+            ><strong>{{ st.name }}</strong
+            ><span>{{ st.code }}</span></ElButton
           >
-            <strong>{{ st.name }}</strong
-            ><span>{{ st.code }}</span>
-          </button>
           <p v-if="!projectStandards.length">无关联标准，可勾选“查看所有标准”</p>
         </aside>
         <div class="inspection-picker-scroll">
-          <table class="business-table inspection-picker-table">
-            <thead>
-              <tr>
-                <th>
-                  <input
-                    type="checkbox"
-                    :checked="
-                      projectItems.length > 0 &&
-                      projectItems.every((i) =>
-                        projectRefs.includes(projectStandardId + '/' + i.id),
-                      )
-                    "
-                    @change="
-                      projectRefs = projectItems.every((i) =>
-                        projectRefs.includes(projectStandardId + '/' + i.id),
-                      )
-                        ? projectRefs.filter(
-                            (r) => !projectItems.some((i) => r === projectStandardId + '/' + i.id),
-                          )
-                        : [
-                            ...new Set([
-                              ...projectRefs,
-                              ...projectItems.map((i) => projectStandardId + '/' + i.id),
-                            ]),
-                          ]
-                    "
-                  />
-                </th>
-                <th>项目名称</th>
-                <th>方法及基准</th>
-                <th>巡检类型</th>
-                <th>结果类型</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="i in projectItems" :key="i.id">
-                <td>
-                  <input
-                    v-model="projectRefs"
-                    type="checkbox"
-                    :value="projectStandardId + '/' + i.id"
-                  />
-                </td>
-                <td>{{ i.name }}</td>
-                <td>{{ i.content }}</td>
-                <td>{{ types.find((t) => t.id === i.typeId)?.name }}</td>
-                <td>{{ i.valueType }}</td>
-              </tr>
-              <tr v-if="!projectItems.length">
-                <td colspan="5" class="inspection-empty">此标准无匹配的检查项目</td>
-              </tr>
-            </tbody>
-          </table>
+          <AppBusinessTable
+            v-model:selection-ids="projectRefs"
+            :selection-width="48"
+            selection-fixed="left"
+            selection-align="center"
+            selectable
+            row-key="_selectionKey"
+            :rows="
+              projectItems.map((i) => ({ ...i, _selectionKey: projectStandardId + '/' + i.id }))
+            "
+            :pagination="false"
+            :fill="false"
+            :framed="false"
+            class="business-table inspection-picker-table"
+            ><!-- @vue-generic {TableColumnRow6} -->
+            <ElTableColumn :min-width="210"
+              ><template #header><div class="table-header-label">项目名称</div></template
+              ><template #default="{ row: i, $index: tableRowIndex }">{{
+                i.name
+              }}</template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow6} -->
+            <ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">方法及基准</div></template
+              ><template #default="{ row: i, $index: tableRowIndex }">{{
+                i.content
+              }}</template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow6} -->
+            <ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">巡检类型</div></template
+              ><template #default="{ row: i, $index: tableRowIndex }">{{
+                types.find((t) => t.id === i.typeId)?.name
+              }}</template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow6} -->
+            <ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">结果类型</div></template
+              ><template #default="{ row: i, $index: tableRowIndex }">{{
+                i.valueType
+              }}</template></ElTableColumn
+            ><template #empty
+              ><div v-if="!projectItems.length">此标准无匹配的检查项目</div></template
+            ></AppBusinessTable
+          >
         </div>
       </div>
       <template #footer
@@ -1604,54 +1710,64 @@ async function batchReview(body: unknown) {
     >
     <AppDialog v-model="typeOpen" title="巡检类型" width="760px" :busy="busy">
       <div class="inspection-type-list">
-        <table class="business-table inspection-picker-table inspection-type-table">
-          <colgroup>
-            <col />
-            <col style="width: 100px" />
-            <col style="width: 90px" />
-            <col style="width: 120px" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>名称</th>
-              <th>周期</th>
-              <th>排序</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="t in types" :key="t.id" :class="{ 'is-editing': typeForm.id === t.id }">
-              <td>{{ t.name }}</td>
-              <td>{{ t.period }} {{ t.unit }}</td>
-              <td>{{ t.sortOrder ?? 0 }}</td>
-              <td>
-                <div class="inspection-row-actions">
-                  <button
-                    type="button"
-                    class="inspection-text-button"
-                    :disabled="busy"
-                    v-if="auth.can('inspectionType', '编辑')"
-                    @click="typeForm = { ...emptyInspection(), ...t }"
-                  >
-                    编辑
-                  </button>
-                  <button
-                    type="button"
-                    class="inspection-text-button danger"
-                    :disabled="busy"
-                    v-if="auth.can('inspectionType', '删除')"
-                    @click="deleteType(t)"
-                  >
-                    删除
-                  </button>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="!types.length">
-              <td colspan="4" class="inspection-empty">暂无巡检类型</td>
-            </tr>
-          </tbody>
-        </table>
+        <AppBusinessTable
+          :rows="types"
+          :pagination="false"
+          :fill="false"
+          :framed="false"
+          class="business-table inspection-picker-table inspection-type-table"
+          :row-class="(t, tableRowIndex) => ({ 'is-editing': typeForm.id === t.id })"
+          ><!-- @vue-generic {TableColumnRow7} -->
+          <ElTableColumn :min-width="210"
+            ><template #header><div class="table-header-label">名称</div></template
+            ><template #default="{ row: t, $index: tableRowIndex }">{{
+              t.name
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow7} -->
+          <ElTableColumn :min-width="150" :width="100"
+            ><template #header><div class="table-header-label">周期</div></template
+            ><template #default="{ row: t, $index: tableRowIndex }"
+              >{{ t.period }} {{ t.unit }}</template
+            ></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow7} -->
+          <ElTableColumn :min-width="150" :width="90"
+            ><template #header><div class="table-header-label">排序</div></template
+            ><template #default="{ row: t, $index: tableRowIndex }">{{
+              t.sortOrder ?? 0
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow7} -->
+          <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
+            ><template #header><div class="table-header-label">操作</div></template
+            ><template #default="{ row: t, $index: tableRowIndex }">
+              <div class="inspection-row-actions">
+                <ElButton
+                  class="inspection-text-button"
+                  :disabled="busy"
+                  v-if="auth.can('inspectionType', '编辑')"
+                  @click="typeForm = { ...emptyInspection(), ...t }"
+                  native-type="button"
+                  type="primary"
+                  link
+                >
+                  编辑
+                </ElButton>
+                <ElButton
+                  class="inspection-text-button danger"
+                  :disabled="busy"
+                  v-if="auth.can('inspectionType', '删除')"
+                  @click="deleteType(t)"
+                  native-type="button"
+                  type="danger"
+                  link
+                >
+                  删除
+                </ElButton>
+              </div>
+            </template></ElTableColumn
+          ><template #empty
+            ><div v-if="!types.length">暂无巡检类型</div></template
+          ></AppBusinessTable
+        >
       </div>
       <div class="inspection-type-form">
         <label
@@ -1719,5 +1835,20 @@ async function batchReview(body: unknown) {
   </section>
 </template>
 <style src="../styles/inspection.css"></style>
-.task-list-layout{display:flex;gap:12px;min-height:0;height:100%;}
-.task-list-content{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;}
+<style scoped>
+.task-list-layout {
+  display: flex;
+  flex: 1;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+.task-list-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  gap: 8px;
+}
+</style>

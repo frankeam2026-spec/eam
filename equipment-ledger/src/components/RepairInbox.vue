@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import AppListToolbar from './common/AppListToolbar.vue';
+import AppListTabs from './common/AppListTabs.vue';
+import { ElTableColumn } from 'element-plus';
+import { ElButton, ElCheckboxGroup, ElCheckbox } from 'element-plus';
+
+import AppBusinessTable from './common/AppBusinessTable.vue';
+import AppIcon from './common/AppIcon.vue';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
@@ -6,7 +13,8 @@ import AppPagination from './common/AppPagination.vue';
 import MaintenanceStatus from './common/MaintenanceStatus.vue';
 import ListSearchInput from './common/ListSearchInput.vue';
 import ListToolbarIcons from './ListToolbarIcons.vue';
-import { workInbox, type InboxItem } from '../api';
+const projectedCounts = ref<Record<string, number>>({});
+import { workInbox, request, type InboxItem } from '../api';
 import { formatDateTime } from '../utils/dateTime';
 import { useWorkInboxStore } from '../stores/workInbox';
 const route = useRoute(),
@@ -17,10 +25,13 @@ const rows = ref<InboxItem[]>([]),
   module = ref(
     [
       'repair',
+      'anomaly',
+      'repairPlan',
       'maintenance',
       'inspection',
       'inventory',
       'inventoryTransfer',
+      'inventoryReturn',
       'inventoryOutbound',
     ].includes(String(route.query.module))
       ? String(route.query.module)
@@ -36,7 +47,7 @@ const rows = ref<InboxItem[]>([]),
   loading = ref(false),
   error = ref('');
 const columnsOpen = ref(false),
-  columns = ref(['orderNo', 'equipmentName', 'kind', 'status', 'time']);
+  columns = ref(['orderNo', 'equipmentName', 'kind', 'status', 'owner', 'due', 'time']);
 const labels: Record<string, string> = {
   title: '任务说明',
   module: '模块',
@@ -45,41 +56,61 @@ const labels: Record<string, string> = {
   kind: '待办事项',
   status: '业务状态',
   time: '到达时间',
+  owner: '责任人',
+  due: '计划时间',
 };
+const projected = computed(() => ['active', 'created', 'team', 'today'].includes(tab.value));
+const displayColumns = computed(() =>
+  columns.value.filter((c) => projected.value || !['owner', 'due'].includes(c)),
+);
 const moduleGroups = computed(() =>
-  ['repair', 'maintenance', 'inspection', 'inventory']
-    .map((key) => ({
-      key,
-      name: inbox.moduleName(key),
-      items: inbox.summary.kinds
-        .filter(
-          (item) =>
-            item.module === key ||
-            (key === 'inventory' &&
-              ['inventoryTransfer', 'inventoryOutbound'].includes(item.module || '')),
-        )
-        .map((item) => ({
-          ...item,
-          count: tab.value === 'completed' ? item.completed : item.count,
+  projected.value
+    ? ['repair', 'maintenance', 'inspection'].map((key) => ({
+        key,
+        name: inbox.moduleName(key),
+        count: projectedCounts.value[key] || 0,
+        items: [],
+      }))
+    : ['repair', 'maintenance', 'inspection', 'inventory']
+        .map((key) => ({
+          key,
+          name: inbox.moduleName(key),
+          items: inbox.summary.kinds
+            .filter(
+              (item) =>
+                item.module === key ||
+                (key === 'repair' && ['anomaly', 'repairPlan'].includes(item.module || '')) ||
+                (key === 'inventory' &&
+                  ['inventoryTransfer', 'inventoryReturn', 'inventoryOutbound'].includes(
+                    item.module || '',
+                  )),
+            )
+            .map((item) => ({
+              ...item,
+              count: tab.value === 'completed' ? item.completed : item.count,
+            }))
+            .filter((item) => item.count > 0),
         }))
-        .filter((item) => item.count > 0),
-    }))
-    .map((group) => ({
-      ...group,
-      count: group.items.reduce((sum, item) => sum + Number(item.count), 0),
-    })),
+        .map((group) => ({
+          ...group,
+          count: group.items.reduce((sum, item) => sum + Number(item.count), 0),
+        })),
 );
 const currentContext = computed(() =>
-  tab.value === 'notification'
-    ? readState.value === 'unread'
-      ? '未读提醒'
-      : '全部提醒'
-    : kind.value ||
-      (module.value
-        ? inbox.moduleName(module.value) + (tab.value === 'completed' ? '已办' : '待办')
-        : tab.value === 'completed'
-          ? '全部已办'
-          : '全部待办'),
+  projected.value
+    ? { today: '今日任务', active: '我正在做', created: '我发起的事项', team: '团队工作' }[
+        tab.value
+      ] || '工作事项'
+    : tab.value === 'notification'
+      ? readState.value === 'unread'
+        ? '未读提醒'
+        : '全部提醒'
+      : kind.value ||
+        (module.value
+          ? inbox.moduleName(module.value) + (tab.value === 'completed' ? '已办' : '待办')
+          : tab.value === 'completed'
+            ? '全部已办'
+            : '全部待办'),
 );
 function selectCategory(nextModule = '', nextKind = '') {
   module.value = nextModule;
@@ -95,33 +126,49 @@ function resetFilters() {
 }
 let revision = 0;
 async function load() {
-  const request = ++revision;
+  const sequence = ++revision;
   loading.value = true;
   error.value = '';
   try {
-    const data = await workInbox({
-      channel: tab.value === 'notification' ? 'notification' : 'todo',
-      state: tab.value === 'notification' ? readState.value : tab.value,
-      module: module.value,
-      kind: kind.value,
-      search: query.value,
-      page: page.value,
-      size: size.value,
-    });
-    if (request === revision) {
+    const data = projected.value
+      ? await request<{ data: InboxItem[]; total: number; moduleCounts: Record<string, number> }>(
+          '/work-center/tasks?' +
+            new URLSearchParams({
+              state: tab.value,
+              status: String(route.query.status || ''),
+              companyId: String(route.query.companyId || ''),
+              departmentId: String(route.query.departmentId || ''),
+              module: module.value,
+              search: query.value,
+              page: String(page.value),
+              size: String(size.value),
+            }),
+        )
+      : await workInbox({
+          channel: tab.value === 'notification' ? 'notification' : 'todo',
+          state: tab.value === 'notification' ? readState.value : tab.value,
+          module: module.value,
+          kind: kind.value,
+          search: query.value,
+          page: page.value,
+          size: size.value,
+        });
+    if (sequence === revision) {
+      if ('moduleCounts' in data)
+        projectedCounts.value = (data as { moduleCounts: Record<string, number> }).moduleCounts;
       rows.value = data.data;
       total.value = data.total;
       const lastPage = Math.max(1, Math.ceil(data.total / size.value));
       if (page.value > lastPage) page.value = lastPage;
     }
   } catch (e) {
-    if (request === revision) error.value = e instanceof Error ? e.message : '加载失败';
+    if (sequence === revision) error.value = e instanceof Error ? e.message : '加载失败';
   } finally {
-    if (request === revision) loading.value = false;
+    if (sequence === revision) loading.value = false;
   }
 }
 function selectTab(value: string) {
-  router.replace({ name: 'workspace', query: { tab: value } });
+  router.replace({ name: 'workspace-inbox', query: { tab: value } });
 }
 let applyingRoute = false;
 let routeRevision = 0;
@@ -131,13 +178,26 @@ watch(
     const revision = ++routeRevision;
     applyingRoute = true;
     const selected = String(values.tab || 'pending');
-    tab.value = ['pending', 'completed', 'notification'].includes(selected) ? selected : 'pending';
+    tab.value = [
+      'pending',
+      'active',
+      'created',
+      'team',
+      'today',
+      'completed',
+      'notification',
+    ].includes(selected)
+      ? selected
+      : 'pending';
     module.value = [
       'repair',
+      'anomaly',
+      'repairPlan',
       'maintenance',
       'inspection',
       'inventory',
       'inventoryTransfer',
+      'inventoryReturn',
       'inventoryOutbound',
     ].includes(String(values.module))
       ? String(values.module)
@@ -166,9 +226,9 @@ watch(size, () => {
 watch(
   [tab, module, kind, query, readState, page, size],
   () => {
-    if (applyingRoute || route.name !== 'workspace') return;
+    if (applyingRoute || route.name !== 'workspace-inbox') return;
     router.replace({
-      name: 'workspace',
+      name: 'workspace-inbox',
       query: {
         tab: tab.value,
         ...(module.value ? { module: module.value } : {}),
@@ -234,32 +294,48 @@ function searchRows() {
 function cell(row: InboxItem, key: string) {
   return key === 'module'
     ? inbox.moduleName(row.module)
-    : key === 'time'
-      ? formatDateTime(row.time)
-      : row[key as keyof InboxItem];
+    : key === 'due'
+      ? formatDateTime(row.due)
+      : key === 'time'
+        ? formatDateTime(row.time)
+        : row[key as keyof InboxItem];
 }
 async function exportRows() {
   try {
     const all: InboxItem[] = [];
     let p = 1;
     do {
-      const data = await workInbox({
-        channel: tab.value === 'notification' ? 'notification' : 'todo',
-        state: tab.value === 'notification' ? readState.value : tab.value,
-        module: module.value,
-        kind: kind.value,
-        search: query.value,
-        page: p++,
-        size: 100,
-      });
+      const data = projected.value
+        ? await request<{ data: InboxItem[]; total: number }>(
+            '/work-center/tasks?' +
+              new URLSearchParams({
+                state: tab.value,
+                status: String(route.query.status || ''),
+                companyId: String(route.query.companyId || ''),
+                departmentId: String(route.query.departmentId || ''),
+                module: module.value,
+                search: query.value,
+                page: String(p++),
+                size: '100',
+              }),
+          )
+        : await workInbox({
+            channel: tab.value === 'notification' ? 'notification' : 'todo',
+            state: tab.value === 'notification' ? readState.value : tab.value,
+            module: module.value,
+            kind: kind.value,
+            search: query.value,
+            page: p++,
+            size: 100,
+          });
       all.push(...data.data);
       if (all.length >= data.total || !data.data.length) break;
     } while (true);
     const csv =
       '\ufeff' +
       [
-        columns.value.map((c) => labels[c]),
-        ...all.map((r) => columns.value.map((c) => String(cell(r, c) ?? ''))),
+        displayColumns.value.map((c) => labels[c]),
+        ...all.map((r) => displayColumns.value.map((c) => String(cell(r, c) ?? ''))),
       ]
         .map((r) =>
           r
@@ -289,162 +365,194 @@ onUnmounted(() => {
   window.removeEventListener('repair-inbox-changed', refresh);
   window.removeEventListener('work-inbox-changed', refresh);
 });
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => rows.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 <template>
   <section class="inbox-page">
-    <nav class="inbox-tabs" aria-label="工作事项">
-      <button :class="{ active: tab === 'pending' }" @click="selectTab('pending')">
-        待办 <span>{{ inbox.summary.counts.pending }}</span>
-      </button>
-      <button :class="{ active: tab === 'completed' }" @click="selectTab('completed')">
-        已办 <span>{{ inbox.summary.counts.completed }}</span>
-      </button>
-      <button :class="{ active: tab === 'notification' }" @click="selectTab('notification')">
-        提醒 <span>{{ inbox.summary.counts.unread }}</span>
-      </button>
-    </nav>
+    <AppListTabs
+      class="inbox-tabs"
+      :active="tab"
+      :items="
+        ['pending', 'completed', 'created'].includes(tab)
+          ? [
+              { key: 'pending', label: '待办', count: inbox.summary.counts.pending },
+              { key: 'completed', label: '已办', count: inbox.summary.counts.completed },
+              { key: 'created', label: '我发起' },
+            ]
+          : [{ key: tab, label: currentContext }]
+      "
+      @select="selectTab"
+    />
     <div class="inbox-workspace">
       <aside class="task-navigation" aria-label="事项分类">
         <header>{{ tab === 'notification' ? '提醒分类' : '任务分类' }}</header>
         <template v-if="tab !== 'notification'">
-          <button
+          <ElButton
             class="queue-all"
             :class="{ selected: !module && !kind }"
             @click="selectCategory()"
+            ><span>{{
+              projected ? '全部工作' : tab === 'completed' ? '全部已办' : '全部待办'
+            }}</span
+            ><b>{{
+              projected
+                ? total
+                : tab === 'completed'
+                  ? inbox.summary.counts.completed
+                  : inbox.summary.counts.pending
+            }}</b></ElButton
           >
-            <span>{{ tab === 'completed' ? '全部已办' : '全部待办' }}</span>
-            <b>{{
-              tab === 'completed' ? inbox.summary.counts.completed : inbox.summary.counts.pending
-            }}</b>
-          </button>
           <section v-for="group in moduleGroups" :key="group.key" class="queue-group">
-            <button
+            <ElButton
               class="queue-module"
               :class="{ selected: module === group.key && !kind }"
               @click="selectCategory(group.key)"
+              ><span><i :class="group.key"></i>{{ group.name }}</span
+              ><b>{{ group.count }}</b></ElButton
             >
-              <span><i :class="group.key"></i>{{ group.name }}</span
-              ><b>{{ group.count }}</b>
-            </button>
-            <button
+            <ElButton
               v-for="item in group.items"
               :key="item.kind"
               class="queue-kind"
               :class="{ selected: module === group.key && kind === item.kind }"
               @click="selectCategory(group.key, item.kind)"
+              ><span>{{ item.kind }}</span
+              ><b>{{ item.count }}</b></ElButton
             >
-              <span>{{ item.kind }}</span
-              ><b>{{ item.count }}</b>
-            </button>
           </section>
         </template>
         <template v-else>
-          <button :class="{ selected: readState === 'all' }" @click="readState = 'all'">
+          <ElButton :class="{ selected: readState === 'all' }" @click="readState = 'all'">
             全部提醒
-          </button>
-          <button :class="{ selected: readState === 'unread' }" @click="readState = 'unread'">
-            未读提醒 <b>{{ inbox.summary.counts.unread }}</b>
-          </button>
+          </ElButton>
+          <ElButton :class="{ selected: readState === 'unread' }" @click="readState = 'unread'">
+            未读提醒 <b>{{ inbox.summary.counts.unread }}</b></ElButton
+          >
           <section class="queue-group">
-            <button :class="{ selected: !module }" @click="module = ''">全部模块</button>
-            <button
+            <ElButton :class="{ selected: !module }" @click="module = ''">全部模块</ElButton>
+            <ElButton
               v-for="group in moduleGroups"
               :key="group.key"
               :class="{ selected: module === group.key }"
               @click="module = group.key"
+              ><span><i :class="group.key"></i>{{ group.name }}</span></ElButton
             >
-              <span><i :class="group.key"></i>{{ group.name }}</span>
-            </button>
           </section>
         </template>
       </aside>
       <div class="task-results">
-        <div class="inbox-toolbar">
+        <AppListToolbar class="inbox-toolbar">
           <div class="queue-context">
             <strong>{{ currentContext }}</strong
             ><span>{{ total }} 条</span>
           </div>
-          <div class="inbox-search">
-            <ListSearchInput
-              v-model="search"
-              placeholder="搜索编号、设备、事项"
-              @submit="searchRows"
-            />
-            <button class="text-action" @click="resetFilters">重置</button>
-            <button
+          <form class="inbox-search" @submit.prevent="searchRows">
+            <ListSearchInput v-model="search" placeholder="搜索编号、设备、事项" />
+            <ElButton
+              class="text-action"
+              @click="resetFilters"
+              native-type="button"
+              type="primary"
+              link
+              >重置</ElButton
+            >
+            <ElButton
               class="text-action refresh-action"
               :disabled="loading"
               @click="refresh"
               aria-label="刷新任务"
-            >
-              <svg viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M16 7a6 6 0 1 0 0 6M16 3v4h-4" /></svg
-              >刷新
-            </button>
-            <button
+              native-type="button"
+              type="primary"
+              link
+              ><AppIcon name="Refresh" />刷新
+            </ElButton>
+            <ElButton
               v-if="tab === 'notification' && inbox.summary.counts.unread"
               class="text-action"
               @click="readAll"
+              type="primary"
+              link
             >
               全部已读
-            </button>
-          </div>
-        </div>
+            </ElButton>
+          </form>
+        </AppListToolbar>
         <p v-if="error || inbox.error" class="inbox-error" role="alert">
           {{ error || inbox.error }}
         </p>
         <div class="inbox-card" :aria-busy="loading">
           <div class="inbox-scroll">
-            <table class="business-table" v-if="tab !== 'notification'">
-              <thead>
-                <tr>
-                  <th v-for="col in columns" :key="col" :class="`col-${col}`">{{ labels[col] }}</th>
-                  <th class="list-action-column">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in rows" :key="row.module + ':' + row.id">
-                  <td v-for="col in columns" :key="col" :class="`col-${col}`">
-                    <button v-if="col === 'orderNo'" class="text-action" @click="open(row)">
-                      {{ row.orderNo }}</button
-                    ><span v-else-if="col === 'kind'" class="task-kind" :class="row.module">{{
-                      row.kind
-                    }}</span
-                    ><span
-                      v-else-if="col === 'title'"
-                      class="task-description"
-                      :title="row.title"
-                      >{{ row.title }}</span
-                    ><MaintenanceStatus v-else-if="col === 'status'" :status="row.status" /><span
-                      v-else
-                      >{{ cell(row, col) }}</span
-                    >
-                  </td>
-                  <td class="list-action-column">
-                    <button
-                      class="text-action task-open"
-                      :class="{ primary: tab === 'pending' }"
-                      @click="open(row, true)"
-                    >
-                      {{ tab === 'completed' ? '查看' : inbox.actionName(row) }}
-                    </button>
-                  </td>
-                </tr>
-                <tr v-if="!rows.length">
-                  <td :colspan="columns.length + 1" class="inbox-empty">
-                    {{
-                      loading
-                        ? '加载中…'
-                        : error
-                          ? '加载失败'
-                          : tab === 'pending'
-                            ? '当前没有待办事项'
-                            : '暂无已办事项'
-                    }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <AppBusinessTable
+              :rows="rows"
+              :pagination="false"
+              :fill="true"
+              :framed="false"
+              class="business-table"
+              v-if="tab !== 'notification'"
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn
+                v-for="col in displayColumns"
+                :min-width="150"
+                :prop="col"
+                :key="col"
+                show-overflow-tooltip
+                ><template #header
+                  ><div class="table-header-label">{{ labels[col] }}</div></template
+                ><template #default="{ row: row, $index: tableRowIndex }">
+                  <ElButton
+                    v-if="col === 'orderNo'"
+                    class="text-action"
+                    @click="open(row)"
+                    type="primary"
+                    link
+                    >{{ row.orderNo }}</ElButton
+                  ><span v-else-if="col === 'kind'" class="task-kind" :class="row.module">{{
+                    row.kind
+                  }}</span
+                  ><span v-else-if="col === 'title'" class="task-description" :title="row.title">{{
+                    row.title
+                  }}</span
+                  ><MaintenanceStatus v-else-if="col === 'status'" :status="row.status" /><span
+                    v-else
+                    >{{ cell(row, col) }}</span
+                  >
+                </template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn
+                class-name="list-action-column"
+                fixed="right"
+                :width="170"
+                :min-width="156"
+                :resizable="false"
+                ><template #header><div class="table-header-label">操作</div></template
+                ><template #default="{ row: row, $index: tableRowIndex }">
+                  <ElButton
+                    class="text-action task-open"
+                    :class="{ primary: tab === 'pending' }"
+                    @click="open(row, true)"
+                    type="primary"
+                    link
+                    >{{
+                      projected || tab === 'completed' ? '查看' : inbox.actionName(row)
+                    }}</ElButton
+                  >
+                </template></ElTableColumn
+              ><template #empty
+                ><div v-if="!rows.length">
+                  {{
+                    loading
+                      ? '加载中…'
+                      : error
+                        ? '加载失败'
+                        : tab === 'pending'
+                          ? '当前没有待办事项'
+                          : '暂无已办事项'
+                  }}
+                </div></template
+              ></AppBusinessTable
+            >
             <div v-else class="reminder-list">
               <article
                 v-for="row in rows"
@@ -462,9 +570,17 @@ onUnmounted(() => {
                 </p>
                 <footer>
                   <span>{{ row.orderNo }} · {{ row.equipmentName }}</span
-                  ><button v-if="!Number(row.isRead)" class="text-action" @click="markRead(row)">
-                    标为已读</button
-                  ><button class="text-action" @click="open(row)">查看详情</button>
+                  ><ElButton
+                    v-if="!Number(row.isRead)"
+                    class="text-action"
+                    @click="markRead(row)"
+                    type="primary"
+                    link
+                  >
+                    标为已读</ElButton
+                  ><ElButton class="text-action" @click="open(row)" type="primary" link
+                    >查看详情</ElButton
+                  >
                 </footer>
               </article>
               <p v-if="!rows.length" class="inbox-empty">{{ loading ? '加载中…' : '暂无提醒' }}</p>
@@ -484,13 +600,14 @@ onUnmounted(() => {
               @toggle-columns="columnsOpen = !columnsOpen"
               @export="exportRows"
               ><template #columns
-                ><label v-for="(label, key) in labels" :key="key"
-                  ><input
-                    v-model="columns"
-                    type="checkbox"
-                    :value="key"
+                ><ElCheckboxGroup v-model="columns"
+                  ><ElCheckbox
+                    v-for="(label, key) in labels"
+                    :key="key"
                     :disabled="key === 'orderNo'"
-                  />{{ label }}</label
+                    :value="key"
+                    >{{ label }}</ElCheckbox
+                  ></ElCheckboxGroup
                 ></template
               ></ListToolbarIcons
             >
@@ -512,9 +629,9 @@ onUnmounted(() => {
 }
 .inbox-tabs {
   display: flex;
-  gap: 24px;
+  /* gap: 24px; */
   border-bottom: 1px solid #e3e8f0;
-  margin-bottom: 14px;
+  /* margin-bottom: 14px; */
 }
 .inbox-tabs button {
   display: flex;
@@ -542,18 +659,10 @@ onUnmounted(() => {
 .inbox-tabs .active span {
   background: var(--brand-soft);
 }
-.inbox-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 12px;
-}
 .inbox-search {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 14px;
 }
 .inbox-error {
   margin: 0 0 10px;
@@ -582,24 +691,10 @@ onUnmounted(() => {
   table-layout: fixed;
   border-spacing: 0;
 }
-.inbox-card th {
+.inbox-card :deep(th) {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f5f7fa;
-  color: var(--text);
-  text-align: left;
-  font-weight: 700;
-}
-.inbox-card th,
-.inbox-card td {
-  padding: 10px 12px;
-  height: 44px;
-  border-bottom: 1px solid #edf0f4;
-  white-space: nowrap;
-}
-.inbox-card tbody tr:hover td {
-  background: #f8faff;
 }
 .text-action {
   border: 0;
@@ -685,12 +780,15 @@ onUnmounted(() => {
 }
 .task-navigation {
   flex: 0 0 208px;
+  min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid #e3e8f0;
   border-radius: 6px;
   background: #fff;
   padding: 8px;
+  margin-top: 9px;
 }
 .task-navigation header {
   padding: 10px 10px 14px;
@@ -701,6 +799,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  min-width: 0;
+  margin: 0;
   border: 0;
   border-radius: 4px;
   padding: 10px;
@@ -724,7 +824,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
 }
+.task-navigation button :deep(> span) {
+  width: 100%;
+  min-width: 0;
+  justify-content: space-between;
+}
 .task-navigation button b {
+  flex-shrink: 0;
   font-size: 13px;
   font-weight: 600;
 }
@@ -770,10 +876,6 @@ onUnmounted(() => {
 .queue-context > span {
   font-size: 13px;
 }
-.inbox-toolbar {
-  min-height: 36px;
-  margin-bottom: 10px;
-}
 .inbox-search {
   gap: 12px;
 }
@@ -782,37 +884,14 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
 }
-.refresh-action svg {
+.refresh-action .app-icon {
   width: 16px;
   height: 16px;
-  fill: none;
-  stroke: currentColor;
   stroke-width: 1.5;
 }
 .refresh-action:disabled {
   opacity: 0.55;
   cursor: default;
-}
-.inbox-card .col-orderNo {
-  width: 160px;
-}
-.inbox-card .col-equipmentName {
-  width: 140px;
-}
-.inbox-card .col-module {
-  width: 75px;
-}
-.inbox-card .col-kind {
-  width: 135px;
-}
-.inbox-card .col-status {
-  width: 95px;
-}
-.inbox-card .col-time {
-  width: 172px;
-}
-.inbox-card .col-title {
-  width: auto;
 }
 .inbox-card .list-action-column {
   width: 88px;

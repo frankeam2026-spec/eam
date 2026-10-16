@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import TaskAnomalies from './common/TaskAnomalies.vue';
+import { confirmSurplus } from '../services/surplusConfirmation';
 import TaskMaterials from './TaskMaterials.vue';
 import { workspaceReturn } from '../utils/workspaceNavigation';
 import { useUnsavedChanges } from '../composables/useUnsavedChanges';
@@ -194,12 +196,15 @@ function submitDialog() {
   else if (dialog.value === 'start') action('start', { equipmentCode: scanCode.value });
   else action(dialog.value, { description: reason.value });
 }
-function submit() {
+async function submit() {
   if (range.value.length !== 2) {
     ElMessage.error('请选择完整保养时间段');
     return;
   }
+  const surplus = await confirmSurplus('保养', String(route.params.id));
+  if (surplus === null) return;
   action('process', {
+    ...surplus,
     startAt: range.value[0],
     endAt: range.value[1],
     description: description.value,
@@ -384,6 +389,7 @@ const dialogTitle = computed(
               readonly
             /></section
         ></template>
+        <TaskAnomalies kind="保养" :task-id="String(route.params.id)" :can-record="processing" />
         <TaskMaterials
           v-if="task"
           :task-id="String(task.id)"

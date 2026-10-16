@@ -55,7 +55,7 @@ assert "撤回" in identity.get("permissions", {}).get("repair", []), "Requires 
 try:
     sql(f"""INSERT INTO eam_repair_order
         (id, tenant_id, order_no, equipment_code, equipment_name,
-         fault_at, fault_type, description, reporter, status, row_version)
+         reported_at, fault_type, description, reporter, status, row_version)
         VALUES ({record_id}, 10001, '{order_no}', 'TEST-CONC', '并发测试记录',
          NOW(), '测试', '自动集成测试临时记录', '集成测试', '待派工', 0)""")
     before = read_record()

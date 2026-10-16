@@ -91,15 +91,8 @@
   width: 68px;
   text-align: right;
 }
-.batch-dialog-content label > .tree-select,
-.batch-dialog-content label > select {
+.batch-dialog-content label > .tree-select {
   flex: 1;
-}
-.batch-dialog-content select {
-  height: 34px;
-  border: 1px solid #d9e1ec;
-  border-radius: 4px;
-  padding: 0 10px;
 }
 
 /* Shared visible entry for the advanced filter drawer. */
@@ -129,4 +122,9 @@
 .content button.advanced-filter-trigger:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;
+}
+
+/* Complex button slots retain their existing layout while using ElButton behavior. */
+.el-button.app-content-button > span {
+  display: contents;
 }

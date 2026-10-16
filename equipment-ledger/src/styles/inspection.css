@@ -4,13 +4,12 @@
   height: calc(100vh - 54px);
   box-sizing: border-box;
   min-height: 0;
-  padding: 12px;
+  padding: 0px 8px;
   gap: 12px;
   font-size: 13px;
   color: #263246;
   overflow: hidden;
 }
-.inspection-toolbar,
 .inspection-toolbar-actions,
 .inspection-search,
 .inspection-picker-toolbar,
@@ -20,10 +19,6 @@
   align-items: center;
   gap: 12px;
   min-width: 0;
-}
-.inspection-toolbar {
-  justify-content: space-between;
-  flex-wrap: wrap;
 }
 .inspection-toolbar :is(.el-button + .el-button) {
   margin-left: 0;
@@ -77,53 +72,14 @@
 }
 .inspection-list-scroll {
   flex: 1;
+  min-width: 0;
   min-height: 0;
-  overflow: auto;
-}
-.inspection-list {
-  min-width: 100%;
-  width: max-content;
-  table-layout: fixed;
-  border-collapse: separate;
-  border-spacing: 0;
-}
-.inspection-list th,
-.inspection-list td {
-  padding: 12px 14px;
-  border-bottom: 1px solid #e9edf3;
-  text-align: left;
-  height: 42px;
-  box-sizing: border-box;
-  white-space: nowrap;
-  max-width: 260px;
-}
-.inspection-list td > span {
-  display: block;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
-.inspection-list th {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  background: #f5f7fa;
-  font-weight: 700;
-  cursor: pointer;
-}
-.inspection-list tbody tr:hover td {
-  background: #f8faff;
-}
-.inspection-column-resizer {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 7px;
-  height: 100%;
-  cursor: col-resize;
-}
-.inspection-list .list-action-column {
-  min-width: 176px;
-  width: 176px;
+/* AppBusinessTable owns cells, scrolling and fixed columns. Its wrapper must fit the flex container. */
+.inspection-list {
+  min-width: 0;
+  width: 100%;
 }
 .inspection-list-footer {
   display: flex;
@@ -171,10 +127,6 @@
 .inspection-enabled.disabled {
   color: #a85d00;
   background: #fff2e5;
-}
-.inspection-empty {
-  text-align: center !important;
-  padding: 45px 16px !important;
 }
 .inspection-error {
   color: #c74444;
@@ -865,8 +817,7 @@
   .inspection-form-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .inspection-form-grid .span-two,
-  .inspection-form-grid .span-three {
+  .inspection-form-grid .span-two {
     grid-column: 1;
   }
   .inspection-task-summary {

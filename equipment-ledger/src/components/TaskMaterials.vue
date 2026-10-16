@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { ElTableColumn } from 'element-plus';
+import AppBusinessTable from './common/AppBusinessTable.vue';
 import AppDecimalInput from './common/AppDecimalInput.vue';
+import { remainingMaterialQuantity } from '../utils/taskMaterialQuantities';
 import { formatNumber } from '../utils/number';
 import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -51,8 +54,8 @@ async function load() {
 watch(() => [props.kind, props.taskId], load, { immediate: true });
 function open(row: Row, type: string) {
   selected.value = row;
-  quantity.value = '1';
-  equipmentId.value = data.value.equipment[0]?.id || '';
+  quantity.value = type === 'remove' ? '1' : remainingMaterialQuantity(row);
+  equipmentId.value = data.value.equipment.length === 1 ? data.value.equipment[0]!.id! : '';
   destination.value = '';
   confirmationKey = crypto.randomUUID();
   dialog.value = type;
@@ -70,7 +73,8 @@ async function submit() {
             allocationId: selected.value.id,
             usageId: selected.value.id,
             quantity: quantity.value,
-            equipmentId: equipmentId.value,
+            equipmentId: equipmentId.value === '__shared__' ? '' : equipmentId.value,
+            attribution: equipmentId.value === '__shared__' ? 'shared' : 'equipment',
             destination: destination.value,
             confirmationKey,
           }),
@@ -88,6 +92,17 @@ async function submit() {
     busy.value = false;
   }
 }
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => data.value.allocations;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows2 = () => data.value.installed;
+type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows3 = () => data.value.usage;
+type TableColumnRow3 = NonNullable<ReturnType<typeof tableColumnRows3>>[number];
 </script>
 <template>
   <section class="task-materials">
@@ -123,90 +138,168 @@ async function submit() {
       >
     </div>
     <div class="scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>物料</th>
-            <th>出库单号</th>
-            <th>已发数量</th>
-            <th>已用 / 安装</th>
-            <th>已退数量</th>
-            <th class="actions">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="a in data.allocations" :key="a.id">
-            <td>{{ a.materialName }}</td>
-            <td>{{ a.issueCode }}</td>
-            <td>{{ formatNumber(a.quantity) }} {{ a.unit }}</td>
-            <td>{{ formatNumber(a.usedQuantity) }}</td>
-            <td>{{ formatNumber(a.returnedQuantity) }}</td>
-            <td class="actions">
-              <ElButton v-if="canWork" link type="primary" @click="open(a, 'use')">{{
-                a.usageType === '可安装' ? '安装' : '登记使用'
-              }}</ElButton>
-            </td>
-          </tr>
-          <tr v-if="!data.allocations.length">
-            <td colspan="6" class="empty">{{ loading ? '正在加载…' : '暂无发料记录' }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <AppBusinessTable
+        :rows="data.allocations"
+        :pagination="false"
+        :fill="false"
+        :framed="false"
+        class="allocation-table"
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">物料</div></template
+          ><template #default="{ row: a, $index: tableRowIndex }">{{
+            a.materialName
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">出库单号</div></template
+          ><template #default="{ row: a, $index: tableRowIndex }">{{
+            a.issueCode
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150" class-name="numeric"
+          ><template #header><div class="table-header-label">已发数量</div></template
+          ><template #default="{ row: a, $index: tableRowIndex }"
+            >{{ formatNumber(a.quantity) }} {{ a.unit }}</template
+          ></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150" class-name="numeric"
+          ><template #header><div class="table-header-label">已用数量</div></template
+          ><template #default="{ row: a, $index: tableRowIndex }">
+            {{ formatNumber(a.usageType === '可安装' ? '0' : a.usedQuantity) }}
+          </template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150" class-name="numeric"
+          ><template #header><div class="table-header-label">已安装数量</div></template
+          ><template #default="{ row: a, $index: tableRowIndex }">
+            {{ formatNumber(a.usageType === '可安装' ? a.usedQuantity : '0') }}
+          </template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150" class-name="numeric"
+          ><template #header><div class="table-header-label">已退数量</div></template
+          ><template #default="{ row: a, $index: tableRowIndex }">{{
+            formatNumber(a.returnedQuantity)
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150" class-name="numeric remaining"
+          ><template #header><div class="table-header-label">剩余未用</div></template
+          ><template #default="{ row: a, $index: tableRowIndex }">{{
+            formatNumber(remainingMaterialQuantity(a))
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn
+          class-name="actions"
+          fixed="right"
+          :width="170"
+          :min-width="156"
+          :resizable="false"
+          ><template #header><div class="table-header-label">操作</div></template
+          ><template #default="{ row: a, $index: tableRowIndex }">
+            <ElButton
+              v-if="canWork && Number(remainingMaterialQuantity(a)) > 0"
+              link
+              type="primary"
+              @click="open(a, 'use')"
+              >{{ a.usageType === '可安装' ? '安装' : '登记使用' }}</ElButton
+            >
+          </template></ElTableColumn
+        ><template #empty
+          ><div v-if="!data.allocations.length">
+            {{ loading ? '正在加载…' : '暂无发料记录' }}
+          </div></template
+        ></AppBusinessTable
+      >
     </div>
+    <p v-if="data.allocations.length" class="quantity-hint">
+      剩余未用 = 已发 − 已用 − 已安装 − 已退；仍由领用人保管，需要时继续登记或退回仓库。
+    </p>
     <template v-if="canWork && data.installed.length"
       ><h4>可换下备件</h4>
       <div class="scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>备件名称</th>
-              <th>规格型号</th>
-              <th>数量</th>
-              <th>安装时间</th>
-              <th class="actions">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="u in data.installed" :key="u.id">
-              <td>{{ u.name }}</td>
-              <td>{{ u.model }}</td>
-              <td>{{ formatNumber(u.quantity) }}</td>
-              <td>{{ u.createdAt?.replace('T', ' ').slice(0, 19) }}</td>
-              <td class="actions">
-                <ElButton v-if="canWork" link type="primary" @click="open(u, 'remove')"
-                  >换下</ElButton
-                >
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <AppBusinessTable :rows="data.installed" :pagination="false" :fill="false" :framed="false"
+          ><!-- @vue-generic {TableColumnRow2} -->
+          <ElTableColumn :min-width="210"
+            ><template #header><div class="table-header-label">备件名称</div></template
+            ><template #default="{ row: u, $index: tableRowIndex }">{{
+              u.name
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow2} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">规格型号</div></template
+            ><template #default="{ row: u, $index: tableRowIndex }">{{
+              u.model
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow2} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">数量</div></template
+            ><template #default="{ row: u, $index: tableRowIndex }">{{
+              formatNumber(u.quantity)
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow2} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">安装时间</div></template
+            ><template #default="{ row: u, $index: tableRowIndex }">{{
+              u.createdAt?.replace('T', ' ').slice(0, 19)
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow2} -->
+          <ElTableColumn
+            class-name="actions"
+            fixed="right"
+            :width="170"
+            :min-width="156"
+            :resizable="false"
+            ><template #header><div class="table-header-label">操作</div></template
+            ><template #default="{ row: u, $index: tableRowIndex }">
+              <ElButton v-if="canWork" link type="primary" @click="open(u, 'remove')"
+                >换下</ElButton
+              >
+            </template></ElTableColumn
+          ></AppBusinessTable
+        >
       </div></template
     >
     <template v-if="data.usage.length"
       ><h4>使用记录</h4>
       <div class="scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>物料</th>
-              <th>操作</th>
-              <th>数量</th>
-              <th>状态 / 去向</th>
-              <th>操作人</th>
-              <th>时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="u in data.usage" :key="u.id">
-              <td>{{ u.materialName }}</td>
-              <td>{{ u.kind }}</td>
-              <td>{{ formatNumber(u.quantity) }}</td>
-              <td>{{ u.status }} {{ u.destination }}</td>
-              <td>{{ u.actorName }}</td>
-              <td>{{ u.createdAt?.replace('T', ' ').slice(0, 19) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <AppBusinessTable :rows="data.usage" :pagination="false" :fill="false" :framed="false"
+          ><!-- @vue-generic {TableColumnRow3} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">物料</div></template
+            ><template #default="{ row: u, $index: tableRowIndex }">{{
+              u.materialName
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow3} -->
+          <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
+            ><template #header><div class="table-header-label">操作</div></template
+            ><template #default="{ row: u, $index: tableRowIndex }">{{
+              u.kind
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow3} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">数量</div></template
+            ><template #default="{ row: u, $index: tableRowIndex }">{{
+              formatNumber(u.quantity)
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow3} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">状态 / 去向</div></template
+            ><template #default="{ row: u, $index: tableRowIndex }"
+              >{{ u.status }} {{ u.destination }}</template
+            ></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow3} -->
+          <ElTableColumn :min-width="156" :width="240" :resizable="false"
+            ><template #header><div class="table-header-label">操作人</div></template
+            ><template #default="{ row: u, $index: tableRowIndex }">{{
+              u.actorName
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow3} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">时间</div></template
+            ><template #default="{ row: u, $index: tableRowIndex }">{{
+              u.createdAt?.replace('T', ' ').slice(0, 19)
+            }}</template></ElTableColumn
+          ></AppBusinessTable
+        >
       </div></template
     >
     <AppDialog
@@ -232,9 +325,12 @@ async function submit() {
             maxlength="500" /></label
         ><template v-else
           ><label>数量<AppDecimalInput v-model="quantity" inputmode="decimal" /></label
-          ><label v-if="selected?.usageType === '可安装'"
-            >设备<ElSelect v-model="equipmentId"
+          ><label
+            >归属设备<ElSelect v-model="equipmentId" placeholder="请选择设备或公共用料"
               ><ElOption
+                v-if="selected?.usageType !== '可安装' && data.equipment.length > 1"
+                value="__shared__"
+                label="任务公共用料" /><ElOption
                 v-for="eq in data.equipment"
                 :key="eq.id"
                 :value="eq.id"
@@ -288,22 +384,17 @@ table {
   table-layout: fixed;
   border-collapse: collapse;
 }
-th,
-td {
-  text-align: left;
-  padding: 10px 12px;
-  font-size: 13px;
-  border-bottom: 1px solid #e4e9f0;
-}
-th {
-  font-weight: 700;
-  background: #f5f7fb;
-}
 .actions {
   position: sticky;
   right: 0;
   background: white;
-  width: 120px;
+  width: 156px;
+}
+.app-business-table :deep(thead .actions) {
+  background: #f5f7fb;
+}
+.app-business-table :deep(tbody tr:hover .actions) {
+  background: var(--table-row-hover, #f5f7fb);
 }
 .empty {
   text-align: center;
@@ -329,5 +420,25 @@ h4 {
 .buttons :deep(.el-button) {
   margin-left: 0;
   min-width: 100px;
+}
+.allocation-table :deep(th:first-child) {
+  width: 170px;
+}
+.allocation-table :deep(th:nth-child(2)) {
+  width: 160px;
+}
+.numeric {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.remaining {
+  color: var(--primary, #205cf5);
+  font-weight: 600;
+}
+.quantity-hint {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
 }
 </style>

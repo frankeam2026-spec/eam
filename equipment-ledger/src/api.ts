@@ -3,9 +3,18 @@ export type EquipmentRecord = {
   code: string;
   name: string;
   category: string;
+  categoryId?: string;
+  unitId?: string;
+  useStateId?: string;
+  sourceId?: string;
+  ownerId?: string;
+  ownerIds?: string[];
+  owners?: { id: string; name: string }[];
+  departmentPath?: string;
   model: string;
   serial: string;
   company: string;
+  companyOrgId?: string;
   departmentOrgId?: string;
   department: string;
   owner: string;
@@ -27,12 +36,14 @@ export type EquipmentRecord = {
   retirementDate?: string;
   level?: string;
   functionLocation?: string;
+  locationId?: string;
   specialEquipment?: string;
   metrologyEquipment?: string;
   depreciationEnabled?: string;
   technicalParams?: string;
   imageName?: string;
   imageFileId?: string;
+  images?: Array<{ id: string; name: string }>;
   calibrationDate?: string;
   calibrationValidUntil?: string;
   inspectorName?: string;
@@ -48,8 +59,27 @@ export type EquipmentRecord = {
     quantity: number;
     remark: string;
   }>;
-  children?: Array<{ code: string; name: string; brand: string; model: string }>;
-  relatedSpares?: Array<{ code: string; name: string; specification: string; quantity: string }>;
+  children?: Array<{
+    equipmentId?: string;
+    code: string;
+    name: string;
+    brand: string;
+    model: string;
+    legacy?: boolean;
+    legacyIndex?: number;
+    legacyReason?: string;
+  }>;
+  relatedSpares?: Array<{
+    materialId?: string;
+    code: string;
+    name: string;
+    specification: string;
+    unit?: string;
+    quantity: string;
+    legacy?: boolean;
+    legacyIndex?: number;
+    legacyReason?: string;
+  }>;
 };
 export type BaseRecord = {
   companyId?: string;
@@ -82,7 +112,6 @@ export type RepairRecord = {
   equipmentCode: string;
   equipmentName: string;
   department: string;
-  faultAt: string;
   faultType: string;
   severity: string;
   description: string;
@@ -101,6 +130,7 @@ export type OrganizationRecord = {
   code: string;
   type: '集团' | '公司' | '部门';
   parentId: string;
+  disabled?: boolean;
   manager: string;
   status: '启用' | '停用';
 };
@@ -140,6 +170,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    public fieldErrors: Record<string, string> = {},
   ) {
     super(message);
   }
@@ -154,7 +185,11 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     if (response.status === 401 && path !== '/auth/me' && path !== '/auth/login')
       window.dispatchEvent(new Event('eam-session-expired'));
-    throw new ApiError(payload.message || '请求失败 (' + response.status + ')', response.status);
+    throw new ApiError(
+      payload.message || '请求失败 (' + response.status + ')',
+      response.status,
+      payload.fieldErrors || {},
+    );
   }
   return payload as T;
 }
@@ -173,6 +208,12 @@ export async function saveEquipment(form: EquipmentRecord, isNew: boolean) {
     code: form.code?.trim() || '',
     name: form.name,
     category: form.category,
+    categoryId: form.categoryId || null,
+    unitId: form.unitId || null,
+    useStateId: form.useStateId || null,
+    sourceId: form.sourceId || null,
+    ownerId: form.ownerId || null,
+    ownerIds: form.ownerIds ?? (form.ownerId ? [form.ownerId] : []),
     model: form.model,
     serial: form.serial,
     company: form.company,
@@ -196,12 +237,14 @@ export async function saveEquipment(form: EquipmentRecord, isNew: boolean) {
     retirementDate: form.retirementDate || null,
     level: form.level,
     functionLocation: form.functionLocation,
+    locationId: form.locationId || null,
     specialEquipment: form.specialEquipment,
     metrologyEquipment: form.metrologyEquipment,
     depreciationEnabled: form.depreciationEnabled,
     technicalParams: form.technicalParams,
     imageName: form.imageName,
     imageFileId: form.imageFileId || '',
+    images: form.images,
     calibrationDate: form.calibrationDate || null,
     calibrationValidUntil: form.calibrationValidUntil || null,
     inspectorName: form.inspectorName,
@@ -240,7 +283,6 @@ export async function saveRepair(form: RepairRecord, isNew: boolean) {
     equipmentCode: form.equipmentCode,
     equipmentName: form.equipmentName,
     department: form.department,
-    faultAt: form.faultAt,
     faultType: form.faultType,
     severity: form.severity,
     description: form.description,
@@ -439,15 +481,20 @@ export type EquipmentHistory = {
 export function equipmentHistory(id: string) {
   return request<EquipmentHistory>(`/equipment/${id}/history`);
 }
-export function batchEquipment(ids: string[], operation: string, value: string) {
+export function batchEquipment(
+  ids: string[],
+  operation: string,
+  value: string,
+  ownerIds?: string[],
+) {
   return request<{ data: { count: number } }>('/equipment/batch', {
     method: 'POST',
-    body: JSON.stringify({ ids, operation, value }),
+    body: JSON.stringify({ ids, operation, value, ownerIds }),
   });
 }
-export function equipmentBatchOptions() {
+export function equipmentBatchOptions(action: '新增' | '编辑' = '编辑') {
   return request<{ departments: OrganizationRecord[]; users: SystemUserRecord[] }>(
-    '/equipment/batch-options',
+    '/equipment/batch-options?action=' + encodeURIComponent(action),
   );
 }
 
@@ -595,6 +642,8 @@ export type WorkflowDetail = {
   results: string[];
 };
 export type InboxItem = {
+  owner?: string;
+  due?: string;
   module?: string;
   id: string;
   orderId: string;
@@ -682,4 +731,36 @@ export async function uploadEquipmentFile(file: File): Promise<RepairAttachment>
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.message || '设备附件上传失败');
   return payload.data;
+}
+
+export function equipmentChildCandidates(
+  parentId: string,
+  departmentOrgId: string,
+  q: string,
+  page: number,
+  size: number,
+) {
+  const params = new URLSearchParams({ q, page: String(page), size: String(size) });
+  if (parentId) params.set('parentId', parentId);
+  if (departmentOrgId) params.set('departmentOrgId', departmentOrgId);
+  return request<{ data: EquipmentRecord[]; page: { total: number } }>(
+    '/equipment/child-candidates?' + params,
+  );
+}
+export function equipmentBomMaterials(q: string, page: number, size: number) {
+  return request<{ data: import('./inventory').InventoryMaster[]; page: { total: number } }>(
+    '/equipment/bom-materials?' +
+      new URLSearchParams({ q, page: String(page), size: String(size) }),
+  );
+}
+
+export type PersonalSettings = { theme: import('./stores/ui').Theme; roles: string[] };
+export function getPersonalSettings() {
+  return request<{ data: PersonalSettings }>('/auth/settings');
+}
+export function savePersonalTheme(theme: import('./stores/ui').Theme) {
+  return request<{ data: Pick<PersonalSettings, 'theme'> }>('/auth/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ theme }),
+  });
 }

@@ -1,4 +1,20 @@
 <script setup lang="ts">
+import AppListTabs from './common/AppListTabs.vue';
+import AppListToolbar from './common/AppListToolbar.vue';
+import { ElTableColumn } from 'element-plus';
+import { ElCheckboxGroup } from 'element-plus';
+
+function onTableSort(sort: BusinessSort) {
+  sortKey.value = sort.order ? sort.prop || '' : '';
+  sortAsc.value = sort.order !== 'descending';
+  page.value = 1;
+}
+import type { BusinessSort } from './common/BusinessTable.types';
+function persistTableWidths() {
+  localStorage.setItem('eam-maintenance-widths-' + kind.value, JSON.stringify(widths.value));
+}
+import AppBusinessTable from './common/AppBusinessTable.vue';
+import AppIcon from './common/AppIcon.vue';
 import AppDecimalInput from './common/AppDecimalInput.vue';
 import TaskOrganizationFilter from './common/TaskOrganizationFilter.vue';
 import { maintenanceMenu, inspectionMenu } from '../rolePermissions';
@@ -44,7 +60,8 @@ import type { TaskResult } from '../maintenance';
 import ListToolbarIcons from './ListToolbarIcons.vue';
 import ListSearchInput from './common/ListSearchInput.vue';
 import TreeSelect from './TreeSelect.vue';
-import AdvancedFilterDrawer from './common/AdvancedFilterDrawer.vue';
+import FilterConditionPopover from './common/FilterConditionPopover.vue';
+import { useConditionPopover } from '../composables/useConditionPopover';
 import AppliedFilterChips from './common/AppliedFilterChips.vue';
 import { matchesAdvanced, type FilterCondition, type FilterField } from '../query/advancedFilters';
 import MaintenanceAttachments from './common/MaintenanceAttachments.vue';
@@ -832,6 +849,35 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
     busy.value = false;
   }
 }
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => pageRows.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows2 = () => form.value.items;
+type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows3 = () => form.value.details;
+type TableColumnRow3 = NonNullable<ReturnType<typeof tableColumnRows3>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows4 = () => projectPickerItems.value;
+type TableColumnRow4 = NonNullable<ReturnType<typeof tableColumnRows4>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows5 = () => eqRows.value;
+type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
+const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter } =
+  useConditionPopover(
+    advancedOpen,
+    () => conditions.value,
+    (value) => {
+      conditions.value = value;
+      page.value = 1;
+      selected.value = [];
+    },
+  );
 </script>
 <template>
   <section class="maintenance-page">
@@ -847,23 +893,25 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
         :records="tasks"
       />
       <div class="task-list-content">
-        <div v-if="kind === 'tasks'" class="maintenance-queues">
-          <button
-            v-for="q in ['全部', '待我执行', '待我验收', '待执行', '执行中', '待验收', '已完成']"
-            :key="q"
-            :class="{ active: queue === q }"
-            @click="
-              queue = q;
-              page = 1;
-            "
-          >
-            {{ q }}
-          </button>
-        </div>
-        <div class="maintenance-toolbar">
+        <AppListTabs
+          v-if="kind === 'tasks'"
+          class="maintenance-queues"
+          :active="queue"
+          :items="
+            ['全部', '待我执行', '待我验收', '待执行', '执行中', '待验收', '已完成'].map((q) => ({
+              key: q,
+              label: q,
+            }))
+          "
+          @select="
+            queue = $event;
+            page = 1;
+          "
+        />
+        <AppListToolbar class="maintenance-toolbar">
           <div>
             <ElButton v-if="kind !== 'tasks' && can('新增')" type="primary" @click="open()"
-              >＋ 新增</ElButton
+              ><AppIcon name="Plus" /> 新增</ElButton
             ><ElButton
               v-if="kind === 'tasks' && can('验收')"
               :disabled="!selected.length"
@@ -873,6 +921,7 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
           </div>
           <form @submit.prevent="page = 1">
             <ListToolbarIcons
+              v-if="kind !== 'tasks'"
               mode="filter"
               :filter-open="filterOpen"
               :columns-open="columnsOpen"
@@ -885,148 +934,149 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
             /><ElButton
               v-if="kind === 'tasks'"
               :class="{ active: conditions.length }"
-              @click="advancedOpen = true"
-              >筛选器<span v-if="conditions.length">（{{ conditions.length }}）</span></ElButton
-            ><button type="button" class="text-action" @click="reset">重置</button>
+              @click="showFilter($event.currentTarget as HTMLElement)"
+              >添加筛选<span v-if="conditions.length">（{{ conditions.length }}）</span></ElButton
+            ><ElButton class="text-action" @click="reset" native-type="button" type="primary" link
+              >重置</ElButton
+            >
           </form>
-        </div>
+        </AppListToolbar>
         <AppliedFilterChips
+          editable
+          @edit="(condition, anchor) => showFilter(anchor, condition.field)"
           v-if="kind === 'tasks'"
           :conditions="conditions"
           :fields="advancedFields"
-          @change="
-            conditions = $event;
-            page = 1;
-          "
-        /><AdvancedFilterDrawer
+          @change="replaceFilters"
+        /><FilterConditionPopover
+          :anchor="filterAnchor"
+          :field-key="editingFilter"
+          :placement="editingFilter ? 'bottom-start' : 'bottom-end'"
           v-if="kind === 'tasks'"
           v-model="advancedOpen"
           :conditions="conditions"
           :fields="advancedFields"
-          @apply="
-            conditions = $event;
-            page = 1;
-          "
+          @confirm="confirmFilter"
         />
         <p v-if="error" class="maintenance-error">{{ error }}</p>
         <div class="maintenance-list">
           <div class="maintenance-table-scroll">
-            <table class="business-table">
-              <thead>
-                <tr>
-                  <th v-if="kind === 'tasks'" class="check-cell"></th>
-                  <th
-                    v-for="[key, label] in activeFields"
-                    :key="key"
-                    :style="
-                      widths[key!]
-                        ? {
-                            width: widths[key!] + 'px',
-                            minWidth: widths[key!] + 'px',
-                            maxWidth: widths[key!] + 'px',
-                          }
-                        : undefined
-                    "
-                    @click="
-                      sortAsc = sortKey === key ? !sortAsc : true;
-                      sortKey = key!;
-                    "
+            <AppBusinessTable
+              v-model:selection-ids="selected"
+              :selection-width="48"
+              selection-fixed="left"
+              selection-align="center"
+              :selectable="kind === 'tasks'"
+              :can-select-row="
+                (row) =>
+                  !(
+                    !(row as MaintenanceTask).canAccept ||
+                    (row as MaintenanceTask).status !== '待验收'
+                  )
+              "
+              :sortable="true"
+              @sort-change="onTableSort"
+              :rows="pageRows"
+              :pagination="false"
+              :fill="true"
+              :framed="false"
+              class="business-table"
+              @column-resize="
+                (key, width) => {
+                  widths[key] = width;
+                  persistTableWidths();
+                }
+              "
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn
+                show-overflow-tooltip
+                :label="label"
+                v-for="[key, label] in activeFields"
+                :prop="key!"
+                :min-width="150"
+                :width="widths[key!]"
+                :key="key"
+                :sortable="true ? 'custom' : false"
+                ><template #header
+                  ><span class="business-column-label" :title="label">{{ label }}</span>
+                  <div
+                    v-if="filterOpen && kind !== 'tasks'"
+                    class="table-column-filter"
+                    @click.stop
                   >
-                    {{ label }}
-                    <span class="sort-mark">{{
-                      sortKey === key ? (sortAsc ? '↑' : '↓') : '↕'
-                    }}</span>
-                    <span
-                      class="column-resize-grip"
-                      @click.stop
-                      @mousedown="resize($event, key!)"
-                      aria-hidden="true"
-                    ></span>
-                  </th>
-                  <th class="list-action-column">操作</th>
-                </tr>
-                <tr v-if="filterOpen">
-                  <th v-if="kind === 'tasks'"></th>
-                  <th v-for="[key] in activeFields" :key="key">
                     <ElInput
                       v-model="columnFilters[key!]"
                       size="small"
                       clearable
                       placeholder="筛选"
                       @input="page = 1"
-                    />
-                  </th>
-                  <th class="list-action-column"></th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in pageRows" :key="row.id">
-                  <td v-if="kind === 'tasks'">
-                    <input
-                      v-model="selected"
-                      type="checkbox"
-                      :value="row.id"
-                      :disabled="
-                        !(row as MaintenanceTask).canAccept ||
-                        (row as MaintenanceTask).status !== '待验收'
-                      "
-                      :aria-label="'选择' + row.code"
-                    />
-                  </td>
-                  <td v-for="[key] in activeFields" :key="key">
-                    <button
-                      v-if="key === 'code'"
-                      class="text-action code-link"
-                      @click="
-                        kind === 'tasks'
-                          ? router.push({ name: 'maintenance-task', params: { id: row.id } })
-                          : open(row as MaintenanceDefinition)
-                      "
+                    /></div></template
+                ><template #default="{ row: row, $index: tableRowIndex }">
+                  <ElButton
+                    v-if="key === 'code'"
+                    class="text-action code-link"
+                    @click="
+                      kind === 'tasks'
+                        ? router.push({ name: 'maintenance-task', params: { id: row.id } })
+                        : open(row as MaintenanceDefinition)
+                    "
+                    type="primary"
+                    link
+                    >{{ cell(row, key!) }}</ElButton
+                  >
+                  <MaintenanceStatus v-else-if="key === 'status'" :status="cell(row, key!)" />
+                  <span v-else :title="cell(row, key!)">{{ cell(row, key!) }}</span>
+                </template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn
+                class-name="maintenance-actions list-action-column"
+                fixed="right"
+                :width="170"
+                :min-width="156"
+                :resizable="false"
+                ><template #header><div class="table-header-label">操作</div></template
+                ><template #default="{ row: row, $index: tableRowIndex }">
+                  <template v-if="kind === 'tasks'"
+                    ><ElButton
+                      class="text-action"
+                      @click="router.push({ name: 'maintenance-task', params: { id: row.id } })"
+                      type="primary"
+                      link
+                      >{{
+                        (row as MaintenanceTask).canExecute
+                          ? '处理'
+                          : (row as MaintenanceTask).canAccept &&
+                              (row as MaintenanceTask).status === '待验收'
+                            ? '验收'
+                            : '查看'
+                      }}</ElButton
+                    ></template
+                  ><template v-else
+                    ><ElButton
+                      v-if="can('编辑')"
+                      class="text-action"
+                      @click="open(row as MaintenanceDefinition)"
+                      type="primary"
+                      link
                     >
-                      {{ cell(row, key!) }}
-                    </button>
-                    <MaintenanceStatus v-else-if="key === 'status'" :status="cell(row, key!)" />
-                    <span v-else :title="cell(row, key!)">{{ cell(row, key!) }}</span>
-                  </td>
-                  <td class="maintenance-actions list-action-column">
-                    <template v-if="kind === 'tasks'"
-                      ><button
-                        class="text-action"
-                        @click="router.push({ name: 'maintenance-task', params: { id: row.id } })"
-                      >
-                        {{
-                          (row as MaintenanceTask).canExecute
-                            ? '处理'
-                            : (row as MaintenanceTask).canAccept &&
-                                (row as MaintenanceTask).status === '待验收'
-                              ? '验收'
-                              : '查看'
-                        }}
-                      </button></template
-                    ><template v-else
-                      ><button
-                        v-if="can('编辑')"
-                        class="text-action"
-                        @click="open(row as MaintenanceDefinition)"
-                      >
-                        编辑</button
-                      ><button
-                        v-if="can('删除') && !(row as MaintenanceDefinition).system"
-                        class="text-action danger"
-                        @click="remove(row as MaintenanceDefinition)"
-                      >
-                        删除
-                      </button></template
+                      编辑</ElButton
+                    ><ElButton
+                      v-if="can('删除') && !(row as MaintenanceDefinition).system"
+                      class="text-action danger"
+                      @click="remove(row as MaintenanceDefinition)"
+                      type="danger"
+                      link
                     >
-                  </td>
-                </tr>
-                <tr v-if="!pageRows.length">
-                  <td :colspan="activeFields.length + 2" class="maintenance-empty">
-                    {{ loading ? '加载中…' : '暂无数据' }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                      删除
+                    </ElButton></template
+                  >
+                </template></ElTableColumn
+              ><template #empty
+                ><div v-if="!pageRows.length">
+                  {{ loading ? '加载中…' : '暂无数据' }}
+                </div></template
+              ></AppBusinessTable
+            >
           </div>
           <footer class="maintenance-list-footer">
             <span>共 {{ filtered.length }} 条</span
@@ -1042,13 +1092,14 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
               @toggle-columns="columnsOpen = !columnsOpen"
               @export="exportRows"
               ><template #columns
-                ><label v-for="[key, label] in fields" :key="key"
-                  ><input
-                    v-model="visibleColumns"
-                    type="checkbox"
-                    :value="key"
+                ><ElCheckboxGroup v-model="visibleColumns"
+                  ><ElCheckbox
+                    v-for="[key, label] in fields"
+                    :key="key"
                     :disabled="key === 'code'"
-                  />{{ label }}</label
+                    :value="key"
+                    >{{ label }}</ElCheckbox
+                  ></ElCheckboxGroup
                 ></template
               ></ListToolbarIcons
             >
@@ -1140,8 +1191,8 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
                 <ElDropdown :disabled="!selectedItems.length" @command="openItemBatch">
                   <ElButton :disabled="!selectedItems.length"
                     >批量操作<span v-if="selectedItems.length">（{{ selectedItems.length }}）</span
-                    >⌄</ElButton
-                  >
+                    ><AppIcon name="Down"
+                  /></ElButton>
                   <template #dropdown
                     ><ElDropdownMenu
                       ><ElDropdownItem command="type">修改类型</ElDropdownItem
@@ -1153,32 +1204,28 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
                     ></template
                   >
                 </ElDropdown>
-                <ElButton type="primary" @click="addItem">＋ 添加项目</ElButton>
+                <ElButton type="primary" @click="addItem"
+                  ><AppIcon name="Plus" /> 添加项目</ElButton
+                >
               </div>
             </div>
             <div class="item-table-scroll" :class="{ 'is-empty': !form.items.length }">
-              <table class="business-table item-edit-table">
-                <colgroup>
-                  <col style="width: 36px" />
-                  <col style="width: 44px" />
-                  <col style="width: 120px" />
-                  <col style="width: 180px" />
-                  <col style="width: 110px" />
-                  <col style="width: 240px" />
-                  <col style="width: 96px" />
-                  <col style="width: 200px" />
-                  <col style="width: 180px" />
-                  <col style="width: 100px" />
-                  <col style="width: 100px" />
-                  <col style="width: 52px" />
-                  <col style="width: 64px" />
-                  <col style="width: 180px" />
-                  <col style="width: 180px" />
-                  <col style="width: 180px" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th class="item-check">
+              <AppBusinessTable
+                :rows="form.items"
+                :pagination="false"
+                :fill="false"
+                :framed="false"
+                class="business-table item-edit-table"
+                :row-class="(item, index) => ({ 'item-error-row': itemErrors[item.id] })"
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn
+                  fixed="left"
+                  :min-width="44"
+                  :width="44"
+                  :resizable="false"
+                  class-name="item-check"
+                  ><template #header
+                    ><div class="table-header-label">
                       <ElCheckbox
                         aria-label="选择全部项目"
                         :model-value="
@@ -1188,182 +1235,235 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
                           selectedItems.length > 0 && selectedItems.length < form.items.length
                         "
                         @change="selectedItems = $event ? form.items.map((item) => item.id) : []"
-                      />
-                    </th>
-                    <th class="item-number">序号</th>
-                    <th class="item-module">模块</th>
-                    <th class="item-name"><span class="required">项目名称</span></th>
-                    <th><span class="required">保养类型</span></th>
-                    <th><span class="required">操作要求</span></th>
-                    <th>结果类型</th>
-                    <th>可选项</th>
-                    <th>正常选项</th>
-                    <th>数值下限</th>
-                    <th>数值上限</th>
-                    <th>必填</th>
-                    <th>必拍照</th>
-                    <th>备注</th>
-                    <th>参考附件</th>
-                    <th class="item-actions">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template v-for="(item, index) in form.items" :key="item.id">
-                    <tr :class="{ 'item-error-row': itemErrors[item.id] }">
-                      <td class="item-check">
-                        <ElCheckbox
-                          :aria-label="'选择第' + (index + 1) + '行'"
-                          :model-value="selectedItems.includes(item.id)"
-                          @change="
-                            selectedItems = $event
-                              ? [...selectedItems, item.id]
-                              : selectedItems.filter((id) => id !== item.id)
-                          "
-                        />
-                      </td>
-                      <td class="item-number">{{ index + 1 }}</td>
-                      <td class="item-module">
-                        <ElInput v-model="item.module" aria-label="模块" placeholder="模块" />
-                      </td>
-                      <td class="item-name">
-                        <ElInput
-                          v-model="item.name"
-                          aria-label="项目名称"
-                          placeholder="项目名称"
-                          maxlength="150"
-                        />
-                      </td>
-                      <td>
-                        <ElSelect v-model="item.typeId" aria-label="保养类型" placeholder="选择类型"
-                          ><ElOption v-for="t in types" :key="t.id" :label="t.name" :value="t.id"
-                        /></ElSelect>
-                      </td>
-                      <td>
-                        <ElInput
-                          v-model="item.content"
-                          aria-label="操作要求"
-                          type="textarea"
-                          :autosize="{ minRows: 1, maxRows: 3 }"
-                          placeholder="填写操作要求"
-                        />
-                      </td>
-                      <td>
-                        <ElSelect v-model="item.valueType" aria-label="结果类型"
-                          ><ElOption
-                            v-for="v in ['选项', '数值', '文本']"
-                            :key="v"
-                            :label="v"
-                            :value="v"
-                        /></ElSelect>
-                      </td>
-                      <td>
-                        <ElSelect
-                          v-if="item.valueType === '选项'"
-                          v-model="item.options"
-                          aria-label="可选项"
-                          placeholder="输入选项，回车添加"
-                          multiple
-                          filterable
-                          allow-create
-                          default-first-option
-                          collapse-tags
-                          collapse-tags-tooltip
-                          @change="changeItemOptions(item)"
-                          ><ElOption v-for="v in item.options" :key="v" :label="v" :value="v"
-                        /></ElSelect>
-                        <span v-else class="item-muted"></span>
-                      </td>
-                      <td>
-                        <ElSelect
-                          v-if="item.valueType === '选项'"
-                          v-model="item.normalOptions"
-                          aria-label="正常选项"
-                          placeholder="选择正常选项"
-                          multiple
-                          collapse-tags
-                          collapse-tags-tooltip
-                          ><ElOption v-for="v in item.options" :key="v" :label="v" :value="v"
-                        /></ElSelect>
-                        <span v-else class="item-muted"></span>
-                      </td>
-                      <td>
-                        <AppDecimalInput
-                          v-if="item.valueType === '数值'"
-                          v-model="item.lower"
-                          aria-label="数值下限"
-                          placeholder="不限"
-                        /><span v-else class="item-muted"></span>
-                      </td>
-                      <td>
-                        <AppDecimalInput
-                          v-if="item.valueType === '数值'"
-                          v-model="item.upper"
-                          aria-label="数值上限"
-                          placeholder="不限"
-                        /><span v-else class="item-muted"></span>
-                      </td>
-                      <td class="item-checkbox">
-                        <ElCheckbox v-model="item.required" aria-label="必填" />
-                      </td>
-                      <td class="item-checkbox">
-                        <ElCheckbox v-model="item.photoRequired" aria-label="必拍照" />
-                      </td>
-                      <td>
-                        <ElInput
-                          v-model="item.remark"
-                          aria-label="项目备注"
-                          type="textarea"
-                          :autosize="{ minRows: 1, maxRows: 3 }"
-                          placeholder="项目补充说明"
-                        />
-                      </td>
-                      <td><MaintenanceAttachments v-model="item.references" /></td>
-                      <td class="item-actions">
-                        <div class="item-row-actions">
-                          <button type="button" class="text-action" @click="copyItem(item, index)">
-                            复制
-                          </button>
-                          <button
-                            type="button"
-                            class="text-action danger"
-                            @click="removeItem(item.id)"
-                          >
-                            删除
-                          </button>
-                          <button
-                            type="button"
-                            class="item-move"
-                            :disabled="index === 0"
-                            aria-label="上移项目"
-                            title="上移"
-                            @click="moveItem(index, -1)"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            class="item-move"
-                            :disabled="index === form.items.length - 1"
-                            aria-label="下移项目"
-                            title="下移"
-                            @click="moveItem(index, 1)"
-                          >
-                            ↓
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr v-if="itemErrors[item.id]" class="item-error-message">
-                      <td colspan="16">{{ itemErrors[item.id] }}</td>
-                    </tr>
-                  </template>
-                  <tr v-if="!form.items.length">
-                    <td colspan="16" class="maintenance-empty">
-                      添加保养项目，直接在表格中填写操作要求和结果标准
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                      /></div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <ElCheckbox
+                      :aria-label="'选择第' + (index + 1) + '行'"
+                      :model-value="selectedItems.includes(item.id)"
+                      @change="
+                        selectedItems = $event
+                          ? [...selectedItems, item.id]
+                          : selectedItems.filter((id) => id !== item.id)
+                      "
+                    /> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="55" :width="44" class-name="item-number" fixed="left"
+                  ><template #header><div class="table-header-label">序号</div></template
+                  ><template #default="{ row: item, $index: index }">{{
+                    index + 1
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="150" :width="120" class-name="item-module" fixed="left"
+                  ><template #header><div class="table-header-label">模块</div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <ElInput v-model="item.module" aria-label="模块" placeholder="模块" />
+                    <div v-if="itemErrors[item.id]" class="item-error-message">
+                      {{ itemErrors[item.id] }}
+                    </div></template
+                  ></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="210" :width="180" class-name="item-name" fixed="left"
+                  ><template #header
+                    ><div class="table-header-label">
+                      <span class="required">项目名称</span>
+                    </div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <ElInput
+                      v-model="item.name"
+                      aria-label="项目名称"
+                      placeholder="项目名称"
+                      maxlength="150"
+                    /> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="150" :width="110" v-if="form.items.length > 0"
+                  ><template #header
+                    ><div class="table-header-label">
+                      <span class="required">保养类型</span>
+                    </div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <ElSelect v-model="item.typeId" aria-label="保养类型" placeholder="选择类型"
+                      ><ElOption v-for="t in types" :key="t.id" :label="t.name" :value="t.id"
+                    /></ElSelect> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn
+                  :min-width="156"
+                  :width="240"
+                  :resizable="false"
+                  v-if="form.items.length > 0"
+                  ><template #header
+                    ><div class="table-header-label">
+                      <span class="required">操作要求</span>
+                    </div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <ElInput
+                      v-model="item.content"
+                      aria-label="操作要求"
+                      type="textarea"
+                      :autosize="{ minRows: 1, maxRows: 3 }"
+                      placeholder="填写操作要求"
+                    /> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="150" :width="96" v-if="form.items.length > 0"
+                  ><template #header><div class="table-header-label">结果类型</div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <ElSelect v-model="item.valueType" aria-label="结果类型"
+                      ><ElOption
+                        v-for="v in ['选项', '数值', '文本']"
+                        :key="v"
+                        :label="v"
+                        :value="v"
+                    /></ElSelect> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="150" :width="200" v-if="form.items.length > 0"
+                  ><template #header><div class="table-header-label">可选项</div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <ElSelect
+                      v-if="item.valueType === '选项'"
+                      v-model="item.options"
+                      aria-label="可选项"
+                      placeholder="输入选项，回车添加"
+                      multiple
+                      filterable
+                      allow-create
+                      default-first-option
+                      collapse-tags
+                      collapse-tags-tooltip
+                      @change="changeItemOptions(item)"
+                      ><ElOption v-for="v in item.options" :key="v" :label="v" :value="v"
+                    /></ElSelect>
+                    <span v-else class="item-muted"></span> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="150" :width="180" v-if="form.items.length > 0"
+                  ><template #header><div class="table-header-label">正常选项</div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <ElSelect
+                      v-if="item.valueType === '选项'"
+                      v-model="item.normalOptions"
+                      aria-label="正常选项"
+                      placeholder="选择正常选项"
+                      multiple
+                      collapse-tags
+                      collapse-tags-tooltip
+                      ><ElOption v-for="v in item.options" :key="v" :label="v" :value="v"
+                    /></ElSelect>
+                    <span v-else class="item-muted"></span> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="150" :width="100" v-if="form.items.length > 0"
+                  ><template #header><div class="table-header-label">数值下限</div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <AppDecimalInput
+                      v-if="item.valueType === '数值'"
+                      v-model="item.lower"
+                      aria-label="数值下限"
+                      placeholder="不限"
+                    /><span v-else class="item-muted"></span> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="150" :width="100" v-if="form.items.length > 0"
+                  ><template #header><div class="table-header-label">数值上限</div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <AppDecimalInput
+                      v-if="item.valueType === '数值'"
+                      v-model="item.upper"
+                      aria-label="数值上限"
+                      placeholder="不限"
+                    /><span v-else class="item-muted"></span> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn
+                  :min-width="80"
+                  :width="80"
+                  :resizable="false"
+                  class-name="item-checkbox"
+                  v-if="form.items.length > 0"
+                  ><template #header><div class="table-header-label">必填</div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <ElCheckbox
+                      v-model="item.required"
+                      aria-label="必填"
+                    /> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn
+                  :min-width="80"
+                  :width="80"
+                  :resizable="false"
+                  class-name="item-checkbox"
+                  v-if="form.items.length > 0"
+                  ><template #header><div class="table-header-label">必拍照</div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <ElCheckbox
+                      v-model="item.photoRequired"
+                      aria-label="必拍照"
+                    /> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="150" :width="180" v-if="form.items.length > 0"
+                  ><template #header><div class="table-header-label">备注</div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <ElInput
+                      v-model="item.remark"
+                      aria-label="项目备注"
+                      type="textarea"
+                      :autosize="{ minRows: 1, maxRows: 3 }"
+                      placeholder="项目补充说明"
+                    /> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="150" :width="180" v-if="form.items.length > 0"
+                  ><template #header><div class="table-header-label">参考附件</div></template
+                  ><template #default="{ row: item, $index: index }"
+                    ><MaintenanceAttachments v-model="item.references" /></template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn
+                  class-name="item-actions"
+                  fixed="right"
+                  :width="170"
+                  :min-width="156"
+                  :resizable="false"
+                  ><template #header><div class="table-header-label">操作</div></template
+                  ><template #default="{ row: item, $index: index }">
+                    <div class="item-row-actions">
+                      <ElButton
+                        class="text-action"
+                        @click="copyItem(item, index)"
+                        native-type="button"
+                        type="primary"
+                        link
+                      >
+                        复制
+                      </ElButton>
+                      <ElButton
+                        class="text-action danger"
+                        @click="removeItem(item.id)"
+                        native-type="button"
+                        type="danger"
+                        link
+                      >
+                        删除
+                      </ElButton>
+                      <ElButton
+                        text
+                        class="item-move"
+                        :disabled="index === 0"
+                        aria-label="上移项目"
+                        title="上移"
+                        @click="moveItem(index, -1)"
+                        native-type="button"
+                        ><AppIcon name="ArrowUp"
+                      /></ElButton>
+                      <ElButton
+                        text
+                        class="item-move"
+                        :disabled="index === form.items.length - 1"
+                        aria-label="下移项目"
+                        title="下移"
+                        @click="moveItem(index, 1)"
+                        native-type="button"
+                        ><AppIcon name="ArrowDown"
+                      /></ElButton>
+                    </div> </template></ElTableColumn
+                ><template #empty
+                  ><div v-if="!form.items.length">
+                    添加保养项目，直接在表格中填写操作要求和结果标准
+                  </div></template
+                ></AppBusinessTable
+              >
             </div>
           </section></template
         >
@@ -1442,7 +1542,7 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
                   ><ElButton :disabled="!selectedPlanRows.length"
                     >批量操作<span v-if="selectedPlanRows.length"
                       >（{{ selectedPlanRows.length }}）</span
-                    >⌄</ElButton
+                    ><AppIcon name="Down" /></ElButton
                   ><template #dropdown
                     ><ElDropdownMenu
                       ><ElDropdownItem
@@ -1453,29 +1553,27 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
                       ></ElDropdownMenu
                     ></template
                   ></ElDropdown
-                ><ElButton type="primary" @click="chooseEquipment">＋ 选择设备</ElButton>
+                ><ElButton type="primary" @click="chooseEquipment"
+                  ><AppIcon name="Plus" /> 选择设备</ElButton
+                >
               </div>
             </div>
             <div class="item-table-scroll" :class="{ 'is-empty': !form.details.length }">
-              <table class="business-table item-edit-table plan-edit-table">
-                <colgroup>
-                  <col style="width: 36px" />
-                  <col style="width: 44px" />
-                  <col style="width: 120px" />
-                  <col style="width: 180px" />
-                  <col style="width: 120px" />
-                  <col style="width: 340px" />
-                  <col style="width: 190px" />
-                  <col style="width: 164px" />
-                  <col style="width: 130px" />
-                  <col style="width: 200px" />
-                  <col style="width: 200px" />
-                  <col style="width: 180px" />
-                  <col style="width: 160px" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th class="item-check">
+              <AppBusinessTable
+                :rows="form.details"
+                :pagination="false"
+                :fill="false"
+                :framed="false"
+                class="business-table item-edit-table plan-edit-table"
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn
+                  fixed="left"
+                  :min-width="44"
+                  :width="44"
+                  :resizable="false"
+                  class-name="item-check"
+                  ><template #header
+                    ><div class="table-header-label">
                       <ElCheckbox
                         aria-label="选择全部计划设备"
                         :model-value="
@@ -1490,148 +1588,173 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
                             ? form.details.map((detail) => detail.clientKey!)
                             : []
                         "
-                      />
-                    </th>
-                    <th class="item-number">序号</th>
-                    <th class="item-module">设备编码</th>
-                    <th class="item-name">设备名称</th>
-                    <th>保养类型</th>
-                    <th>保养项目</th>
-                    <th>保养周期</th>
-                    <th>下次保养时间</th>
-                    <th>有效时长（天）</th>
-                    <th>负责人</th>
-                    <th>审核人</th>
-                    <th>说明</th>
-                    <th class="item-actions">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(detail, index) in form.details" :key="detail.clientKey">
-                    <td class="item-check">
-                      <ElCheckbox
-                        :aria-label="'选择计划设备第' + (index + 1) + '行'"
-                        :model-value="selectedPlanRows.includes(detail.clientKey!)"
-                        @change="
-                          selectedPlanRows = $event
-                            ? [...selectedPlanRows, detail.clientKey!]
-                            : selectedPlanRows.filter((key) => key !== detail.clientKey)
-                        "
-                      />
-                    </td>
-                    <td class="item-number">{{ index + 1 }}</td>
-                    <td class="item-module">{{ eq(detail.equipmentId)?.code }}</td>
-                    <td class="item-name">{{ eq(detail.equipmentId)?.name }}</td>
-                    <td>
-                      <ElSelect
-                        v-model="detail.typeId"
-                        placeholder="保养类型"
-                        @change="typeChanged(detail)"
-                        ><ElOption
-                          v-for="type in types"
-                          :key="type.id"
-                          :label="type.name"
-                          :value="type.id"
-                      /></ElSelect>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        class="plan-project-trigger"
-                        @click="openProjectPicker(detail)"
-                        :title="projectSummary(detail)"
-                      >
-                        <span>{{
-                          detail.projectRefs?.length
-                            ? `已选 ${detail.projectRefs.length} 项`
-                            : '选择保养项目'
-                        }}</span
-                        ><span class="project-trigger-arrow">›</span>
-                      </button>
-                    </td>
-                    <td>
-                      <div class="plan-cycle-control">
-                        <ElInputNumber
-                          v-model="detail.period"
-                          @change="updateTaskDuration(detail)"
-                          :min="1"
-                          :max="10000"
-                          controls-position="right"
-                        /><ElSelect v-model="detail.unit" @change="updateTaskDuration(detail)"
-                          ><ElOption
-                            v-for="unit in ['日', '周', '月', '年']"
-                            :key="unit"
-                            :label="unit"
-                            :value="unit"
-                        /></ElSelect>
-                      </div>
-                    </td>
-                    <td>
-                      <ElDatePicker
-                        v-model="detail.nextDate"
-                        type="date"
-                        value-format="YYYY-MM-DD"
-                        placeholder="选择日期"
-                      />
-                    </td>
-                    <td>
+                      /></div></template
+                  ><template #default="{ row: detail, $index: index }">
+                    <ElCheckbox
+                      :aria-label="'选择计划设备第' + (index + 1) + '行'"
+                      :model-value="selectedPlanRows.includes(detail.clientKey!)"
+                      @change="
+                        selectedPlanRows = $event
+                          ? [...selectedPlanRows, detail.clientKey!]
+                          : selectedPlanRows.filter((key) => key !== detail.clientKey)
+                      "
+                    /> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="55" :width="44" class-name="item-number" fixed="left"
+                  ><template #header><div class="table-header-label">序号</div></template
+                  ><template #default="{ row: detail, $index: index }">{{
+                    index + 1
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150" :width="120" class-name="item-module" fixed="left"
+                  ><template #header><div class="table-header-label">设备编号</div></template
+                  ><template #default="{ row: detail, $index: index }">{{
+                    eq(detail.equipmentId)?.code
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="210" :width="180" class-name="item-name" fixed="left"
+                  ><template #header><div class="table-header-label">设备名称</div></template
+                  ><template #default="{ row: detail, $index: index }">{{
+                    eq(detail.equipmentId)?.name
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150" :width="120"
+                  ><template #header><div class="table-header-label">保养类型</div></template
+                  ><template #default="{ row: detail, $index: index }">
+                    <ElSelect
+                      v-model="detail.typeId"
+                      placeholder="保养类型"
+                      @change="typeChanged(detail)"
+                      ><ElOption
+                        v-for="type in types"
+                        :key="type.id"
+                        :label="type.name"
+                        :value="type.id"
+                    /></ElSelect> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="210" :width="340"
+                  ><template #header><div class="table-header-label">保养项目</div></template
+                  ><template #default="{ row: detail, $index: index }">
+                    <ElButton
+                      class="plan-project-trigger"
+                      @click="openProjectPicker(detail)"
+                      :title="projectSummary(detail)"
+                      native-type="button"
+                      ><span>{{
+                        detail.projectRefs?.length
+                          ? `已选 ${detail.projectRefs.length} 项`
+                          : '选择保养项目'
+                      }}</span
+                      ><span class="project-trigger-arrow"><AppIcon name="Right" /></span
+                    ></ElButton> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150" :width="190"
+                  ><template #header><div class="table-header-label">保养周期</div></template
+                  ><template #default="{ row: detail, $index: index }">
+                    <div class="plan-cycle-control">
                       <ElInputNumber
-                        v-model="detail.validDays"
-                        :min="0"
-                        :max="36500"
+                        v-model="detail.period"
+                        @change="updateTaskDuration(detail)"
+                        :min="1"
+                        :max="10000"
                         controls-position="right"
-                      />
-                    </td>
-                    <td>
-                      <ElSelect
-                        v-model="detail.owners"
-                        multiple
-                        filterable
-                        collapse-tags
-                        collapse-tags-tooltip
-                        placeholder="沿用计划负责人"
+                      /><ElSelect v-model="detail.unit" @change="updateTaskDuration(detail)"
                         ><ElOption
-                          v-for="user in choices.users"
-                          :key="user.id"
-                          :label="user.name"
-                          :value="user.id"
+                          v-for="unit in ['日', '周', '月', '年']"
+                          :key="unit"
+                          :label="unit"
+                          :value="unit"
                       /></ElSelect>
-                    </td>
-                    <td>
-                      <ElSelect
-                        v-model="detail.reviewers"
-                        multiple
-                        filterable
-                        collapse-tags
-                        collapse-tags-tooltip
-                        placeholder="沿用计划审核人"
-                        ><ElOption
-                          v-for="user in choices.users"
-                          :key="user.id"
-                          :label="user.name"
-                          :value="user.id"
-                      /></ElSelect>
-                    </td>
-                    <td><ElInput v-model="detail.remark" placeholder="0天表示不过期" /></td>
-                    <td class="item-actions">
-                      <div class="item-row-actions">
-                        <button class="text-action" @click="copyPlanRow(detail)">复制</button
-                        ><button
-                          class="text-action danger"
-                          @click="removePlanRow(detail.clientKey!)"
-                        >
-                          删除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr v-if="!form.details.length">
-                    <td colspan="13" class="maintenance-empty">
-                      选择设备后，按保养类型自动生成计划行
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                    </div> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150" :width="164"
+                  ><template #header><div class="table-header-label">下次保养时间</div></template
+                  ><template #default="{ row: detail, $index: index }">
+                    <ElDatePicker
+                      v-model="detail.nextDate"
+                      type="date"
+                      value-format="YYYY-MM-DD"
+                      placeholder="选择日期"
+                    /> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150" :width="130"
+                  ><template #header><div class="table-header-label">有效时长（天）</div></template
+                  ><template #default="{ row: detail, $index: index }">
+                    <ElInputNumber
+                      v-model="detail.validDays"
+                      :min="0"
+                      :max="36500"
+                      controls-position="right"
+                    /> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150" :width="200"
+                  ><template #header><div class="table-header-label">负责人</div></template
+                  ><template #default="{ row: detail, $index: index }">
+                    <ElSelect
+                      v-model="detail.owners"
+                      multiple
+                      filterable
+                      collapse-tags
+                      collapse-tags-tooltip
+                      placeholder="沿用计划负责人"
+                      ><ElOption
+                        v-for="user in choices.users"
+                        :key="user.id"
+                        :label="user.name"
+                        :value="user.id"
+                    /></ElSelect> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150" :width="200"
+                  ><template #header><div class="table-header-label">审核人</div></template
+                  ><template #default="{ row: detail, $index: index }">
+                    <ElSelect
+                      v-model="detail.reviewers"
+                      multiple
+                      filterable
+                      collapse-tags
+                      collapse-tags-tooltip
+                      placeholder="沿用计划审核人"
+                      ><ElOption
+                        v-for="user in choices.users"
+                        :key="user.id"
+                        :label="user.name"
+                        :value="user.id"
+                    /></ElSelect> </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150" :width="180"
+                  ><template #header><div class="table-header-label">说明</div></template
+                  ><template #default="{ row: detail, $index: index }"
+                    ><ElInput
+                      v-model="detail.remark"
+                      placeholder="0天表示不过期" /></template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn
+                  class-name="item-actions"
+                  fixed="right"
+                  :width="170"
+                  :min-width="156"
+                  :resizable="false"
+                  ><template #header><div class="table-header-label">操作</div></template
+                  ><template #default="{ row: detail, $index: index }">
+                    <div class="item-row-actions">
+                      <ElButton class="text-action" @click="copyPlanRow(detail)" type="primary" link
+                        >复制</ElButton
+                      ><ElButton
+                        class="text-action danger"
+                        @click="removePlanRow(detail.clientKey!)"
+                        type="danger"
+                        link
+                      >
+                        删除
+                      </ElButton>
+                    </div>
+                  </template></ElTableColumn
+                ><template #empty
+                  ><div v-if="!form.details.length">
+                    选择设备后，按保养类型自动生成计划行
+                  </div></template
+                ></AppBusinessTable
+              >
             </div>
           </section></template
         >
@@ -1775,21 +1898,20 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
       <div class="project-picker-layout">
         <aside class="project-picker-standards">
           <h4>保养标准</h4>
-          <button
+          <ElButton
             v-for="standard in projectPickerStandards"
             :key="standard.id"
-            type="button"
             :class="{ active: projectPickerStandard === standard.id }"
             @click="projectPickerStandard = standard.id"
-          >
-            <span>{{ standard.name }}</span
+            native-type="button"
+            ><span>{{ standard.name }}</span
             ><small
               >{{ projectPickerValues.filter((v) => v.startsWith(standard.id + ':')).length }} /
               {{
                 standard.items.filter((i) => i.typeId === projectPickerRow?.typeId).length
               }}</small
-            >
-          </button>
+            ></ElButton
+          >
           <p v-if="!projectPickerStandards.length" class="picker-empty">
             没有关联标准，可切换查看所有标准
           </p>
@@ -1804,48 +1926,61 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
             />
           </div>
           <div class="project-picker-table-scroll">
-            <table class="business-table">
-              <thead>
-                <tr>
-                  <th>
+            <AppBusinessTable
+              :rows="projectPickerItems"
+              :pagination="false"
+              :fill="false"
+              :framed="false"
+              class="business-table"
+              @row-click="
+                (item) => {
+                  togglePickerItem(item, !projectPickerValues.includes(pickerItemKey(item)));
+                }
+              "
+              ><!-- @vue-generic {TableColumnRow4} -->
+              <ElTableColumn :min-width="44" fixed="left" :width="44"
+                ><template #header
+                  ><div class="table-header-label">
                     <ElCheckbox
                       :model-value="projectPickerAllChecked"
                       :indeterminate="projectPickerSomeChecked && !projectPickerAllChecked"
                       aria-label="选择当前标准全部项目"
                       @change="togglePickerAll(Boolean($event))"
-                    />
-                  </th>
-                  <th>模块</th>
-                  <th>项目名称</th>
-                  <th>保养内容</th>
-                  <th>结果类型</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="item in projectPickerItems"
-                  :key="item.id"
-                  @click="
-                    togglePickerItem(item, !projectPickerValues.includes(pickerItemKey(item)))
-                  "
-                >
-                  <td @click.stop>
-                    <ElCheckbox
-                      :model-value="projectPickerValues.includes(pickerItemKey(item))"
-                      :aria-label="'选择' + item.name"
-                      @change="togglePickerItem(item, Boolean($event))"
-                    />
-                  </td>
-                  <td>{{ item.module || '' }}</td>
-                  <td>{{ item.name }}</td>
-                  <td>{{ item.content }}</td>
-                  <td>{{ item.valueType }}</td>
-                </tr>
-                <tr v-if="!projectPickerItems.length">
-                  <td colspan="5" class="picker-empty">暂无符合本行保养类型的项目</td>
-                </tr>
-              </tbody>
-            </table>
+                    /></div></template
+                ><template #default="{ row: item, $index: tableRowIndex }">
+                  <ElCheckbox
+                    :model-value="projectPickerValues.includes(pickerItemKey(item))"
+                    :aria-label="'选择' + item.name"
+                    @change="togglePickerItem(item, Boolean($event))"
+                  /> </template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow4} -->
+              <ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">模块</div></template
+                ><template #default="{ row: item, $index: tableRowIndex }">{{
+                  item.module || ''
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow4} -->
+              <ElTableColumn :min-width="210"
+                ><template #header><div class="table-header-label">项目名称</div></template
+                ><template #default="{ row: item, $index: tableRowIndex }">{{
+                  item.name
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow4} -->
+              <ElTableColumn :min-width="210"
+                ><template #header><div class="table-header-label">保养内容</div></template
+                ><template #default="{ row: item, $index: tableRowIndex }">{{
+                  item.content
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow4} -->
+              <ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">结果类型</div></template
+                ><template #default="{ row: item, $index: tableRowIndex }">{{
+                  item.valueType
+                }}</template></ElTableColumn
+              ><template #empty
+                ><div v-if="!projectPickerItems.length">暂无符合本行保养类型的项目</div></template
+              ></AppBusinessTable
+            >
           </div>
           <p class="project-picker-hint">
             可跨标准选择同一保养类型的项目，切换标准会保留已选项目。
@@ -1863,33 +1998,48 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
         ><ListSearchInput v-model="pickSearch" placeholder="搜索设备名称、编号、型号、类别" />
       </div>
       <div class="equipment-picker-table">
-        <table class="business-table">
-          <thead>
-            <tr>
-              <th></th>
-              <th>设备编号</th>
-              <th>设备名称</th>
-              <th>类别</th>
-              <th>规格型号</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="e in eqRows" :key="e.id">
-              <td>
-                <ElCheckbox
-                  :model-value="picked.includes(e.id)"
-                  @change="
-                    (v) => (picked = v ? [...picked, e.id] : picked.filter((id) => id !== e.id))
-                  "
-                />
-              </td>
-              <td>{{ e.code }}</td>
-              <td>{{ e.name }}</td>
-              <td>{{ e.category }}</td>
-              <td>{{ e.model }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <AppBusinessTable
+          :rows="eqRows"
+          :pagination="false"
+          :fill="false"
+          :framed="false"
+          class="business-table"
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label"></div></template
+            ><template #default="{ row: e, $index: tableRowIndex }">
+              <ElCheckbox
+                :model-value="picked.includes(e.id)"
+                @change="
+                  (v) => (picked = v ? [...picked, e.id] : picked.filter((id) => id !== e.id))
+                "
+              /> </template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">设备编号</div></template
+            ><template #default="{ row: e, $index: tableRowIndex }">{{
+              e.code
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="210"
+            ><template #header><div class="table-header-label">设备名称</div></template
+            ><template #default="{ row: e, $index: tableRowIndex }">{{
+              e.name
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">类别</div></template
+            ><template #default="{ row: e, $index: tableRowIndex }">{{
+              e.category
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">规格型号</div></template
+            ><template #default="{ row: e, $index: tableRowIndex }">{{
+              e.model
+            }}</template></ElTableColumn
+          ></AppBusinessTable
+        >
       </div>
       <template #footer
         ><ElButton @click="equipmentDialog = false">取消</ElButton
@@ -1921,7 +2071,7 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
 
 .maintenance-page {
   height: calc(100vh - 54px);
-  padding: 0 12px;
+  padding: 0 8px;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1930,29 +2080,12 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   color: #334155;
   overflow: hidden;
 }
-.maintenance-tabs {
-  display: flex;
-  border-bottom: 1px solid #e1e7ef;
-  flex: none;
-  height: 46px;
-  gap: 22px;
-}
-.maintenance-tabs button,
 .maintenance-queues button {
   border: 0;
   background: none;
   font: inherit;
   color: #728096;
   cursor: pointer;
-}
-.maintenance-tabs button {
-  padding: 0 4px;
-  border-bottom: 2px solid transparent;
-  font-weight: 600;
-}
-.maintenance-tabs button.active {
-  color: var(--brand);
-  border-color: var(--brand);
 }
 .maintenance-queues {
   display: flex;
@@ -1968,14 +2101,6 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   background: var(--brand-soft);
   color: var(--brand);
 }
-.maintenance-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0;
-  flex: none;
-}
 .maintenance-toolbar > div {
   display: flex;
   align-items: center;
@@ -1984,11 +2109,6 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
 }
 .maintenance-toolbar > div > .el-button {
   margin-left: 0;
-}
-.maintenance-toolbar form {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 .maintenance-list {
   display: flex;
@@ -2011,52 +2131,25 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   white-space: nowrap;
   font-size: 13px;
 }
-.maintenance-page th {
-  background: #f5f7fa;
-  color: #6d7a8e;
-  font-weight: 600;
-  text-align: left;
+.maintenance-page :deep(th) {
   position: sticky;
   top: 0;
   z-index: 1;
   cursor: pointer;
 }
-.maintenance-page th,
-.maintenance-page td {
-  height: 44px;
-  padding: 9px 14px;
-  border-bottom: 1px solid #edf0f4;
+.maintenance-page :deep(th),
+.maintenance-page :deep(td) {
   max-width: 320px;
 }
-.maintenance-page td > span:not(.el-tag):not(.maintenance-task-status) {
+.maintenance-page :deep(td > span:not(.el-tag):not(.maintenance-task-status)) {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 300px;
 }
 
-.maintenance-page thead tr:nth-child(2) th {
+.maintenance-page :deep(thead tr:nth-child(2) th) {
   top: 44px;
-}
-.maintenance-page tbody tr:hover {
-  background: #f7f9ff;
-}
-.column-resize-grip {
-  position: absolute;
-  right: 0;
-  top: 0;
-  width: 7px;
-  height: 100%;
-  cursor: col-resize;
-}
-.column-resize-grip:hover {
-  background: var(--brand-soft);
-}
-.sort-mark {
-  float: right;
-  margin-left: 14px;
-  color: #a9b3c1;
-  font-size: 11px;
 }
 .maintenance-actions {
   display: flex;
@@ -2081,20 +2174,12 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   padding: 10px;
   background: #fff1f2;
 }
-.maintenance-empty {
-  padding: 30px !important;
-  text-align: center;
-  color: #97a3b4;
-}
 .code-link {
   color: var(--brand);
   font-weight: 500;
 }
 .danger {
   color: #d94b60;
-}
-.check-cell {
-  width: 40px;
 }
 .maintenance-edit-head {
   display: flex;
@@ -2135,8 +2220,7 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   background: var(--brand);
   margin-right: 8px;
 }
-.maintenance-form-grid,
-.maintenance-item-grid {
+.maintenance-form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px 24px;
@@ -2160,14 +2244,6 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   width: 100%;
   min-width: 0;
 }
-.maintenance-page .item-table-scroll.is-empty thead {
-  display: none;
-}
-.maintenance-page .item-table-scroll.is-empty .maintenance-empty {
-  height: 178px;
-  text-align: center;
-  white-space: normal;
-}
 .maintenance-page .item-edit-table {
   width: 2062px;
   min-width: 2062px;
@@ -2176,25 +2252,12 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   border-spacing: 0;
   font-size: 13px;
 }
-.maintenance-page .item-edit-table th {
+.maintenance-page .item-edit-table :deep(th) {
   position: sticky;
   top: 0;
   z-index: 3;
-  background: #f5f7fa;
-  height: 40px;
-  padding: 8px;
-  color: #617086;
-  text-align: left;
-  font-weight: 600;
-  border-bottom: 1px solid #e3e8f0;
 }
-.maintenance-page .item-edit-table td {
-  padding: 10px 8px;
-  background: #fff;
-  border-bottom: 1px solid #edf0f4;
-  vertical-align: top;
-}
-.item-edit-table tr:last-child td {
+.item-edit-table :deep(tr:last-child td) {
   border-bottom: 0;
 }
 /* Keep item identity visible while editing distant columns. */
@@ -2229,29 +2292,19 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   border-left: 1px solid #e4e9f1;
   box-shadow: -4px 0 6px -5px #64748b40;
 }
-.maintenance-page .item-edit-table th.item-check,
-.maintenance-page .item-edit-table th.item-number,
-.maintenance-page .item-edit-table th.item-module,
-.maintenance-page .item-edit-table th.item-name,
-.maintenance-page .item-edit-table th.item-actions {
+.maintenance-page .item-edit-table :deep(th.item-check),
+.maintenance-page .item-edit-table :deep(th.item-number),
+.maintenance-page .item-edit-table :deep(th.item-module),
+.maintenance-page .item-edit-table :deep(th.item-name),
+.maintenance-page .item-edit-table :deep(th.item-actions) {
   z-index: 4;
   background: #f4f7fb;
 }
-.maintenance-page .item-edit-table th {
-  height: 42px;
-  padding: 9px 10px;
-  background: #f4f7fb;
-  font-size: 13px;
-  color: #586981;
+.maintenance-page .item-edit-table :deep(th) {
   cursor: default;
 }
-.maintenance-page .item-edit-table td {
-  padding: 12px 10px;
+.maintenance-page .item-edit-table :deep(td) {
   vertical-align: middle;
-  white-space: normal;
-}
-.maintenance-page .item-edit-table tbody tr:hover > td {
-  background: #f8faff;
 }
 .item-edit-table :deep(.el-input__wrapper),
 .item-edit-table :deep(.el-select__wrapper) {
@@ -2333,14 +2386,6 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   padding-top: 7px;
   color: #9aa6b6;
 }
-.item-edit-table .item-error-row td {
-  background: #fff7f7;
-}
-.item-edit-table .item-error-message td {
-  color: #c43e4c;
-  background: #fff7f7;
-  padding: 5px 14px;
-}
 .item-toolbar {
   display: flex;
   gap: 8px;
@@ -2363,19 +2408,7 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
 .item-table-scroll::-webkit-scrollbar-track {
   background: #f3f5f8;
 }
-.item-table-bottom {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding-top: 12px;
-  color: #8692a3;
-}
-.maintenance-item-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding: 12px 14px;
-}
 .maintenance-form-grid label,
-.maintenance-item-grid label,
 .small-form label {
   display: flex;
   align-items: center;
@@ -2383,15 +2416,13 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   min-width: 0;
 }
 .maintenance-form-grid label > span,
-.maintenance-item-grid label > span,
 .small-form label > span {
   flex: none;
   width: 78px;
   text-align: right;
   color: #68788e;
 }
-.maintenance-form-grid label > :last-child,
-.maintenance-item-grid label > :last-child {
+.maintenance-form-grid label > :last-child {
   min-width: 0;
   flex: 1;
 }
@@ -2436,33 +2467,6 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   font-weight: 400;
   margin-left: 8px;
 }
-.item-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-right: 10px;
-  border-radius: 4px;
-  background: var(--brand-soft);
-  color: var(--brand);
-}
-.item-kind {
-  margin-left: 12px;
-}
-.item-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 0 14px 12px;
-}
-.plan-equipment {
-  padding: 16px 0 22px;
-  border-bottom: 1px solid #edf0f4;
-}
-.plan-equipment:last-child {
-  border-bottom: 0;
-}
 .small-form {
   display: grid;
   gap: 20px;
@@ -2479,12 +2483,6 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-}
-.equipment-picker-table td,
-.equipment-picker-table th {
-  padding: 12px;
-  border-bottom: 1px solid #edf0f4;
-  text-align: left;
 }
 .maintenance-page :deep(.el-input__inner),
 .maintenance-page :deep(.el-select),
@@ -2517,15 +2515,8 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   }
 }
 @media (max-width: 760px) {
-  .maintenance-form-grid,
-  .maintenance-item-grid {
+  .maintenance-form-grid {
     grid-template-columns: 1fr;
-  }
-  .maintenance-toolbar {
-    flex-wrap: wrap;
-  }
-  .maintenance-toolbar form {
-    width: 100%;
   }
   .maintenance-queues {
     overflow: auto;
@@ -2655,24 +2646,15 @@ async function submitAcceptance(value: NonNullable<TaskResult['acceptance']>) {
   width: 100%;
   border-collapse: collapse;
 }
-.project-picker-table-scroll th {
+.project-picker-table-scroll :deep(th) {
   position: sticky;
   top: 0;
-  background: #f5f7fa;
-  color: #667387;
-  text-align: left;
   z-index: 1;
 }
-.project-picker-table-scroll td,
-.project-picker-table-scroll th {
-  padding: 10px;
-  border-bottom: 1px solid #edf0f4;
-}
-.project-picker-table-scroll td:first-child {
+.project-picker-table-scroll :deep(td:first-child) {
   width: 36px;
 }
-.project-picker-table-scroll tbody tr:hover {
-  background: #f8faff;
+.project-picker-table-scroll :deep(tbody tr:hover) {
   cursor: pointer;
 }
 .picker-empty {

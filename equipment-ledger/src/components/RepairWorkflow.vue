@@ -1,10 +1,18 @@
 <script setup lang="ts">
+import { ElTableColumn } from 'element-plus';
+import AppAttachments from './common/AppAttachments.vue';
+import AppAttachmentList from './common/AppAttachmentList.vue';
+import { ElButton, ElSelect, ElOption, ElRadio, ElInput } from 'element-plus';
+
+import TaskAnomalies from './common/TaskAnomalies.vue';
+import { confirmSurplus } from '../services/surplusConfirmation';
+import AppBusinessTable from './common/AppBusinessTable.vue';
+import AppIcon from './common/AppIcon.vue';
 import AppDecimalInput from './common/AppDecimalInput.vue';
 import { formatNumber } from '../utils/number';
 import TaskMaterials from './TaskMaterials.vue';
 import { workspaceReturn } from '../utils/workspaceNavigation';
 import { useUnsavedChanges } from '../composables/useUnsavedChanges';
-import AppBackButton from './common/AppBackButton.vue';
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElRate } from 'element-plus';
@@ -62,6 +70,13 @@ async function cancelProcess() {
 }
 const faultNodes = computed(() => base.faultTypeData.filter((x) => x.status === '启用'));
 const faultCauses = computed(() => base.faultCauseData.filter((x) => x.status === '启用'));
+function requestMaterial() {
+  router.push({
+    name: 'inventory-requisition-detail',
+    params: { id: 'new' },
+    query: { taskKind: '维修', taskId: id.value },
+  });
+}
 const timelineEvents = computed(() => [...(detail.value?.events || [])].reverse());
 const canWork = computed(
   () => detail.value?.canProcess && ['处理中', '挂起'].includes(order.value?.status || ''),
@@ -200,7 +215,11 @@ async function submitProcess() {
     ElMessage.warning('请填写必填项');
     return;
   }
-  if (await run('process', { ...f, collaboratorIds: f.collaborators.map((x) => x.id) })) {
+  const surplus = f.result === '已解决' ? await confirmSurplus('维修', id.value) : {};
+  if (surplus === null) return;
+  if (
+    await run('process', { ...f, ...surplus, collaboratorIds: f.collaborators.map((x) => x.id) })
+  ) {
     markSaved();
     pageMode.value = 'detail';
   }
@@ -262,9 +281,7 @@ async function submitDialog() {
   if (action === 'remove') payload = { installedId: installedId.value, reason: reason.value };
   if (await run(action === 'review' ? acceptResult.value : action, payload)) dialog.value = '';
 }
-async function upload(event: Event, target: 'process' | 'review') {
-  const input = event.target as HTMLInputElement;
-  const files = Array.from(input.files || []);
+async function upload(files: File[], target: 'process' | 'review') {
   if (!files.length) return;
   busy.value = true;
   try {
@@ -275,7 +292,6 @@ async function upload(event: Event, target: 'process' | 'review') {
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : '上传失败');
   } finally {
-    input.value = '';
     busy.value = false;
   }
 }
@@ -283,7 +299,7 @@ const detailLabels: Record<string, string> = {
   after: '新状态',
   description: '故障描述',
   faultType: '故障类型',
-  faultAt: '故障时间',
+  reportedAt: '报修时间',
   recipients: '派给',
   reason: '说明',
   faultCause: '故障原因',
@@ -325,79 +341,99 @@ function eventFiles(event: api.WorkflowEvent) {
     ? (event.details.attachments as api.RepairAttachment[])
     : [];
 }
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => spareChanges.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows2 = () => detail.value?.materials;
+type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
 </script>
 <template>
   <section class="workflow-page">
     <header class="workflow-header">
       <div>
-        <AppBackButton
-          :label="workspaceReturn(route.query.returnTo) ? '返回工作台' : '返回工单列表'"
+        <ElButton
+          class="workflow-back"
+          :title="workspaceReturn(route.query.returnTo) ? '返回工作台' : '返回工单列表'"
           :disabled="busy"
           @click="router.push(workspaceReturn(route.query.returnTo) || { name: 'repairs' })"
-        /><strong>{{ pageMode === 'process' ? '处理工单' : '工单详情' }}</strong
+          native-type="button"
+          ><AppIcon name="Left" />返回</ElButton
+        ><strong>{{ pageMode === 'process' ? '处理工单' : '工单详情' }}</strong
         ><span v-if="order">{{ order.orderNo }}</span
         ><b v-if="order" class="order-status">{{ order.status }}</b>
       </div>
       <div v-if="detail && order && pageMode === 'detail'" class="workflow-actions">
-        <button v-if="detail.canClaim" class="btn primary" :disabled="busy" @click="run('claim')">
+        <ElButton
+          v-if="detail.canClaim"
+          class=""
+          :disabled="busy"
+          @click="run('claim')"
+          type="primary"
+        >
           接单
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           v-if="detail.canDispatch && order.status === '待派工'"
-          class="btn primary"
+          class=""
           @click="openPicker('dispatch')"
+          type="primary"
         >
           派工
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           v-if="detail.canProcess && order.status === '处理中'"
-          class="btn primary"
+          class=""
           @click="startProcess"
+          type="primary"
         >
           处理
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           v-if="detail.canProcess && order.status === '挂起'"
-          class="btn primary"
+          class=""
           @click="openDialog('resume')"
+          type="primary"
         >
           恢复
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           v-if="canWork && order.status === '处理中'"
-          class="btn secondary"
+          class=""
           @click="openDialog('suspend')"
         >
           挂起
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           v-if="canWork || (detail.canDispatch && order.status === '待接单')"
-          class="btn secondary"
+          class=""
           @click="openPicker('transfer')"
         >
           转派
-        </button>
-        <button v-if="canWork" class="btn secondary" @click="openDialog('outsource')">委外</button>
-        <button v-if="canWork" class="btn secondary" @click="openDialog('material')">领料</button>
-        <button
-          v-if="canWork || (detail.canIssue && ['处理中', '挂起'].includes(order.status))"
-          class="btn secondary"
+        </ElButton>
+        <ElButton v-if="canWork" class="" @click="openDialog('outsource')">委外</ElButton>
+        <ElButton v-if="canWork" class="" @click="requestMaterial">申请领料</ElButton>
+        <ElButton
+          v-if="detail.materials.length && (canWork || detail.canIssue)"
+          class=""
           @click="materialPanel = true"
         >
-          领料管理
-        </button>
-        <button
+          历史领料
+        </ElButton>
+        <ElButton
           v-if="detail.canAccept && order.status === '待验收'"
-          class="btn primary"
+          class=""
           @click="openDialog('review')"
+          type="primary"
         >
           验收
-        </button>
+        </ElButton>
       </div>
     </header>
     <AppLoadState v-if="!detail" :loading="loading" :error="error" @retry="load" />
     <div v-else-if="error" class="workflow-error">
-      {{ error }}<button class="btn secondary" @click="load">重试</button>
+      {{ error }}<ElButton class="" @click="load">重试</ElButton>
     </div>
     <div
       v-if="detail && order"
@@ -423,7 +459,7 @@ function eventFiles(event: api.WorkflowEvent) {
             <small>报修人</small><span>{{ order.reporter }}</span>
           </div>
           <div>
-            <small>故障时间</small><span>{{ order.faultAt.replace('T', ' ') }}</span>
+            <small>报修时间</small><span>{{ order.reportedAt.replace('T', ' ') }}</span>
           </div>
           <div>
             <small>所属部门</small><span>{{ order.department }}</span>
@@ -434,18 +470,9 @@ function eventFiles(event: api.WorkflowEvent) {
           <div class="summary-wide">
             <small>故障描述</small><span>{{ order.description }}</span>
           </div>
-          <div v-if="order.attachments.length" class="summary-wide">
+          <div class="summary-wide">
             <small>报修附件</small>
-            <div class="file-links">
-              <a
-                v-for="file in order.attachments"
-                :key="file.id"
-                :href="file.url"
-                target="_blank"
-                rel="noopener"
-                >{{ file.name }}</a
-              >
-            </div>
+            <AppAttachmentList :files="order.attachments" />
           </div>
         </div>
         <template v-if="pageMode === 'process'">
@@ -453,19 +480,17 @@ function eventFiles(event: api.WorkflowEvent) {
             <h3 class="process-heading">维修处理</h3>
             <label
               ><span>故障原因 <i>*</i></span
-              ><select v-model="form.faultCause" aria-label="故障原因">
-                <option value="">请选择故障原因</option>
-                <option
+              ><ElSelect v-model="form.faultCause" aria-label="故障原因"
+                ><ElOption value="" :label="'请选择故障原因'" /><ElOption
                   v-if="form.faultCause && !faultCauses.some((x) => x.name === form.faultCause)"
                   :value="form.faultCause"
                   disabled
-                >
-                  {{ form.faultCause }}（历史值）
-                </option>
-                <option v-for="cause in faultCauses" :key="cause.id" :value="cause.name">
-                  {{ cause.name }}
-                </option>
-              </select>
+                  :label="String(form.faultCause) + '（历史值） '" /><ElOption
+                  v-for="cause in faultCauses"
+                  :key="cause.id"
+                  :value="cause.name"
+                  :label="String(cause.name)"
+              /></ElSelect>
             </label>
             <label
               ><span>故障类型 <i>*</i></span
@@ -477,73 +502,61 @@ function eventFiles(event: api.WorkflowEvent) {
             <label
               ><span>维修方式 <i>*</i></span>
               <div class="radio-line">
-                <label><input v-model="form.repairMethod" type="radio" value="自修" />自修</label
-                ><label><input v-model="form.repairMethod" type="radio" value="外协" />外协</label>
+                <ElRadio v-model="form.repairMethod" :value="'自修'">自修</ElRadio
+                ><ElRadio v-model="form.repairMethod" :value="'外协'">外协</ElRadio>
               </div></label
             >
             <label
               ><span>处理结果 <i>*</i></span
-              ><select v-model="form.result">
-                <option v-for="result in detail.results" :key="result">{{ result }}</option>
-              </select></label
-            >
+              ><ElSelect v-model="form.result"
+                ><ElOption
+                  v-for="result in detail.results"
+                  :key="result"
+                  :value="String(result)"
+                  :label="String(result)" /></ElSelect
+            ></label>
             <label class="full"
               ><span>处理内容 <i>*</i></span
-              ><textarea
+              ><ElInput
                 v-model="form.content"
-                rows="4"
+                :rows="4"
                 maxlength="20000"
                 placeholder="记录本次处理内容"
+                type="textarea"
               />
             </label>
             <label class="full"
               ><span>预防措施</span
-              ><textarea
+              ><ElInput
                 v-model="form.prevention"
-                rows="3"
+                :rows="3"
                 maxlength="20000"
                 placeholder="填写后续预防措施"
+                type="textarea"
               />
             </label>
             <label class="full"
               ><span>协同处理人</span>
               <div class="collaborators">
-                <button type="button" class="btn secondary" @click="openPicker('collaborators')">
-                  选择人员</button
+                <ElButton class="" @click="openPicker('collaborators')" native-type="button">
+                  选择人员</ElButton
                 ><span v-for="user in form.collaborators" :key="user.id"
                   >{{ user.name
-                  }}<button
-                    type="button"
+                  }}<ElButton
                     @click="form.collaborators = form.collaborators.filter((x) => x.id !== user.id)"
-                  >
-                    ×
-                  </button></span
-                >
-              </div></label
-            >
+                    native-type="button"
+                    ><AppIcon name="Close" /></ElButton
+                ></span></div
+            ></label>
             <label class="full"
               ><span>附件 / 图片</span>
-              <div class="upload-area">
-                <label class="btn secondary"
-                  ><input
-                    type="file"
-                    multiple
-                    hidden
-                    accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.csv"
-                    :disabled="busy"
-                    @change="upload($event, 'process')"
-                  />上传</label
-                ><span v-for="file in form.attachments" :key="file.id"
-                  >{{ file.name
-                  }}<button
-                    type="button"
-                    @click="form.attachments = form.attachments.filter((x) => x.id !== file.id)"
-                  >
-                    ×
-                  </button></span
-                >
-              </div></label
-            >
+              <AppAttachments
+                :files="form.attachments"
+                :uploading="busy"
+                @select="upload($event, 'process')"
+                @remove="form.attachments = form.attachments.filter((file) => file.id !== $event)"
+              />
+            </label>
           </form>
         </template>
         <section v-if="pageMode === 'detail' && order.repairAction" class="processing-summary">
@@ -578,17 +591,9 @@ function eventFiles(event: api.WorkflowEvent) {
               <dd>{{ order.collaborators?.map((x) => x.name).join('、') || '—' }}</dd>
             </div>
           </dl>
-          <div class="file-links">
-            <a
-              v-for="file in order.processAttachments"
-              :key="file.id"
-              :href="file.url"
-              target="_blank"
-              rel="noopener"
-              >{{ file.name }}</a
-            >
-          </div>
+          <AppAttachmentList :files="order.processAttachments || []" :show-empty="false" />
         </section>
+        <TaskAnomalies kind="维修" :task-id="id" :can-record="false" />
         <TaskMaterials
           :task-id="id"
           kind="维修"
@@ -596,48 +601,68 @@ function eventFiles(event: api.WorkflowEvent) {
           :can-request="!!canWork"
           @changed="load"
         />
-        <section v-if="detail?.materials?.length || spareChanges.length" class="spare-section">
+        <section
+          v-if="detail?.materials?.length || (pageMode === 'detail' && spareChanges.length)"
+          class="spare-section"
+        >
           <header>
             <h3>更换备件</h3>
             <div>
-              <button
+              <ElButton
                 v-if="pageMode === 'process' && canWork && order.status === '处理中'"
-                class="btn secondary"
+                class=""
                 :disabled="busy"
                 @click="openReplacement"
               >
                 更换备件
-              </button>
+              </ElButton>
             </div>
           </header>
           <div class="spare-table">
-            <table class="business-table">
-              <thead>
-                <tr>
-                  <th>备件名称</th>
-                  <th>操作</th>
-                  <th>数量</th>
-                  <th>操作人</th>
-                  <th>时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="event in spareChanges" :key="event.id">
-                  <td>{{ event.details.name }}</td>
-                  <td>{{ event.action === '换上备件' ? '换上' : '换下' }}</td>
-                  <td>{{ formatNumber(event.details.quantity) }}</td>
-                  <td>{{ event.actor }}</td>
-                  <td>{{ event.time }}</td>
-                </tr>
-                <tr v-if="!spareChanges.length">
-                  <td colspan="5" class="empty">本次工单暂无备件更换</td>
-                </tr>
-              </tbody>
-            </table>
+            <AppBusinessTable
+              :rows="spareChanges"
+              :pagination="false"
+              :fill="false"
+              :framed="false"
+              class="business-table"
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn :min-width="210"
+                ><template #header><div class="table-header-label">备件名称</div></template
+                ><template #default="{ row: event, $index: tableRowIndex }">{{
+                  event.details.name
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
+                ><template #header><div class="table-header-label">操作</div></template
+                ><template #default="{ row: event, $index: tableRowIndex }">{{
+                  event.action === '换上备件' ? '换上' : '换下'
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">数量</div></template
+                ><template #default="{ row: event, $index: tableRowIndex }">{{
+                  formatNumber(event.details.quantity)
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn :min-width="156" :width="240" :resizable="false"
+                ><template #header><div class="table-header-label">操作人</div></template
+                ><template #default="{ row: event, $index: tableRowIndex }">{{
+                  event.actor
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">时间</div></template
+                ><template #default="{ row: event, $index: tableRowIndex }">{{
+                  event.time
+                }}</template></ElTableColumn
+              ><template #empty
+                ><div v-if="!spareChanges.length">本次工单暂无备件更换</div></template
+              ></AppBusinessTable
+            >
           </div>
         </section>
       </div>
-      <section v-if="pageMode === 'detail'" class="timeline-section">
+      <section class="timeline-section">
         <h3>维修时间轴</h3>
         <ol class="workflow-timeline">
           <li v-for="event in timelineEvents" :key="event.id">
@@ -652,16 +677,7 @@ function eventFiles(event: api.WorkflowEvent) {
                 <dd>{{ line.value }}</dd>
               </div>
             </dl>
-            <div class="file-links">
-              <a
-                v-for="file in eventFiles(event)"
-                :key="file.id"
-                :href="file.url"
-                target="_blank"
-                rel="noopener"
-                >{{ file.name }}</a
-              >
-            </div>
+            <AppAttachmentList :files="eventFiles(event)" :show-empty="false" />
           </li>
           <li v-if="!detail.events.length" class="empty">暂无维修记录</li>
         </ol>
@@ -671,11 +687,11 @@ function eventFiles(event: api.WorkflowEvent) {
       <template #hint>{{
         form.result === '已解决' ? '提交后进入验收环节' : '提交后继续处理工单'
       }}</template>
-      <button type="button" class="btn secondary" :disabled="busy" @click="cancelProcess">
-        取消</button
-      ><button class="btn primary" :disabled="busy" @click="submitProcess">
-        {{ busy ? '保存中…' : '提交' }}
-      </button>
+      <ElButton class="" :disabled="busy" @click="cancelProcess" native-type="button">
+        取消</ElButton
+      ><ElButton class="" :disabled="busy" @click="submitProcess" type="primary">{{
+        busy ? '保存中…' : '提交'
+      }}</ElButton>
     </AppFormFooter>
     <RepairUserPicker
       v-model="picker"
@@ -690,67 +706,79 @@ function eventFiles(event: api.WorkflowEvent) {
       :busy="busy"
       @confirm="confirmUsers"
     />
-    <AppDialog v-model="materialPanel" title="领料" width="760px" :busy="busy">
+    <AppDialog v-model="materialPanel" title="历史领料" width="760px" :busy="busy">
       <div class="material-tools">
-        <button
+        <ElButton
           v-if="canWork"
-          class="btn primary"
+          class=""
           @click="
             materialPanel = false;
-            openDialog('material');
+            requestMaterial();
           "
+          type="primary"
         >
           领料
-        </button>
+        </ElButton>
       </div>
-      <table class="business-table material-table">
-        <thead>
-          <tr>
-            <th>备件</th>
-            <th>申请数量</th>
-            <th>已出库</th>
-            <th>已换上</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in detail?.materials" :key="item.id">
-            <td>
-              {{ item.name }}<small>{{ item.code }}</small>
-            </td>
-            <td>{{ formatNumber(item.quantity) }}</td>
-            <td>{{ formatNumber(item.issuedQuantity) }}</td>
-            <td>{{ formatNumber(item.installedQuantity) }}</td>
-            <td>{{ item.status }}</td>
-            <td>
-              <button
-                v-if="item.status === '待出库' && canWork"
-                class="text-action"
-                :disabled="busy"
-                @click="run('cancelMaterial', { materialId: item.id })"
-              >
-                撤回
-              </button>
-              <button
-                v-if="item.status === '待出库' && detail?.canIssue"
-                class="text-action"
-                :disabled="busy"
-                @click="run('issue', { materialId: item.id })"
-              >
-                出库
-              </button>
-            </td>
-          </tr>
-          <tr v-if="!detail?.materials.length">
-            <td colspan="6" class="empty">暂无申请</td>
-          </tr>
-        </tbody>
-      </table>
+      <AppBusinessTable
+        :rows="detail?.materials"
+        :pagination="false"
+        :fill="false"
+        :framed="false"
+        class="business-table material-table"
+        ><!-- @vue-generic {TableColumnRow2} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">备件</div></template
+          ><template #default="{ row: item, $index: tableRowIndex }">
+            {{ item.name }}<small>{{ item.code }}</small>
+          </template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow2} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">申请数量</div></template
+          ><template #default="{ row: item, $index: tableRowIndex }">{{
+            formatNumber(item.quantity)
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow2} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">已出库</div></template
+          ><template #default="{ row: item, $index: tableRowIndex }">{{
+            formatNumber(item.issuedQuantity)
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow2} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">已换上</div></template
+          ><template #default="{ row: item, $index: tableRowIndex }">{{
+            formatNumber(item.installedQuantity)
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow2} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">状态</div></template
+          ><template #default="{ row: item, $index: tableRowIndex }">{{
+            item.status
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow2} -->
+        <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
+          ><template #header><div class="table-header-label">操作</div></template
+          ><template #default="{ row: item, $index: tableRowIndex }">
+            <ElButton
+              v-if="item.status === '待出库' && canWork"
+              class="text-action"
+              :disabled="busy"
+              @click="run('cancelMaterial', { materialId: item.id })"
+              type="primary"
+              link
+            >
+              撤回
+            </ElButton>
+          </template></ElTableColumn
+        ><template #empty
+          ><div v-if="!detail?.materials.length">暂无申请</div></template
+        ></AppBusinessTable
+      >
       <template #footer
-        ><button class="btn secondary" :disabled="busy" @click="materialPanel = false">
+        ><ElButton class="" :disabled="busy" @click="materialPanel = false">
           关闭
-        </button></template
+        </ElButton></template
       >
     </AppDialog>
     <AppDialog
@@ -780,50 +808,43 @@ function eventFiles(event: api.WorkflowEvent) {
           ><label
             ><span>结果</span>
             <div class="radio-line">
-              <label><input v-model="acceptResult" type="radio" value="accept" />通过</label
-              ><label><input v-model="acceptResult" type="radio" value="return" />打回</label>
+              <ElRadio v-model="acceptResult" :value="'accept'">通过</ElRadio
+              ><ElRadio v-model="acceptResult" :value="'return'">打回</ElRadio>
             </div></label
           ><label
             ><span>说明 <i>*</i></span
-            ><textarea
+            ><ElInput
               v-model="comment"
-              rows="4"
+              :rows="4"
               maxlength="10000"
               placeholder="填写验收说明"
-            /></label
+              type="textarea" /></label
           ><label
             ><span>附件</span>
-            <div class="upload-area">
-              <label class="btn secondary"
-                ><input
-                  type="file"
-                  multiple
-                  hidden
-                  :disabled="busy"
-                  @change="upload($event, 'review')"
-                />上传</label
-              ><span v-for="file in reviewAttachments" :key="file.id"
-                >{{ file.name
-                }}<button
-                  type="button"
-                  @click="reviewAttachments = reviewAttachments.filter((x) => x.id !== file.id)"
-                >
-                  ×
-                </button></span
-              >
-            </div></label
-          ></template
-        >
+            <AppAttachments
+              :files="reviewAttachments"
+              :uploading="busy"
+              @select="upload($event, 'review')"
+              @remove="
+                reviewAttachments = reviewAttachments.filter((file) => file.id !== $event)
+              " /></label
+        ></template>
         <template v-else-if="dialog === 'material'"
           ><label
             ><span>备件 <i>*</i></span
-            ><select v-model="stockId">
-              <option value="">请选择备件</option>
-              <option v-for="stock in stockRows" :key="stock.id" :value="stock.id">
-                {{ stock.name }} · {{ stock.code }} · 库存 {{ formatNumber(stock.quantity) }}
-              </option>
-            </select></label
-          >
+            ><ElSelect v-model="stockId"
+              ><ElOption value="" :label="'请选择备件'" /><ElOption
+                v-for="stock in stockRows"
+                :key="stock.id"
+                :value="stock.id"
+                :label="
+                  String(stock.name) +
+                  ' · ' +
+                  String(stock.code) +
+                  ' · 库存 ' +
+                  String(formatNumber(stock.quantity))
+                " /></ElSelect
+          ></label>
           <p v-if="!stockRows.length">本公司暂无库存备件，请先在仓库与库存中维护。</p>
           <label
             ><span>数量 <i>*</i></span
@@ -833,25 +854,37 @@ function eventFiles(event: api.WorkflowEvent) {
         ></template>
         <template v-else-if="dialog === 'replace'">
           <div class="replacement-mode">
-            <span>操作</span
-            ><label><input v-model="replacementMode" type="radio" value="install" />换上</label
-            ><label><input v-model="replacementMode" type="radio" value="remove" />换下</label>
+            <span>操作</span><ElRadio v-model="replacementMode" :value="'install'">换上</ElRadio
+            ><ElRadio v-model="replacementMode" :value="'remove'">换下</ElRadio>
           </div>
           <label
             ><span>备件 <i>*</i></span>
-            <select v-if="replacementMode === 'install'" v-model="materialId">
-              <option value="">请选择已出库备件</option>
-              <option v-for="item in availableMaterials" :key="item.id" :value="item.id">
-                {{ item.name }} · {{ item.code }} · 可用
-                {{ formatNumber(Number(item.issuedQuantity) - Number(item.installedQuantity)) }}
-              </option>
-            </select>
-            <select v-else v-model="installedId">
-              <option value="">请选择需要换下的备件</option>
-              <option v-for="item in detail?.installed" :key="item.id" :value="item.id">
-                {{ item.name }} · {{ item.code }} · 数量 {{ formatNumber(item.quantity) }}
-              </option>
-            </select>
+            <ElSelect v-if="replacementMode === 'install'" v-model="materialId"
+              ><ElOption value="" :label="'请选择已出库备件'" /><ElOption
+                v-for="item in availableMaterials"
+                :key="item.id"
+                :value="item.id"
+                :label="
+                  String(item.name) +
+                  ' · ' +
+                  String(item.code) +
+                  ' · 可用 ' +
+                  String(formatNumber(Number(item.issuedQuantity) - Number(item.installedQuantity)))
+                "
+            /></ElSelect>
+            <ElSelect v-else v-model="installedId"
+              ><ElOption value="" :label="'请选择需要换下的备件'" /><ElOption
+                v-for="item in detail?.installed"
+                :key="item.id"
+                :value="item.id"
+                :label="
+                  String(item.name) +
+                  ' · ' +
+                  String(item.code) +
+                  ' · 数量 ' +
+                  String(formatNumber(item.quantity))
+                "
+            /></ElSelect>
           </label>
           <label v-if="replacementMode === 'install'"
             ><span>数量 <i>*</i></span
@@ -865,7 +898,13 @@ function eventFiles(event: api.WorkflowEvent) {
           <p v-if="replacementMode === 'remove'">换下所选安装记录的全部数量，不自动退回库存。</p>
           <label
             ><span>说明</span
-            ><textarea v-model="reason" rows="3" maxlength="2000" placeholder="填写更换说明" />
+            ><ElInput
+              v-model="reason"
+              :rows="3"
+              maxlength="2000"
+              placeholder="填写更换说明"
+              type="textarea"
+            />
           </label>
         </template>
         <label v-else-if="dialog === 'install'"
@@ -875,27 +914,47 @@ function eventFiles(event: api.WorkflowEvent) {
         <template v-else
           ><label v-if="dialog === 'outsource'"
             ><span>外协单位 <i>*</i></span
-            ><input v-model="vendor" maxlength="200" placeholder="填写外协单位" /></label
+            ><ElInput v-model="vendor" maxlength="200" placeholder="填写外协单位" /></label
           ><label
             ><span>说明 <i v-if="['transfer', 'suspend', 'resume'].includes(dialog)">*</i></span
-            ><textarea
+            ><ElInput
               v-model="reason"
-              rows="4"
+              :rows="4"
               maxlength="2000"
               placeholder="填写操作说明"
-            /></label
+              type="textarea" /></label
         ></template>
       </form>
       <template #footer
-        ><button class="btn secondary" :disabled="busy" @click="dialog = ''">取消</button
-        ><button class="btn primary" :disabled="busy" @click="submitDialog">
-          {{ dialog === 'transfer' ? '选择人员' : '提交' }}
-        </button></template
+        ><ElButton class="" :disabled="busy" @click="dialog = ''">取消</ElButton
+        ><ElButton class="" :disabled="busy" @click="submitDialog" type="primary">{{
+          dialog === 'transfer' ? '选择人员' : '提交'
+        }}</ElButton></template
       >
     </AppDialog>
   </section>
 </template>
 <style scoped>
+.workflow-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color, #e0e6ef);
+  border-radius: 5px;
+  background: var(--surface, #fff);
+  color: var(--text, #263246);
+  font: inherit;
+  cursor: pointer;
+}
+.workflow-back .app-icon {
+  font-size: 16px;
+}
+.workflow-back:hover {
+  color: var(--brand);
+  background: var(--brand-soft, #edf2fa);
+}
 .workflow-page small {
   font-size: 13px;
 }
@@ -976,15 +1035,6 @@ function eventFiles(event: api.WorkflowEvent) {
 .summary-wide {
   grid-column: 1/-1;
 }
-.file-links {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.file-links a {
-  color: var(--primary, #2458f5);
-  text-decoration: none;
-}
 .processing-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1008,25 +1058,6 @@ function eventFiles(event: api.WorkflowEvent) {
 .full {
   grid-column: 1/-1;
 }
-.workflow-page input:not([type='radio']),
-.workflow-page select,
-.workflow-page textarea {
-  padding: 8px 10px;
-  border: 1px solid #d8e1ed;
-  border-radius: 4px;
-  font: inherit;
-  min-width: 0;
-  color: #334155;
-  background: #fff;
-}
-.workflow-page input:focus,
-.workflow-page select:focus,
-.workflow-page textarea:focus {
-  outline: 2px solid #2458f51c;
-  border-color: var(--primary, #2458f5);
-}
-.processing-form textarea,
-.processing-form select,
 .processing-form :deep(.tree-select) {
   flex: 1;
   width: auto;
@@ -1048,33 +1079,22 @@ function eventFiles(event: api.WorkflowEvent) {
   align-items: center;
   gap: 6px;
 }
-.radio-line input {
-  accent-color: var(--primary, #2458f5);
-}
-.collaborators,
-.upload-area {
+.collaborators {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   align-items: center;
 }
-.upload-area > span,
 .collaborators > span {
   padding: 5px 8px;
   background: #f1f5fa;
   border-radius: 4px;
 }
-.upload-area button,
 .collaborators span button {
   border: 0;
   background: none;
   color: var(--text-secondary);
   cursor: pointer;
-}
-.upload-area > label {
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
 }
 .spare-section,
 .timeline-section {
@@ -1095,14 +1115,6 @@ function eventFiles(event: api.WorkflowEvent) {
   min-width: 0;
   table-layout: fixed;
   border: 1px solid #e4e9f0;
-}
-.spare-table th,
-.spare-table td {
-  padding: 9px 10px;
-  font-size: 13px;
-}
-.spare-table th {
-  background: #f5f7fa;
 }
 .empty {
   text-align: center;
@@ -1172,28 +1184,10 @@ function eventFiles(event: api.WorkflowEvent) {
   overflow-wrap: anywhere;
   max-width: 1000px;
 }
-.workflow-timeline .file-links {
-  margin-top: 8px;
-}
 .action-form {
   display: grid;
   gap: 18px;
   font-size: 13px;
-}
-.action-form textarea,
-.action-form select,
-.action-form input:not([type='radio']),
-.action-form .upload-area {
-  flex: 1;
-  min-width: 0;
-}
-.action-form textarea,
-.action-form select,
-.action-form input:not([type='radio']) {
-  font: inherit;
-  border: 1px solid #d8e1ed;
-  border-radius: 4px;
-  padding: 8px 10px;
 }
 .action-form p {
   color: var(--text-secondary);
@@ -1302,15 +1296,6 @@ function eventFiles(event: api.WorkflowEvent) {
   border-collapse: collapse;
   font-size: 13px;
 }
-.material-table td,
-.material-table th {
-  padding: 10px;
-  border-bottom: 1px solid #e5eaf1;
-  text-align: left;
-}
-.material-table th {
-  background: #f5f7fa;
-}
 .material-table small {
   display: block;
   color: var(--text-secondary);
@@ -1351,118 +1336,107 @@ function eventFiles(event: api.WorkflowEvent) {
 }
 
 .process-layout {
-  padding: 0;
-  background: #fff;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  padding: 16px;
+  overflow: hidden;
+  background: var(--page-bg, #f5f7fa);
 }
 .process-layout .workflow-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 0 28px;
-  padding: 24px;
-  align-items: start;
+  overflow: auto;
+  padding: 0;
+}
+.process-layout .report-summary,
+.process-layout .processing-form {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-color, #e4e9f0);
+  border-radius: 6px;
+  padding: 16px;
 }
 .process-layout .report-summary {
-  grid-column: 2;
-  grid-row: 1 / 3;
-  grid-template-columns: 1fr;
-  gap: 18px;
-  border-bottom: 0;
-  border-left: 1px solid #e5eaf1;
-  padding: 0 0 24px 24px;
-  position: sticky;
-  top: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
 }
-.process-layout .report-summary .summary-wide {
-  flex-direction: column;
-  gap: 8px;
-}
-.process-layout .report-summary strong {
-  color: #273347;
-}
-.process-layout .reference-heading {
-  margin-bottom: 0;
-}
-.process-layout .processing-form {
-  grid-column: 1;
-  grid-row: 1;
-  padding: 0;
-  gap: 22px 24px;
-}
+.process-layout .reference-heading,
 .process-layout .process-heading {
   grid-column: 1 / -1;
-  padding-bottom: 14px;
-  margin: 0;
-  border-bottom: 1px solid #e5eaf1;
+  margin: 0 0 4px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--border-color, #e4e9f0);
+  font-size: 14px;
+  color: var(--text);
 }
-.process-layout .spare-section {
-  grid-column: 1;
-  grid-row: 2;
-  margin-top: 26px;
-  border-top: 1px solid #e5eaf1;
-  padding-top: 20px;
+.process-layout .report-summary small {
+  width: 64px;
+  flex-shrink: 0;
+  color: var(--text);
 }
-.process-layout textarea {
-  line-height: 1.65;
-  resize: vertical;
+.process-layout .report-summary .summary-wide {
+  align-items: flex-start;
+}
+.process-layout .processing-form {
+  margin-top: 16px;
+  row-gap: 12px;
+  column-gap: 24px;
+}
+.process-layout .processing-form > label > span {
+  width: 78px;
+  color: var(--text);
 }
 .process-layout .radio-line {
-  background: #f5f7fb;
-  border-radius: 5px;
-  padding: 0 12px;
-  gap: 22px;
-  flex: 1;
+  min-height: 36px;
+  gap: 24px;
 }
 .process-layout .collaborators {
   min-height: 36px;
 }
-.process-layout .upload-area > label {
-  border-style: dashed;
-  padding: 0 16px;
+.process-layout .timeline-section {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--border-color, #e4e9f0);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  overflow: auto;
+}
+.process-layout .timeline-section h3 {
+  margin-top: 0;
+  font-size: 14px;
+}
+.process-layout .event-title {
+  flex-wrap: wrap;
+}
+.process-layout .event-title time {
+  width: 100%;
+  margin-left: 0;
+}
+.process-layout :deep(.task-materials) {
+  margin-top: 16px;
 }
 @media (max-width: 1100px) {
-  .process-layout .workflow-main {
+  .process-layout {
     grid-template-columns: minmax(0, 1fr) 260px;
-    gap: 0 20px;
-    padding: 20px;
+    gap: 12px;
   }
   .process-layout .processing-form {
     grid-template-columns: 1fr;
   }
 }
 @media (max-width: 800px) {
+  .process-layout {
+    display: block;
+    overflow: auto;
+    padding: 12px;
+  }
   .process-layout .workflow-main {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    padding: 16px;
+    overflow: visible;
   }
   .process-layout .report-summary {
-    position: static;
-    border-left: 0;
-    border-bottom: 1px solid #e5eaf1;
-    padding: 0 0 20px;
-    width: 100%;
+    grid-template-columns: 1fr;
   }
-  .process-layout .processing-form,
-  .process-layout .spare-section {
-    width: 100%;
+  .process-layout .timeline-section {
+    margin-top: 16px;
+    overflow: visible;
   }
-}
-
-.process-layout .process-heading,
-.process-layout .reference-heading {
-  position: relative;
-  padding-left: 12px;
-}
-.process-layout .process-heading::before,
-.process-layout .reference-heading::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 2px;
-  height: 14px;
-  width: 3px;
-  border-radius: 2px;
-  background: var(--primary, #2458f5);
 }
 </style>

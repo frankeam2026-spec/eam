@@ -83,7 +83,7 @@ function size(value: number) {
 }
 @media (max-width: 600px) {
   .app-pagination :deep(.el-pagination__jump),
-  .app-pagination :deep(.el-pagination__sizes) {
+.app-pagination :deep(.el-pagination__sizes) {
     display: none;
   }
 }

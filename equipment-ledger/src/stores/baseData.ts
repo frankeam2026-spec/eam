@@ -1,16 +1,13 @@
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import * as api from '../api';
-export const BASE_TABS = [
-  '设备分类',
-  '物料分类',
-  '单位',
-  '故障类型',
-  '故障原因',
-  '使用状态',
-  '设备来源',
-  '处理结果',
+export const BASE_DATA_GROUPS: { key: string; label: string; items: string[] }[] = [
+  { key: 'equipment', label: '设备', items: ['设备分类', '使用状态', '设备来源'] },
+  { key: 'maintenance', label: '维保', items: ['故障类型', '故障原因', '处理结果'] },
+  { key: 'spares', label: '备件', items: ['物料分类'] },
+  { key: 'other', label: '其他', items: ['单位'] },
 ];
+export const BASE_TABS = BASE_DATA_GROUPS.flatMap((group) => group.items);
 export type BaseItem = api.BaseRecord;
 export const useBaseDataStore = defineStore('base-data', () => {
   const categoryData = ref<BaseItem[]>([]);

@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { ElTableColumn } from 'element-plus';
+import TaskAnomalies from './common/TaskAnomalies.vue';
+import { confirmSurplus } from '../services/surplusConfirmation';
+import AppBusinessTable from './common/AppBusinessTable.vue';
 import TaskMaterials from './TaskMaterials.vue';
 import { workspaceReturn } from '../utils/workspaceNavigation';
 import { useUnsavedChanges } from '../composables/useUnsavedChanges';
@@ -169,7 +173,10 @@ async function action(name: string, body: Record<string, unknown> = {}) {
   }
 }
 async function submit() {
-  if (await confirmAction('提交检查结果？')) action('submit', { ...draft.value });
+  if (!(await confirmAction('提交检查结果？'))) return;
+  const surplus = await confirmSurplus('点巡检', String(route.params.id));
+  if (surplus === null) return;
+  action('submit', { ...draft.value, ...surplus });
 }
 function setSkipped(value: boolean) {
   const selected = new Set(draft.value.skippedEquipmentIds || []);
@@ -235,6 +242,9 @@ function eventDetails(details: Record<string, unknown>) {
     .map(([key, v]) => `${key}：${Array.isArray(v) ? v.join('、') : String(v).replace('T', ' ')}`)
     .join('；');
 }
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => draft.value.reviewItems;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 <template>
   <section class="inspection-page inspection-task-page">
@@ -334,13 +344,13 @@ function eventDetails(details: Record<string, unknown>) {
           <div class="inspection-task-equipment-layout">
             <aside v-if="task.equipment.length > 1" class="inspection-route-panel">
               <h3>巡检路线</h3>
-              <button
+              <ElButton
                 v-for="(e, index) in task.equipment"
                 :key="e.id"
                 :class="{ active: activeEquipment === e.id }"
                 @click="activeEquipment = e.id"
-              >
-                <span class="inspection-route-index">{{ index + 1 }}</span>
+                class="app-content-button"
+                ><span class="inspection-route-index">{{ index + 1 }}</span>
                 <div>
                   <strong>{{ e.name }}</strong
                   ><span>{{ e.code }}</span
@@ -349,8 +359,8 @@ function eventDetails(details: Record<string, unknown>) {
                       ? '已跳过'
                       : checkedCount(e.id) + ' / ' + itemCount(e.id) + ' 项'
                   }}</small>
-                </div>
-              </button>
+                </div></ElButton
+              >
             </aside>
             <section class="inspection-form-card inspection-task-projects">
               <div class="inspection-equipment-heading">
@@ -427,23 +437,35 @@ function eventDetails(details: Record<string, unknown>) {
             </div>
             <p>{{ draft.review.description || '—' }}</p>
             <MaintenanceAttachments :model-value="draft.review.attachments || []" readonly />
-            <table v-if="draft.reviewItems?.length" class="business-table inspection-picker-table">
-              <thead>
-                <tr>
-                  <th>项目名称</th>
-                  <th>审核结果</th>
-                  <th>说明</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="r in draft.reviewItems" :key="r.id">
-                  <td>{{ task.items.find((i) => i.id === r.id)?.name }}</td>
-                  <td>{{ r.decision }}</td>
-                  <td>{{ r.description || '' }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <AppBusinessTable
+              :rows="draft.reviewItems"
+              :pagination="false"
+              :fill="false"
+              :framed="false"
+              v-if="draft.reviewItems?.length"
+              class="business-table inspection-picker-table"
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn :min-width="210"
+                ><template #header><div class="table-header-label">项目名称</div></template
+                ><template #default="{ row: r, $index: tableRowIndex }">{{
+                  task.items.find((i) => i.id === r.id)?.name
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">审核结果</div></template
+                ><template #default="{ row: r, $index: tableRowIndex }">{{
+                  r.decision
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow1} -->
+              <ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">说明</div></template
+                ><template #default="{ row: r, $index: tableRowIndex }">{{
+                  r.description || ''
+                }}</template></ElTableColumn
+              ></AppBusinessTable
+            >
           </section>
+          <TaskAnomalies kind="点巡检" :task-id="String(route.params.id)" :can-record="editing" />
           <TaskMaterials
             v-if="task"
             :task-id="String(task.id)"

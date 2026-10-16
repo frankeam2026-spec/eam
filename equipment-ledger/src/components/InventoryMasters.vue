@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import AppListToolbar from './common/AppListToolbar.vue';
+import { ElTableColumn } from 'element-plus';
+import { ElCheckboxGroup, ElCheckbox } from 'element-plus';
+
+import AppBusinessTable from './common/AppBusinessTable.vue';
+import AppIcon from './common/AppIcon.vue';
 import AppDecimalInput from './common/AppDecimalInput.vue';
 import { formatNumber, isDecimalField } from '../utils/number';
 
@@ -312,12 +318,19 @@ watch(
     if (!managers.value.some((u) => u.id === form.value.managerId)) form.value.managerId = '';
   },
 );
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => visible.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows2 = () => binRows.value;
+type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
 </script>
 <template>
   <section class="inventory-master-page">
-    <div class="master-toolbar">
+    <AppListToolbar class="master-toolbar">
       <ElButton v-if="auth.can(inventoryMenu(kind), '新增')" type="primary" @click="edit()"
-        >＋ 新增</ElButton
+        ><AppIcon name="Plus" /> 新增</ElButton
       >
       <form class="master-search" @submit.prevent="search">
         <ListToolbarIcons
@@ -333,53 +346,65 @@ watch(
           "
         /><ElButton text @click="reset">重置</ElButton>
       </form>
-    </div>
+    </AppListToolbar>
     <p v-if="error" role="alert" class="master-error">
       {{ error }} <ElButton text @click="load">重试</ElButton>
     </p>
     <div class="master-card">
       <div class="master-scroll">
-        <table class="business-table">
-          <thead>
-            <tr>
-              <th v-for="key in columns" :key="key">{{ fields[key] }}</th>
-              <th class="master-action">操作</th>
-            </tr>
-            <tr v-if="filterOpen">
-              <th v-for="key in columns" :key="key">
-                <ElInput v-model="filters[key]" clearable :placeholder="`筛选${fields[key]}`" />
-              </th>
-              <th class="master-action" />
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in visible" :key="row.id">
-              <td v-for="key in columns" :key="key">
-                <ElTag v-if="key === 'enabled'" :type="row.enabled ? 'success' : 'info'">{{
-                  display(row, key)
-                }}</ElTag
-                ><span v-else>{{ display(row, key) }}</span>
-              </td>
-              <td class="master-action">
-                <ElButton
-                  v-if="auth.can(inventoryMenu(kind), '编辑')"
-                  link
-                  type="primary"
-                  @click="edit(row)"
-                  >编辑</ElButton
-                >
-                <ElButton v-if="kind === 'warehouses'" link type="primary" @click="openBins(row)"
-                  >库位</ElButton
-                >
-              </td>
-            </tr>
-            <tr v-if="!visible.length">
-              <td :colspan="columns.length + 1" class="master-empty">
-                {{ loading ? '正在加载…' : error ? '加载失败，请重试' : '暂无数据' }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <AppBusinessTable
+          :rows="visible"
+          :pagination="false"
+          :fill="true"
+          :framed="false"
+          class="business-table"
+          ><!-- @vue-generic {TableColumnRow1} -->
+          <ElTableColumn
+            show-overflow-tooltip
+            v-for="key in columns"
+            :min-width="150"
+            :prop="String(key)"
+            :key="String(key)"
+            ><template #header
+              ><div class="table-header-label">{{ fields[key] }}</div>
+              <div v-if="filterOpen" class="table-column-filter" @click.stop>
+                <ElInput
+                  v-model="filters[key]"
+                  clearable
+                  :placeholder="`筛选${fields[key]}`"
+                /></div></template
+            ><template #default="{ row: row, $index: tableRowIndex }">
+              <ElTag v-if="key === 'enabled'" :type="row.enabled ? 'success' : 'info'">{{
+                display(row, key)
+              }}</ElTag
+              ><span v-else>{{ display(row, key) }}</span>
+            </template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow1} -->
+          <ElTableColumn
+            class-name="master-action"
+            fixed="right"
+            :width="170"
+            :min-width="156"
+            :resizable="false"
+            ><template #header><div class="table-header-label">操作</div></template
+            ><template #default="{ row: row, $index: tableRowIndex }">
+              <ElButton
+                v-if="auth.can(inventoryMenu(kind), '编辑')"
+                link
+                type="primary"
+                @click="edit(row)"
+                >编辑</ElButton
+              >
+              <ElButton v-if="kind === 'warehouses'" link type="primary" @click="openBins(row)"
+                >库位</ElButton
+              >
+            </template></ElTableColumn
+          ><template #empty
+            ><div v-if="!visible.length">
+              {{ loading ? '正在加载…' : error ? '加载失败，请重试' : '暂无数据' }}
+            </div></template
+          ></AppBusinessTable
+        >
       </div>
       <footer>
         <div class="master-paging">
@@ -394,8 +419,10 @@ watch(
           @toggle-columns="columnsOpen = !columnsOpen"
           @export="exportRows"
           ><template #columns
-            ><label v-for="(label, key) in fields" :key="key"
-              ><input v-model="columns" type="checkbox" :value="key" />{{ label }}</label
+            ><ElCheckboxGroup v-model="columns"
+              ><ElCheckbox v-for="(label, key) in fields" :key="key" :value="key">{{
+                label
+              }}</ElCheckbox></ElCheckboxGroup
             ></template
           ></ListToolbarIcons
         >
@@ -428,47 +455,59 @@ watch(
         maxlength="1000"
         style="margin-bottom: 12px"
       />
-      <table class="business-table">
-        <thead>
-          <tr>
-            <th>库位编码</th>
-            <th>库位名称</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="bin in binRows" :key="bin.id">
-            <td>{{ bin.code }}</td>
-            <td>{{ bin.name }}</td>
-            <td>{{ bin.enabled ? '启用' : '停用' }}</td>
-            <td>
-              <ElButton
-                v-if="auth.can('inventoryWarehouse', '编辑')"
-                link
-                type="primary"
-                @click="
-                  binEditing = bin;
-                  binName = bin.name;
-                  binCode = bin.code;
-                  binRemark = bin.remark;
-                "
-                >编辑</ElButton
-              ><ElButton
-                v-if="auth.can('inventoryWarehouse', '编辑')"
-                link
-                @click="
-                  inventoryApi
-                    .save('bins', { ...bin, enabled: !bin.enabled })
-                    .then(loadBins)
-                    .catch((e) => ElMessage.error(e.message))
-                "
-                >{{ bin.enabled ? '停用' : '启用' }}</ElButton
-              >
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <AppBusinessTable
+        :rows="binRows"
+        :pagination="false"
+        :fill="false"
+        :framed="false"
+        class="business-table"
+        ><!-- @vue-generic {TableColumnRow2} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">库位编码</div></template
+          ><template #default="{ row: bin, $index: tableRowIndex }">{{
+            bin.code
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow2} -->
+        <ElTableColumn :min-width="210"
+          ><template #header><div class="table-header-label">库位名称</div></template
+          ><template #default="{ row: bin, $index: tableRowIndex }">{{
+            bin.name
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow2} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">状态</div></template
+          ><template #default="{ row: bin, $index: tableRowIndex }">{{
+            bin.enabled ? '启用' : '停用'
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow2} -->
+        <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
+          ><template #header><div class="table-header-label">操作</div></template
+          ><template #default="{ row: bin, $index: tableRowIndex }">
+            <ElButton
+              v-if="auth.can('inventoryWarehouse', '编辑')"
+              link
+              type="primary"
+              @click="
+                binEditing = bin;
+                binName = bin.name;
+                binCode = bin.code;
+                binRemark = bin.remark;
+              "
+              >编辑</ElButton
+            ><ElButton
+              v-if="auth.can('inventoryWarehouse', '编辑')"
+              link
+              @click="
+                inventoryApi
+                  .save('bins', { ...bin, enabled: !bin.enabled })
+                  .then(loadBins)
+                  .catch((e) => ElMessage.error(e.message))
+              "
+              >{{ bin.enabled ? '停用' : '启用' }}</ElButton
+            >
+          </template></ElTableColumn
+        ></AppBusinessTable
+      >
       <template #footer
         ><div style="display: flex; gap: 12px; align-items: center; justify-content: space-between">
           <AppPagination
@@ -597,14 +636,9 @@ watch(
   </section>
 </template>
 <style scoped>
-.master-footer > span {
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
 .inventory-master-page {
   height: calc(100dvh - 54px);
-  padding: 12px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -612,15 +646,11 @@ watch(
   font-size: 13px;
   min-height: 0;
 }
-.master-toolbar,
 .master-search,
 .master-paging {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-.master-toolbar {
-  justify-content: space-between;
 }
 .master-card {
   flex: 1;
@@ -642,18 +672,6 @@ watch(
   min-width: 1000px;
   table-layout: fixed;
 }
-.master-card td,
-.master-card th {
-  height: 44px;
-  padding: 10px 14px;
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.master-card th {
-  font-weight: 600;
-}
 .master-action {
   position: sticky;
   right: 0;
@@ -662,7 +680,7 @@ watch(
   box-shadow: -1px 0 0 #e1e7ef;
   z-index: 1;
 }
-.master-card thead .master-action {
+.master-card :deep(thead .master-action) {
   background: #f5f7fa;
   z-index: 2;
 }
@@ -674,10 +692,6 @@ watch(
   justify-content: space-between;
   padding: 0 14px;
   border-top: 1px solid #e1e7ef;
-}
-.master-empty {
-  text-align: center;
-  color: var(--text-secondary);
 }
 .master-form {
   display: grid;
@@ -714,9 +728,6 @@ watch(
 @media (max-width: 850px) {
   .master-form {
     grid-template-columns: 1fr;
-  }
-  .master-toolbar {
-    flex-wrap: wrap;
   }
   .master-search {
     width: 100%;

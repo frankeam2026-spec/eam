@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './common/AppIcon.vue';
 import { computed, ref, onMounted } from 'vue';
 import { ElCheckbox, ElInput, ElSelect, ElOption, ElTreeSelect, ElButton } from 'element-plus';
 import { request } from '../api';
@@ -63,11 +64,23 @@ const departmentTree = computed(() => {
       .map((org) => ({
         id: org.id,
         label: org.name,
-        disabled: org.type !== '部门',
+        disabled: false,
         children: branch(org.id, new Set([...seen, org.id])),
       }));
   }
   return branch('');
+});
+const companyTree = computed(() => {
+  const companyIds = new Set(props.orgs.filter((o) => o.type !== '部门').map((o) => o.id));
+  const prune = (nodes: DepartmentNode[]): DepartmentNode[] =>
+    nodes.filter((n) => companyIds.has(n.id)).map((n) => ({ ...n, children: prune(n.children) }));
+  return prune(departmentTree.value);
+});
+const selectableDepartmentTree = computed(() => {
+  const departments = new Set(props.orgs.filter((o) => o.type === '部门').map((o) => o.id));
+  const mark = (nodes: DepartmentNode[]): DepartmentNode[] =>
+    nodes.map((n) => ({ ...n, disabled: !departments.has(n.id), children: mark(n.children) }));
+  return mark(departmentTree.value);
 });
 function toggleGroup(name: string) {
   collapsed.value = collapsed.value.includes(name)
@@ -124,11 +137,19 @@ function setScopes(key: string, values: DataScope[]) {
     values.includes('all') && !current.dataScopes.includes('all')
       ? (['all'] as DataScope[])
       : values.filter((scope) => scope !== 'all');
+  const latest = values.find((v) => !current.dataScopes.includes(v));
+  const exclusive = ['selected', 'companies', 'warehouse'];
+  const effective =
+    latest && exclusive.includes(latest)
+      ? dataScopes.filter((v) => !exclusive.includes(v) || v === latest)
+      : dataScopes;
   setGrant(key, {
     ...current,
-    dataScopes,
+    dataScopes: effective,
     orgIds:
-      dataScopes.includes('selected') || dataScopes.includes('warehouse') ? current.orgIds : [],
+      effective.some((v) => exclusive.includes(v)) && !(latest && exclusive.includes(latest))
+        ? current.orgIds
+        : [],
   });
 }
 function setDepartments(key: string, ids: string[]) {
@@ -159,14 +180,13 @@ function setDepartments(key: string, ids: string[]) {
           <tbody v-for="group in visibleGroups" :key="group.name">
             <tr class="permission-group-row">
               <td colspan="3">
-                <button
+                <ElButton
                   class="permission-group-toggle"
                   :aria-expanded="!isCollapsed(group.name)"
                   @click="toggleGroup(group.name)"
+                  ><span><AppIcon :name="isCollapsed(group.name) ? 'Right' : 'Down'" /></span
+                  >{{ group.name }}<small>{{ group.menus.length }} 个菜单</small></ElButton
                 >
-                  <span>{{ isCollapsed(group.name) ? '›' : '⌄' }}</span
-                  >{{ group.name }}<small>{{ group.menus.length }} 个菜单</small>
-                </button>
               </td>
             </tr>
             <tr
@@ -206,7 +226,7 @@ function setDepartments(key: string, ids: string[]) {
                 >
                   {{
                     ['base', 'maintenanceType', 'inspectionType', 'location'].includes(menu.key)
-                      ? '集团统一维护'
+                      ? '统一维护'
                       : scopeLabel(menu.scopes[0]!, menu.key)
                   }}
                 </span>
@@ -241,9 +261,24 @@ function setDepartments(key: string, ids: string[]) {
                   >{{ warehouseError }}</span
                 >
                 <ElTreeSelect
+                  v-if="grant(menu.key).dataScopes.includes('companies')"
+                  :data="companyTree"
+                  node-key="id"
+                  :model-value="grant(menu.key).orgIds"
+                  multiple
+                  show-checkbox
+                  check-strictly
+                  default-expand-all
+                  filterable
+                  :render-after-expand="false"
+                  placeholder="选择指定公司（不含子公司）"
+                  :aria-label="`${menu.name}指定公司`"
+                  @update:model-value="setDepartments(menu.key, $event)"
+                />
+                <ElTreeSelect
                   v-if="grant(menu.key).dataScopes.includes('selected')"
                   class="permission-departments"
-                  :data="departmentTree"
+                  :data="selectableDepartmentTree"
                   node-key="id"
                   :model-value="grant(menu.key).orgIds"
                   multiple
@@ -305,8 +340,6 @@ function setDepartments(key: string, ids: string[]) {
   min-height: 42px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 14px;
   border-bottom: 1px solid #e7ebf1;
 }
 .permission-matrix-head strong {
@@ -337,14 +370,9 @@ function setDepartments(key: string, ids: string[]) {
 .permission-matrix th:first-child {
   width: 130px;
 }
-.permission-matrix th:nth-child(2) {
-  width: 40%;
-}
 .permission-matrix td {
   height: auto;
-  padding: 12px 14px;
   border-bottom: 1px solid #edf0f5;
-  vertical-align: top;
   color: var(--text);
   font-size: 13px;
   white-space: normal;

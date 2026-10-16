@@ -1,0 +1,55 @@
+package com.windasoft.eam.dto.equipment;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.validation.constraints.*;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+
+public record EquipmentForm(
+    @Size(max = 32, message = "设备编号不能超过32个字符") String code,
+    @NotBlank(message = "设备名称必填") String name,
+    String category,
+    String model,
+    String serial,
+    String company,
+    String department,
+    String owner,
+    String brand,
+    @NotBlank(message = "设备状态必选") String state,
+    String useState,
+    String source,
+    LocalDate acquiredAt,
+    BigDecimal amount,
+    LocalDate warranty,
+    String remark,
+    String assetNo,
+    String tagCode,
+    String supplier,
+    String unit,
+    LocalDate purchaseDate,
+    LocalDate inServiceDate,
+    LocalDate retirementDate,
+    String level,
+    String functionLocation,
+    String specialEquipment,
+    String metrologyEquipment,
+    String depreciationEnabled,
+    String technicalParams,
+    String imageName,
+    String imageFileId,
+    JsonNode images,
+    JsonNode documents,
+    JsonNode children,
+    JsonNode relatedSpares,
+    LocalDate calibrationDate,
+    LocalDate calibrationValidUntil,
+    @Size(max = 100) String inspectorName,
+    @jakarta.validation.constraints.NotNull(message = "请选择所属部门") Long departmentOrgId,
+    @jakarta.validation.constraints.NotNull(message = "位置必选") Long locationId,
+    @jakarta.validation.constraints.NotNull(message = "请选择设备类别") Long categoryId,
+    @jakarta.validation.constraints.NotNull(message = "请选择单位") Long unitId,
+    @jakarta.validation.constraints.NotNull(message = "请选择使用状态") Long useStateId,
+    Long sourceId,
+    Long ownerId,
+    @Size(max = 50, message = "负责人最多选择50人") List<Long> ownerIds) {}

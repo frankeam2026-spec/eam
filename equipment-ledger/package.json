@@ -9,11 +9,18 @@
     "preview": "vite preview --host 0.0.0.0",
     "format": "prettier --write \"src/**/*.{vue,ts,css}\" *.json vite.config.ts",
     "format:check": "prettier --check \"src/**/*.{vue,ts,css}\" *.json vite.config.ts",
-    "typecheck": "vue-tsc -b"
+    "typecheck": "vue-tsc -b",
+    "check:icons": "node scripts/check-icons.mjs",
+    "check:tables": "node scripts/check-business-tables.mjs",
+    "check:controls": "node scripts/check-ui-controls.mjs"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "2.3.2",
+    "@icon-park/vue-next": "1.4.2",
     "@vitejs/plugin-vue": "5.2.4",
+    "echarts": "6.1.0",
     "element-plus": "2.14.7",
+    "pdfjs-dist": "5.4.296",
     "pinia": "3.0.4",
     "typescript": "5.8.3",
     "vite": "6.4.4",

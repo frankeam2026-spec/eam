@@ -61,7 +61,7 @@ for n,actor in enumerate(['warehouse','warehouse2','owner','noMoney','outsider',
         orgs=[] if scopes==['all'] else [995002 if actor=='outsider' else 995001]
         setup+=f"INSERT INTO eam_sys_role_menu_permission(id,tenant_id,role_id,menu_key,actions_json,data_scopes_json,org_ids_json) VALUES({995400+n*30+j},10001,{rid},'{menu}','{json.dumps(actions,ensure_ascii=False)}','{json.dumps(scopes)}','{json.dumps(orgs)}');"
 setup+="""
-INSERT INTO eam_repair_order(id,tenant_id,order_no,equipment_code,equipment_name,fault_at,fault_type,description,reporter,status,department_org_id,reporter_user_id,assignee_user_id) VALUES(995501,10001,'QA-WX-1','EQ-2026-0001','QA 设备',NOW(),'QA 故障','QA 出库验证','QA owner','处理中',71003,995103,995103),(995502,10001,'QA-WX-2','EQ-2026-0001','QA 设备',NOW(),'QA 故障','QA 合并验证','QA owner','处理中',71003,995103,995103);
+INSERT INTO eam_repair_order(id,tenant_id,order_no,equipment_code,equipment_name,reported_at,fault_type,description,reporter,status,department_org_id,reporter_user_id,assignee_user_id) VALUES(995501,10001,'QA-WX-1','EQ-2026-0001','QA 设备',NOW(),'QA 故障','QA 出库验证','QA owner','处理中',71003,995103,995103),(995502,10001,'QA-WX-2','EQ-2026-0001','QA 设备',NOW(),'QA 故障','QA 合并验证','QA owner','处理中',71003,995103,995103);
 """
 sql(setup)
 

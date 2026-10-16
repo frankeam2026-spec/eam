@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import * as api from '../api';
+import { useUiStore } from './ui';
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<api.CurrentUser | null>(null);
@@ -17,6 +18,7 @@ export const useAuthStore = defineStore('auth', () => {
     return grantedActions.value[menu]?.includes(action) === true;
   }
   function expire() {
+    useUiStore().resetUser();
     user.value = null;
     grantedActions.value = {};
     authState.value = 'login';
@@ -33,8 +35,10 @@ export const useAuthStore = defineStore('auth', () => {
         user.value = result.data;
         grantedActions.value = result.permissions || {};
         developmentMode.value = !!result.developmentMode;
+        await useUiStore().bindUser(result.data.tenantId, result.data.id);
         authState.value = 'ready';
       } catch (error) {
+        useUiStore().resetUser();
         user.value = null;
         grantedActions.value = {};
         authState.value =

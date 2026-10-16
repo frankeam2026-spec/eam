@@ -11,7 +11,20 @@ case "${1:-}" in
     ;;
   backend)
     cd "$PROJECT_DIR/backend"
-    exec "$JAVA_HOME/bin/java" -jar target/equipment-ledger-api-0.1.0.jar --spring.profiles.active=local-dev
+    BACKEND_SOURCE_JAR="$PROJECT_DIR/backend/target/equipment-ledger-api-0.1.0.jar"
+    if [[ ! -f "$BACKEND_SOURCE_JAR" ]]; then
+      echo '缺少后端构建产物，请先完成 Maven package。' >&2
+      exit 1
+    fi
+    # Spring Boot loads nested classes lazily. Never run a JAR that Maven may overwrite.
+    mkdir -p "$RUNTIME_DIR/backend-runs"
+    BACKEND_RUN_DIR="$(mktemp -d "$RUNTIME_DIR/backend-runs/run.XXXXXX")"
+    cp "$BACKEND_SOURCE_JAR" "$BACKEND_RUN_DIR/equipment-ledger-api.jar"
+    if ! unzip -t "$BACKEND_RUN_DIR/equipment-ledger-api.jar" > "$BACKEND_RUN_DIR/archive-check.log" 2>&1; then
+      echo '后端构建产物不完整，请等待构建结束后重试。' >&2
+      exit 1
+    fi
+    exec "$JAVA_HOME/bin/java" -jar "$BACKEND_RUN_DIR/equipment-ledger-api.jar" --spring.profiles.active=local-dev
     ;;
   frontend)
     cd "$PROJECT_DIR"

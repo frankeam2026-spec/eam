@@ -23,6 +23,7 @@ async function close(done: () => void) {
     :title="title"
     :width="width"
     class="eam-dialog"
+    align-center
     append-to-body
     :close-on-click-modal="false"
     :close-on-press-escape="false"
@@ -33,3 +34,29 @@ async function close(done: () => void) {
     ><slot /><template v-if="$slots.footer" #footer><slot name="footer" /></template
   ></ElDialog>
 </template>
+
+<style>
+.eam-dialog {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+.eam-dialog .el-dialog__header,
+.eam-dialog .el-dialog__footer {
+  flex: none;
+}
+.eam-dialog .el-dialog__body {
+  min-height: 0;
+  overflow: auto;
+}
+.eam-dialog .el-dialog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+}
+.eam-dialog .el-dialog__footer .el-button + .el-button {
+  margin-left: 0;
+}
+</style>

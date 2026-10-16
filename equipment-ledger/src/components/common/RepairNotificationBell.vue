@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { ElButton, ElBadge } from 'element-plus';
+import 'element-plus/es/components/badge/style/css';
+
+import AppIcon from './AppIcon.vue';
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElPopover, ElMessage } from 'element-plus';
@@ -99,66 +103,54 @@ onUnmounted(() => {
       popper-class="eam-notification-popover"
       @update:visible="(value) => (value ? show(channel) : visible === channel && (visible = ''))"
     >
-      <template #reference
-        ><button
+      <template #reference>
+        <ElButton
           class="inbox-tool"
+          circle
           :aria-label="channel === 'todo' ? '待办' : '提醒'"
           :title="channel === 'todo' ? '需要我处理的事项' : '需要我知道的消息'"
         >
-          <svg
-            v-if="channel === 'notification'"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
+          <ElBadge
+            class="inbox-count"
+            :value="channel === 'todo' ? inbox.summary.counts.pending : inbox.summary.counts.unread"
+            :max="99"
+            :show-zero="false"
           >
-            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9 20h6" />
-          </svg>
-          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-            <rect x="5" y="4" width="15" height="17" rx="2" />
-            <path d="M9 4V2h7v4H9M8 10l2 2 3-3M14 11h3M8 16l2 2 3-3M14 17h3" />
-          </svg>
-          <b
-            v-if="
-              (channel === 'todo' ? inbox.summary.counts.pending : inbox.summary.counts.unread) > 0
-            "
-            >{{
-              Math.min(
-                99,
-                channel === 'todo' ? inbox.summary.counts.pending : inbox.summary.counts.unread,
-              )
-            }}{{
-              (channel === 'todo' ? inbox.summary.counts.pending : inbox.summary.counts.unread) > 99
-                ? '+'
-                : ''
-            }}</b
-          >
-        </button></template
-      >
+            <AppIcon :name="channel === 'notification' ? 'Remind' : 'Todo'" />
+          </ElBadge>
+        </ElButton>
+      </template>
       <div class="notification-title">
         <strong>{{ channel === 'todo' ? '待办' : '提醒' }}</strong
-        ><button v-if="channel === 'notification' && inbox.summary.counts.unread" @click="readAll">
-          全部已读</button
-        ><button @click="center(channel)">查看全部</button>
+        ><ElButton
+          v-if="channel === 'notification' && inbox.summary.counts.unread"
+          @click="readAll"
+        >
+          全部已读</ElButton
+        ><ElButton @click="center(channel)">查看全部</ElButton>
       </div>
       <div class="notification-items">
         <p v-if="busy">加载中…</p>
         <p v-else-if="error" role="alert">{{ error }}</p>
-        <button v-for="item in rows" v-else :key="item.module + ':' + item.id" @click="open(item)">
-          <div class="notification-row-head">
+        <ElButton
+          v-for="item in rows"
+          v-else
+          :key="item.module + ':' + item.id"
+          @click="open(item)"
+          class="app-content-button"
+          ><div class="notification-row-head">
             <i v-if="channel === 'notification' && !Number(item.isRead)" class="unread-dot"></i
             ><b>{{ inbox.moduleName(item.module) }} · {{ item.kind }}</b
             ><span v-if="channel === 'todo'" class="task-action"
-              >{{ inbox.actionName(item) }} ›</span
-            >
+              >{{ inbox.actionName(item) }} <AppIcon name="Right"
+            /></span>
           </div>
           <span v-if="channel === 'notification'"
             >{{ item.title
             }}<template v-if="!item.title.includes(item.kind)"> · {{ item.kind }}</template></span
-          >
-          <span v-else>{{ item.orderNo }} · {{ item.equipmentName }}</span
-          ><small>{{ formatDateTime(item.time) }}</small>
-        </button>
+          ><span v-else>{{ item.orderNo }} · {{ item.equipmentName }}</span
+          ><small>{{ formatDateTime(item.time) }}</small></ElButton
+        >
         <p v-if="!busy && !error && !rows.length">
           {{ channel === 'todo' ? '当前没有待办事项' : '暂无提醒' }}
         </p>
@@ -170,15 +162,20 @@ onUnmounted(() => {
 .work-inbox-tools {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 .inbox-tool {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 0 8px;
+  width: 36px;
+  padding: 0;
   height: 34px;
+  --el-button-text-color: currentColor;
+  --el-button-hover-text-color: currentColor;
+  --el-button-hover-bg-color: #ffffff20;
+  --el-fill-color-light: #ffffff20;
+  --el-fill-color: #ffffff30;
   border: 0;
   border-radius: 4px;
   background: transparent;
@@ -189,21 +186,19 @@ onUnmounted(() => {
 .inbox-tool:hover {
   background: #ffffff20;
 }
-.inbox-tool svg {
+.inbox-tool .app-icon {
   width: 20px;
   height: 20px;
 }
-.inbox-tool > b {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  min-width: 16px;
-  padding: 1px 4px;
-  background: #ef5369;
-  color: #fff;
-  border-radius: 10px;
-  font-size: 10px;
-  line-height: 14px;
+.inbox-count {
+  --el-badge-size: 16px;
+  --el-badge-font-size: 10px;
+  --el-badge-padding: 4px;
+  display: flex;
+  align-items: center;
+}
+.inbox-count :deep(.el-badge__content) {
+  border-color: var(--brand);
 }
 .notification-title {
   display: flex;
@@ -228,6 +223,11 @@ onUnmounted(() => {
   overflow: auto;
 }
 .notification-items > button {
+  height: auto;
+  min-height: 76px;
+  margin-left: 0;
+  white-space: normal;
+  align-items: flex-start;
   display: flex;
   flex-direction: column;
   width: 100%;

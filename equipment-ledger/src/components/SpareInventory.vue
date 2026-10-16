@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { ElTableColumn } from 'element-plus';
+import { ElButton, ElInput, ElCheckboxGroup, ElCheckbox } from 'element-plus';
+
+import AppBusinessTable from './common/AppBusinessTable.vue';
 import AppDecimalInput from './common/AppDecimalInput.vue';
 import { formatNumber } from '../utils/number';
 import { computed, onMounted, ref } from 'vue';
@@ -84,20 +88,24 @@ function exportRows() {
   URL.revokeObjectURL(url);
 }
 onMounted(load);
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => pageRows.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 <template>
   <section class="inventory-page">
     <div class="inventory-toolbar">
-      <button
+      <ElButton
         v-if="auth.can('inventory', '入库')"
-        class="btn primary"
+        class=""
         @click="
           form = { code: '', name: '', model: '', quantity: 1 };
           open = true;
         "
+        type="primary"
       >
         新增入库
-      </button>
+      </ElButton>
       <div>
         <ListToolbarIcons
           mode="filter"
@@ -107,47 +115,54 @@ onMounted(load);
           @toggle-filter="filtersOpen = !filtersOpen"
           @toggle-columns="columnsOpen = !columnsOpen"
           @export="exportRows"
-        /><ListSearchInput v-model="query" placeholder="搜索备件编号、名称、型号" /><button
+        /><ListSearchInput v-model="query" placeholder="搜索备件编号、名称、型号" /><ElButton
           class="text-action"
           @click="
             query = '';
             filters = {};
             load();
           "
+          type="primary"
+          link
         >
           重置
-        </button>
+        </ElButton>
       </div>
     </div>
     <p v-if="error" class="error">{{ error }}</p>
     <div class="inventory-card">
       <div class="inventory-scroll">
-        <table class="business-table">
-          <thead>
-            <tr>
-              <th v-for="key in columns" :key="key">{{ labels[key] }}</th>
-            </tr>
-            <tr v-if="filtersOpen">
-              <th v-for="key in columns" :key="key">
-                <input v-model="filters[key]" :placeholder="`筛选${labels[key]}`" />
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in pageRows" :key="row.id">
-              <td v-for="key in columns" :key="key">
-                {{
-                  key === 'quantity'
-                    ? formatNumber(row[key as keyof api.StockRow])
-                    : row[key as keyof api.StockRow]
-                }}
-              </td>
-            </tr>
-            <tr v-if="!pageRows.length">
-              <td :colspan="columns.length" class="empty">暂无库存备件</td>
-            </tr>
-          </tbody>
-        </table>
+        <AppBusinessTable
+          :rows="pageRows"
+          :pagination="false"
+          :fill="true"
+          :framed="false"
+          class="business-table"
+          ><!-- @vue-generic {TableColumnRow1} -->
+          <ElTableColumn
+            show-overflow-tooltip
+            v-for="key in columns"
+            :min-width="150"
+            :prop="String(key)"
+            :key="String(key)"
+            ><template #header
+              ><div class="table-header-label">{{ labels[key] }}</div>
+              <div v-if="filtersOpen" class="table-column-filter" @click.stop>
+                <ElInput
+                  v-model="filters[key]"
+                  :placeholder="`筛选${labels[key]}`"
+                /></div></template
+            ><template #default="{ row: row, $index: tableRowIndex }">
+              {{
+                key === 'quantity'
+                  ? formatNumber(row[key as keyof api.StockRow])
+                  : row[key as keyof api.StockRow]
+              }}
+            </template></ElTableColumn
+          ><template #empty
+            ><div v-if="!pageRows.length">暂无库存备件</div></template
+          ></AppBusinessTable
+        >
       </div>
       <footer>
         <span>共 {{ filtered.length }} 条</span
@@ -161,8 +176,10 @@ onMounted(load);
           @toggle-columns="columnsOpen = !columnsOpen"
           @export="exportRows"
           ><template #columns
-            ><label v-for="(label, key) in labels" :key="key"
-              ><input v-model="columns" type="checkbox" :value="key" />{{ label }}</label
+            ><ElCheckboxGroup v-model="columns"
+              ><ElCheckbox v-for="(label, key) in labels" :key="key" :value="key">{{
+                label
+              }}</ElCheckbox></ElCheckboxGroup
             ></template
           ></ListToolbarIcons
         >
@@ -172,13 +189,13 @@ onMounted(load);
       ><div class="stock-form">
         <label
           ><span>备件编号 *</span
-          ><input v-model="form.code" maxlength="64" placeholder="输入备件编号" /></label
+          ><ElInput v-model="form.code" maxlength="64" placeholder="输入备件编号" /></label
         ><label
           ><span>备件名称 *</span
-          ><input v-model="form.name" maxlength="100" placeholder="输入备件名称" /></label
+          ><ElInput v-model="form.name" maxlength="100" placeholder="输入备件名称" /></label
         ><label
           ><span>规格型号</span
-          ><input v-model="form.model" maxlength="200" placeholder="输入规格型号" /></label
+          ><ElInput v-model="form.model" maxlength="200" placeholder="输入规格型号" /></label
         ><label
           ><span>入库数量 *</span
           ><AppDecimalInput
@@ -187,8 +204,8 @@ onMounted(load);
         /></label>
       </div>
       <template #footer
-        ><button class="btn secondary" :disabled="busy" @click="open = false">取消</button
-        ><button class="btn primary" :disabled="busy" @click="save">入库</button></template
+        ><ElButton class="" :disabled="busy" @click="open = false">取消</ElButton
+        ><ElButton class="" :disabled="busy" @click="save" type="primary">入库</ElButton></template
       ></AppDialog
     >
   </section>
@@ -238,15 +255,6 @@ onMounted(load);
   min-width: 600px;
   table-layout: fixed;
 }
-.inventory-card th,
-.inventory-card td {
-  font-size: 13px;
-  padding: 12px 16px;
-  height: 44px;
-}
-.inventory-card th {
-  background: #f5f7fa;
-}
 .inventory-card footer {
   height: 46px;
   flex-shrink: 0;
@@ -281,15 +289,6 @@ onMounted(load);
   width: 90px;
   text-align: right;
   color: #64748b;
-}
-.stock-form input,
-.inventory-card th input {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid #d8e1ed;
-  border-radius: 4px;
-  font: inherit;
-  padding: 8px 10px;
 }
 .error {
   color: #d74343;

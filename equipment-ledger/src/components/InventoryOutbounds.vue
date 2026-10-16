@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import AppListToolbar from './common/AppListToolbar.vue';
+import { ElTableColumn } from 'element-plus';
+import { ElCheckbox } from 'element-plus';
+
+import AppBusinessTable from './common/AppBusinessTable.vue';
+const vLoading = ElLoading.directive;
+import AppIcon from './common/AppIcon.vue';
 import MaterialPicker from './common/MaterialPicker.vue';
 import type { InventoryMaster } from '../inventory';
 import AppDecimalInput from './common/AppDecimalInput.vue';
@@ -8,6 +15,7 @@ import { formatNumber } from '../utils/number';
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
+  ElLoading,
   ElButton,
   ElInput,
   ElSelect,
@@ -23,11 +31,13 @@ import AppBackButton from './common/AppBackButton.vue';
 import AppFormFooter from './common/AppFormFooter.vue';
 import AppPagination from './common/AppPagination.vue';
 import AppDialog from './common/AppDialog.vue';
+import OutboundPrintDialog from './common/OutboundPrintDialog.vue';
 import RowMoreActions from './common/RowMoreActions.vue';
 import TreeSelect from './TreeSelect.vue';
 import ListSearchInput from './common/ListSearchInput.vue';
 import ListToolbarIcons from './ListToolbarIcons.vue';
-import AdvancedFilterDrawer from './common/AdvancedFilterDrawer.vue';
+import FilterConditionPopover from './common/FilterConditionPopover.vue';
+import { useConditionPopover } from '../composables/useConditionPopover';
 import AppliedFilterChips from './common/AppliedFilterChips.vue';
 import type { FilterCondition, FilterField } from '../query/advancedFilters';
 import { formatDateTime } from '../utils/dateTime';
@@ -171,6 +181,12 @@ const busy = ref(false),
 const editing = computed(() => !!route.params.id),
   pending = computed(() => route.query.tab === 'pending');
 const can = (action: string) => auth.can('inventoryOutbound', action);
+const printOpen = ref(false),
+  printTarget = ref({ id: '', code: '' });
+function openPrint(item: { id: string; code?: string }) {
+  printTarget.value = { id: item.id, code: item.code || '' };
+  printOpen.value = true;
+}
 const direct = computed(() => form.value.sourceKind === '直接出库');
 const writable = computed(
   () =>
@@ -183,13 +199,11 @@ const guard = useUnsavedChanges(
   () => busy.value,
 );
 const q = ref(String(route.query.q || '')),
-  filters = ref<Record<string, string>>({}),
   conditions = ref<FilterCondition[]>([]),
   page = ref(1),
   size = ref(10),
   total = ref(0),
   columnsOpen = ref(false),
-  filterOpen = ref(false),
   drawerOpen = ref(false);
 const warehouse = computed(() =>
   choices.value.warehouses.find((w) => w.id === form.value.warehouseId),
@@ -364,7 +378,6 @@ async function load() {
       const endpoint = pending.value ? '/inventory/outbounds/pending' : '/inventory/outbounds';
       const params = new URLSearchParams({
         q: q.value,
-        filters: JSON.stringify(filters.value),
         conditions: JSON.stringify(conditions.value),
         page: String(page.value),
         size: String(size.value),
@@ -390,7 +403,6 @@ async function search() {
     query: {
       tab: pending.value ? 'pending' : 'documents',
       q: q.value,
-      filters: JSON.stringify(filters.value),
       conditions: JSON.stringify(conditions.value),
       page: String(page.value),
       size: String(size.value),
@@ -400,12 +412,10 @@ async function search() {
 }
 function reset() {
   q.value = '';
-  filters.value = {};
   conditions.value = [];
   search();
 }
 function switchTab(tab: string) {
-  filters.value = {};
   conditions.value = [];
   page.value = 1;
   router.push({ name: 'inventory-outbounds', query: { tab } });
@@ -717,7 +727,6 @@ async function exportRows() {
   try {
     const params = new URLSearchParams({
       q: q.value,
-      filters: JSON.stringify(filters.value),
       conditions: JSON.stringify(conditions.value),
     });
     const result = await request<{ data: (Outbound | Pending)[] }>(
@@ -767,12 +776,18 @@ watch(
     if (!editing.value) {
       try {
         q.value = String(route.query.q || '');
-        filters.value = JSON.parse(String(route.query.filters || '{}'));
         conditions.value = JSON.parse(String(route.query.conditions || '[]'));
+        const legacy: Record<string, string> = JSON.parse(String(route.query.filters || '{}'));
+        const appliedFields = new Set(conditions.value.map((c) => c.field));
+        conditions.value.push(
+          ...Object.entries(legacy)
+            .filter(([field, value]) => value && !appliedFields.has(field))
+            .map(([field, value]) => ({ field, operator: 'contains' as const, values: [value] })),
+        );
+
         page.value = Number(route.query.page || 1);
         size.value = Number(route.query.size || 10);
       } catch {
-        filters.value = {};
         conditions.value = [];
       }
       restoreColumns();
@@ -787,6 +802,36 @@ watch([page, size], () => {
       query: { ...route.query, page: String(page.value), size: String(size.value) },
     });
 });
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => rows.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows2 = () => form.value.lines;
+type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows3 = () => form.value.allocations;
+type TableColumnRow3 = NonNullable<ReturnType<typeof tableColumnRows3>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows4 = () =>
+  picking.value ? preview.value?.pickingSummary : preview.value?.allocations;
+type TableColumnRow4 = NonNullable<ReturnType<typeof tableColumnRows4>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows5 = () => stockRows.value;
+type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
+const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter } =
+  useConditionPopover(
+    drawerOpen,
+    () => conditions.value,
+    (value) => {
+      conditions.value = value;
+      selected.value = [];
+      search();
+    },
+  );
 </script>
 
 <template>
@@ -803,10 +848,10 @@ watch([page, size], () => {
         ]"
         @select="switchTab"
       />
-      <div class="outbound-toolbar">
+      <AppListToolbar class="outbound-toolbar">
         <div class="outbound-actions">
           <ElButton type="primary" v-if="can('新增直接出库')" title="新增出库单" @click="newDirect"
-            >＋ 新增</ElButton
+            ><AppIcon name="Plus" /> 新增</ElButton
           ><ElButton
             v-if="pending && can('确认出库')"
             :disabled="!selected.length"
@@ -815,131 +860,104 @@ watch([page, size], () => {
           >
         </div>
         <form class="outbound-query" @submit.prevent="search">
-          <ListToolbarIcons
-            mode="filter"
-            :filter-open="filterOpen"
-            :columns-open="false"
-            @toggle-filter="filterOpen = !filterOpen"
-          /><ListSearchInput
+          <ListSearchInput
             v-model="q"
             :placeholder="
               pending ? '搜索申请、任务、申请人、仓库' : '搜索出库单、领用人、任务、仓库'
             "
-          /><ElButton @click="drawerOpen = true"
-            >筛选器<span v-if="conditions.length">（{{ conditions.length }}）</span></ElButton
+          /><ElButton @click="showFilter($event.currentTarget as HTMLElement)"
+            >添加筛选<span v-if="conditions.length">（{{ conditions.length }}）</span></ElButton
           ><ElButton text @click="reset">重置</ElButton>
         </form>
-      </div>
+      </AppListToolbar>
       <AppliedFilterChips
+        editable
+        @edit="(condition, anchor) => showFilter(anchor, condition.field)"
         :conditions="conditions"
         :fields="filterFields"
-        @change="
-          conditions = $event;
-          search();
-        "
+        @change="replaceFilters"
       />
       <div class="outbound-list">
         <div class="outbound-table-scroll">
-          <table class="business-table outbound-table">
-            <thead>
-              <tr>
-                <th v-if="pending" class="select-cell">
-                  <input
-                    type="checkbox"
-                    aria-label="选择本页"
-                    :checked="!!rows.length && selected.length === rows.length"
-                    @change="
-                      selected = ($event.target as HTMLInputElement).checked
-                        ? rows.map((r) => r.id)
-                        : []
-                    "
-                  />
-                </th>
-                <th
-                  v-for="key in columns"
-                  :key="key"
-                  :class="{
-                    numeric: ['totalQuantity', 'totalAmount', 'remainingQuantity'].includes(key),
-                  }"
-                >
+          <AppBusinessTable
+            v-model:selection-ids="selected"
+            :selection-width="48"
+            selection-fixed="left"
+            selection-align="center"
+            :selectable="pending"
+            :rows="rows"
+            :pagination="false"
+            :fill="true"
+            :framed="false"
+            class="business-table outbound-table"
+            ><!-- @vue-generic {TableColumnRow1} -->
+            <ElTableColumn
+              show-overflow-tooltip
+              v-for="key in columns"
+              :min-width="150"
+              :prop="String(key)"
+              :key="String(key)"
+              ><template #header
+                ><div class="table-header-label">
                   {{ fields[key] }}
-                </th>
-                <th class="outbound-operation">操作</th>
-              </tr>
-              <tr v-if="filterOpen">
-                <th v-if="pending"></th>
-                <th v-for="key in columns" :key="key">
-                  <ElInput
-                    v-model="filters[key]"
-                    clearable
-                    :placeholder="fields[key]"
-                    @change="search"
-                  />
-                </th>
-                <th class="outbound-operation"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in rows" :key="r.id">
-                <td v-if="pending" class="select-cell">
-                  <input
-                    type="checkbox"
-                    :checked="selected.includes(r.id)"
-                    :aria-label="`选择${r.code}`"
-                    @change="select(r.id, ($event.target as HTMLInputElement).checked)"
-                  />
-                </td>
-                <td
-                  v-for="key in columns"
-                  :key="key"
-                  :class="{
-                    numeric: ['totalQuantity', 'totalAmount', 'remainingQuantity'].includes(key),
-                  }"
-                >
-                  <ElButton
-                    v-if="key === 'code'"
+                </div> </template
+              ><template #default="{ row: r, $index: tableRowIndex }">
+                <ElButton
+                  v-if="key === 'code'"
+                  link
+                  type="primary"
+                  @click="
+                    pending ? router.push(`/inventory/requisitions/${r.id}`) : openDocument(r.id)
+                  "
+                  >{{ r.code }}</ElButton
+                ><ElTag v-else-if="key === 'status'" :type="tone(r.status)">{{ r.status }}</ElTag
+                ><span v-else>{{ display(r, key) }}</span>
+              </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow1} -->
+            <ElTableColumn
+              class-name="outbound-operation"
+              fixed="right"
+              :width="170"
+              :min-width="156"
+              :resizable="false"
+              ><template #header><div class="table-header-label">操作</div></template
+              ><template #default="{ row: r, $index: tableRowIndex }">
+                <template v-if="pending"
+                  ><ElButton v-if="can('确认出库')" link type="primary" @click="issue([r.id])"
+                    >出库</ElButton
+                  ><ElButton
                     link
                     type="primary"
-                    @click="
-                      pending ? router.push(`/inventory/requisitions/${r.id}`) : openDocument(r.id)
-                    "
-                    >{{ r.code }}</ElButton
-                  ><ElTag v-else-if="key === 'status'" :type="tone(r.status)">{{ r.status }}</ElTag
-                  ><span v-else>{{ display(r, key) }}</span>
-                </td>
-                <td class="outbound-operation">
-                  <template v-if="pending"
-                    ><ElButton v-if="can('确认出库')" link type="primary" @click="issue([r.id])"
-                      >出库</ElButton
-                    ><ElButton
-                      link
-                      type="primary"
-                      @click="router.push(`/inventory/requisitions/${r.id}`)"
-                      >查看</ElButton
-                    ><RowMoreActions :actions="pendingActions(r as Pending)" /></template
-                  ><template v-else
-                    ><ElButton link type="primary" @click="openDocument(r.id)">查看</ElButton
-                    ><ElButton
-                      v-if="r.status === '草稿'"
-                      link
-                      type="primary"
-                      @click="openDocument(r.id)"
-                      >编辑</ElButton
-                    ></template
+                    @click="router.push(`/inventory/requisitions/${r.id}`)"
+                    >查看</ElButton
+                  ><RowMoreActions :actions="pendingActions(r as Pending)" /></template
+                ><template v-else
+                  ><ElButton link type="primary" @click="openDocument(r.id)">查看</ElButton
+                  ><ElButton
+                    v-if="r.status === '草稿' && can('编辑草稿')"
+                    link
+                    type="primary"
+                    @click="openDocument(r.id)"
+                    >编辑</ElButton
                   >
-                </td>
-              </tr>
-              <tr v-if="!rows.length">
-                <td :colspan="columns.length + (pending ? 2 : 1)" class="outbound-empty">
-                  {{
-                    q || conditions.length || Object.values(filters).some(Boolean)
-                      ? '当前筛选无结果'
-                      : '暂无数据'
-                  }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  <ElButton
+                    v-if="can('打印') && (r.status !== '草稿' || !can('编辑草稿'))"
+                    link
+                    type="primary"
+                    @click="openPrint(r)"
+                    >打印</ElButton
+                  >
+                  <RowMoreActions
+                    v-if="can('打印') && r.status === '草稿' && can('编辑草稿')"
+                    :actions="[{ label: '打印', run: () => openPrint(r) }]"
+                  />
+                </template> </template></ElTableColumn
+            ><template #empty
+              ><div v-if="!rows.length">
+                {{ q || conditions.length ? '当前筛选无结果' : '暂无数据' }}
+              </div></template
+            ></AppBusinessTable
+          >
         </div>
         <footer class="outbound-list-footer">
           <span>共 {{ total }} 条</span
@@ -955,45 +973,41 @@ watch([page, size], () => {
             @toggle-columns="columnsOpen = !columnsOpen"
             @export="exportRows"
             ><template #columns
-              ><label
+              ><ElCheckbox
                 v-for="(label, key) in orderedFields"
                 draggable="true"
                 @dragstart="columnDrag = String(key)"
                 @dragover.prevent
                 @drop.prevent="dropColumn(String(key))"
                 :key="key"
-                ><input
-                  type="checkbox"
-                  :checked="columns.includes(String(key))"
-                  @change="toggleColumn(String(key))"
-                />{{ label
+                :model-value="columns.includes(String(key))"
+                @change="toggleColumn(String(key))"
+                >{{ label
                 }}<ElButton
                   v-if="columns.includes(String(key))"
                   text
                   aria-label="上移列"
                   @click.prevent="moveColumn(String(key), -1)"
-                  >↑</ElButton
+                  ><AppIcon name="ArrowUp" /></ElButton
                 ><ElButton
                   v-if="columns.includes(String(key))"
                   text
                   aria-label="下移列"
                   @click.prevent="moveColumn(String(key), 1)"
-                  >↓</ElButton
-                ></label
+                  ><AppIcon name="ArrowDown" /></ElButton></ElCheckbox
               ><ElButton text @click="resetColumns">恢复默认</ElButton></template
             ></ListToolbarIcons
           >
         </footer>
       </div>
-      <AdvancedFilterDrawer
+      <FilterConditionPopover
+        :anchor="filterAnchor"
+        :field-key="editingFilter"
+        :placement="editingFilter ? 'bottom-start' : 'bottom-end'"
         v-model="drawerOpen"
         :fields="filterFields"
         :conditions="conditions"
-        @apply="
-          conditions = $event;
-          drawerOpen = false;
-          search();
-        "
+        @confirm="confirmFilter"
       />
     </template>
     <template v-else>
@@ -1005,6 +1019,14 @@ watch([page, size], () => {
           ><span>{{ form.sourceKind }}</span>
         </div>
         <div class="outbound-actions">
+          <ElButton
+            v-if="form.id && can('打印')"
+            :disabled="busy || guard.dirty.value"
+            :title="guard.dirty.value ? '请先保存后打印' : '打印出库单'"
+            @click="openPrint(form)"
+            >打印</ElButton
+          >
+
           <ElButton
             v-if="form.id && writable && can('删除草稿')"
             type="danger"
@@ -1131,175 +1153,208 @@ watch([page, size], () => {
           <section v-if="form.lines.length || writable" class="outbound-panel">
             <div class="outbound-section-heading">
               <h3>{{ writable ? '本次出库' : '出库明细' }}</h3>
-              <ElButton v-if="writable && direct" @click="addLine">＋ 新增行</ElButton>
+              <ElButton v-if="writable && direct" @click="addLine"
+                ><AppIcon name="Plus" /> 新增行</ElButton
+              >
             </div>
             <div class="outbound-line-scroll">
-              <table class="business-table outbound-line-table">
-                <thead>
-                  <tr>
-                    <th v-if="!direct">申请 / 任务</th>
-                    <th>料号</th>
-                    <th>物料名称</th>
-                    <th>单位</th>
-                    <th v-if="!direct" class="numeric">申请 / 已发</th>
-                    <th v-if="!direct" class="numeric">剩余 / 预留</th>
-                    <th class="numeric">本次数量</th>
-                    <th v-if="!direct">领用人</th>
-                    <th v-if="writable" class="outbound-operation">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(line, i) in form.lines" :key="line.id || i">
-                    <td v-if="!direct">
-                      <ElButton
-                        link
-                        type="primary"
-                        @click="router.push(`/inventory/requisitions/${line.requisitionId}`)"
-                        >{{ line.requisitionCode }}</ElButton
-                      >
-                      <div>
-                        <ElButton
-                          link
-                          type="primary"
-                          @click="taskLink(line.taskKind, line.taskId)"
-                          >{{ line.taskCode }}</ElButton
-                        >
-                      </div>
-                    </td>
-                    <td class="outbound-material-code">
-                      <ElButton
-                        v-if="writable && direct"
-                        text
-                        class="outbound-material-trigger"
-                        :disabled="!form.warehouseId"
-                        :title="form.warehouseId ? '选择物料' : '请先选择出库仓库'"
-                        :aria-label="`第 ${i + 1} 行料号选择`"
-                        @click="chooseMaterial(line)"
-                      >
-                        {{ line.materialCode || '选择料号'
-                        }}<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
-                          <circle
-                            cx="8.5"
-                            cy="8.5"
-                            r="5.5"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                          />
-                          <path
-                            d="m13 13 4 4"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                          />
-                        </svg>
-                      </ElButton>
-                      <span v-else>{{ line.materialCode }}</span>
-                    </td>
-                    <td>{{ line.materialName }}</td>
-                    <td>{{ line.unit }}</td>
-                    <td v-if="!direct" class="numeric">
-                      {{ number(line.requestedQuantity) }} / {{ number(line.issuedQuantity) }}
-                    </td>
-                    <td v-if="!direct" class="numeric">
-                      {{
-                        number(
-                          line.remainingQuantity ??
-                            Number(line.requestedQuantity) - Number(line.issuedQuantity),
-                        )
-                      }}
-                      / {{ number(line.reservedQuantity) }}
-                    </td>
-                    <td class="numeric">
-                      <AppDecimalInput
-                        v-if="writable"
-                        :model-value="line.quantity"
-                        :min="0"
-                        @update:model-value="
-                          line.quantity = String($event ?? 0);
-                          line.selections = [];
-                        "
-                      /><span v-else>{{ number(line.quantity) }}</span>
-                    </td>
-                    <td v-if="!direct">{{ line.recipientName }}</td>
-                    <td v-if="writable" class="outbound-operation">
-                      <ElButton link type="primary" @click="chooseStock(line)">{{
-                        line.selections.length ? '手动分配' : '自动分配'
-                      }}</ElButton
-                      ><ElButton v-if="direct" link type="danger" @click="form.lines.splice(i, 1)"
-                        >移除</ElButton
-                      >
-                    </td>
-                  </tr>
-                  <tr v-if="!form.lines.length">
-                    <td
-                      :colspan="direct ? (writable ? 5 : 4) : writable ? 9 : 8"
-                      class="outbound-empty"
+              <AppBusinessTable
+                :rows="form.lines"
+                :pagination="false"
+                :fill="false"
+                :framed="false"
+                class="business-table outbound-line-table"
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn v-if="!direct" :min-width="150"
+                  ><template #header><div class="table-header-label">申请 / 任务</div></template
+                  ><template #default="{ row: line, $index: i }">
+                    <ElButton
+                      link
+                      type="primary"
+                      @click="router.push(`/inventory/requisitions/${line.requisitionId}`)"
+                      >{{ line.requisitionCode }}</ElButton
                     >
-                      {{ writable && direct ? '点击新增行，在料号列选择物料' : '暂无出库明细' }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                    <div>
+                      <ElButton link type="primary" @click="taskLink(line.taskKind, line.taskId)">{{
+                        line.taskCode
+                      }}</ElButton>
+                    </div>
+                  </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="150" class-name="outbound-material-code"
+                  ><template #header><div class="table-header-label">料号</div></template
+                  ><template #default="{ row: line, $index: i }">
+                    <ElButton
+                      v-if="writable && direct"
+                      text
+                      class="outbound-material-trigger"
+                      :disabled="!form.warehouseId"
+                      :title="form.warehouseId ? '选择物料' : '请先选择出库仓库'"
+                      :aria-label="`第 ${i + 1} 行料号选择`"
+                      @click="chooseMaterial(line)"
+                    >
+                      {{ line.materialCode || '选择料号' }}<AppIcon name="Search" />
+                    </ElButton>
+                    <span v-else>{{ line.materialCode }}</span>
+                  </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="210"
+                  ><template #header><div class="table-header-label">物料名称</div></template
+                  ><template #default="{ row: line, $index: i }">{{
+                    line.materialName
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="150"
+                  ><template #header><div class="table-header-label">单位</div></template
+                  ><template #default="{ row: line, $index: i }">{{
+                    line.unit
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn v-if="!direct" :min-width="150" class-name="numeric"
+                  ><template #header><div class="table-header-label">申请 / 已发</div></template
+                  ><template #default="{ row: line, $index: i }">
+                    {{ number(line.requestedQuantity) }} / {{ number(line.issuedQuantity) }}
+                  </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn v-if="!direct" :min-width="150" class-name="numeric"
+                  ><template #header><div class="table-header-label">剩余 / 预留</div></template
+                  ><template #default="{ row: line, $index: i }">
+                    {{
+                      number(
+                        line.remainingQuantity ??
+                          Number(line.requestedQuantity) - Number(line.issuedQuantity),
+                      )
+                    }}
+                    / {{ number(line.reservedQuantity) }}
+                  </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn :min-width="150" class-name="numeric"
+                  ><template #header><div class="table-header-label">本次数量</div></template
+                  ><template #default="{ row: line, $index: i }">
+                    <AppDecimalInput
+                      v-if="writable"
+                      :model-value="line.quantity"
+                      :min="0"
+                      @update:model-value="
+                        line.quantity = String($event ?? 0);
+                        line.selections = [];
+                      "
+                    /><span v-else>{{ number(line.quantity) }}</span>
+                  </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn v-if="!direct" :min-width="150"
+                  ><template #header><div class="table-header-label">领用人</div></template
+                  ><template #default="{ row: line, $index: i }">{{
+                    line.recipientName
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow2} -->
+                <ElTableColumn
+                  v-if="writable"
+                  class-name="outbound-operation"
+                  fixed="right"
+                  :width="170"
+                  :min-width="156"
+                  :resizable="false"
+                  ><template #header><div class="table-header-label">操作</div></template
+                  ><template #default="{ row: line, $index: i }">
+                    <ElButton link type="primary" @click="chooseStock(line)">{{
+                      line.selections.length ? '手动分配' : '自动分配'
+                    }}</ElButton
+                    ><ElButton v-if="direct" link type="danger" @click="form.lines.splice(i, 1)"
+                      >移除</ElButton
+                    >
+                  </template></ElTableColumn
+                ><template #empty
+                  ><div v-if="!form.lines.length">
+                    {{ writable && direct ? '点击新增行，在料号列选择物料' : '暂无出库明细' }}
+                  </div></template
+                ></AppBusinessTable
+              >
             </div>
           </section>
           <section v-if="form.allocations?.length" class="outbound-panel">
             <h3>批次与成本分配</h3>
             <div class="outbound-line-scroll">
-              <table class="business-table outbound-allocation-table">
-                <thead>
-                  <tr>
-                    <th>物料</th>
-                    <th>库位</th>
-                    <th>批次 / 有效期</th>
-                    <th>来源 / 领用人</th>
-                    <th class="numeric">数量</th>
-                    <th class="numeric">已用 / 已退</th>
-                    <th v-if="can('查看金额')" class="numeric">成本单价</th>
-                    <th v-if="can('查看金额')" class="numeric">金额</th>
-                    <th>成本来源</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(a, i) in form.allocations" :key="a.id || i">
-                    <td>{{ a.materialName }}</td>
-                    <td>{{ a.binName }}</td>
-                    <td>
-                      {{ a.batchCode }}
-                      <div>{{ a.expiryDate }}</div>
-                    </td>
-                    <td>
-                      {{ a.requisitionCode }}
-                      <div v-if="form.id.startsWith('g')">
-                        <ElButton link type="primary" @click="openDocument(a.issueId || '')"
-                          >原出库单</ElButton
-                        ><ElTag v-if="childReversed(a.issueId)" type="danger">已冲销</ElTag>
-                      </div>
-                      <div>
-                        {{ a.recipientName }}
-                        <ElButton link type="primary" @click="taskLink(a.taskKind, a.taskId)">{{
-                          a.taskCode
-                        }}</ElButton>
-                      </div>
-                    </td>
-                    <td class="numeric">{{ number(a.quantity) }}</td>
-                    <td class="numeric">
-                      {{ number(a.usedQuantity) }} / {{ number(a.returnedQuantity) }}
-                    </td>
-                    <td v-if="can('查看金额')" class="numeric">{{ number(a.unitCost) }}</td>
-                    <td v-if="can('查看金额')" class="numeric">{{ number(a.amount) }}</td>
-                    <td>
-                      <ElButton
-                        v-if="a.receiptId"
-                        link
-                        type="primary"
-                        @click="router.push(`/inventory/receipts/${a.receiptId}`)"
-                        >入库来源</ElButton
-                      ><span v-else>成本层 {{ a.costLayerId }}</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+              <AppBusinessTable
+                :rows="form.allocations"
+                :pagination="false"
+                :fill="false"
+                :framed="false"
+                class="business-table outbound-allocation-table"
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150"
+                  ><template #header><div class="table-header-label">物料</div></template
+                  ><template #default="{ row: a, $index: i }">{{
+                    a.materialName
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150"
+                  ><template #header><div class="table-header-label">库位</div></template
+                  ><template #default="{ row: a, $index: i }">{{
+                    a.binName
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150"
+                  ><template #header><div class="table-header-label">批次 / 有效期</div></template
+                  ><template #default="{ row: a, $index: i }">
+                    {{ a.batchCode }}
+                    <div>{{ a.expiryDate }}</div>
+                  </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150"
+                  ><template #header><div class="table-header-label">来源 / 领用人</div></template
+                  ><template #default="{ row: a, $index: i }">
+                    {{ a.requisitionCode }}
+                    <div v-if="form.id.startsWith('g')">
+                      <ElButton link type="primary" @click="openDocument(a.issueId || '')"
+                        >原出库单</ElButton
+                      ><ElTag v-if="childReversed(a.issueId)" type="danger">已冲销</ElTag>
+                    </div>
+                    <div>
+                      {{ a.recipientName }}
+                      <ElButton link type="primary" @click="taskLink(a.taskKind, a.taskId)">{{
+                        a.taskCode
+                      }}</ElButton>
+                    </div>
+                  </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150" class-name="numeric"
+                  ><template #header><div class="table-header-label">数量</div></template
+                  ><template #default="{ row: a, $index: i }">{{
+                    number(a.quantity)
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150" class-name="numeric"
+                  ><template #header><div class="table-header-label">已用 / 已退</div></template
+                  ><template #default="{ row: a, $index: i }">
+                    {{ number(a.usedQuantity) }} / {{ number(a.returnedQuantity) }}
+                  </template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn v-if="can('查看金额')" :min-width="150" class-name="numeric"
+                  ><template #header><div class="table-header-label">成本单价</div></template
+                  ><template #default="{ row: a, $index: i }">{{
+                    number(a.unitCost)
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn v-if="can('查看金额')" :min-width="150" class-name="numeric"
+                  ><template #header><div class="table-header-label">金额</div></template
+                  ><template #default="{ row: a, $index: i }">{{
+                    number(a.amount)
+                  }}</template></ElTableColumn
+                ><!-- @vue-generic {TableColumnRow3} -->
+                <ElTableColumn :min-width="150"
+                  ><template #header><div class="table-header-label">成本来源</div></template
+                  ><template #default="{ row: a, $index: i }">
+                    <ElButton
+                      v-if="a.receiptId"
+                      link
+                      type="primary"
+                      @click="router.push(`/inventory/receipts/${a.receiptId}`)"
+                      >入库来源</ElButton
+                    ><span v-else>成本层 {{ a.costLayerId }}</span>
+                  </template></ElTableColumn
+                ></AppBusinessTable
+              >
             </div>
             <div v-if="can('查看金额')" class="outbound-total">
               合计：{{ number(form.totalAmount) }}
@@ -1339,35 +1394,57 @@ watch([page, size], () => {
         >
       </div>
       <div class="outbound-line-scroll">
-        <table class="business-table">
-          <thead>
-            <tr>
-              <th v-if="!picking">来源 / 领用人</th>
-              <th>物料</th>
-              <th>库位</th>
-              <th>批次</th>
-              <th>有效期</th>
-              <th class="numeric">数量</th>
-              <th v-if="can('查看金额')" class="numeric">成本单价</th>
-              <th v-if="can('查看金额')" class="numeric">金额</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(a, i) in picking ? preview?.pickingSummary : preview?.allocations" :key="i">
-              <td v-if="!picking">
-                {{ a.requisitionCode }}
-                <div>{{ a.recipientName }} · {{ a.taskCode }}</div>
-              </td>
-              <td>{{ a.materialName }}</td>
-              <td>{{ a.binName }}</td>
-              <td>{{ a.batchCode }}</td>
-              <td>{{ a.expiryDate }}</td>
-              <td class="numeric">{{ number(a.quantity) }}</td>
-              <td v-if="can('查看金额')" class="numeric">{{ number(a.unitCost) }}</td>
-              <td v-if="can('查看金额')" class="numeric">{{ number(a.amount) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <AppBusinessTable
+          :rows="picking ? preview?.pickingSummary : preview?.allocations"
+          :pagination="false"
+          :fill="false"
+          :framed="false"
+          class="business-table"
+          ><!-- @vue-generic {TableColumnRow4} -->
+          <ElTableColumn v-if="!picking" :min-width="150"
+            ><template #header><div class="table-header-label">来源 / 领用人</div></template
+            ><template #default="{ row: a, $index: i }">
+              {{ a.requisitionCode }}
+              <div>{{ a.recipientName }} · {{ a.taskCode }}</div>
+            </template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow4} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">物料</div></template
+            ><template #default="{ row: a, $index: i }">{{
+              a.materialName
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow4} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">库位</div></template
+            ><template #default="{ row: a, $index: i }">{{ a.binName }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow4} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">批次</div></template
+            ><template #default="{ row: a, $index: i }">{{ a.batchCode }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow4} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">有效期</div></template
+            ><template #default="{ row: a, $index: i }">{{ a.expiryDate }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow4} -->
+          <ElTableColumn :min-width="150" class-name="numeric"
+            ><template #header><div class="table-header-label">数量</div></template
+            ><template #default="{ row: a, $index: i }">{{
+              number(a.quantity)
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow4} -->
+          <ElTableColumn v-if="can('查看金额')" :min-width="150" class-name="numeric"
+            ><template #header><div class="table-header-label">成本单价</div></template
+            ><template #default="{ row: a, $index: i }">{{
+              number(a.unitCost)
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow4} -->
+          <ElTableColumn v-if="can('查看金额')" :min-width="150" class-name="numeric"
+            ><template #header><div class="table-header-label">金额</div></template
+            ><template #default="{ row: a, $index: i }">{{
+              number(a.amount)
+            }}</template></ElTableColumn
+          ></AppBusinessTable
+        >
       </div>
       <div v-if="can('查看金额')" class="outbound-total">
         合计：{{ number(preview?.totalAmount) }}
@@ -1380,37 +1457,55 @@ watch([page, size], () => {
     <AppDialog v-model="stockOpen" title="选择批次与库位" width="780px"
       ><p>本次数量 {{ number(stockLine?.quantity) }}；清空选择后使用自动分配。</p>
       <div class="outbound-line-scroll">
-        <table class="business-table">
-          <thead>
-            <tr>
-              <th>库位</th>
-              <th>批次</th>
-              <th>有效期</th>
-              <th class="numeric">可用</th>
-              <th class="numeric">本申请预留</th>
-              <th class="numeric">分配数量</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="s in stockRows" :key="s.id">
-              <td>{{ s.binName }}</td>
-              <td>{{ s.batchCode }}</td>
-              <td>{{ s.expiryDate }}</td>
-              <td class="numeric">{{ number(s.availableQuantity) }}</td>
-              <td class="numeric">{{ number(s.ownReservedQuantity) }}</td>
-              <td>
-                <AppDecimalInput
-                  :model-value="stockQuantities[s.id]"
-                  @update:model-value="stockQuantities[s.id] = Number($event)"
-                  :min="0"
-                />
-              </td>
-            </tr>
-            <tr v-if="!stockRows.length">
-              <td colspan="6" class="outbound-empty">暂无库存</td>
-            </tr>
-          </tbody>
-        </table>
+        <AppBusinessTable
+          :rows="stockRows"
+          :pagination="false"
+          :fill="false"
+          :framed="false"
+          class="business-table"
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">库位</div></template
+            ><template #default="{ row: s, $index: tableRowIndex }">{{
+              s.binName
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">批次</div></template
+            ><template #default="{ row: s, $index: tableRowIndex }">{{
+              s.batchCode
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">有效期</div></template
+            ><template #default="{ row: s, $index: tableRowIndex }">{{
+              s.expiryDate
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150" class-name="numeric"
+            ><template #header><div class="table-header-label">可用</div></template
+            ><template #default="{ row: s, $index: tableRowIndex }">{{
+              number(s.availableQuantity)
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150" class-name="numeric"
+            ><template #header><div class="table-header-label">本申请预留</div></template
+            ><template #default="{ row: s, $index: tableRowIndex }">{{
+              number(s.ownReservedQuantity)
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">分配数量</div></template
+            ><template #default="{ row: s, $index: tableRowIndex }">
+              <AppDecimalInput
+                :model-value="stockQuantities[s.id]"
+                @update:model-value="stockQuantities[s.id] = Number($event)"
+                :min="0"
+              /> </template></ElTableColumn
+          ><template #empty
+            ><div v-if="!stockRows.length">暂无库存</div></template
+          ></AppBusinessTable
+        >
       </div>
       <template #footer
         ><ElButton @click="stockOpen = false">取消</ElButton
@@ -1426,6 +1521,11 @@ watch([page, size], () => {
       @select="selectMaterials"
     />
   </section>
+  <OutboundPrintDialog
+    v-model="printOpen"
+    :document-id="printTarget.id"
+    :document-code="printTarget.code"
+  />
 </template>
 
 <style scoped>
@@ -1444,7 +1544,6 @@ watch([page, size], () => {
   color: var(--el-text-color-primary);
   gap: 8px;
 }
-.outbound-toolbar,
 .outbound-query,
 .outbound-actions,
 .outbound-detail-header,
@@ -1453,7 +1552,6 @@ watch([page, size], () => {
   align-items: center;
   gap: 8px;
 }
-.outbound-toolbar,
 .outbound-detail-header,
 .outbound-section-heading {
   justify-content: space-between;
@@ -1499,20 +1597,12 @@ watch([page, size], () => {
   white-space: nowrap;
   z-index: 2;
 }
-.outbound-table thead .outbound-operation {
+.outbound-table :deep(thead .outbound-operation) {
   background: var(--el-fill-color-light);
   z-index: 4;
 }
 .outbound-operation :deep(.el-button + .el-button) {
   margin-left: 8px;
-}
-.select-cell {
-  width: 36px;
-  min-width: 36px;
-}
-.outbound-empty {
-  text-align: center;
-  height: 150px;
 }
 .outbound-operation details {
   display: inline-block;
@@ -1522,21 +1612,6 @@ watch([page, size], () => {
   cursor: pointer;
   list-style: none;
   color: var(--el-color-primary);
-}
-.outbound-more {
-  position: absolute;
-  right: 6px;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
-  padding: 6px;
-  box-shadow: var(--el-box-shadow-light);
-}
-.outbound-more :deep(.el-button) {
-  margin: 0;
 }
 .outbound-detail-header {
   padding: 4px 0 12px;
@@ -1670,9 +1745,6 @@ watch([page, size], () => {
 @media (max-width: 1280px) {
   .outbound-detail-body {
     grid-template-columns: minmax(0, 1fr) 230px;
-  }
-  .outbound-toolbar {
-    flex-wrap: wrap;
   }
   .outbound-query {
     flex-wrap: wrap;

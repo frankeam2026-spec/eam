@@ -36,20 +36,28 @@ export const useWorkInboxStore = defineStore('work-inbox', () => {
       };
     return {
       name:
-        row.module === 'inventoryOutbound'
-          ? 'inventory-outbound-detail'
-          : row.module === 'inventoryTransfer'
-            ? 'inventory-operation-detail'
-            : row.module === 'inventory'
-              ? 'inventory-requisition-detail'
-              : row.module === 'inspection'
-                ? 'inspection-task'
-                : row.module === 'maintenance'
-                  ? 'maintenance-task'
-                  : 'repair-detail',
+        row.module === 'anomaly'
+          ? 'anomalies'
+          : row.module === 'repairPlan'
+            ? 'repair-plans'
+            : row.module === 'inventoryOutbound'
+              ? 'inventory-outbound-detail'
+              : ['inventoryTransfer', 'inventoryReturn'].includes(row.module || '')
+                ? 'inventory-operation-detail'
+                : row.module === 'inventory'
+                  ? 'inventory-requisition-detail'
+                  : row.module === 'inspection'
+                    ? 'inspection-task'
+                    : row.module === 'maintenance'
+                      ? 'maintenance-task'
+                      : 'repair-detail',
       params: {
         id: row.orderId,
-        ...(row.module === 'inventoryTransfer' ? { kind: 'transfers' } : {}),
+        ...(row.module === 'inventoryTransfer'
+          ? { kind: 'transfers' }
+          : row.module === 'inventoryReturn'
+            ? { kind: 'returns' }
+            : {}),
       },
       query: {
         ...(returnTo ? { returnTo } : {}),
@@ -58,8 +66,11 @@ export const useWorkInboxStore = defineStore('work-inbox', () => {
     };
   }
   function moduleName(module?: string) {
+    if (module === 'anomaly') return '异常';
+    if (module === 'repairPlan') return '维修计划';
     return module === 'inventory' ||
       module === 'inventoryTransfer' ||
+      module === 'inventoryReturn' ||
       module === 'inventoryOutbound'
       ? '库存'
       : module === 'inspection'

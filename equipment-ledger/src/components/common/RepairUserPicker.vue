@@ -1,10 +1,20 @@
 <script setup lang="ts">
+import { ElTableColumn } from 'element-plus';
+import { ElButton } from 'element-plus';
+
+import AppBusinessTable from './AppBusinessTable.vue';
 import { computed, ref, watch } from 'vue';
 import AppDialog from './AppDialog.vue';
 import ListSearchInput from './ListSearchInput.vue';
 import { repairUserChoices, type DispatchUser } from '../../api';
 const props = withDefaults(
-  defineProps<{ modelValue: boolean; selected?: string[]; title?: string; busy?: boolean }>(),
+  defineProps<{
+    modelValue: boolean;
+    selected?: string[];
+    title?: string;
+    busy?: boolean;
+    loadUsers?: () => Promise<{ data: DispatchUser[] }>;
+  }>(),
   { selected: () => [], title: '选择人员', busy: false },
 );
 const emit = defineEmits<{ 'update:modelValue': [boolean]; confirm: [string[]] }>();
@@ -27,7 +37,7 @@ watch(
     error.value = '';
     loading.value = true;
     try {
-      rows.value = (await repairUserChoices()).data;
+      rows.value = (await (props.loadUsers || repairUserChoices)()).data;
     } catch (e) {
       error.value = e instanceof Error ? e.message : '人员加载失败';
     } finally {
@@ -35,6 +45,9 @@ watch(
     }
   },
 );
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => filtered.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 <template>
   <AppDialog
@@ -50,63 +63,66 @@ watch(
     </div>
     <p v-if="error" class="picker-error">{{ error }}</p>
     <div class="picker-table">
-      <table class="business-table">
-        <thead>
-          <tr>
-            <th class="pick-check"></th>
-            <th>姓名</th>
-            <th>部门</th>
-            <th>账号</th>
-            <th>未完成工单</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="user in filtered"
-            :key="user.id"
-            :class="{ picked: picked.includes(user.id) }"
-            @click="
-              picked = picked.includes(user.id)
-                ? picked.filter((x) => x !== user.id)
-                : [...picked, user.id]
-            "
-          >
-            <td class="pick-check">
-              <input
-                v-model="picked"
-                type="checkbox"
-                :value="user.id"
-                :aria-label="`选择${user.name}`"
-                @click.stop
-              />
-            </td>
-            <td>
-              <strong>{{ user.name }}</strong>
-            </td>
-            <td>{{ user.department }}</td>
-            <td>{{ user.account }}</td>
-            <td>
-              <span class="load-count" :class="{ occupied: user.unfinished > 0 }">{{
-                user.unfinished
-              }}</span>
-            </td>
-          </tr>
-          <tr v-if="!filtered.length">
-            <td colspan="5">{{ loading ? '加载中…' : '没有匹配的人员' }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <AppBusinessTable
+        v-model:selection-ids="picked"
+        :selection-width="48"
+        selection-fixed="left"
+        selection-align="center"
+        selectable
+        :rows="filtered"
+        :pagination="false"
+        :fill="false"
+        :framed="false"
+        class="business-table"
+        :row-class="(user, tableRowIndex) => ({ picked: picked.includes(user.id) })"
+        @row-click="
+          (user) => {
+            picked = picked.includes(user.id)
+              ? picked.filter((x) => x !== user.id)
+              : [...picked, user.id];
+          }
+        "
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">姓名</div></template
+          ><template #default="{ row: user, $index: tableRowIndex }">
+            <strong>{{ user.name }}</strong>
+          </template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">部门</div></template
+          ><template #default="{ row: user, $index: tableRowIndex }">{{
+            user.department
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">账号</div></template
+          ><template #default="{ row: user, $index: tableRowIndex }">{{
+            user.account
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">未完成工单</div></template
+          ><template #default="{ row: user, $index: tableRowIndex }">
+            <span class="load-count" :class="{ occupied: user.unfinished > 0 }">{{
+              user.unfinished
+            }}</span>
+          </template></ElTableColumn
+        ><template #empty
+          ><div v-if="!filtered.length">{{ loading ? '加载中…' : '没有匹配的人员' }}</div></template
+        ></AppBusinessTable
+      >
     </div>
     <template #footer
-      ><button class="btn secondary" :disabled="busy" @click="emit('update:modelValue', false)">
-        取消</button
-      ><button
-        class="btn primary"
+      ><ElButton class="" :disabled="busy" @click="emit('update:modelValue', false)"> 取消</ElButton
+      ><ElButton
+        class=""
         :disabled="busy || !picked.length"
         @click="emit('confirm', picked)"
+        type="primary"
       >
         确定
-      </button></template
+      </ElButton></template
     >
   </AppDialog>
 </template>
@@ -130,30 +146,15 @@ watch(
   min-width: 0;
   table-layout: fixed;
 }
-.picker-table th,
-.picker-table td {
-  height: 42px;
-  padding: 8px 12px;
-  font-size: 13px;
-  border-bottom: 1px solid #edf0f5;
-}
-.picker-table th {
-  background: #f5f7fa;
+.picker-table :deep(th) {
   position: sticky;
   top: 0;
 }
-.picker-table tr {
+.picker-table :deep(tr) {
   cursor: pointer;
 }
-.picker-table tr.picked {
+.picker-table :deep(tr.picked) {
   background: var(--primary-light, #eef3ff);
-}
-.picker-table .pick-check {
-  width: 42px;
-  text-align: center;
-}
-.picker-table input {
-  accent-color: var(--primary, #2458f5);
 }
 .load-count {
   padding: 3px 10px;

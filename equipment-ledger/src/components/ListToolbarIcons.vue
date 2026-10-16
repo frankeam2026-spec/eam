@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ElPopover } from 'element-plus';
+import AppIcon from './common/AppIcon.vue';
+import { ElPopover, ElButton } from 'element-plus';
 const props = withDefaults(
   defineProps<{
     mode?: 'all' | 'filter' | 'footer';
-    filterOpen: boolean;
+    filterOpen?: boolean;
     columnsOpen: boolean;
     canExport?: boolean;
     exportBusy?: boolean;
@@ -15,20 +16,18 @@ defineEmits<{ toggleFilter: []; toggleColumns: []; export: [] }>();
 
 <template>
   <div class="list-tools" :class="{ 'list-footer-tools': mode === 'footer' }">
-    <button
+    <ElButton
       v-if="mode !== 'footer'"
       class="list-icon-btn"
       :class="{ active: filterOpen }"
-      type="button"
+      native-type="button"
       title="列筛选"
       aria-label="列筛选"
       :aria-pressed="filterOpen"
       @click="$emit('toggleFilter')"
     >
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M3 4h14l-5.5 6.2v4.3l-3 1.5v-5.8L3 4Z" />
-      </svg>
-    </button>
+      <AppIcon name="Filter" />
+    </ElButton>
     <ElPopover
       v-if="mode !== 'filter'"
       :visible="columnsOpen"
@@ -44,39 +43,37 @@ defineEmits<{ toggleFilter: []; toggleColumns: []; export: [] }>();
       "
     >
       <template #reference
-        ><button
+        ><ElButton
           class="list-icon-btn"
           :class="{ active: columnsOpen }"
-          type="button"
+          native-type="button"
           title="设置列"
           aria-label="设置列"
           :aria-expanded="columnsOpen"
         >
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <rect x="2.5" y="3" width="15" height="14" rx="1.5" />
-            <path d="M7.5 3v14M12.5 3v14" />
-          </svg></button
+          <AppIcon name="Columns" /></ElButton
       ></template>
       <div class="list-columns-menu"><slot name="columns" /></div>
     </ElPopover>
-    <button
+    <ElButton
       v-if="canExport && mode !== 'filter'"
       class="list-icon-btn"
-      type="button"
+      native-type="button"
       title="导出"
       aria-label="导出"
       :disabled="exportBusy"
       :aria-busy="exportBusy"
       @click="$emit('export')"
     >
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M10 2.5v9m-3.5-3.5L10 11.5l3.5-3.5M3.5 13v4h13v-4" />
-      </svg>
-    </button>
+      <AppIcon name="Download" />
+    </ElButton>
   </div>
 </template>
 
 <style>
+.list-tools .el-button + .el-button {
+  margin-left: 0;
+}
 .list-tools {
   display: inline-flex;
   align-items: center;
@@ -102,17 +99,9 @@ defineEmits<{ toggleFilter: []; toggleColumns: []; export: [] }>();
   background: var(--brand-soft);
   color: var(--brand);
 }
-.list-icon-btn svg {
+.list-icon-btn .app-icon {
   width: 18px;
   height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.list-columns-anchor {
-  position: relative;
 }
 .list-columns-menu {
   max-height: min(420px, 70vh);
@@ -129,9 +118,6 @@ defineEmits<{ toggleFilter: []; toggleColumns: []; export: [] }>();
   color: #4f5c70;
   font-size: 13px;
   cursor: pointer;
-}
-.list-columns-menu input[type='checkbox'] {
-  accent-color: var(--brand);
 }
 </style>
 

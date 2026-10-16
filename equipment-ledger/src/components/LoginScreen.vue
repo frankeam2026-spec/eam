@@ -1,12 +1,33 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { ElButton, ElInput } from 'element-plus';
+
+import SystemBrand from './common/SystemBrand.vue';
+import { defaultBranding } from '../branding';
+import { useBrandingStore } from '../stores/branding';
+import { reactive, ref, computed, watch } from 'vue';
 defineProps<{ state: 'loading' | 'login' | 'unavailable'; message: string }>();
+const store = useBrandingStore();
+const visual = computed(() => store.branding);
+const backgroundFailed = ref(false);
+watch(
+  () => visual.value.backgroundUrl,
+  () => {
+    backgroundFailed.value = false;
+  },
+);
 const emit = defineEmits<{
   login: [tenantId: string, account: string, password: string];
   retry: [];
 }>();
 const form = reactive({ tenantId: '10001', account: '', password: '' });
 const submitting = ref(false);
+watch(
+  () => form.tenantId,
+  (id) => {
+    if (/^[1-9][0-9]*$/.test(id)) void store.load(id);
+  },
+  { immediate: true },
+);
 function submit() {
   if (!form.tenantId.trim() || !form.account.trim() || !form.password) return;
   submitting.value = true;
@@ -17,36 +38,45 @@ function submit() {
 
 <template>
   <main class="login-screen">
-    <div class="login-brand"><span class="login-symbol">✳</span><span>设备管理系统</span></div>
+    <img
+      class="login-background"
+      :src="backgroundFailed ? defaultBranding.backgroundUrl : visual.backgroundUrl"
+      :style="{ objectPosition: visual.backgroundPosition }"
+      alt=""
+      @error="backgroundFailed = true"
+    />
+    <SystemBrand class="login-brand" :name="visual.systemName" :logo-url="visual.logoUrl" />
     <section class="login-card">
       <h1>登录系统</h1>
       <p>使用企业账号访问设备与运维数据</p>
       <div v-if="state === 'loading'" class="login-status">正在连接服务…</div>
       <div v-else-if="state === 'unavailable'" class="login-status">
         <span>{{ message || '服务暂时无法连接' }}</span
-        ><button type="button" @click="emit('retry')">重新连接</button>
+        ><ElButton @click="emit('retry')" native-type="button">重新连接</ElButton>
       </div>
       <form v-else @submit.prevent="submit">
         <label
-          >租户编号<input
+          >租户编号<ElInput
             v-model="form.tenantId"
             inputmode="numeric"
             autocomplete="organization"
             placeholder="请输入租户编号" /></label
         ><label
-          >登录账号<input
+          >登录账号<ElInput
             v-model="form.account"
             autocomplete="username"
             placeholder="请输入账号" /></label
         ><label
-          >密码<input
+          >密码<ElInput
             v-model="form.password"
             type="password"
             autocomplete="current-password"
             placeholder="请输入密码"
         /></label>
         <div v-if="message" class="login-error">{{ message }}</div>
-        <button class="login-submit" :disabled="submitting" type="submit">登录</button>
+        <ElButton class="login-submit" :disabled="submitting" native-type="submit" type="primary"
+          >登录</ElButton
+        >
       </form>
     </section>
     <div class="login-foot">企业级设备管理 · 安全访问</div>
@@ -54,6 +84,20 @@ function submit() {
 </template>
 
 <style scoped>
+.login-screen {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.login-background {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: -1;
+}
+
 .login-screen {
   min-height: 100vh;
   background: linear-gradient(135deg, #f4f7fd, #eaf0fb);
@@ -69,18 +113,11 @@ function submit() {
   align-items: center;
   gap: 11px;
   margin: 24px 32px;
+  padding: 10px 14px;
+  background: #ffffffeb;
+  border-radius: 10px;
   font-size: 17px;
   font-weight: 650;
-}
-.login-symbol {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  background: #205cf5;
-  color: #fff;
-  font-size: 23px;
 }
 .login-card {
   width: min(420px, calc(100vw - 32px));
@@ -108,18 +145,6 @@ function submit() {
   gap: 7px;
   color: #4d5b70;
   font-weight: 550;
-}
-.login-card input {
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid #d8e0ec;
-  border-radius: 5px;
-  font: inherit;
-  color: #273347;
-}
-.login-card input:focus {
-  outline: 2px solid #205cf530;
-  border-color: #205cf5;
 }
 .login-submit,
 .login-status button {

@@ -43,7 +43,7 @@ try:
     other=next(x['id'] for x in choices['data'] if x['id']!=user_id)
     status,equipment=http('equipment?size=1');eq=equipment['data'][0]
     status,faults=http('base-data/fault-types');fault=next(x['name'] for x in faults['data'] if x['status']=='启用')
-    report={'equipmentCode':eq['code'],'equipmentName':eq['name'],'department':eq['department'],'faultAt':time.strftime('%Y-%m-%dT%H:%M'),'faultType':fault,'severity':'一般','description':tag,'reporter':'不可伪造报修人','attachments':[]}
+    report={'equipmentCode':eq['code'],'equipmentName':eq['name'],'department':eq['department'],'reportedAt':time.strftime('%Y-%m-%dT%H:%M'),'faultType':fault,'severity':'一般','description':tag,'reporter':'不可伪造报修人','attachments':[]}
     status,payload=http('repairs',report);ok(status==200,('report',payload));order_id=payload['data']['id'];order_no=payload['data']['orderNo']
     ok(payload['data']['reporter']==identity['data']['name'],'server reporter identity')
     r=action('dispatch',userIds=[user_id,other]);ok(r['status']=='待接单','dispatch pending, not processing')

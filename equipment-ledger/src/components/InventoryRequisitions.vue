@@ -1,4 +1,12 @@
 <script setup lang="ts">
+import AppListToolbar from './common/AppListToolbar.vue';
+import { ElTableColumn } from 'element-plus';
+import { ElCheckbox } from 'element-plus';
+
+import AppBusinessTable from './common/AppBusinessTable.vue';
+import AppIcon from './common/AppIcon.vue';
+import MaterialPicker from './common/MaterialPicker.vue';
+import type { InventoryMaster } from '../inventory';
 import AppListTabs from './common/AppListTabs.vue';
 import AppDecimalInput from './common/AppDecimalInput.vue';
 import { formatNumber, isDecimalField } from '../utils/number';
@@ -112,6 +120,12 @@ const selectedTask = computed(() =>
 const warehouses = computed(() =>
   choices.value.warehouses.filter((w) => w.companyId === selectedTask.value?.companyId),
 );
+const warehouseHint = computed(() => {
+  if (!taskValue.value) return '请先选择关联任务，仓库按任务所属公司提供';
+  if (!selectedTask.value) return '关联任务已结束或不可申请领料，请重新选择';
+  if (!warehouses.value.length) return '任务所属公司暂无可申请领料的仓库，请联系仓管';
+  return '';
+});
 const canReserve = computed(
   () =>
     auth.can('inventoryOutbound', '预留') &&
@@ -287,9 +301,44 @@ function reset() {
 async function back() {
   if (await guard.permitLeave()) router.push({ name: 'inventory-requisitions' });
 }
+const materialPickerOpen = ref(false);
+const materialTarget = ref<RequisitionLine>();
 function add() {
   form.value.lines.push({ materialId: '', quantity: '1' });
 }
+function chooseMaterial(line: RequisitionLine) {
+  materialTarget.value = line;
+  materialPickerOpen.value = true;
+}
+async function loadMaterialRows(q: string, page: number, size: number) {
+  return request<{ data: InventoryMaster[]; page: { total: number } }>(
+    `/inventory/requisitions/materials?${new URLSearchParams({ q, page: String(page), size: String(size), warehouseId: form.value.warehouseId, taskKind: form.value.taskKind, taskId: form.value.taskId })}`,
+  );
+}
+function selectMaterials(rows: InventoryMaster[]) {
+  const target = materialTarget.value;
+  if (!target || !form.value.lines.includes(target)) return;
+  const otherIds = new Set(form.value.lines.filter((l) => l !== target).map((l) => l.materialId));
+  if (rows.some((m) => otherIds.has(m.id))) {
+    ElMessage.warning('所选物料已在明细中，请修改原行数量');
+    return;
+  }
+  rows.forEach((m, index) => {
+    if (!choices.value.materials.some((x) => x.id === m.id)) choices.value.materials.push(m);
+    const value = {
+      materialId: m.id,
+      materialCode: m.code,
+      materialName: m.name,
+      materialModel: m.model,
+      unit: m.unit,
+      quantity: index === 0 ? target.quantity : '1',
+    };
+    if (index === 0) Object.assign(target, value);
+    else form.value.lines.push(value);
+  });
+  materialPickerOpen.value = false;
+}
+
 async function save() {
   if (busy.value || readOnly.value) return;
   busy.value = true;
@@ -434,6 +483,25 @@ async function removeDraft() {
     busy.value = false;
   }
 }
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => rows.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows2 = () => form.value.lines;
+type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows3 = () => form.value.reservations;
+type TableColumnRow3 = NonNullable<ReturnType<typeof tableColumnRows3>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows4 = () => form.value.issues?.[0]?.allocations;
+type TableColumnRow4 = NonNullable<ReturnType<typeof tableColumnRows4>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows5 = () => poolRows.value;
+type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
 </script>
 <template>
   <section class="requisition-page">
@@ -458,7 +526,7 @@ async function removeDraft() {
             )
         "
       />
-      <div class="toolbar">
+      <AppListToolbar class="toolbar">
         <ElButton
           v-if="pendingOnly && auth.can('inventoryOutbound', '确认出库')"
           type="primary"
@@ -471,7 +539,7 @@ async function removeDraft() {
           v-if="!pendingOnly && auth.can('inventoryRequisition', '新增')"
           type="primary"
           @click="router.push({ name: 'inventory-requisition-detail', params: { id: 'new' } })"
-          >＋ 新增</ElButton
+          ><AppIcon name="Plus" /> 新增</ElButton
         >
         <form @submit.prevent="search">
           <ListToolbarIcons
@@ -484,85 +552,79 @@ async function removeDraft() {
             placeholder="搜索领料单、任务、申请人、仓库"
           /><ElButton text @click="reset">重置</ElButton>
         </form>
-      </div>
+      </AppListToolbar>
       <div class="card" :aria-busy="loading">
         <div class="scroll">
-          <table class="business-table">
-            <thead>
-              <tr>
-                <th v-if="pendingOnly" style="width: 40px">
-                  <input
-                    type="checkbox"
-                    aria-label="选择当前页"
-                    :checked="!!rows.length && rows.every((x) => selectedRequests.includes(x.id))"
-                    @change="
-                      (event) => {
-                        selectedRequests = (event.target as HTMLInputElement).checked
-                          ? rows.map((x) => x.id)
-                          : [];
-                      }
-                    "
-                  />
-                </th>
-                <th v-for="key in columns" :key="key">{{ fields[key] }}</th>
-                <th class="action">操作</th>
-              </tr>
-              <tr v-if="filterOpen">
-                <th v-if="pendingOnly" />
-                <th v-for="key in columns" :key="key">
-                  <ElInput v-model="filters[key]" :placeholder="'筛选' + fields[key]" clearable />
-                </th>
-                <th class="action" />
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in rows" :key="row.id">
-                <td v-if="pendingOnly">
-                  <input
-                    type="checkbox"
-                    :aria-label="'选择' + row.code"
-                    :checked="selectedRequests.includes(row.id)"
-                    @change="(e) => selectRequest(row.id, (e.target as HTMLInputElement).checked)"
-                  />
-                </td>
-                <td v-for="key in columns" :key="key">
-                  <ElTag v-if="key === 'status'" :type="tone(row.status)">{{ row.status }}</ElTag
-                  ><ElButton
-                    v-else-if="key === 'code'"
-                    link
-                    type="primary"
-                    @click="
-                      router.push({ name: 'inventory-requisition-detail', params: { id: row.id } })
-                    "
-                    >{{ row.code }}</ElButton
-                  ><span v-else>{{ display(row, key) }}</span>
-                </td>
-                <td class="action">
-                  <ElButton
-                    v-if="pendingOnly && auth.can('inventoryOutbound', '确认出库')"
-                    link
-                    type="primary"
-                    :disabled="mergedBusy"
-                    @click="previewMerged([row.id])"
-                    >出库</ElButton
-                  >
-                  <ElButton
-                    link
-                    type="primary"
-                    @click="
-                      router.push({ name: 'inventory-requisition-detail', params: { id: row.id } })
-                    "
-                    >{{ row.status === '草稿' ? '编辑' : '查看' }}</ElButton
-                  >
-                </td>
-              </tr>
-              <tr v-if="!rows.length">
-                <td :colspan="columns.length + 1 + (pendingOnly ? 1 : 0)" class="empty">
-                  {{ loading ? '正在加载…' : error ? '加载失败，请重试' : '暂无领料申请' }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <AppBusinessTable
+            v-model:selection-ids="selectedRequests"
+            :selection-width="48"
+            selection-fixed="left"
+            selection-align="center"
+            :selectable="pendingOnly"
+            :rows="rows"
+            :pagination="false"
+            :fill="true"
+            :framed="false"
+            class="business-table"
+            ><!-- @vue-generic {TableColumnRow1} -->
+            <ElTableColumn
+              show-overflow-tooltip
+              v-for="key in columns"
+              :min-width="150"
+              :prop="String(key)"
+              :key="String(key)"
+              ><template #header
+                ><div class="table-header-label">{{ fields[key] }}</div>
+                <div v-if="filterOpen" class="table-column-filter" @click.stop>
+                  <ElInput
+                    v-model="filters[key]"
+                    :placeholder="'筛选' + fields[key]"
+                    clearable
+                  /></div></template
+              ><template #default="{ row: row, $index: tableRowIndex }">
+                <ElTag v-if="key === 'status'" :type="tone(row.status)">{{ row.status }}</ElTag
+                ><ElButton
+                  v-else-if="key === 'code'"
+                  link
+                  type="primary"
+                  @click="
+                    router.push({ name: 'inventory-requisition-detail', params: { id: row.id } })
+                  "
+                  >{{ row.code }}</ElButton
+                ><span v-else>{{ display(row, key) }}</span>
+              </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow1} -->
+            <ElTableColumn
+              class-name="action"
+              fixed="right"
+              :width="170"
+              :min-width="156"
+              :resizable="false"
+              ><template #header><div class="table-header-label">操作</div></template
+              ><template #default="{ row: row, $index: tableRowIndex }">
+                <ElButton
+                  v-if="pendingOnly && auth.can('inventoryOutbound', '确认出库')"
+                  link
+                  type="primary"
+                  :disabled="mergedBusy"
+                  @click="previewMerged([row.id])"
+                  >出库</ElButton
+                >
+                <ElButton
+                  link
+                  type="primary"
+                  @click="
+                    router.push({ name: 'inventory-requisition-detail', params: { id: row.id } })
+                  "
+                  >{{ row.status === '草稿' ? '编辑' : '查看' }}</ElButton
+                >
+              </template></ElTableColumn
+            ><template #empty
+              ><div v-if="!rows.length">
+                {{ loading ? '正在加载…' : error ? '加载失败，请重试' : '暂无领料申请' }}
+              </div></template
+            ></AppBusinessTable
+          >
         </div>
         <footer class="list-footer">
           <span>共 {{ total }} 条</span
@@ -580,13 +642,13 @@ async function removeDraft() {
             @toggle-columns="columnsOpen = !columnsOpen"
             @export="exportRows"
             ><template #columns
-              ><label v-for="(label, key) in fields" :key="key"
-                ><input
-                  type="checkbox"
-                  :checked="columns.includes(key)"
-                  :disabled="columns.length === 1 && columns.includes(key)"
-                  @change="toggle(key)"
-                />{{ label }}</label
+              ><ElCheckbox
+                v-for="(label, key) in fields"
+                :key="key"
+                :model-value="columns.includes(key)"
+                :disabled="columns.length === 1 && columns.includes(key)"
+                @change="toggle(key)"
+                >{{ label }}</ElCheckbox
               ></template
             ></ListToolbarIcons
           >
@@ -622,12 +684,13 @@ async function removeDraft() {
               v-else
               v-model="form.warehouseId"
               filterable
-              placeholder="请选择任务所属公司仓库"
-              ><ElOption
-                v-for="w in warehouses"
-                :key="w.id"
-                :value="w.id"
-                :label="w.name" /></ElSelect></label
+              :disabled="!selectedTask || !warehouses.length"
+              :placeholder="!selectedTask ? '请先选择关联任务' : '请选择任务所属公司仓库'"
+              ><ElOption v-for="w in warehouses" :key="w.id" :value="w.id" :label="w.name"
+            /></ElSelect>
+            <span v-if="!readOnly && warehouseHint" class="warehouse-hint" role="status">{{
+              warehouseHint
+            }}</span></label
           ><label
             >申请人<span>{{ form.applicantName || auth.currentUser }}</span></label
           ><label
@@ -642,73 +705,123 @@ async function removeDraft() {
             plain
             :disabled="!form.warehouseId"
             @click="add"
-            >＋ 添加物料</ElButton
+            ><AppIcon name="Plus" /> 新增行</ElButton
           >
         </div>
         <div class="line-scroll">
-          <table class="business-table">
-            <thead>
-              <tr>
-                <th class="material">物料</th>
-                <th>单位</th>
-                <th class="numeric">申请数量</th>
-                <th v-if="readOnly" class="numeric">预留数量</th>
-                <th v-if="readOnly" class="numeric">已发数量</th>
-                <th v-if="!readOnly" class="action">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(line, index) in form.lines" :key="line.id || index">
-                <td>
-                  <span v-if="readOnly">{{ line.materialCode }} {{ line.materialName }}</span
-                  ><ElSelect v-else v-model="line.materialId" filterable placeholder="选择物料"
-                    ><ElOption
-                      v-for="m in choices.materials"
-                      :key="m.id"
-                      :value="m.id"
-                      :label="m.code + ' ' + m.name"
-                  /></ElSelect>
-                </td>
-                <td>{{ line.unit || material(line)?.unit }}</td>
-                <td class="numeric">
-                  <span v-if="readOnly">{{ number(line.quantity) }}</span
-                  ><AppDecimalInput v-else v-model="line.quantity" inputmode="decimal" />
-                </td>
-                <td v-if="readOnly" class="numeric">{{ number(line.reservedQuantity) }}</td>
-                <td v-if="readOnly" class="numeric">{{ number(line.issuedQuantity) }}</td>
-                <td v-if="!readOnly" class="action">
-                  <ElButton link type="danger" @click="form.lines.splice(index, 1)">删除</ElButton>
-                </td>
-              </tr>
-              <tr v-if="!form.lines.length">
-                <td :colspan="readOnly ? 5 : 4" class="empty">添加本任务需要的物料及数量</td>
-              </tr>
-            </tbody>
-          </table>
+          <AppBusinessTable
+            :rows="form.lines"
+            :pagination="false"
+            :fill="false"
+            :framed="false"
+            class="business-table"
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">料号</div></template
+              ><template #default="{ row: line, $index: index }">
+                <span v-if="readOnly">{{ line.materialCode }}</span>
+                <ElButton
+                  v-else
+                  class="material-code-picker"
+                  :disabled="!form.warehouseId"
+                  @click="chooseMaterial(line)"
+                  >{{ line.materialCode || material(line)?.code || '选择料号' }}</ElButton
+                >
+              </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn :min-width="210"
+              ><template #header><div class="table-header-label">物料名称</div></template
+              ><template #default="{ row: line, $index: index }">{{
+                line.materialName || material(line)?.name
+              }}</template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">规格型号</div></template
+              ><template #default="{ row: line, $index: index }">{{
+                line.materialModel || material(line)?.model
+              }}</template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">单位</div></template
+              ><template #default="{ row: line, $index: index }">{{
+                line.unit || material(line)?.unit
+              }}</template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn :min-width="150" class-name="numeric"
+              ><template #header><div class="table-header-label">申请数量</div></template
+              ><template #default="{ row: line, $index: index }">
+                <span v-if="readOnly">{{ number(line.quantity) }}</span
+                ><AppDecimalInput
+                  v-else
+                  v-model="line.quantity"
+                  inputmode="decimal"
+                /> </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn v-if="readOnly" :min-width="150" class-name="numeric"
+              ><template #header><div class="table-header-label">预留数量</div></template
+              ><template #default="{ row: line, $index: index }">{{
+                number(line.reservedQuantity)
+              }}</template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn v-if="readOnly" :min-width="150" class-name="numeric"
+              ><template #header><div class="table-header-label">已发数量</div></template
+              ><template #default="{ row: line, $index: index }">{{
+                number(line.issuedQuantity)
+              }}</template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn
+              v-if="!readOnly"
+              class-name="action"
+              fixed="right"
+              :width="170"
+              :min-width="156"
+              :resizable="false"
+              ><template #header><div class="table-header-label">操作</div></template
+              ><template #default="{ row: line, $index: index }">
+                <ElButton link type="danger" @click="form.lines.splice(index, 1)">删除</ElButton>
+              </template></ElTableColumn
+            ><template #empty
+              ><div v-if="!form.lines.length">添加本任务需要的物料及数量</div></template
+            ></AppBusinessTable
+          >
         </div>
         <template v-if="form.reservations?.length"
           ><div class="detail-heading">
             <strong>预留明细</strong><span>预留数量不扣减在库数量</span>
           </div>
           <div class="line-scroll">
-            <table class="business-table">
-              <thead>
-                <tr>
-                  <th>物料</th>
-                  <th>库位</th>
-                  <th>批次号</th>
-                  <th class="numeric">预留数量</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="r in form.reservations" :key="r.id">
-                  <td>{{ r.materialName }}</td>
-                  <td>{{ r.binName }}</td>
-                  <td>{{ r.batchCode }}</td>
-                  <td class="numeric">{{ number(r.remainingQuantity) }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <AppBusinessTable
+              :rows="form.reservations"
+              :pagination="false"
+              :fill="false"
+              :framed="false"
+              class="business-table"
+              ><!-- @vue-generic {TableColumnRow3} -->
+              <ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">物料</div></template
+                ><template #default="{ row: r, $index: tableRowIndex }">{{
+                  r.materialName
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow3} -->
+              <ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">库位</div></template
+                ><template #default="{ row: r, $index: tableRowIndex }">{{
+                  r.binName
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow3} -->
+              <ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">批次号</div></template
+                ><template #default="{ row: r, $index: tableRowIndex }">{{
+                  r.batchCode
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow3} -->
+              <ElTableColumn :min-width="150" class-name="numeric"
+                ><template #header><div class="table-header-label">预留数量</div></template
+                ><template #default="{ row: r, $index: tableRowIndex }">{{
+                  number(r.remainingQuantity)
+                }}</template></ElTableColumn
+              ></AppBusinessTable
+            >
           </div></template
         >
         <div v-for="issue in form.issues" :key="issue.id" class="issue-history">
@@ -724,26 +837,44 @@ async function removeDraft() {
             >
           </div>
           <div class="line-scroll">
-            <table class="business-table">
-              <thead>
-                <tr>
-                  <th>物料</th>
-                  <th>库位</th>
-                  <th>批次号</th>
-                  <th class="numeric">发料数量</th>
-                  <th class="numeric">金额</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="a in issue.allocations" :key="a.id">
-                  <td>{{ a.materialName }}</td>
-                  <td>{{ a.binName }}</td>
-                  <td>{{ a.batchCode }}</td>
-                  <td class="numeric">{{ number(a.quantity) }}</td>
-                  <td class="numeric">{{ formatNumber(a.amount) }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <AppBusinessTable
+              :rows="issue.allocations"
+              :pagination="false"
+              :fill="false"
+              :framed="false"
+              class="business-table"
+              ><!-- @vue-generic {TableColumnRow4} -->
+              <ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">物料</div></template
+                ><template #default="{ row: a, $index: tableRowIndex }">{{
+                  a.materialName
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow4} -->
+              <ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">库位</div></template
+                ><template #default="{ row: a, $index: tableRowIndex }">{{
+                  a.binName
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow4} -->
+              <ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">批次号</div></template
+                ><template #default="{ row: a, $index: tableRowIndex }">{{
+                  a.batchCode
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow4} -->
+              <ElTableColumn :min-width="150" class-name="numeric"
+                ><template #header><div class="table-header-label">发料数量</div></template
+                ><template #default="{ row: a, $index: tableRowIndex }">{{
+                  number(a.quantity)
+                }}</template></ElTableColumn
+              ><!-- @vue-generic {TableColumnRow4} -->
+              <ElTableColumn :min-width="150" class-name="numeric"
+                ><template #header><div class="table-header-label">金额</div></template
+                ><template #default="{ row: a, $index: tableRowIndex }">{{
+                  formatNumber(a.amount)
+                }}</template></ElTableColumn
+              ></AppBusinessTable
+            >
           </div>
           <p v-if="auth.can('inventoryRequisition', '查看金额')" class="issue-total">
             合计 ¥ {{ formatNumber(issue.totalAmount) }}
@@ -798,31 +929,53 @@ async function removeDraft() {
     >
       <p class="issue-hint">填写本次预留数量；留为 0 的行不预留。也可关闭窗口后使用自动预留。</p>
       <div class="line-scroll">
-        <table class="issue-table">
-          <thead>
-            <tr>
-              <th>物料</th>
-              <th>库位</th>
-              <th>批次</th>
-              <th>有效期</th>
-              <th>可用数量</th>
-              <th>预留数量</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in poolRows" :key="row.lineId + ':' + row.balanceId">
-              <td>{{ row.materialName }}</td>
-              <td>{{ row.binName }}</td>
-              <td>{{ row.batchCode }}</td>
-              <td>{{ row.expiryDate }}</td>
-              <td>{{ number(row.availableQuantity) }}</td>
-              <td><AppDecimalInput v-model="row.quantity" inputmode="decimal" /></td>
-            </tr>
-            <tr v-if="!poolRows.length">
-              <td colspan="6" class="empty">暂无可用库存</td>
-            </tr>
-          </tbody>
-        </table>
+        <AppBusinessTable
+          :rows="poolRows"
+          :pagination="false"
+          :fill="false"
+          :framed="false"
+          class="issue-table"
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">物料</div></template
+            ><template #default="{ row: row, $index: tableRowIndex }">{{
+              row.materialName
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">库位</div></template
+            ><template #default="{ row: row, $index: tableRowIndex }">{{
+              row.binName
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">批次</div></template
+            ><template #default="{ row: row, $index: tableRowIndex }">{{
+              row.batchCode
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">有效期</div></template
+            ><template #default="{ row: row, $index: tableRowIndex }">{{
+              row.expiryDate
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">可用数量</div></template
+            ><template #default="{ row: row, $index: tableRowIndex }">{{
+              number(row.availableQuantity)
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow5} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">预留数量</div></template
+            ><template #default="{ row: row, $index: tableRowIndex }"
+              ><AppDecimalInput
+                v-model="row.quantity"
+                inputmode="decimal" /></template></ElTableColumn
+          ><template #empty
+            ><div v-if="!poolRows.length">暂无可用库存</div></template
+          ></AppBusinessTable
+        >
       </div>
       <template #footer
         ><ElButton :disabled="busy" @click="poolOpen = false">取消</ElButton
@@ -835,17 +988,18 @@ async function removeDraft() {
         ></template
       >
     </AppDialog>
+    <MaterialPicker
+      v-model="materialPickerOpen"
+      :multiple="true"
+      :load-rows="loadMaterialRows"
+      @select="selectMaterials"
+    />
   </section>
 </template>
 <style scoped>
 .list-footer > span {
   white-space: nowrap;
   flex-shrink: 0;
-}
-
-.issue-content {
-  max-height: 55vh;
-  overflow: auto;
 }
 .issue-table {
   min-width: 660px;
@@ -854,15 +1008,6 @@ async function removeDraft() {
   margin: 0 0 16px;
   color: var(--text);
   line-height: 1.6;
-}
-.issue-buttons {
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-}
-.issue-buttons :deep(.el-button) {
-  margin-left: 0;
-  min-width: 100px;
 }
 .issue-total {
   text-align: right;
@@ -879,20 +1024,17 @@ async function removeDraft() {
   font-size: 13px;
   color: var(--text);
 }
-.toolbar,
-.toolbar form,
 header,
 .list-footer,
+.warehouse-hint {
+  grid-column: 2;
+  font-size: 13px;
+  line-height: 1.5;
+}
 .detail-heading {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-.toolbar {
-  margin-bottom: 0;
-}
-.toolbar form {
-  margin-left: auto;
 }
 .card {
   flex: 1;
@@ -915,26 +1057,6 @@ table {
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
-}
-th,
-td {
-  padding: 12px;
-  font-size: 13px;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  border-bottom: 1px solid #e4e9f0;
-}
-th {
-  background: #f5f7fb;
-  font-weight: 700;
-}
-td {
-  background: white;
-}
-tbody tr:hover td {
-  background: #f8faff;
 }
 .action {
   position: sticky;
@@ -978,6 +1100,11 @@ header strong {
   gap: 10px;
   align-items: center;
 }
+.warehouse-hint {
+  grid-column: 2;
+  font-size: 13px;
+  line-height: 1.5;
+}
 .detail-heading {
   margin: 24px 0 12px;
 }
@@ -988,9 +1115,6 @@ header strong {
   overflow: auto;
   border: 1px solid #e4e9f0;
   border-radius: 5px;
-}
-.material {
-  width: 40%;
 }
 .numeric {
   text-align: right;
@@ -1030,15 +1154,19 @@ header strong {
   .metadata {
     grid-template-columns: 1fr;
   }
-  .toolbar {
-    flex-wrap: wrap;
-  }
-  .toolbar form {
-    margin-left: 0;
-    max-width: 100%;
-  }
   .editor-scroll {
     padding: 14px;
   }
+}
+.line-scroll table {
+  min-width: 1000px;
+}
+.material {
+  width: 180px;
+  min-width: 180px;
+}
+.material-code-picker {
+  width: 100%;
+  justify-content: space-between;
 }
 </style>

@@ -1,0 +1,2 @@
+CREATE INDEX ix_maintenance_planned_analysis ON eam_maintenance_task(tenant_id,due_date,company_id,department_id);
+CREATE INDEX ix_inspection_planned_analysis ON eam_inspection_task(tenant_id,deleted,kind,due_at,company_id,department_id);

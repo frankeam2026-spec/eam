@@ -6,11 +6,9 @@
 .business-table,
 .business-table th,
 .business-table td,
-.business-table :is(span, small, b, strong, a, button, input, select, textarea, label) {
+.business-table
+  :is(span, small, b, strong, a, button, label) {
   font-size: var(--list-font-size) !important;
-}
-.business-table thead th {
-  font-weight: var(--list-heading-weight) !important;
 }
 
 /* Low-specificity defaults allow a business component to declare its own layout. */
@@ -23,52 +21,19 @@
   text-align: left;
   color: #263246;
 }
-:where(.business-table) thead th {
-  height: 40px;
-  background: #f8f9fb;
-  border-bottom: 1px solid #e9ecf1;
-  color: #263246;
-  white-space: nowrap;
-  padding: 0 12px;
-}
 :where(.business-table) thead th:first-child {
   border-radius: 7px 0 0 0;
 }
 :where(.business-table) thead th:last-child {
   border-radius: 0 7px 0 0;
 }
-:where(.business-table) tbody td {
-  height: 44px;
-  border-bottom: 1px solid #f0f1f4;
-  padding: 0 12px;
-  color: #263246;
-  white-space: nowrap;
-}
 :where(.business-table) tbody tr:last-child td {
   border-bottom: 0;
-}
-:where(.business-table) tbody tr:hover td {
-  background: #fafbfe;
 }
 
 /* 两个文字操作及更多入口的最小空间，禁止操作换行。 */
 .business-table
-  :is(th, td):is(
-    .action,
-    .actions,
-    .action-col,
-    .operation-col,
-    .master-action,
-    .operations,
-    .table-actions,
-    .sticky-action,
-    .list-action-column,
-    .row-actions,
-    .base-row-actions,
-    .system-action-column,
-    .inspection-actions,
-    .maintenance-actions
-  ) {
+  :is(th, td):is(.action, .actions, .action-col, .master-action, .operations, .list-action-column, .row-actions, .base-row-actions, .maintenance-actions) {
   min-width: 156px !important;
   width: 156px;
   white-space: nowrap !important;

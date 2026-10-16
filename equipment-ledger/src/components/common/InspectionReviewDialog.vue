@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ElTableColumn } from 'element-plus';
+import AppBusinessTable from './AppBusinessTable.vue';
 import { ref, watch, computed } from 'vue';
 import {
   ElButton,
@@ -66,6 +68,9 @@ function submit() {
     reviewItems: reviews.value,
   });
 }
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => reviews.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 <template>
   <AppDialog
@@ -83,26 +88,31 @@ function submit() {
         ></label
       >
       <div v-if="itemReview" class="inspection-picker-scroll">
-        <table class="business-table inspection-picker-table">
-          <thead>
-            <tr>
-              <th>项目名称</th>
-              <th>结果</th>
-              <th>说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(r, index) in reviews" :key="r.id">
-              <td>{{ items[index]?.name }}</td>
-              <td>
-                <ElSelect v-model="r.decision"
-                  ><ElOption value="通过" /><ElOption value="打回"
-                /></ElSelect>
-              </td>
-              <td><ElInput v-model="r.description" /></td>
-            </tr>
-          </tbody>
-        </table>
+        <AppBusinessTable
+          :rows="reviews"
+          :pagination="false"
+          :fill="false"
+          :framed="false"
+          class="business-table inspection-picker-table"
+          ><!-- @vue-generic {TableColumnRow1} -->
+          <ElTableColumn :min-width="210"
+            ><template #header><div class="table-header-label">项目名称</div></template
+            ><template #default="{ row: r, $index: index }">{{
+              items[index]?.name
+            }}</template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow1} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">结果</div></template
+            ><template #default="{ row: r, $index: index }">
+              <ElSelect v-model="r.decision"
+                ><ElOption value="通过" /><ElOption value="打回"
+              /></ElSelect> </template></ElTableColumn
+          ><!-- @vue-generic {TableColumnRow1} -->
+          <ElTableColumn :min-width="150"
+            ><template #header><div class="table-header-label">说明</div></template
+            ><template #default="{ row: r, $index: index }"
+              ><ElInput v-model="r.description" /></template></ElTableColumn
+        ></AppBusinessTable>
       </div>
       <label
         ><span>说明</span

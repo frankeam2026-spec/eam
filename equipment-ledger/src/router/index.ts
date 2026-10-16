@@ -1,11 +1,19 @@
 import { inventoryMenu } from '../inventory';
 import { maintenanceMenu, inspectionMenu } from '../rolePermissions';
-import { defineComponent } from 'vue';
 import { createRouter, createWebHashHistory } from 'vue-router';
 import { pinia } from '../stores';
 import { useAuthStore } from '../stores/auth';
+import { BASE_TABS } from '../stores/baseData';
+import { canUseBaseTab } from '../utils/baseDataAccess';
 
 export type AppPage =
+  | 'anomalies'
+  | 'repair-plans'
+  | 'home-templates'
+  | 'print-templates'
+  | 'personalization'
+  | 'personal-settings'
+  | 'material-custody'
   | 'equipment'
   | 'inspection'
   | 'locations'
@@ -16,9 +24,9 @@ export type AppPage =
   | 'roles'
   | 'labels'
   | 'workspace'
+  | 'home2'
   | 'inventory'
   | 'maintenance';
-const InlinePage = defineComponent({ render: () => null });
 export const router = createRouter({
   history: createWebHashHistory(),
   routes: [
@@ -26,12 +34,76 @@ export const router = createRouter({
       path: '/',
       component: () => import('../WorkspaceLayout.vue'),
       children: [
-        { path: '', redirect: '/equipment' },
+        {
+          path: 'home/analytics/:key',
+          alias: '/home2/analytics/:key',
+          name: 'home-analytics-details',
+          component: () => import('../pages/HomeAnalyticsDetailPage.vue'),
+          meta: { page: 'home2', menu: 'workspace' },
+        },
+        {
+          path: 'home',
+          alias: '/home2',
+          name: 'home2',
+          component: () => import('../pages/HomeComparisonPage.vue'),
+          meta: { page: 'home2', menu: 'workspace' },
+        },
+        {
+          path: 'workspace/inbox',
+          name: 'workspace-inbox',
+          component: () => import('../components/RepairInbox.vue'),
+          meta: { page: 'workspace' },
+        },
+        {
+          path: 'personal-settings',
+          name: 'personal-settings',
+          component: () => import('../pages/PersonalSettingsPage.vue'),
+          meta: { page: 'personal-settings' },
+        },
+        {
+          path: 'personalization',
+          name: 'personalization',
+          component: () => import('../components/PersonalizationSettings.vue'),
+          meta: { page: 'personalization', menu: 'personalization' },
+        },
+        {
+          path: 'print-templates',
+          name: 'print-templates',
+          component: () => import('../pages/PrintTemplatesPage.vue'),
+          meta: { page: 'print-templates', menu: 'printTemplate' },
+        },
+        {
+          path: 'home-templates',
+          name: 'home-templates',
+          component: () => import('../components/HomeTemplates.vue'),
+          meta: { page: 'home-templates', menu: 'homeTemplate' },
+        },
+        {
+          path: 'anomalies/:id?',
+          name: 'anomalies',
+          component: () => import('../components/ExperienceManager.vue'),
+          meta: { page: 'anomalies', menu: 'anomaly' },
+        },
+        {
+          path: 'repair-plans/:id?',
+          name: 'repair-plans',
+          component: () => import('../components/ExperienceManager.vue'),
+          meta: { page: 'repair-plans', menu: 'repairPlan' },
+        },
+        {
+          path: 'material-custody',
+          name: 'material-custody',
+          component: () => import('../components/ExperienceManager.vue'),
+          meta: { page: 'material-custody' },
+        },
+        { path: '', redirect: '/home' },
         {
           path: 'workspace',
           name: 'workspace',
-          component: () => import('../components/RepairInbox.vue'),
-          meta: { page: 'workspace' },
+          redirect: (to) => ({
+            name: to.query.tab ? 'workspace-inbox' : 'home2',
+            query: to.query,
+          }),
         },
         {
           path: 'inspection/task/:id',
@@ -156,25 +228,25 @@ export const router = createRouter({
         {
           path: 'equipment',
           name: 'equipment',
-          component: InlinePage,
+          component: () => import('../pages/EquipmentLedgerPage.vue'),
           meta: { page: 'equipment', menu: 'equipment' },
         },
         {
           path: 'equipment/new',
           name: 'equipment-new',
-          component: InlinePage,
+          component: () => import('../pages/EquipmentLedgerPage.vue'),
           meta: { page: 'equipment', menu: 'equipment', action: '新增' },
         },
         {
           path: 'equipment/:id/edit',
           name: 'equipment-edit',
-          component: InlinePage,
+          component: () => import('../pages/EquipmentLedgerPage.vue'),
           meta: { page: 'equipment', menu: 'equipment', action: '编辑' },
         },
         {
           path: 'equipment/:id/history',
           name: 'equipment-history',
-          component: InlinePage,
+          component: () => import('../pages/EquipmentLedgerPage.vue'),
           meta: { page: 'equipment', menu: 'equipment' },
         },
         {
@@ -183,7 +255,12 @@ export const router = createRouter({
           component: () => import('../components/LocationManagement.vue'),
           meta: { page: 'locations', menu: 'location' },
         },
-        { path: 'base', name: 'base', component: InlinePage, meta: { page: 'base', menu: 'base' } },
+        {
+          path: 'base',
+          name: 'base',
+          component: () => import('../pages/BaseDataPage.vue'),
+          meta: { page: 'base', menu: 'base' },
+        },
         {
           path: 'repairs',
           name: 'repairs',
@@ -201,11 +278,21 @@ export const router = createRouter({
           meta: { page: 'labels', menu: 'equipmentTag' },
           props: () => ({ actions: useAuthStore(pinia).grantedActions.equipmentTag || [] }),
         },
-        ...(['organization', 'users', 'roles'] as const).map((page, index) => ({
+        {
+          path: 'organization',
+          name: 'organization',
+          component: () => import('../components/OrganizationManagement.vue'),
+          meta: { page: 'organization', menu: 'org' },
+          props: () => ({
+            apiReady: useAuthStore(pinia).authState === 'ready',
+            grantedActions: useAuthStore(pinia).grantedActions,
+          }),
+        },
+        ...(['users', 'roles'] as const).map((page, index) => ({
           path: page,
           name: page,
           component: () => import('../components/SystemManagement.vue'),
-          meta: { page, menu: ['org', 'user', 'role'][index] },
+          meta: { page, menu: ['user', 'role'][index] },
           props: () => ({
             view: page,
             apiReady: useAuthStore(pinia).authState === 'ready',
@@ -226,8 +313,27 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore(pinia);
   await auth.load();
   if (auth.authState !== 'ready') return true;
+  if (
+    to.name === 'inventory-operation-detail' &&
+    to.params.kind === 'returns' &&
+    /^\d+$/.test(String(to.params.id))
+  )
+    return true;
+  if (to.name === 'anomalies' && /^\d+$/.test(String(to.params.id))) return true;
+  if (to.name === 'workspace' && to.query.tab) return { name: 'workspace-inbox', query: to.query };
   if (to.name === 'inventory-requisitions' && to.query.queue === 'pending')
     return { name: 'inventory-outbounds', query: { tab: 'pending' } };
+  if (to.name === 'base') {
+    const visibleTabs = BASE_TABS.filter((tab) => canUseBaseTab(auth.can, tab));
+    const requested = String(to.query.tab || (auth.can('base') ? '单位' : '设备分类'));
+    if (visibleTabs.includes(requested)) return true;
+    if (visibleTabs.length)
+      return {
+        name: 'base',
+        query: { ...to.query, tab: visibleTabs.includes('单位') ? '单位' : visibleTabs[0] },
+      };
+  }
+
   const menu =
     to.meta.page === 'inventory' && to.name !== 'inventory'
       ? inventoryMenu(
@@ -246,11 +352,7 @@ router.beforeEach(async (to) => {
         ? maintenanceMenu(String(to.params.kind || 'tasks'))
         : to.meta.menu === 'inspection'
           ? inspectionMenu(String(to.params.kind || 'daily-tasks'))
-          : to.name === 'base'
-            ? to.query.tab === '设备分类'
-              ? 'category'
-              : 'base'
-            : (to.meta.menu as string | undefined);
+          : (to.meta.menu as string | undefined);
   if (
     to.name === 'inventory-requisition-detail' &&
     (auth.can('repair', '查看') ||
@@ -291,4 +393,24 @@ router.beforeEach(async (to) => {
     };
   if (auth.can('category')) return { name: 'base', query: { tab: '设备分类' } };
   return { name: 'access-denied' };
+});
+
+router.afterEach((to, from, failure) => {
+  const auth = useAuthStore(pinia);
+  if (
+    failure ||
+    auth.authState !== 'ready' ||
+    !auth.can('workspace') ||
+    to.path === from.path ||
+    !/^\/(equipment|repairs|maintenance|inspection|anomalies|repair-plans|inventory|organization|users|roles)(\/|$)/.test(
+      to.path,
+    )
+  )
+    return;
+  fetch('/api/v1/home/recent', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: to.path }),
+  }).catch(() => {});
 });

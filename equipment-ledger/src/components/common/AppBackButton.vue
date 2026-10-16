@@ -1,19 +1,21 @@
 <script setup lang="ts">
+import { ElButton } from 'element-plus';
+import AppIcon from './AppIcon.vue';
 withDefaults(defineProps<{ label?: string; disabled?: boolean }>(), {
   label: '返回',
   disabled: false,
 });
 </script>
 <template>
-  <button
+  <ElButton
     class="app-back-button"
-    type="button"
+    native-type="button"
     :aria-label="label"
     :title="label"
     :disabled="disabled"
   >
-    <span aria-hidden="true">‹</span>
-  </button>
+    <span aria-hidden="true"><AppIcon name="Left" /></span>
+  </ElButton>
 </template>
 <style scoped>
 .app-back-button {

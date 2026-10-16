@@ -1,14 +1,81 @@
 <script setup lang="ts">
+import 'element-plus/es/components/tabs/style/css';
+import { ElTabs, ElTabPane, ElTableColumn, ElTag } from 'element-plus';
+import AppAttachmentList from './common/AppAttachmentList.vue';
+import EquipmentOverview from './common/EquipmentOverview.vue';
+import EquipmentEvents from './common/EquipmentEvents.vue';
+import { archiveState, statusType, type ArchiveState, type ArchiveTab } from '../equipmentOverview';
+import { useAuthStore } from '../stores/auth';
+import AppBusinessTable from './common/AppBusinessTable.vue';
+import AppIcon from './common/AppIcon.vue';
 import { formatNumber } from '../utils/number';
 import AppBackButton from './common/AppBackButton.vue';
-import { ref, watch } from 'vue';
+import { computed, nextTick, ref, watch, onBeforeUnmount } from 'vue';
 import { equipmentHistory, type EquipmentHistory } from '../api';
 const props = defineProps<{ id: string }>();
 const emit = defineEmits<{ close: [] }>();
 const record = ref<EquipmentHistory | null>(null),
-  error = ref(''),
-  tab = ref('基本信息');
-const tabs = ['基本信息', '维修', '保养', '巡检', '备件'];
+  error = ref('');
+const body = ref<HTMLElement>();
+const auth = useAuthStore();
+const view = ref<ArchiveState>(archiveState());
+const tab = computed({
+  get: () => view.value.tab,
+  set: (value: ArchiveTab) => {
+    view.value.tab = value;
+  },
+});
+const tabs: ArchiveTab[] = ['概览', '基本信息', '维修', '保养', '巡检', '备件', '动态'];
+const storageKey = computed(
+  () => `eam-equipment-archive:${auth.user?.tenantId}:${auth.user?.id}:${props.id}`,
+);
+let revision = 0;
+let pendingScrollRestore = true;
+onBeforeUnmount(() => revision++);
+watch(
+  view,
+  (value) => {
+    try {
+      sessionStorage.setItem(storageKey.value, JSON.stringify(value));
+    } catch {
+      /* Unavailable storage only disables restoration. */
+    }
+  },
+  { deep: true },
+);
+async function restoreScroll() {
+  if (!record.value || !pendingScrollRestore) return;
+  await nextTick();
+  if (!pendingScrollRestore || !body.value) return;
+  body.value.scrollTop = view.value.scroll[tab.value] || 0;
+  pendingScrollRestore = false;
+}
+watch(tab, () => {
+  pendingScrollRestore = true;
+  if (tab.value !== '概览' && tab.value !== '动态') void restoreScroll();
+});
+function rememberScroll(event: Event) {
+  if (record.value && !pendingScrollRestore)
+    view.value.scroll[tab.value] = (event.target as HTMLElement).scrollTop;
+}
+async function navigate(value: ArchiveTab, section?: string) {
+  tab.value = value;
+  await nextTick();
+  const target = section && body.value?.querySelector(`[data-equipment-section="${section}"]`);
+  if (target && body.value) {
+    // Explicit navigation takes precedence over restoring this tab's last scroll position.
+    pendingScrollRestore = false;
+    body.value.scrollTo({
+      top:
+        body.value.scrollTop +
+        target.getBoundingClientRect().top -
+        body.value.getBoundingClientRect().top -
+        16,
+      behavior: 'smooth',
+    });
+  }
+}
+
 const labels: Record<string, string> = {
   code: '设备编号',
   name: '设备名称',
@@ -22,7 +89,7 @@ const labels: Record<string, string> = {
   company: '所属公司',
   department: '所属部门',
   owner: '负责人',
-  functionLocation: '功能位置',
+  functionLocation: '位置',
   state: '设备状态',
   useState: '使用状态',
   source: '设备来源',
@@ -44,12 +111,23 @@ const labels: Record<string, string> = {
 watch(
   () => props.id,
   async (id) => {
+    const seq = ++revision;
+    pendingScrollRestore = true;
     record.value = null;
     error.value = '';
     try {
-      record.value = await equipmentHistory(id);
+      view.value = archiveState(JSON.parse(sessionStorage.getItem(storageKey.value) || '{}'));
+    } catch {
+      view.value = archiveState();
+    }
+    try {
+      const result = await equipmentHistory(id);
+      if (seq !== revision) return;
+      record.value = result;
+      await nextTick();
+      if (tab.value !== '概览' && tab.value !== '动态') await restoreScroll();
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '加载失败';
+      if (seq === revision) error.value = e instanceof Error ? e.message : '加载失败';
     }
   },
   { immediate: true },
@@ -65,26 +143,56 @@ function records() {
         : record.value.spareChanges;
 }
 function time(value: string) {
-  return value ? value.replace('T', ' ').slice(0, 19) : '—';
+  return value ? value.replace('T', ' ').slice(0, 19) : '';
 }
 </script>
 <template>
   <section class="equipment-history">
-    <header>
-      <AppBackButton label="返回设备台账" @click="emit('close')" /><strong>设备履历</strong
-      ><span v-if="record">{{ record.data.code }} · {{ record.data.name }}</span
-      ><button class="history-close" @click="emit('close')">×</button>
+    <header class="equipment-history-heading">
+      <AppBackButton label="返回设备台账" @click="emit('close')" />
+      <template v-if="record"
+        ><h1 :title="record.data.name">{{ record.data.name }}</h1>
+        <span class="equipment-history-code">{{ record.data.code }}</span>
+        <div class="equipment-history-statuses">
+          <ElTag
+            v-if="record.data.state"
+            :type="statusType(record.data.state)"
+            :title="`设备状态：${record.data.state}`"
+            :class="['equipment-state', statusType(record.data.state)]"
+            >{{ record.data.state }}</ElTag
+          ><ElTag
+            v-if="record.data.useState"
+            :type="statusType(record.data.useState)"
+            :title="`使用状态：${record.data.useState}`"
+            effect="light"
+            >{{ record.data.useState }}</ElTag
+          >
+        </div></template
+      >
+      <strong v-else>设备档案</strong>
     </header>
-    <nav>
-      <button v-for="item in tabs" :class="{ active: tab === item }" @click="tab = item">
-        {{ item }}
-      </button>
-    </nav>
-    <div class="history-body">
+    <ElTabs class="history-tabs" v-model="tab"
+      ><ElTabPane v-for="item in tabs" :key="item" :label="item" :name="item"
+    /></ElTabs>
+    <div ref="body" class="history-body" @scroll="rememberScroll">
       <p v-if="error" class="history-error">{{ error }}</p>
       <p v-else-if="!record">正在加载…</p>
       <template v-else>
-        <template v-if="tab === '基本信息'"
+        <EquipmentOverview
+          v-if="tab === '概览'"
+          :equipment="record.data"
+          v-model:state="view.attention"
+          @navigate="navigate"
+          @ready="restoreScroll"
+        />
+        <EquipmentEvents
+          v-else-if="tab === '动态'"
+          :equipment-id="id"
+          v-model:state="view.events"
+          @ready="restoreScroll"
+          full
+        />
+        <template v-else-if="tab === '基本信息'"
           ><section class="history-equipment-identity">
             <div>
               <h3>{{ record.data.name }}</h3>
@@ -95,7 +203,6 @@ function time(value: string) {
                 :src="`/api/v1/equipment/${record.data.id}/qrcode`"
                 :alt="`设备二维码：${record.data.code}`"
               />
-              <figcaption>设备二维码</figcaption>
             </figure>
           </section>
           <dl class="history-info">
@@ -105,22 +212,29 @@ function time(value: string) {
               :class="{ wide: key === 'remark' || key === 'technicalParams' }"
             >
               <dt>{{ label }}</dt>
-              <dd v-if="key === 'imageName' && record.data.imageFileId">
-                <a
-                  :href="`/api/v1/equipment/files/${record.data.imageFileId}/preview`"
-                  target="_blank"
-                  rel="noopener"
-                  ><img
-                    class="history-equipment-image"
-                    :src="`/api/v1/equipment/files/${record.data.imageFileId}/preview`"
-                    alt="设备图片，点击查看原图"
-                /></a>
+              <dd
+                v-if="
+                  key === 'imageName' && (record.data.images?.length || record.data.imageFileId)
+                "
+              >
+                <AppAttachmentList
+                  :files="
+                    (record.data.images?.length
+                      ? record.data.images
+                      : [{ id: record.data.imageFileId!, name: '' }]
+                    ).map((image) => ({
+                      ...image,
+                      isImage: true,
+                      url: `/api/v1/equipment/files/${image.id}/preview`,
+                    }))
+                  "
+                />
               </dd>
               <dd v-else>
                 {{
                   key === 'amount'
                     ? formatNumber(record.data.amount)
-                    : (record.data as any)[key] || '—'
+                    : (record.data as any)[key] || ''
                 }}
               </dd>
             </div>
@@ -129,145 +243,250 @@ function time(value: string) {
             v-for="(label, key) in {
               documents: '设备相关文件',
               children: '子设备',
-              relatedSpares: '关联备件',
+              relatedSpares: '设备BOM',
             }"
             class="history-related"
+            :data-equipment-section="key"
           >
             <h3>{{ label }}</h3>
-            <table class="business-table" v-if="(record.data as any)[key]?.length">
-              <thead v-if="key === 'documents'">
-                <tr>
-                  <th>资料编号</th>
-                  <th>资料名称</th>
-                  <th>资料类型</th>
-                  <th>文档密级</th>
-                  <th>数量</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in (record.data as any)[key]">
-                  <template v-if="key === 'documents'">
-                    <td>{{ item.code || '—' }}</td>
-                    <td>{{ item.name }}</td>
-                    <td>{{ item.type || '—' }}</td>
-                    <td>{{ item.security || '普通' }}</td>
-                    <td>{{ formatNumber(item.quantity || 1) }}</td>
-                    <td>
-                      <a
-                        v-if="item.id"
-                        :href="`/api/v1/equipment/files/${item.id}`"
-                        target="_blank"
-                        rel="noopener"
-                        >下载</a
-                      ><span v-else>未上传文件</span>
-                    </td>
-                  </template>
-                  <td v-for="value in key === 'documents' ? [] : item">{{ value || '—' }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <p v-else>暂无记录</p>
+            <AppBusinessTable
+              :pagination="false"
+              :fill="false"
+              :framed="false"
+              v-if="key === 'documents' &amp;&amp; (record.data as any)[key]?.length"
+              :rows="record.data.documents || []"
+              class="business-table"
+              ><ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">资料编号</div></template
+                ><template #default="{ row: item, $index: tableRowIndex }">{{
+                  item.code || ''
+                }}</template></ElTableColumn
+              ><ElTableColumn :min-width="210"
+                ><template #header><div class="table-header-label">资料名称</div></template
+                ><template #default="{ row: item, $index: tableRowIndex }">{{
+                  item.name
+                }}</template></ElTableColumn
+              ><ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">资料类型</div></template
+                ><template #default="{ row: item, $index: tableRowIndex }">{{
+                  item.type || ''
+                }}</template></ElTableColumn
+              ><ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">文档密级</div></template
+                ><template #default="{ row: item, $index: tableRowIndex }">{{
+                  item.security || '普通'
+                }}</template></ElTableColumn
+              ><ElTableColumn :min-width="150"
+                ><template #header><div class="table-header-label">数量</div></template
+                ><template #default="{ row: item, $index: tableRowIndex }">{{
+                  formatNumber(item.quantity || 1)
+                }}</template></ElTableColumn
+              ><ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
+                ><template #header><div class="table-header-label">操作</div></template
+                ><template #default="{ row: item, $index: tableRowIndex }">
+                  <a
+                    v-if="item.id"
+                    :href="`/api/v1/equipment/files/${item.id}`"
+                    target="_blank"
+                    rel="noopener"
+                    >下载</a
+                  ><span v-else>未上传文件</span>
+                </template></ElTableColumn
+              ></AppBusinessTable
+            ><AppBusinessTable
+              v-else-if="(record.data as any)[key]?.length"
+              :rows="(record.data as any)[key] as Record<string, unknown>[]"
+              :columns="
+                key === 'children'
+                  ? [
+                      { prop: 'code', label: '设备编号', minWidth: 160 },
+                      { prop: 'name', label: '设备名称', minWidth: 180 },
+                      { prop: 'model', label: '规格型号', minWidth: 150 },
+                      { prop: 'brand', label: '品牌', minWidth: 120 },
+                    ]
+                  : [
+                      { prop: 'code', label: '料号', minWidth: 160 },
+                      { prop: 'name', label: '物料名称', minWidth: 180 },
+                      { prop: 'specification', label: '规格型号', minWidth: 150 },
+                      { prop: 'unit', label: '单位', minWidth: 90 },
+                      { prop: 'quantity', label: '数量', minWidth: 100 },
+                    ]
+              "
+              :fill="false"
+              :pagination="false"
+              :framed="false"
+            >
+              <template #name="{ row }"
+                >{{ row.name }}<small v-if="row.legacy">（历史关联待确认）</small></template
+              >
+            </AppBusinessTable>
+            <p v-else>
+              {{
+                key === 'relatedSpares'
+                  ? '暂无设备BOM'
+                  : key === 'children'
+                    ? '暂无子设备'
+                    : '暂无记录'
+              }}
+            </p>
           </section></template
         >
         <div v-else-if="tab === '备件'" class="history-table">
           <h3>在用备件</h3>
-          <table class="business-table">
-            <thead>
-              <tr>
-                <th>备件编号</th>
-                <th>备件名称</th>
-                <th>规格型号</th>
-                <th>数量</th>
-                <th>安装时间</th>
-                <th>状态</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in record?.installedSpares || []" :key="item.id">
-                <td>{{ item.code }}</td>
-                <td>{{ item.name }}</td>
-                <td>{{ item.model }}</td>
-                <td>{{ formatNumber(item.quantity) }}</td>
-                <td>{{ item.installedAt }}</td>
-                <td>{{ item.status }}</td>
-              </tr>
-              <tr v-if="!record?.installedSpares?.length">
-                <td colspan="6" class="history-empty">暂无在用备件</td>
-              </tr>
-            </tbody>
-          </table>
+          <AppBusinessTable
+            :rows="record.installedSpares"
+            :pagination="false"
+            :fill="false"
+            :framed="false"
+            class="business-table"
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">备件编号</div></template
+              ><template #default="{ row: item, $index: tableRowIndex }">{{
+                item.code
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="210"
+              ><template #header><div class="table-header-label">备件名称</div></template
+              ><template #default="{ row: item, $index: tableRowIndex }">{{
+                item.name
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">规格型号</div></template
+              ><template #default="{ row: item, $index: tableRowIndex }">{{
+                item.model
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">数量</div></template
+              ><template #default="{ row: item, $index: tableRowIndex }">{{
+                formatNumber(item.quantity)
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">安装时间</div></template
+              ><template #default="{ row: item, $index: tableRowIndex }">{{
+                item.installedAt
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">状态</div></template
+              ><template #default="{ row: item, $index: tableRowIndex }">{{
+                item.status
+              }}</template></ElTableColumn
+            ><template #empty
+              ><div v-if="!record?.installedSpares?.length">暂无在用备件</div></template
+            ></AppBusinessTable
+          >
           <h3 class="spare-history-heading">备件更换记录</h3>
-          <table class="business-table">
-            <thead>
-              <tr>
-                <th>工单编号</th>
-                <th>时间</th>
-                <th>更换内容 / 数量</th>
-                <th>执行人</th>
-                <th>状态</th>
-                <th>说明</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(item, index) in record.spareChanges" :key="index">
-                <td>{{ item.number || '—' }}</td>
-                <td>{{ time(item.time) }}</td>
-                <td>{{ item.description || '—' }}</td>
-                <td>{{ item.person || '—' }}</td>
-                <td>{{ item.status || '—' }}</td>
-                <td>{{ item.result || '—' }}</td>
-              </tr>
-              <tr v-if="!record.spareChanges.length">
-                <td colspan="6" class="history-empty">暂无备件更换记录</td>
-              </tr>
-            </tbody>
-          </table>
+          <AppBusinessTable
+            :rows="record.spareChanges"
+            :pagination="false"
+            :fill="false"
+            :framed="false"
+            class="business-table"
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">工单编号</div></template
+              ><template #default="{ row: item, $index: index }">{{
+                item.number || ''
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">时间</div></template
+              ><template #default="{ row: item, $index: index }">{{
+                time(item.time)
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="210"
+              ><template #header><div class="table-header-label">更换内容 / 数量</div></template
+              ><template #default="{ row: item, $index: index }">{{
+                item.description || ''
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">执行人</div></template
+              ><template #default="{ row: item, $index: index }">{{
+                item.person || ''
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">状态</div></template
+              ><template #default="{ row: item, $index: index }">{{
+                item.status || ''
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">说明</div></template
+              ><template #default="{ row: item, $index: index }">{{
+                item.result || ''
+              }}</template></ElTableColumn
+            ><template #empty
+              ><div v-if="!record.spareChanges.length">暂无备件更换记录</div></template
+            ></AppBusinessTable
+          >
         </div>
-        <div v-else class="history-table">
-          <table class="business-table">
-            <thead>
-              <tr>
-                <th>记录编号</th>
-                <th>时间</th>
-                <th>内容</th>
-                <th>执行人</th>
-                <th>状态</th>
-                <th>结果 / 措施</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(item, index) in records()" :key="index">
-                <td>{{ item.number || '—' }}</td>
-                <td>{{ time(item.time) }}</td>
-                <td>{{ item.description || '—' }}</td>
-                <td>{{ item.person || '—' }}</td>
-                <td>{{ item.status || '—' }}</td>
-                <td>{{ item.result || '—' }}</td>
-              </tr>
-              <tr v-if="!records().length">
-                <td colspan="6" class="history-empty">暂无{{ tab }}记录</td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-else-if="!['概览', '动态'].includes(tab)" class="history-table">
+          <AppBusinessTable
+            :rows="records()"
+            :pagination="false"
+            :fill="false"
+            :framed="false"
+            class="business-table"
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">记录编号</div></template
+              ><template #default="{ row: item, $index: index }">{{
+                item.number || ''
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">时间</div></template
+              ><template #default="{ row: item, $index: index }">{{
+                time(item.time)
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="210"
+              ><template #header><div class="table-header-label">内容</div></template
+              ><template #default="{ row: item, $index: index }">{{
+                item.description || ''
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">执行人</div></template
+              ><template #default="{ row: item, $index: index }">{{
+                item.person || ''
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">状态</div></template
+              ><template #default="{ row: item, $index: index }">{{
+                item.status || ''
+              }}</template></ElTableColumn
+            ><ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">结果 / 措施</div></template
+              ><template #default="{ row: item, $index: index }">{{
+                item.result || ''
+              }}</template></ElTableColumn
+            ><template #empty
+              ><div v-if="!records().length">暂无{{ tab }}记录</div></template
+            ></AppBusinessTable
+          >
         </div>
       </template>
     </div>
   </section>
 </template>
 <style scoped>
+.history-tabs {
+  background: var(--surface);
+  flex: none;
+  padding: 0 24px;
+}
+.history-tabs :deep(.el-tabs__header) {
+  margin: 0;
+}
+.history-tabs :deep(.el-tabs__item) {
+  height: 40px;
+  font-size: 13px;
+}
+
 .equipment-history {
   position: absolute;
   inset: 48px 0 0;
   z-index: 30;
-  background: #fff;
+  background: var(--canvas);
   display: flex;
   flex-direction: column;
   font-size: 13px;
-  color: #334155;
+  color: var(--text);
 }
-.equipment-history header {
-  height: 48px;
+.equipment-history > .equipment-history-heading {
+  min-height: 60px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -275,42 +494,51 @@ function time(value: string) {
   padding: 0 16px;
   border-bottom: 1px solid #e5e9ef;
 }
-.equipment-history header span {
-  color: #64748b;
+.equipment-history-heading {
+  background: var(--surface);
 }
-.history-close {
-  border: 0;
-  background: transparent;
-  font-size: 24px;
-  color: #64748b;
-  cursor: pointer;
+.equipment-history-heading h1 {
+  font-size: 18px;
+  font-weight: 650;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.history-close {
+.equipment-history-code {
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--text);
+}
+.equipment-history-statuses {
   margin-left: auto;
-}
-.equipment-history nav {
   display: flex;
-  gap: 24px;
-  padding: 0 20px;
-  border-bottom: 1px solid #e5e9ef;
+  align-items: center;
+  gap: 8px;
+  flex: none;
 }
-.equipment-history nav button {
-  height: 44px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: #64748b;
-  font: inherit;
-  cursor: pointer;
+.equipment-state.success {
+  color: #11934a;
+  background: #e8faf0;
+  border-color: #d1f2de;
 }
-.equipment-history nav button.active {
-  color: var(--primary, #245bfa);
-  border-color: var(--primary, #245bfa);
+.equipment-state.warning {
+  color: #c66a00;
+  background: #fff1d6;
+  border-color: #ffe4ae;
+}
+.equipment-state.danger {
+  color: #e33535;
+  background: #ffe8e8;
+  border-color: #ffd1d1;
 }
 .history-body {
   overflow: auto;
-  padding: 20px;
+  padding: 8px;
   flex: 1;
+  min-height: 0;
+  min-width: 0;
 }
 .history-info {
   display: grid;
@@ -345,8 +573,7 @@ function time(value: string) {
 .history-related h3 {
   font-size: 13px;
 }
-.history-related p,
-.history-empty {
+.history-related p {
   color: #94a3b8;
 }
 .history-table table,
@@ -354,31 +581,8 @@ function time(value: string) {
   width: 100%;
   border-collapse: collapse;
 }
-.history-table th {
-  background: #f5f7fa;
-  text-align: left;
-  font-weight: 600;
-}
-.history-table td,
-.history-table th,
-.history-related td {
-  padding: 12px;
-  border-bottom: 1px solid #e9edf3;
-}
-.history-empty {
-  text-align: center;
-  padding: 48px !important;
-}
 .history-error {
   color: #dc3545;
-}
-.history-equipment-image {
-  display: block;
-  max-width: 180px;
-  max-height: 140px;
-  object-fit: contain;
-  border: 1px solid #e2e7ee;
-  border-radius: 6px;
 }
 .history-equipment-identity {
   display: flex;

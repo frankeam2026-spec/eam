@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './AppIcon.vue';
 import { ref, watch } from 'vue';
 const props = defineProps<{ fileId?: string; name?: string }>();
 const failed = ref(false);
@@ -19,26 +20,7 @@ watch(
       loading="lazy"
       @error="failed = true"
     />
-    <svg v-else viewBox="0 0 48 48" role="img" aria-label="暂无设备图片">
-      <rect
-        x="9"
-        y="11"
-        width="30"
-        height="26"
-        rx="5"
-        fill="#edf3ff"
-        stroke="#b7c9ed"
-        stroke-width="1.5"
-      />
-      <circle cx="19" cy="20" r="3" fill="#87a8e5" />
-      <path
-        d="m11 33 9-8 6 5 7-9 4 5v6a3 3 0 0 1-3 3H14a3 3 0 0 1-3-2Z"
-        fill="#b7cef4"
-        stroke="#8fafe5"
-        stroke-width="1.2"
-        stroke-linejoin="round"
-      />
-    </svg>
+    <AppIcon name="Picture" v-else role="img" aria-label="暂无设备图片" />
   </span>
 </template>
 
@@ -54,9 +36,13 @@ watch(
   background: #f6f8fc;
 }
 .equipment-image img,
-.equipment-image svg {
+.equipment-image .app-icon {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+.equipment-image .app-icon {
+  --app-icon-size: 26px;
+  color: var(--brand, #205cf5);
 }
 </style>

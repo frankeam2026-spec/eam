@@ -117,8 +117,8 @@ const cells = computed(() => {
   display: block;
   max-width: 100%;
   max-height: 100%;
-  width: auto;
-  height: auto;
+  width: 100%;
+  height: 100%;
   filter: drop-shadow(0 2px 5px #24395715);
   border: 1px solid #e2e7ef;
   font-family: Arial, 'Microsoft YaHei', sans-serif;

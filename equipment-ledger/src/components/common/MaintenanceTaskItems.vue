@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ElTableColumn } from 'element-plus';
+import AppBusinessTable from './AppBusinessTable.vue';
 import AppDecimalInput from './AppDecimalInput.vue';
 import { formatNumber } from '../../utils/number';
 import { ElInput, ElSelect, ElOption, ElSwitch, ElTag } from 'element-plus';
@@ -54,216 +56,220 @@ function abnormal(item: MaintenanceItem) {
   }
   return false;
 }
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => props.items;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 
 <template>
   <div class="task-project-table-scroll">
-    <table
+    <AppBusinessTable
+      :rows="items"
+      :pagination="false"
+      :fill="false"
+      :framed="false"
       class="business-table task-project-table"
-      :class="{ 'without-module': hideModule, 'compact-check-table': compact }"
-    >
-      <colgroup v-if="compact">
-        <col style="width: 48px" />
-        <col style="width: 150px" />
-        <col style="width: 210px" />
-        <col style="width: 240px" />
-        <col style="width: 80px" />
-        <col style="width: 240px" />
-        <col style="width: 165px" />
-      </colgroup>
-      <colgroup v-else>
-        <col style="width: 52px" />
-        <col v-if="!hideModule" style="width: 130px" />
-        <col style="width: 190px" />
-        <col style="width: 260px" />
-        <col style="width: 310px" />
-        <col style="width: 92px" />
-        <col style="width: 110px" />
-        <col style="width: 240px" />
-        <col style="width: 220px" />
-        <col style="width: 210px" />
-        <col style="width: 220px" />
-      </colgroup>
-      <thead>
-        <tr>
-          <th class="fixed-sequence">序号</th>
-          <th v-if="!hideModule" class="fixed-module">模块</th>
-          <th class="fixed-name">项目名称</th>
-          <th>{{ label === '保养' ? '保养内容' : '方法及基准' }}</th>
-          <th>{{ label }}结果</th>
-          <th>判定</th>
-          <th v-if="!compact">异常已处理</th>
-          <th>{{ compact ? '异常处理 / 说明' : '处理措施' }}</th>
-          <th v-if="!compact">项目说明</th>
-          <th>{{ label }}图片</th>
-          <th v-if="!compact">参考说明 / 附件</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="(item, index) in items" :key="item.id">
-          <td class="fixed-sequence">{{ index + 1 }}</td>
-          <td v-if="!hideModule" class="fixed-module">{{ item.module || '' }}</td>
-          <td class="fixed-name">
-            <strong>{{ item.name }}</strong>
-          </td>
-          <td class="long-text">
-            {{ item.content || '' }}
-            <details
-              v-if="compact && (item.remark || item.references?.length)"
-              class="check-reference"
-            >
-              <summary>参考资料</summary>
-              <p v-if="item.remark">{{ item.remark }}</p>
-              <MaintenanceAttachments :model-value="item.references || []" readonly />
-            </details>
-          </td>
-          <td>
-            <div class="result-value">
-              <span v-if="item.required && !readonly" class="required-mark" title="必填">*</span>
-              <template v-if="readonly"
-                ><span>{{
-                  result(item.id).skipped
-                    ? '已跳过'
-                    : (item.valueType === '数值'
-                        ? formatNumber(result(item.id).value)
-                        : result(item.id).value) ||
-                      (result(item.id).implicitNormal ? '正常（仅异常填报）' : '')
-                }}</span></template
-              >
-              <ElSelect
-                v-else-if="item.valueType === '选项'"
-                :model-value="result(item.id).value"
-                placeholder="选择结果"
-                @update:model-value="update(item.id, { value: String($event) })"
-              >
-                <ElOption
-                  v-for="option in item.options"
-                  :key="option"
-                  :label="option"
-                  :value="option"
-                />
-              </ElSelect>
-              <AppDecimalInput
-                v-else-if="item.valueType === '数值'"
-                :model-value="result(item.id).value"
-                placeholder="输入测量值"
-                @update:model-value="update(item.id, { value: $event })"
-              />
-              <ElInput
-                v-else
-                :model-value="result(item.id).value"
-                type="text"
-                placeholder="填写结果"
-                @update:model-value="update(item.id, { value: $event })"
-              />
-              <span v-if="item.valueType === '数值'" class="numeric-interval"
-                >{{ formatNumber(item.lower) || '−∞' }} ～
-                {{ formatNumber(item.upper) || '+∞' }}</span
-              >
-            </div>
-            <small
-              v-if="item.valueType === '选项' && item.normalOptions.length"
-              class="normal-options"
-              >正常选项：{{ item.normalOptions.join('、') }}</small
-            >
-          </td>
-          <td>
-            <ElTag
-              :type="
-                !result(item.id).value && !result(item.id).implicitNormal
-                  ? 'info'
-                  : abnormal(item)
-                    ? 'danger'
-                    : 'success'
-              "
-              size="small"
-              >{{
+      ><!-- @vue-generic {TableColumnRow1} -->
+      <ElTableColumn :min-width="55" :width="52" class-name="fixed-sequence"
+        ><template #header><div class="table-header-label">序号</div></template
+        ><template #default="{ row: item, $index: index }">{{ index + 1 }}</template></ElTableColumn
+      ><!-- @vue-generic {TableColumnRow1} -->
+      <ElTableColumn v-if="!hideModule" :min-width="150" :width="130" class-name="fixed-module"
+        ><template #header><div class="table-header-label">模块</div></template
+        ><template #default="{ row: item, $index: index }">{{
+          item.module || ''
+        }}</template></ElTableColumn
+      ><!-- @vue-generic {TableColumnRow1} -->
+      <ElTableColumn :min-width="210" :width="190" class-name="fixed-name"
+        ><template #header><div class="table-header-label">项目名称</div></template
+        ><template #default="{ row: item, $index: index }">
+          <strong>{{ item.name }}</strong>
+        </template></ElTableColumn
+      ><!-- @vue-generic {TableColumnRow1} -->
+      <ElTableColumn :min-width="210" :width="260" class-name="long-text"
+        ><template #header
+          ><div class="table-header-label">
+            {{ label === '保养' ? '保养内容' : '方法及基准' }}
+          </div></template
+        ><template #default="{ row: item, $index: index }">
+          {{ item.content || '' }}
+          <details
+            v-if="compact && (item.remark || item.references?.length)"
+            class="check-reference"
+          >
+            <summary>参考资料</summary>
+            <p v-if="item.remark">{{ item.remark }}</p>
+            <MaintenanceAttachments :model-value="item.references || []" readonly />
+          </details> </template></ElTableColumn
+      ><!-- @vue-generic {TableColumnRow1} -->
+      <ElTableColumn :min-width="150" :width="310"
+        ><template #header
+          ><div class="table-header-label">{{ label }}结果</div></template
+        ><template #default="{ row: item, $index: index }">
+          <div class="result-value">
+            <span v-if="item.required && !readonly" class="required-mark" title="必填">*</span>
+            <template v-if="readonly"
+              ><span>{{
                 result(item.id).skipped
                   ? '已跳过'
-                  : !result(item.id).value && !result(item.id).implicitNormal
-                    ? '未填写'
-                    : abnormal(item)
-                      ? '异常'
-                      : '正常'
-              }}</ElTag
+                  : (item.valueType === '数值'
+                      ? formatNumber(result(item.id).value)
+                      : result(item.id).value) ||
+                    (result(item.id).implicitNormal ? '正常（仅异常填报）' : '')
+              }}</span></template
             >
-          </td>
-          <td v-if="!compact">
-            <template v-if="readonly">{{
-              abnormal(item) ? (result(item.id).resolved ? '是' : '否') : ''
-            }}</template>
-            <ElSwitch
-              v-else-if="abnormal(item)"
-              :model-value="result(item.id).resolved"
-              :aria-label="item.name + '异常已处理'"
-              @update:model-value="update(item.id, { resolved: Boolean($event) })"
-            />
-            <span v-else class="muted"></span>
-          </td>
-          <td class="long-text">
-            <div v-if="compact && abnormal(item)" class="check-resolution">
-              <span>异常已处理</span
-              ><span v-if="readonly">{{ result(item.id).resolved ? '是' : '否' }}</span
-              ><ElSwitch
-                v-else
-                :model-value="result(item.id).resolved"
-                @update:model-value="update(item.id, { resolved: Boolean($event) })"
+            <ElSelect
+              v-else-if="item.valueType === '选项'"
+              :model-value="result(item.id).value"
+              placeholder="选择结果"
+              @update:model-value="update(item.id, { value: String($event) })"
+            >
+              <ElOption
+                v-for="option in item.options"
+                :key="option"
+                :label="option"
+                :value="option"
               />
-            </div>
-            <template v-if="readonly">{{ result(item.id).measure || '' }}</template>
-            <div v-else-if="abnormal(item)" class="result-value">
-              <span v-if="result(item.id).resolved" class="required-mark">*</span
-              ><ElInput
-                :model-value="result(item.id).measure"
-                type="textarea"
-                :autosize="{ minRows: 1, maxRows: 4 }"
-                placeholder="填写处理措施"
-                @update:model-value="update(item.id, { measure: $event })"
-              />
-            </div>
-            <span v-else class="muted"></span>
-            <p v-if="compact && readonly && result(item.id).remark" class="check-note">
-              {{ result(item.id).remark }}
-            </p>
-            <ElInput
-              v-if="compact && !readonly"
-              :model-value="result(item.id).remark"
-              class="check-note"
-              placeholder="检查说明（选填）"
-              @update:model-value="update(item.id, { remark: $event })"
+            </ElSelect>
+            <AppDecimalInput
+              v-else-if="item.valueType === '数值'"
+              :model-value="result(item.id).value"
+              placeholder="输入测量值"
+              @update:model-value="update(item.id, { value: $event })"
             />
-          </td>
-          <td v-if="!compact" class="long-text">
-            <template v-if="readonly">{{ result(item.id).remark || '' }}</template>
             <ElInput
               v-else
-              :model-value="result(item.id).remark"
+              :model-value="result(item.id).value"
+              type="text"
+              placeholder="填写结果"
+              @update:model-value="update(item.id, { value: $event })"
+            />
+            <span v-if="item.valueType === '数值'" class="numeric-interval"
+              >{{ formatNumber(item.lower) || '−∞' }} ～
+              {{ formatNumber(item.upper) || '+∞' }}</span
+            >
+          </div>
+          <small
+            v-if="item.valueType === '选项' && item.normalOptions.length"
+            class="normal-options"
+            >正常选项：{{ item.normalOptions.join('、') }}</small
+          >
+        </template></ElTableColumn
+      ><!-- @vue-generic {TableColumnRow1} -->
+      <ElTableColumn :min-width="150" :width="92"
+        ><template #header><div class="table-header-label">判定</div></template
+        ><template #default="{ row: item, $index: index }">
+          <ElTag
+            :type="
+              !result(item.id).value && !result(item.id).implicitNormal
+                ? 'info'
+                : abnormal(item)
+                  ? 'danger'
+                  : 'success'
+            "
+            size="small"
+            >{{
+              result(item.id).skipped
+                ? '已跳过'
+                : !result(item.id).value && !result(item.id).implicitNormal
+                  ? '未填写'
+                  : abnormal(item)
+                    ? '异常'
+                    : '正常'
+            }}</ElTag
+          >
+        </template></ElTableColumn
+      ><!-- @vue-generic {TableColumnRow1} -->
+      <ElTableColumn v-if="!compact" :min-width="150" :width="110"
+        ><template #header><div class="table-header-label">异常已处理</div></template
+        ><template #default="{ row: item, $index: index }">
+          <template v-if="readonly">{{
+            abnormal(item) ? (result(item.id).resolved ? '是' : '否') : ''
+          }}</template>
+          <ElSwitch
+            v-else-if="abnormal(item)"
+            :model-value="result(item.id).resolved"
+            :aria-label="item.name + '异常已处理'"
+            @update:model-value="update(item.id, { resolved: Boolean($event) })"
+          />
+          <span v-else class="muted"></span> </template></ElTableColumn
+      ><!-- @vue-generic {TableColumnRow1} -->
+      <ElTableColumn :min-width="150" :width="240" class-name="long-text"
+        ><template #header
+          ><div class="table-header-label">
+            {{ compact ? '异常处理 / 说明' : '处理措施' }}
+          </div></template
+        ><template #default="{ row: item, $index: index }">
+          <div v-if="compact && abnormal(item)" class="check-resolution">
+            <span>异常已处理</span
+            ><span v-if="readonly">{{ result(item.id).resolved ? '是' : '否' }}</span
+            ><ElSwitch
+              v-else
+              :model-value="result(item.id).resolved"
+              @update:model-value="update(item.id, { resolved: Boolean($event) })"
+            />
+          </div>
+          <template v-if="readonly">{{ result(item.id).measure || '' }}</template>
+          <div v-else-if="abnormal(item)" class="result-value">
+            <span v-if="result(item.id).resolved" class="required-mark">*</span
+            ><ElInput
+              :model-value="result(item.id).measure"
               type="textarea"
               :autosize="{ minRows: 1, maxRows: 4 }"
-              placeholder="填写说明"
-              @update:model-value="update(item.id, { remark: $event })"
+              placeholder="填写处理措施"
+              @update:model-value="update(item.id, { measure: $event })"
             />
-          </td>
-          <td>
-            <span v-if="item.photoRequired && !readonly" class="required-mark">*</span
-            ><MaintenanceAttachments
-              :model-value="result(item.id).images || []"
-              :readonly="readonly"
-              images-only
-              :upload-file="uploadFile"
-              @update:model-value="update(item.id, { images: $event })"
-            />
-          </td>
-          <td v-if="!compact" class="long-text">
-            <p v-if="item.remark" class="reference-note">{{ item.remark }}</p>
-            <MaintenanceAttachments :model-value="item.references || []" readonly />
-          </td>
-        </tr>
-        <tr v-if="!items.length">
-          <td :colspan="compact ? 7 : hideModule ? 10 : 11" class="empty">暂无{{ label }}项目</td>
-        </tr>
-      </tbody>
-    </table>
+          </div>
+          <span v-else class="muted"></span>
+          <p v-if="compact && readonly && result(item.id).remark" class="check-note">
+            {{ result(item.id).remark }}
+          </p>
+          <ElInput
+            v-if="compact && !readonly"
+            :model-value="result(item.id).remark"
+            class="check-note"
+            placeholder="检查说明（选填）"
+            @update:model-value="update(item.id, { remark: $event })"
+          /> </template></ElTableColumn
+      ><!-- @vue-generic {TableColumnRow1} -->
+      <ElTableColumn v-if="!compact" :min-width="210" :width="220" class-name="long-text"
+        ><template #header><div class="table-header-label">项目说明</div></template
+        ><template #default="{ row: item, $index: index }">
+          <template v-if="readonly">{{ result(item.id).remark || '' }}</template>
+          <ElInput
+            v-else
+            :model-value="result(item.id).remark"
+            type="textarea"
+            :autosize="{ minRows: 1, maxRows: 4 }"
+            placeholder="填写说明"
+            @update:model-value="update(item.id, { remark: $event })"
+          /> </template></ElTableColumn
+      ><!-- @vue-generic {TableColumnRow1} -->
+      <ElTableColumn :min-width="150" :width="210"
+        ><template #header
+          ><div class="table-header-label">{{ label }}图片</div></template
+        ><template #default="{ row: item, $index: index }">
+          <span v-if="item.photoRequired && !readonly" class="required-mark">*</span
+          ><MaintenanceAttachments
+            :model-value="result(item.id).images || []"
+            :readonly="readonly"
+            images-only
+            :upload-file="uploadFile"
+            @update:model-value="update(item.id, { images: $event })"
+          /> </template></ElTableColumn
+      ><!-- @vue-generic {TableColumnRow1} -->
+      <ElTableColumn v-if="!compact" :min-width="150" :width="220" class-name="long-text"
+        ><template #header><div class="table-header-label">参考说明 / 附件</div></template
+        ><template #default="{ row: item, $index: index }">
+          <p v-if="item.remark" class="reference-note">{{ item.remark }}</p>
+          <MaintenanceAttachments
+            :model-value="item.references || []"
+            readonly
+          /> </template></ElTableColumn
+      ><template #empty
+        ><div v-if="!items.length">暂无{{ label }}项目</div></template
+      ></AppBusinessTable
+    >
   </div>
 </template>
 
@@ -282,28 +288,12 @@ function abnormal(item: MaintenanceItem) {
   font-size: 13px;
   color: #263246;
 }
-.task-project-table th {
-  background: #f5f7fa;
-  color: #263246;
-  text-align: left;
-  font-weight: 700;
-  height: 42px;
-}
-.task-project-table th,
-.task-project-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid #edf0f4;
+.task-project-table :deep(th),
+.task-project-table :deep(td) {
   vertical-align: middle;
 }
-.task-project-table td {
-  height: 54px;
-  background: #fff;
-}
-.task-project-table tbody tr:last-child td {
+.task-project-table :deep(tbody tr:last-child td) {
   border-bottom: 0;
-}
-.task-project-table tbody tr:hover td {
-  background: #f8faff;
 }
 .fixed-sequence,
 .fixed-module,
@@ -322,16 +312,10 @@ function abnormal(item: MaintenanceItem) {
   left: 182px;
   box-shadow: 1px 0 0 #e3e8f0;
 }
-.task-project-table th.fixed-sequence,
-.task-project-table th.fixed-module,
-.task-project-table th.fixed-name {
+.task-project-table :deep(th.fixed-sequence),
+.task-project-table :deep(th.fixed-module),
+.task-project-table :deep(th.fixed-name) {
   z-index: 2;
-}
-.without-module {
-  width: 1904px;
-}
-.without-module .fixed-name {
-  left: 52px;
 }
 .fixed-name strong {
   font-weight: 600;
@@ -381,17 +365,6 @@ function abnormal(item: MaintenanceItem) {
 </style>
 
 <style scoped>
-.task-project-table.compact-check-table {
-  width: 1133px;
-  min-width: 100%;
-}
-.compact-check-table .fixed-name {
-  left: 48px;
-}
-.compact-check-table td {
-  padding: 12px;
-  vertical-align: top;
-}
 .check-reference {
   margin-top: 8px;
   font-size: 13px;

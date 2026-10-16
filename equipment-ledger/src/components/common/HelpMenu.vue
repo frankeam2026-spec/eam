@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './AppIcon.vue';
 import { ElDropdown, ElDropdownMenu, ElDropdownItem, ElButton } from 'element-plus';
 import AppDialog from './AppDialog.vue';
 import { version } from '../../../package.json';
@@ -13,12 +14,9 @@ const titles: Record<string, string> = {
 
 <template>
   <ElDropdown class="help-menu" trigger="click" placement="bottom-end" @command="section = $event">
-    <button class="help-trigger" type="button" title="帮助" aria-label="帮助">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="12" r="9" />
-        <path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 16.5v.1" />
-      </svg>
-    </button>
+    <ElButton class="help-trigger" title="帮助" aria-label="帮助" native-type="button"
+      ><AppIcon name="Help"
+    /></ElButton>
     <template #dropdown>
       <ElDropdownMenu>
         <ElDropdownItem command="guide">操作指南</ElDropdownItem>
@@ -90,14 +88,9 @@ const titles: Record<string, string> = {
   outline: 2px solid currentColor;
   outline-offset: 2px;
 }
-.help-trigger svg {
+.help-trigger .app-icon {
   width: 20px;
   height: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 .help-content {
   color: var(--text);

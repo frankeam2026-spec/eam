@@ -1,5 +1,17 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue';
+import AppFilePicker from './common/AppFilePicker.vue';
+import {
+  ElButton,
+  ElSelect,
+  ElOption,
+  ElInput,
+  ElCheckbox,
+  ElInputNumber,
+  ElColorPicker,
+} from 'element-plus';
+
+import AppIcon from './common/AppIcon.vue';
+import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import {
   emptyCell,
   getCell,
@@ -31,6 +43,38 @@ const rect = computed(() => ({
 const active = computed(
   () =>
     getCell(grid.value, rect.value.r0, rect.value.c0) || emptyCell(rect.value.r0, rect.value.c0),
+);
+const canvasViewport = ref<HTMLElement>();
+const fitMode = ref(true);
+const showFields = ref(true);
+const showProperties = ref(true);
+let canvasObserver: ResizeObserver | undefined;
+function fitCanvas() {
+  if (!fitMode.value || !canvasViewport.value) return;
+  const { clientWidth, clientHeight } = canvasViewport.value;
+  if (clientWidth < 1 || clientHeight < 1) return;
+  const horizontal =
+    (clientWidth - 80 - 32) / ((props.width + grid.value.margin.left) * 3.7795275591);
+  const vertical =
+    (clientHeight - 80 - 28) / ((props.height + grid.value.margin.top) * 3.7795275591);
+  zoom.value = Math.max(0.25, Math.min(4, Math.floor(Math.min(horizontal, vertical) * 100) / 100));
+}
+const zoomChoice = computed({
+  get: () => (fitMode.value ? 'fit' : String(zoom.value)),
+  set: (value: string) => {
+    fitMode.value = value === 'fit';
+    if (fitMode.value) fitCanvas();
+    else zoom.value = Number(value);
+  },
+});
+watch(
+  [
+    () => props.width,
+    () => props.height,
+    () => grid.value.margin.left,
+    () => grid.value.margin.top,
+  ],
+  () => nextTick(fitCanvas),
 );
 const scale = computed(() => 3.7795275591 * zoom.value);
 const name = computed(
@@ -78,13 +122,10 @@ function afterInput() {
   }
   focusState = '';
 }
-function contentChange(event: Event) {
-  change(
-    () =>
-      (ensureCell(grid.value, rect.value.r0, rect.value.c0).content = (
-        event.target as HTMLTextAreaElement
-      ).value),
-  );
+function contentChange(value: string) {
+  change(() => {
+    ensureCell(grid.value, rect.value.r0, rect.value.c0).content = value;
+  });
 }
 function setStyle(key: keyof GridCell, value: unknown) {
   change(() => {
@@ -447,9 +488,8 @@ function keydown(event: KeyboardEvent) {
     expand();
   }
 }
-async function upload(event: Event) {
-  const input = event.target as HTMLInputElement,
-    file = input.files?.[0];
+async function upload(files: File[]) {
+  const file = files[0];
   if (!file) return;
   if (!['image/png', 'image/jpeg'].includes(file.type) || file.size > 1024 * 1024) {
     emit('message', '请选择1MB以内的PNG或JPEG图片');
@@ -461,7 +501,6 @@ async function upload(event: Event) {
       ensureCell(grid.value, rect.value.r0, rect.value.c0).image = String(reader.result);
     });
   reader.readAsDataURL(file);
-  input.value = '';
 }
 function cellStyle(r: number, c: number) {
   const cell = getCell(grid.value, r, c) || emptyCell(r, c);
@@ -485,99 +524,117 @@ function cellStyle(r: number, c: number) {
 }
 
 onMounted(() => {
+  canvasObserver = new ResizeObserver(fitCanvas);
+  if (canvasViewport.value) canvasObserver.observe(canvasViewport.value);
+  fitCanvas();
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', end);
 });
 onBeforeUnmount(() => {
+  canvasObserver?.disconnect();
   window.removeEventListener('pointermove', move);
   window.removeEventListener('pointerup', end);
 });
 </script>
 <template>
-  <div class="print-grid-shell" tabindex="0" @keydown="keydown" @paste="paste">
-    <aside class="grid-fields">
+  <div
+    class="print-grid-shell"
+    :class="{ 'fields-hidden': !showFields, 'properties-hidden': !showProperties }"
+    tabindex="0"
+    @keydown="keydown"
+    @paste="paste"
+  >
+    <div class="grid-toolbar">
+      <ElButton :class="{ active: showFields }" @click="showFields = !showFields">字段</ElButton>
+      <ElButton :class="{ active: showProperties }" @click="showProperties = !showProperties"
+        >属性</ElButton
+      >
+      <ElButton :disabled="!editable || !undo.length" title="撤销" @click="doUndo"
+        ><AppIcon name="Undo" /></ElButton
+      ><ElButton :disabled="!editable || !redo.length" title="重做" @click="doRedo"
+        ><AppIcon name="Redo" /></ElButton
+      ><i></i><ElButton :disabled="!editable" @click="merge">合并</ElButton
+      ><ElButton :disabled="!editable" @click="split">拆分</ElButton
+      ><ElButton
+        :disabled="!editable"
+        @click="setStyle('bold', !active.bold)"
+        :class="{ active: active.bold }"
+        title="加粗"
+        ><b>B</b></ElButton
+      ><ElSelect
+        :disabled="!editable"
+        aria-label="边框"
+        class="grid-border-select"
+        placeholder="边框"
+        @change="borders($event as any)"
+        :model-value="''"
+        ><ElOption value="" :label="'边框'" /><ElOption value="all" :label="'全部边框'" /><ElOption
+          value="outer"
+          :label="'外框'" /><ElOption value="top" :label="'上边框'" /><ElOption
+          value="bottom"
+          :label="'下边框'" /><ElOption value="left" :label="'左边框'" /><ElOption
+          value="right"
+          :label="'右边框'" /><ElOption value="none" :label="'清除边框'" /></ElSelect
+      ><i></i
+      ><ElSelect
+        :disabled="!editable"
+        class="grid-axis-select"
+        placeholder="行列操作"
+        @change="modifyAxis($event.includes('Row') ? 'row' : 'col', $event.startsWith('insert'))"
+        :model-value="''"
+        ><ElOption value="" :label="'行列操作'" /><ElOption
+          value="insertRow"
+          :label="'插入行'" /><ElOption value="deleteRow" :label="'删除行'" /><ElOption
+          value="insertCol"
+          :label="'插入列'" /><ElOption value="deleteCol" :label="'删除列'" /></ElSelect
+      ><ElButton @click="copy" title="复制区域">复制</ElButton
+      ><ElButton :disabled="!editable" @click="pasteCells" title="粘贴区域">粘贴</ElButton
+      ><ElButton
+        @click="
+          paperSettings = !paperSettings;
+          showProperties = true;
+        "
+        :class="{ active: paperSettings }"
+      >
+        纸张设置</ElButton
+      >
+      <ElSelect v-model="zoomChoice" class="grid-zoom-select" aria-label="缩放比例">
+        <ElOption value="fit" :label="`适应画布 ${Math.round(zoom * 100)}%`" />
+        <ElOption
+          v-for="ratio in [0.5, 0.75, 1, 1.5, 2, 3, 4]"
+          :key="ratio"
+          :value="String(ratio)"
+          :label="`${ratio * 100}%`"
+        />
+      </ElSelect>
+    </div>
+    <aside v-if="showFields" class="grid-fields">
       <h3>设备字段</h3>
       <div class="field-list">
-        <button
+        <ElButton
           v-for="f in fields"
           :key="f.key"
           :disabled="!editable"
           draggable="true"
           @click="insertField(f.key)"
           @dragstart="$event.dataTransfer?.setData('text/print-field', f.key)"
+          >{{ f.label }}</ElButton
         >
-          {{ f.label }}
-        </button>
       </div>
       <p>选中单元格后点击字段，或拖入画布。</p>
     </aside>
     <div class="print-grid-main">
-      <div class="grid-toolbar">
-        <button :disabled="!editable || !undo.length" title="撤销" @click="doUndo">↶</button
-        ><button :disabled="!editable || !redo.length" title="重做" @click="doRedo">↷</button><i></i
-        ><button :disabled="!editable" @click="merge">合并</button
-        ><button :disabled="!editable" @click="split">拆分</button
-        ><button
-          :disabled="!editable"
-          @click="setStyle('bold', !active.bold)"
-          :class="{ active: active.bold }"
-          title="加粗"
-        >
-          <b>B</b></button
-        ><select
-          :disabled="!editable"
-          aria-label="边框"
-          @change="
-            borders(($event.target as HTMLSelectElement).value as any);
-            ($event.target as HTMLSelectElement).value = '';
-          "
-        >
-          <option value="">▦ 边框</option>
-          <option value="all">全部边框</option>
-          <option value="outer">外框</option>
-          <option value="top">上边框</option>
-          <option value="bottom">下边框</option>
-          <option value="left">左边框</option>
-          <option value="right">右边框</option>
-          <option value="none">清除边框</option></select
-        ><i></i
-        ><select
-          :disabled="!editable"
-          @change="
-            modifyAxis(
-              ($event.target as HTMLSelectElement).value.includes('Row') ? 'row' : 'col',
-              ($event.target as HTMLSelectElement).value.startsWith('insert'),
-            );
-            ($event.target as HTMLSelectElement).value = '';
-          "
-        >
-          <option value="">行列操作</option>
-          <option value="insertRow">插入行</option>
-          <option value="deleteRow">删除行</option>
-          <option value="insertCol">插入列</option>
-          <option value="deleteCol">删除列</option></select
-        ><button @click="copy" title="复制区域">复制</button
-        ><button :disabled="!editable" @click="pasteCells" title="粘贴区域">粘贴</button
-        ><button @click="paperSettings = !paperSettings" :class="{ active: paperSettings }">
-          纸张</button
-        ><select v-model.number="zoom">
-          <option :value="0.75">75%</option>
-          <option :value="1">100%</option>
-          <option :value="1.5">150%</option>
-          <option :value="2">200%</option>
-        </select>
-      </div>
       <div class="grid-formula">
         <span>{{ name }}</span
         ><b>fx</b
-        ><input
+        ><ElInput
           :disabled="!editable"
-          :value="active.content"
+          :model-value="active.content"
           @change="contentChange"
-          placeholder="输入文字，或在右侧插入字段"
-        /><label><input type="checkbox" v-model="sampleMode" />示例值</label>
+          placeholder="输入文字，或从左侧插入字段"
+        /><ElCheckbox v-model="sampleMode">示例值</ElCheckbox>
       </div>
-      <div class="grid-scroll">
+      <div ref="canvasViewport" class="grid-scroll">
         <div
           class="grid-paper"
           :style="{
@@ -666,7 +723,9 @@ onBeforeUnmount(() => {
                       /><span
                         v-else-if="['qrcode', 'barcode'].includes(getCell(grid, r, c)?.kind || '')"
                         class="code-placeholder"
-                        >{{ getCell(grid, r, c)?.kind === 'qrcode' ? '▦ 二维码' : '▥ 条形码'
+                        ><AppIcon
+                          :name="getCell(grid, r, c)?.kind === 'qrcode' ? 'QrCode' : 'Barcode'"
+                        />{{ getCell(grid, r, c)?.kind === 'qrcode' ? '二维码' : '条形码'
                         }}<small>{{ getCell(grid, r, c)?.content }}</small></span
                       ><template v-else>{{
                         sampleMode
@@ -692,72 +751,71 @@ onBeforeUnmount(() => {
                 ? '#cf535f'
                 : undefined,
           }"
-          >列宽 {{ grid.columns.reduce((a, b) => a + b, 0).toFixed(1) }}mm · 纸张 {{ width }} ×
-          {{ height }}mm</span
+          >列宽 {{ grid.columns.reduce((a, b) => a + b, 0).toFixed(1) }}mm · 纸张 {{ width }}
+          <AppIcon name="Close" /> {{ height }}mm</span
         >
       </div>
     </div>
-    <aside class="grid-properties">
+    <aside v-if="showProperties" class="grid-properties">
       <template v-if="paperSettings"
         ><h3>纸张与打印</h3>
         <slot name="paper" />
         <div class="property-pair">
           <label
-            >上边距<input
-              v-model.number="grid.margin.top"
+            >上边距<ElInputNumber
+              v-model="grid.margin.top"
               :disabled="!editable"
-              type="number"
-              min="0"
-              step=".5"
-              @focus="beforeInput"
-              @change="afterInput" /></label
-          ><label
-            >下边距<input
-              v-model.number="grid.margin.bottom"
-              :disabled="!editable"
-              type="number"
-              min="0"
-              step=".5"
-              @focus="beforeInput"
-              @change="afterInput" /></label
-          ><label
-            >左边距<input
-              v-model.number="grid.margin.left"
-              :disabled="!editable"
-              type="number"
-              min="0"
-              step=".5"
-              @focus="beforeInput"
-              @change="afterInput" /></label
-          ><label
-            >右边距<input
-              v-model.number="grid.margin.right"
-              :disabled="!editable"
-              type="number"
-              min="0"
-              step=".5"
+              :min="0"
+              :step="0.5"
               @focus="beforeInput"
               @change="afterInput"
+              controls-position="right" /></label
+          ><label
+            >下边距<ElInputNumber
+              v-model="grid.margin.bottom"
+              :disabled="!editable"
+              :min="0"
+              :step="0.5"
+              @focus="beforeInput"
+              @change="afterInput"
+              controls-position="right" /></label
+          ><label
+            >左边距<ElInputNumber
+              v-model="grid.margin.left"
+              :disabled="!editable"
+              :min="0"
+              :step="0.5"
+              @focus="beforeInput"
+              @change="afterInput"
+              controls-position="right" /></label
+          ><label
+            >右边距<ElInputNumber
+              v-model="grid.margin.right"
+              :disabled="!editable"
+              :min="0"
+              :step="0.5"
+              @focus="beforeInput"
+              @change="afterInput"
+              controls-position="right"
           /></label>
         </div>
         <label
-          >重复表头行数<input
-            v-model.number="grid.repeatHeader"
+          >重复表头行数<ElInputNumber
+            v-model="grid.repeatHeader"
             :disabled="!editable"
-            type="number"
-            min="0"
+            :min="0"
             :max="grid.rows.length - 1"
             @focus="beforeInput"
-            @change="afterInput" /></label
-        ><label class="check-label"
-          ><input
-            v-model="grid.pageNumbers"
-            :disabled="!editable"
-            type="checkbox"
-            @focus="beforeInput"
             @change="afterInput"
-          />显示页码</label
-        ><button
+            controls-position="right" /></label
+        ><ElCheckbox
+          class="check-label"
+          v-model="grid.pageNumbers"
+          :disabled="!editable"
+          @focus="beforeInput"
+          @change="afterInput"
+          >显示页码</ElCheckbox
+        ><ElButton
           :disabled="!editable"
           @click="
             change(() => {
@@ -772,188 +830,153 @@ onBeforeUnmount(() => {
             })
           "
         >
-          将所选区域设为打印区域</button
-        ><button v-if="grid.area" :disabled="!editable" @click="change(() => (grid.area = null))">
+          将所选区域设为打印区域</ElButton
+        ><ElButton v-if="grid.area" :disabled="!editable" @click="change(() => (grid.area = null))">
           清除打印区域
-        </button></template
+        </ElButton></template
       >
       <template v-else
         ><h3>单元格 {{ name }}</h3>
         <div class="property-pair">
           <label
-            >行高（mm）<input
-              :value="grid.rows[rect.r0]"
+            >行高（mm）<ElInputNumber
+              :model-value="grid.rows[rect.r0]"
               :disabled="!editable"
-              type="number"
-              min=".1"
-              step=".5"
-              @change="
-                change(
-                  () =>
-                    (grid.rows[rect.r0] = Math.max(
-                      0.1,
-                      Number(($event.target as HTMLInputElement).value),
-                    )),
-                )
-              " /></label
+              :min="0.1"
+              :step="0.5"
+              @change="change(() => (grid.rows[rect.r0] = Math.max(0.1, Number($event))))"
+              controls-position="right" /></label
           ><label
-            >列宽（mm）<input
-              :value="grid.columns[rect.c0]"
+            >列宽（mm）<ElInputNumber
+              :model-value="grid.columns[rect.c0]"
               :disabled="!editable"
-              type="number"
-              min=".1"
-              step=".5"
-              @change="
-                change(
-                  () =>
-                    (grid.columns[rect.c0] = Math.max(
-                      0.1,
-                      Number(($event.target as HTMLInputElement).value),
-                    )),
-                )
-              "
+              :min="0.1"
+              :step="0.5"
+              @change="change(() => (grid.columns[rect.c0] = Math.max(0.1, Number($event))))"
+              controls-position="right"
           /></label>
         </div>
         <label
-          >内容类型<select
-            :value="active.kind"
+          >内容类型<ElSelect
+            :model-value="active.kind"
             :disabled="!editable"
-            @change="setStyle('kind', ($event.target as HTMLSelectElement).value)"
-          >
-            <option value="text">文本 / 字段</option>
-            <option value="image">图片</option>
-            <option value="qrcode">二维码</option>
-            <option value="barcode">条形码（Code128）</option>
-          </select></label
+            @change="setStyle('kind', $event)"
+            ><ElOption value="text" :label="'文本 / 字段'" /><ElOption
+              value="image"
+              :label="'图片'" /><ElOption value="qrcode" :label="'二维码'" /><ElOption
+              value="barcode"
+              :label="'条形码（Code128）'" /></ElSelect></label
         ><template v-if="active.kind === 'image'"
-          ><label
-            >上传图片<input
-              :disabled="!editable"
-              type="file"
-              accept="image/png,image/jpeg"
-              @change="upload" /></label></template
+          ><AppFilePicker :disabled="!editable" accept="image/png,image/jpeg" @select="upload"
+            ><ElButton :disabled="!editable">上传图片</ElButton></AppFilePicker
+          ></template
         ><template v-else
           ><label
-            >内容<textarea
-              :value="active.content"
+            >内容<ElInput
+              :model-value="active.content"
               :disabled="!editable"
               maxlength="4000"
-              placeholder="设备编码：{code}"
+              placeholder="设备编号：{code}"
               @change="contentChange"
+              type="textarea"
             />
           </label>
           <div class="property-pair">
             <label
-              >字号（pt）<input
-                :value="active.fontSize"
+              >字号（pt）<ElInputNumber
+                :model-value="active.fontSize"
                 :disabled="!editable"
-                type="number"
-                min="6"
-                max="72"
-                @change="
-                  setStyle('fontSize', Number(($event.target as HTMLInputElement).value))
-                " /></label
+                :min="6"
+                :max="72"
+                @change="setStyle('fontSize', Number($event))"
+                controls-position="right" /></label
             ><label
-              >文字颜色<input
-                :value="active.color"
+              >文字颜色<ElColorPicker
+                :model-value="active.color"
                 :disabled="!editable"
-                type="color"
-                @change="setStyle('color', ($event.target as HTMLInputElement).value)"
+                @change="setStyle('color', $event)"
             /></label>
           </div>
           <div class="font-toggles">
-            <button
+            <ElButton
               v-for="key in ['bold', 'italic', 'underline'] as const"
               :class="{ active: active[key] }"
               :disabled="!editable"
               @click="setStyle(key, !active[key])"
+              >{{ key === 'bold' ? '加粗' : key === 'italic' ? '斜体' : '下划线' }}</ElButton
             >
-              {{ key === 'bold' ? '加粗' : key === 'italic' ? '斜体' : '下划线' }}
-            </button>
           </div>
           <div class="property-pair">
             <label
-              >水平对齐<select
-                :value="active.align"
+              >水平对齐<ElSelect
+                :model-value="active.align"
                 :disabled="!editable"
-                @change="setStyle('align', ($event.target as HTMLSelectElement).value)"
-              >
-                <option value="left">左对齐</option>
-                <option value="center">居中</option>
-                <option value="right">右对齐</option>
-              </select></label
+                @change="setStyle('align', $event)"
+                ><ElOption value="left" :label="'左对齐'" /><ElOption
+                  value="center"
+                  :label="'居中'" /><ElOption value="right" :label="'右对齐'" /></ElSelect></label
             ><label
-              >垂直对齐<select
-                :value="active.vertical"
+              >垂直对齐<ElSelect
+                :model-value="active.vertical"
                 :disabled="!editable"
-                @change="setStyle('vertical', ($event.target as HTMLSelectElement).value)"
-              >
-                <option value="top">顶部</option>
-                <option value="middle">居中</option>
-                <option value="bottom">底部</option>
-              </select></label
-            >
+                @change="setStyle('vertical', $event)"
+                ><ElOption value="top" :label="'顶部'" /><ElOption
+                  value="middle"
+                  :label="'居中'" /><ElOption value="bottom" :label="'底部'" /></ElSelect
+            ></label>
           </div>
           <label
-            >长文本处理<select
-              :value="active.overflow"
+            >长文本处理<ElSelect
+              :model-value="active.overflow"
               :disabled="!editable"
-              @change="setStyle('overflow', ($event.target as HTMLSelectElement).value)"
-            >
-              <option value="wrap">自动换行</option>
-              <option value="shrink">缩小字号</option>
-              <option value="clip">截断</option>
-            </select></label
-          ></template
-        >
+              @change="setStyle('overflow', $event)"
+              ><ElOption value="wrap" :label="'自动换行'" /><ElOption
+                value="shrink"
+                :label="'缩小字号'" /><ElOption value="clip" :label="'截断'" /></ElSelect></label
+        ></template>
         <div class="property-pair">
           <label
-            >背景色<input
-              :value="active.background"
+            >背景色<ElColorPicker
+              :model-value="active.background"
               :disabled="!editable"
-              type="color"
-              @change="setStyle('background', ($event.target as HTMLInputElement).value)"
+              @change="setStyle('background', $event)"
           /></label>
         </div>
         <h3 class="border-title">边框</h3>
         <div class="border-presets">
-          <button :disabled="!editable" @click="borders('all')">全部</button
-          ><button :disabled="!editable" @click="borders('outer')">外框</button
-          ><button :disabled="!editable" @click="borders('none')">清除</button>
+          <ElButton :disabled="!editable" @click="borders('all')">全部</ElButton
+          ><ElButton :disabled="!editable" @click="borders('outer')">外框</ElButton
+          ><ElButton :disabled="!editable" @click="borders('none')">清除</ElButton>
         </div>
         <div class="border-sides">
-          <button
+          <ElButton
             v-for="side in borderSides"
             :key="side"
             :disabled="!editable"
             :class="{ active: hasBorder(active, side) }"
             @click="borders(side)"
+            >{{ { top: '上', right: '右', bottom: '下', left: '左' }[side] }}</ElButton
           >
-            {{ { top: '上', right: '右', bottom: '下', left: '左' }[side] }}
-          </button>
         </div>
         <div class="property-pair">
           <label
-            >线条颜色<input
-              :value="active.borderColor || '#000000'"
+            >线条颜色<ElColorPicker
+              :model-value="active.borderColor || '#000000'"
               :disabled="!editable"
-              type="color"
-              @change="setStyle('borderColor', ($event.target as HTMLInputElement).value)" /></label
+              @change="setStyle('borderColor', $event)" /></label
           ><label
-            >粗细（pt）<select
-              :value="active.borderWidth ?? 0.5"
+            >粗细（pt）<ElSelect
+              :model-value="active.borderWidth ?? 0.5"
               :disabled="!editable"
-              @change="setStyle('borderWidth', Number(($event.target as HTMLSelectElement).value))"
-            >
-              <option :value="0.5">0.5</option>
-              <option :value="1">1</option>
-              <option :value="1.5">1.5</option>
-              <option :value="2">2</option>
-              <option :value="3">3</option>
-            </select></label
-          >
+              @change="setStyle('borderWidth', Number($event))"
+              ><ElOption :value="0.5" :label="'0.5'" /><ElOption :value="1" :label="'1'" /><ElOption
+                :value="1.5"
+                :label="'1.5'" /><ElOption :value="2" :label="'2'" /><ElOption
+                :value="3"
+                :label="'3'" /></ElSelect
+          ></label>
         </div>
-        <button :disabled="!editable" @click="clear">清空内容</button>
+        <ElButton :disabled="!editable" @click="clear">清空内容</ElButton>
         <p class="property-note">
           浅色网格线仅辅助排版；设置的边框会显示在预览和打印中。
         </p></template
@@ -963,7 +986,9 @@ onBeforeUnmount(() => {
 </template>
 <style scoped>
 .print-grid-shell {
-  display: flex;
+  display: grid;
+  grid-template-columns: 152px minmax(0, 1fr) 224px;
+  grid-template-rows: auto minmax(0, 1fr);
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -971,12 +996,24 @@ onBeforeUnmount(() => {
   background: #fff;
   font-size: 13px;
 }
+.print-grid-shell.fields-hidden {
+  grid-template-columns: 0 minmax(0, 1fr) 224px;
+}
+.print-grid-shell.properties-hidden {
+  grid-template-columns: 152px minmax(0, 1fr) 0;
+}
+.print-grid-shell.fields-hidden.properties-hidden {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+}
 .grid-fields {
-  width: 170px;
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  width: auto;
   flex-shrink: 0;
   overflow: auto;
   border-right: 1px solid #e4e9ef;
-  padding: 14px;
+  padding: 12px;
   background: #fafbfe;
   box-sizing: border-box;
 }
@@ -994,11 +1031,14 @@ onBeforeUnmount(() => {
   border-color: var(--brand);
 }
 .grid-fields p {
-  color: #94a0b0;
+  color: var(--text);
   line-height: 1.7;
   font-size: 12px;
 }
 .print-grid-main {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 0;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -1006,6 +1046,8 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 .grid-toolbar {
+  grid-column: 1 / -1;
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1013,17 +1055,36 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid #e5eaf0;
   flex-wrap: wrap;
 }
-.grid-toolbar button,
-.grid-toolbar select,
-.grid-properties button {
-  height: 29px;
-  border: 1px solid #dce3eb;
-  background: #fff;
-  border-radius: 4px;
-  padding: 0 9px;
-  color: #526076;
-  font: inherit;
-  cursor: pointer;
+.grid-toolbar .el-button {
+  padding: 0 10px;
+}
+.grid-toolbar .el-button,
+.grid-properties .el-button {
+  height: 32px;
+  margin: 0;
+}
+.grid-toolbar .grid-border-select {
+  width: 98px;
+}
+.grid-toolbar .grid-axis-select {
+  width: 112px;
+}
+.grid-toolbar .grid-zoom-select {
+  width: 140px;
+  margin-left: auto;
+}
+.grid-toolbar {
+  flex: none;
+  gap: 8px;
+}
+.grid-properties :deep(.el-input-number),
+.grid-properties :deep(.el-select),
+.grid-properties :deep(.el-input) {
+  width: 100%;
+  min-width: 0;
+}
+.grid-properties label {
+  min-width: 0;
 }
 .grid-toolbar button.active,
 .grid-properties button.active {
@@ -1040,9 +1101,6 @@ onBeforeUnmount(() => {
   height: 18px;
   border-left: 1px solid #e4e9ef;
   margin: 0 4px;
-}
-.grid-toolbar > select:last-child {
-  margin-left: auto;
 }
 .grid-formula {
   display: flex;
@@ -1062,14 +1120,6 @@ onBeforeUnmount(() => {
   color: #8b98a9;
   font-style: italic;
 }
-.grid-formula > input {
-  border: 0;
-  outline: 0;
-  flex: 1;
-  min-width: 0;
-  font: inherit;
-  background: #fff;
-}
 .grid-formula > label {
   display: flex;
   gap: 5px;
@@ -1082,10 +1132,12 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 24px;
-  background: #eff2f6;
+  padding: 32px;
+  background: #e9eef5;
+  text-align: center;
 }
 .grid-paper {
+  text-align: left;
   display: inline-block;
   background: #fff;
   box-shadow: 0 2px 15px #2d405817;
@@ -1169,13 +1221,17 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   padding: 0 12px;
   border-top: 1px solid #e4e9ef;
-  color: #8e9bad;
+  color: var(--text);
   font-size: 11px;
 }
 .grid-properties {
-  width: 250px;
+  grid-column: 3;
+  grid-row: 2;
+  min-width: 0;
+  width: auto;
   flex-shrink: 0;
-  padding: 16px;
+  padding: 14px;
+  box-sizing: border-box;
   overflow: auto;
   border-left: 1px solid #e4e9ef;
   background: white;
@@ -1190,26 +1246,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 6px;
   margin-bottom: 12px;
-  color: #748196;
-}
-.grid-properties input:not([type='checkbox']),
-.grid-properties select,
-.grid-properties textarea {
-  width: 100%;
-  height: 32px;
-  box-sizing: border-box;
-  border: 1px solid #dce3ec;
-  border-radius: 4px;
-  padding: 0 8px;
-  min-width: 0;
-  color: #3d4b60;
-  background: #fff;
-  font: inherit;
-}
-.grid-properties textarea {
-  height: 80px;
-  padding: 7px;
-  resize: vertical;
+  color: var(--text);
 }
 .property-pair {
   display: grid;
@@ -1219,17 +1256,6 @@ onBeforeUnmount(() => {
 .grid-properties .check-label {
   flex-direction: row;
   align-items: center;
-}
-.grid-properties input[type='color'] {
-  padding: 3px;
-}
-.field-insert {
-  display: flex;
-  gap: 5px;
-  margin: 0 0 14px;
-}
-.field-insert select {
-  flex: 1;
 }
 .font-toggles {
   display: flex;
@@ -1258,7 +1284,7 @@ onBeforeUnmount(() => {
 }
 .property-note {
   font-size: 11px;
-  color: #9ba7b8;
+  color: var(--text);
   line-height: 1.6;
 }
 .field-list {
@@ -1268,13 +1294,17 @@ onBeforeUnmount(() => {
   margin-top: 16px;
 }
 .field-list button {
+  width: 100%;
+  margin: 0;
+  min-height: 32px;
+  justify-content: flex-start;
   border: 1px solid #e0e6ef;
   font: inherit;
   text-align: left;
   padding: 7px;
   background: #f4f7fc;
   border-radius: 4px;
-  color: #64758d;
+  color: var(--text);
   cursor: grab;
   font-size: 12px;
 }
@@ -1289,13 +1319,7 @@ onBeforeUnmount(() => {
 .code-placeholder small {
   font-size: 9px;
 }
-.print-grid-shell input[type='checkbox'] {
-  accent-color: var(--brand);
-}
 @media (max-width: 1100px) {
-  .grid-properties {
-    width: 215px;
-  }
   .grid-status > span:nth-child(2) {
     display: none;
   }

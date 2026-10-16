@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import AppListToolbar from './common/AppListToolbar.vue';
+import { ElTableColumn } from 'element-plus';
+import { ElCheckbox } from 'element-plus';
+
+import AppBusinessTable from './common/AppBusinessTable.vue';
+import AppIcon from './common/AppIcon.vue';
 import MaterialPicker from './common/MaterialPicker.vue';
 import AppDecimalInput from './common/AppDecimalInput.vue';
 import { formatNumber, isDecimalField } from '../utils/number';
@@ -324,6 +330,13 @@ async function allocateFees() {
     busy.value = false;
   }
 }
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => rows.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
+
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows2 = () => form.value.lines;
+type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
 </script>
 <template>
   <section class="receipts">
@@ -331,12 +344,12 @@ async function allocateFees() {
       {{ error }} <ElButton text @click="load">重试</ElButton>
     </p>
     <template v-if="!editing">
-      <div class="toolbar">
+      <AppListToolbar class="toolbar">
         <ElButton
           v-if="auth.can('inventoryReceipt', '入库')"
           type="primary"
           @click="router.push({ name: 'inventory-receipt-detail', params: { id: 'new' } })"
-          >＋ 新增</ElButton
+          ><AppIcon name="Plus" /> 新增</ElButton
         >
         <form
           @submit.prevent="
@@ -362,57 +375,65 @@ async function allocateFees() {
             >重置</ElButton
           >
         </form>
-      </div>
+      </AppListToolbar>
       <div class="card">
         <div class="scroll">
-          <table class="business-table">
-            <thead>
-              <tr>
-                <th v-for="key in columns" :key="key">{{ fields[key] }}</th>
-                <th class="action">操作</th>
-              </tr>
-              <tr v-if="filterOpen">
-                <th v-for="key in columns" :key="key">
-                  <ElInput v-model="filters[key]" clearable :placeholder="'筛选' + fields[key]" />
-                </th>
-                <th class="action" />
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in rows" :key="row.id">
-                <td v-for="key in columns" :key="key">
-                  <ElButton
-                    v-if="key === 'code'"
-                    type="primary"
-                    link
-                    @click="
-                      router.push({ name: 'inventory-receipt-detail', params: { id: row.id } })
-                    "
-                    >{{ row.code }}</ElButton
-                  ><ElTag
-                    v-else-if="key === 'status'"
-                    :type="row.status === '已入库' ? 'success' : 'warning'"
-                    >{{ row.status }}</ElTag
-                  ><span v-else>{{ display(row, key) }}</span>
-                </td>
-                <td class="action">
-                  <ElButton
-                    type="primary"
-                    link
-                    @click="
-                      router.push({ name: 'inventory-receipt-detail', params: { id: row.id } })
-                    "
-                    >{{ row.status === '草稿' ? '编辑' : '查看' }}</ElButton
-                  >
-                </td>
-              </tr>
-              <tr v-if="!rows.length">
-                <td :colspan="columns.length + 1" class="empty">
-                  {{ loading ? '正在加载…' : error ? '加载失败，请重试' : '暂无入库单' }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <AppBusinessTable
+            :rows="rows"
+            :pagination="false"
+            :fill="true"
+            :framed="false"
+            class="business-table"
+            ><!-- @vue-generic {TableColumnRow1} -->
+            <ElTableColumn
+              show-overflow-tooltip
+              v-for="key in columns"
+              :min-width="150"
+              :prop="String(key)"
+              :key="String(key)"
+              ><template #header
+                ><div class="table-header-label">{{ fields[key] }}</div>
+                <div v-if="filterOpen" class="table-column-filter" @click.stop>
+                  <ElInput
+                    v-model="filters[key]"
+                    clearable
+                    :placeholder="'筛选' + fields[key]"
+                  /></div></template
+              ><template #default="{ row: row, $index: tableRowIndex }">
+                <ElButton
+                  v-if="key === 'code'"
+                  type="primary"
+                  link
+                  @click="router.push({ name: 'inventory-receipt-detail', params: { id: row.id } })"
+                  >{{ row.code }}</ElButton
+                ><ElTag
+                  v-else-if="key === 'status'"
+                  :type="row.status === '已入库' ? 'success' : 'warning'"
+                  >{{ row.status }}</ElTag
+                ><span v-else>{{ display(row, key) }}</span>
+              </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow1} -->
+            <ElTableColumn
+              class-name="action"
+              fixed="right"
+              :width="170"
+              :min-width="156"
+              :resizable="false"
+              ><template #header><div class="table-header-label">操作</div></template
+              ><template #default="{ row: row, $index: tableRowIndex }">
+                <ElButton
+                  type="primary"
+                  link
+                  @click="router.push({ name: 'inventory-receipt-detail', params: { id: row.id } })"
+                  >{{ row.status === '草稿' ? '编辑' : '查看' }}</ElButton
+                >
+              </template></ElTableColumn
+            ><template #empty
+              ><div v-if="!rows.length">
+                {{ loading ? '正在加载…' : error ? '加载失败，请重试' : '暂无入库单' }}
+              </div></template
+            ></AppBusinessTable
+          >
         </div>
         <footer class="list-footer">
           <span>共 {{ total }} 条</span
@@ -427,13 +448,13 @@ async function allocateFees() {
             @toggle-columns="columnsOpen = !columnsOpen"
             @export="exportRows"
             ><template #columns
-              ><label v-for="(label, key) in fields" :key="key"
-                ><input
-                  type="checkbox"
-                  :checked="columns.includes(key)"
-                  :disabled="columns.length === 1 && columns.includes(key)"
-                  @change="toggleColumn(key)"
-                />{{ label }}</label
+              ><ElCheckbox
+                v-for="(label, key) in fields"
+                :key="key"
+                :model-value="columns.includes(key)"
+                :disabled="columns.length === 1 && columns.includes(key)"
+                @change="toggleColumn(key)"
+                >{{ label }}</ElCheckbox
               ></template
             ></ListToolbarIcons
           >
@@ -474,7 +495,7 @@ async function allocateFees() {
             plain
             :disabled="!form.warehouseId"
             @click="add"
-            >＋ 添加物料</ElButton
+            ><AppIcon name="Plus" /> 添加物料</ElButton
           ><ElButton
             v-if="!readOnly"
             :disabled="!form.id || guard.dirty.value || busy"
@@ -483,120 +504,146 @@ async function allocateFees() {
           ><span>不含税单价与分摊费用均以元计</span>
         </div>
         <div class="line-scroll">
-          <table class="lines" :class="{ 'batch-lines': hasBatch }">
-            <thead>
-              <tr>
-                <th class="fixed-material">物料</th>
-                <th>单位</th>
-                <th>库位</th>
-                <th>数量</th>
-                <th>不含税单价</th>
-                <th>分摊费用</th>
-                <th>税率（小数）</th>
-                <th v-if="hasBatch">批次号</th>
-                <th v-if="hasBatch">供应商批次</th>
-                <th v-if="hasBatch">生产日期</th>
-                <th v-if="hasBatch">有效期至</th>
-                <th v-if="readOnly">入库成本</th>
-                <th v-if="!readOnly" class="action">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(line, index) in form.lines" :key="line.id || index">
-                <td class="fixed-material">
-                  <span v-if="readOnly">{{ line.materialCode }} {{ line.materialName }}</span
-                  ><ElButton
-                    v-else
-                    text
-                    class="material-select-button"
-                    @click="replaceMaterial(line)"
-                  >
-                    {{ line.materialCode || material(line)?.code }}
-                    {{ line.materialName || material(line)?.name || '选择物料' }}
-                  </ElButton>
-                </td>
-                <td>{{ line.unit || material(line)?.unit }}</td>
-                <td>
-                  <span v-if="readOnly">{{ line.binName }}</span
-                  ><ElSelect v-else v-model="line.binId" filterable placeholder="选择库位"
-                    ><ElOption
-                      v-for="b in choices.bins.filter((x) => x.warehouseId === form.warehouseId)"
-                      :key="b.id"
-                      :value="b.id"
-                      :label="b.name"
-                  /></ElSelect>
-                </td>
-                <td>
-                  <AppDecimalInput
-                    v-model="line.quantity"
-                    :readonly="readOnly"
-                    inputmode="decimal"
-                  />
-                </td>
-                <td>
-                  <AppDecimalInput
-                    v-model="line.unitPrice"
-                    :readonly="readOnly"
-                    inputmode="decimal"
-                    placeholder="待确定"
-                  />
-                </td>
-                <td>
-                  <AppDecimalInput
-                    v-model="line.allocatedFee"
-                    :readonly="readOnly"
-                    inputmode="decimal"
-                  />
-                </td>
-                <td>
-                  <AppDecimalInput
-                    v-model="line.taxRate"
-                    :readonly="readOnly"
-                    inputmode="decimal"
-                    placeholder="如 0.13"
-                  />
-                </td>
-                <td v-if="hasBatch">
-                  <ElInput
-                    v-if="line.batchEnabled || material(line)?.batchEnabled"
-                    v-model="line.batchCode"
-                    :readonly="readOnly"
-                    placeholder="留空自动生成"
-                  />
-                </td>
-                <td v-if="hasBatch">
-                  <ElInput
-                    v-if="line.batchEnabled || material(line)?.batchEnabled"
-                    v-model="line.supplierBatch"
-                    :readonly="readOnly"
-                  />
-                </td>
-                <td v-if="hasBatch">
-                  <ElDatePicker
-                    v-if="!readOnly && material(line)?.batchEnabled"
-                    v-model="line.productionDate"
-                    value-format="YYYY-MM-DD"
-                    type="date"
-                  /><span v-else>{{ line.productionDate }}</span>
-                </td>
-                <td v-if="hasBatch">
-                  <ElDatePicker
-                    v-if="!readOnly && material(line)?.batchEnabled"
-                    v-model="line.expiryDate"
-                    value-format="YYYY-MM-DD"
-                    type="date"
-                  /><span v-else>{{ line.expiryDate }}</span>
-                </td>
-                <td v-if="readOnly">{{ formatNumber(line.totalCost) }}</td>
-                <td v-if="!readOnly" class="action">
-                  <ElButton link type="danger" @click="form.lines.splice(index, 1)">删除</ElButton>
-                </td>
-              </tr>
-              <tr v-if="!form.lines.length">
-                <td :colspan="hasBatch ? 11 : 7" class="empty">选择仓库后添加入库物料</td>
-              </tr>
-            </tbody>
-          </table>
+          <AppBusinessTable
+            :rows="form.lines"
+            :pagination="false"
+            :fill="false"
+            :framed="false"
+            class="lines"
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn :min-width="150" class-name="fixed-material"
+              ><template #header><div class="table-header-label">物料</div></template
+              ><template #default="{ row: line, $index: index }">
+                <span v-if="readOnly">{{ line.materialCode }} {{ line.materialName }}</span
+                ><ElButton
+                  v-else
+                  text
+                  class="material-select-button"
+                  @click="replaceMaterial(line)"
+                >
+                  {{ line.materialCode || material(line)?.code }}
+                  {{ line.materialName || material(line)?.name || '选择物料' }}
+                </ElButton>
+              </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">单位</div></template
+              ><template #default="{ row: line, $index: index }">{{
+                line.unit || material(line)?.unit
+              }}</template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">库位</div></template
+              ><template #default="{ row: line, $index: index }">
+                <span v-if="readOnly">{{ line.binName }}</span
+                ><ElSelect v-else v-model="line.binId" filterable placeholder="选择库位"
+                  ><ElOption
+                    v-for="b in choices.bins.filter((x) => x.warehouseId === form.warehouseId)"
+                    :key="b.id"
+                    :value="b.id"
+                    :label="b.name"
+                /></ElSelect> </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">数量</div></template
+              ><template #default="{ row: line, $index: index }">
+                <AppDecimalInput
+                  v-model="line.quantity"
+                  :readonly="readOnly"
+                  inputmode="decimal"
+                /> </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">不含税单价</div></template
+              ><template #default="{ row: line, $index: index }">
+                <AppDecimalInput
+                  v-model="line.unitPrice"
+                  :readonly="readOnly"
+                  inputmode="decimal"
+                  placeholder="待确定"
+                /> </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">分摊费用</div></template
+              ><template #default="{ row: line, $index: index }">
+                <AppDecimalInput
+                  v-model="line.allocatedFee"
+                  :readonly="readOnly"
+                  inputmode="decimal"
+                /> </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn :min-width="150"
+              ><template #header><div class="table-header-label">税率（小数）</div></template
+              ><template #default="{ row: line, $index: index }">
+                <AppDecimalInput
+                  v-model="line.taxRate"
+                  :readonly="readOnly"
+                  inputmode="decimal"
+                  placeholder="如 0.13"
+                /> </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn v-if="hasBatch" :min-width="150"
+              ><template #header><div class="table-header-label">批次号</div></template
+              ><template #default="{ row: line, $index: index }">
+                <ElInput
+                  v-if="line.batchEnabled || material(line)?.batchEnabled"
+                  v-model="line.batchCode"
+                  :readonly="readOnly"
+                  placeholder="留空自动生成"
+                /> </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn v-if="hasBatch" :min-width="150"
+              ><template #header><div class="table-header-label">供应商批次</div></template
+              ><template #default="{ row: line, $index: index }">
+                <ElInput
+                  v-if="line.batchEnabled || material(line)?.batchEnabled"
+                  v-model="line.supplierBatch"
+                  :readonly="readOnly"
+                /> </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn v-if="hasBatch" :min-width="150"
+              ><template #header><div class="table-header-label">生产日期</div></template
+              ><template #default="{ row: line, $index: index }">
+                <ElDatePicker
+                  v-if="!readOnly && material(line)?.batchEnabled"
+                  v-model="line.productionDate"
+                  value-format="YYYY-MM-DD"
+                  type="date"
+                /><span v-else>{{ line.productionDate }}</span>
+              </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn v-if="hasBatch" :min-width="150"
+              ><template #header><div class="table-header-label">有效期至</div></template
+              ><template #default="{ row: line, $index: index }">
+                <ElDatePicker
+                  v-if="!readOnly && material(line)?.batchEnabled"
+                  v-model="line.expiryDate"
+                  value-format="YYYY-MM-DD"
+                  type="date"
+                /><span v-else>{{ line.expiryDate }}</span>
+              </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn v-if="readOnly" :min-width="150"
+              ><template #header><div class="table-header-label">入库成本</div></template
+              ><template #default="{ row: line, $index: index }">{{
+                formatNumber(line.totalCost)
+              }}</template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow2} -->
+            <ElTableColumn
+              v-if="!readOnly"
+              class-name="action"
+              fixed="right"
+              :width="170"
+              :min-width="156"
+              :resizable="false"
+              ><template #header><div class="table-header-label">操作</div></template
+              ><template #default="{ row: line, $index: index }">
+                <ElButton link type="danger" @click="form.lines.splice(index, 1)">删除</ElButton>
+              </template></ElTableColumn
+            ><template #empty
+              ><div v-if="!form.lines.length">选择仓库后添加入库物料</div></template
+            ></AppBusinessTable
+          >
         </div>
         <div v-if="form.events?.length" class="records">
           <strong>单据记录</strong>
@@ -653,20 +700,12 @@ async function allocateFees() {
   color: var(--text);
   gap: 8px;
 }
-.toolbar,
-.toolbar form,
 header,
 .detail-heading,
 .list-footer {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-.toolbar {
-  margin-bottom: 0;
-}
-.toolbar form {
-  margin-left: auto;
 }
 header {
   background: #fff;
@@ -734,24 +773,6 @@ table {
   width: 100%;
   min-width: 950px;
 }
-th,
-td {
-  text-align: left;
-  padding: 12px;
-  border-bottom: 1px solid #e4e9f0;
-  font-size: 13px;
-  white-space: nowrap;
-}
-th {
-  background: #f5f7fb;
-  font-weight: 700;
-}
-td {
-  background: #fff;
-}
-tbody tr:hover td {
-  background: #f8faff;
-}
 .action {
   position: sticky;
   right: 0;
@@ -768,22 +789,13 @@ tbody tr:hover td {
 .lines {
   min-width: 850px;
 }
-.batch-lines {
-  min-width: 1800px;
-}
-.lines td {
-  padding: 8px;
-}
-.lines th {
-  padding: 12px 8px;
-}
-.lines td:first-child {
+.lines :deep(td:first-child) {
   min-width: 270px;
 }
-.lines td:nth-child(2) {
+.lines :deep(td:nth-child(2)) {
   min-width: 60px;
 }
-.lines td {
+.lines :deep(td) {
   min-width: 130px;
 }
 .lines :deep(.el-date-editor) {

@@ -1,18 +1,24 @@
 <script setup lang="ts">
+import { ElButton } from 'element-plus';
+
 import { computed } from 'vue';
 import { ElTree, ElInput } from 'element-plus';
 import { ref } from 'vue';
 import OrganizationIcon from './OrganizationIcon.vue';
 type Org = { id: string; name: string; parentId?: string; type?: string };
-const props = defineProps<{
-  modelValue: string;
-  organizations: Org[];
-  records: { companyId?: string; departmentId?: string }[];
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: string;
+    organizations: Org[];
+    records: { companyId?: string; departmentId?: string }[];
+    scopeByRecords?: boolean;
+  }>(),
+  { scopeByRecords: true },
+);
 const emit = defineEmits<{ 'update:modelValue': [id: string] }>();
 const search = ref('');
 const nodes = computed(() => {
-  const keep = new Set<string>();
+  const keep = new Set<string>(props.scopeByRecords ? [] : props.organizations.map((x) => x.id));
   const byId = new Map(props.organizations.map((x) => [x.id, x]));
   for (const record of props.records)
     for (const id of [record.companyId, record.departmentId]) {
@@ -55,7 +61,7 @@ const nodes = computed(() => {
 <template>
   <aside class="task-organizations">
     <header>
-      <strong>公司与部门</strong><button @click="emit('update:modelValue', '')">全部</button>
+      <strong>公司与部门</strong><ElButton @click="emit('update:modelValue', '')">全部</ElButton>
     </header>
     <ElInput v-model="search" placeholder="搜索公司、部门" clearable /><ElTree
       :data="nodes"
@@ -74,7 +80,7 @@ const nodes = computed(() => {
         ></template
       ></ElTree
     >
-    <p v-if="!nodes.length">暂无可查看的任务组织</p>
+    <p v-if="!nodes.length">暂无可查看的公司或部门</p>
   </aside>
 </template>
 <style scoped>
@@ -107,7 +113,7 @@ header button {
   align-items: center;
   min-width: 0;
 }
-.org-node svg {
+.org-node :deep(.organization-icon) {
   color: var(--brand, #205cf5);
 }
 .org-node span {
@@ -115,8 +121,12 @@ header button {
   line-height: 19px;
 }
 .task-organizations :deep(.el-tree) {
+  --el-tree-text-color: var(--text, #202938);
   margin-top: 10px;
   background: transparent;
+}
+.task-organizations :deep(.el-tree-node.is-current > .el-tree-node__content) {
+  color: var(--brand, #205cf5);
 }
 .task-organizations :deep(.el-tree-node__content) {
   height: auto;

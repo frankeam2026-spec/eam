@@ -1,10 +1,14 @@
 <script setup lang="ts">
+import { ElButton } from 'element-plus';
+
+import AppIcon from './AppIcon.vue';
 import { ElDropdown, ElDropdownMenu, ElDropdownItem } from 'element-plus';
 defineProps<{ actions: { label: string; run: () => unknown; danger?: boolean }[] }>();
 </script>
 <template>
   <ElDropdown trigger="click" placement="bottom-end" popper-class="eam-dropdown"
-    ><button class="row-more" aria-label="更多操作" title="更多操作">···</button
+    ><ElButton class="row-more" aria-label="更多操作" title="更多操作"
+      ><AppIcon name="More" /></ElButton
     ><template #dropdown
       ><ElDropdownMenu
         ><ElDropdownItem

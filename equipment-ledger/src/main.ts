@@ -1,3 +1,10 @@
+import '@icon-park/vue-next/styles/index.css';
+import 'element-plus/es/components/tabs/style/css';
+import 'element-plus/es/components/checkbox/style/css';
+import 'element-plus/es/components/checkbox-group/style/css';
+import 'element-plus/es/components/radio/style/css';
+import 'element-plus/es/components/color-picker/style/css';
+import 'element-plus/es/components/upload/style/css';
 import 'element-plus/es/components/rate/style/css';
 import { createApp } from 'vue';
 import App from './App.vue';

@@ -147,7 +147,8 @@ export const inspectionApi = {
       body.id ? 'PUT' : 'POST',
     ),
   remove: (kind: string, id: string) => call('/' + kind + '/' + id, undefined, 'DELETE'),
-  tasks: (kind: 'daily' | 'periodic') => call<{ data: InspectionTask[] }>('/tasks?kind=' + kind),
+  tasks: (kind: 'daily' | 'periodic') =>
+    call<{ data: InspectionTask[]; organizations: Choice[] }>('/tasks?kind=' + kind),
   task: (id: string) => call<{ data: InspectionTask }>('/tasks/' + id),
   action: (id: string, action: string, body: unknown) =>
     call<{ data: InspectionTask }>('/tasks/' + id + '/' + action, body, 'POST'),

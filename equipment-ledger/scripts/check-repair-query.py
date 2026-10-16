@@ -54,7 +54,7 @@ try:
         assignee = user_id if index < 10 else user_id + 999
         description = "=1+1" if index == 0 else "query test fixture"
         values.append(f"({base_id + index},{tenant},'{tag}-{index:02d}','TEST-QUERY','查询测试',NOW(),'测试','{description}','集成测试','{state}',{reporter},{assignee})")
-    sql("INSERT INTO eam_repair_order (id,tenant_id,order_no,equipment_code,equipment_name,fault_at,fault_type,description,reporter,status,reporter_user_id,assignee_user_id) VALUES " + ",".join(values))
+    sql("INSERT INTO eam_repair_order (id,tenant_id,order_no,equipment_code,equipment_name,reported_at,fault_type,description,reporter,status,reporter_user_id,assignee_user_id) VALUES " + ",".join(values))
     first = query(page=1, size=10, sortBy="orderNo", direction="asc")
     second = query(page=2, size=10, sortBy="orderNo", direction="asc")
     third = query(page=3, size=10, sortBy="orderNo", direction="asc")
@@ -67,7 +67,7 @@ try:
     filtered = query(filters=json.dumps({"status": "处理中"}))
     assert filtered["page"]["total"] == 5 and filtered["counts"]["mine"] == 5
     assert query(filters=json.dumps({"orderNo": tag + "-00"}))["page"]["total"] == 1
-    advanced = json.dumps([{"field": "status", "operator": "in", "values": ["处理中", "挂起"]}, {"field": "faultAt", "operator": "range", "values": ["2020-01-01T00:00", "2099-12-31T23:59"]}])
+    advanced = json.dumps([{"field": "status", "operator": "in", "values": ["处理中", "挂起"]}, {"field": "reportedAt", "operator": "range", "values": ["2020-01-01T00:00", "2099-12-31T23:59"]}])
     assert query(advanced=advanced)["page"]["total"] == 10
     assert query(advanced=advanced, filters=json.dumps({"status": "处理中"}))["page"]["total"] == 5
     assert query(advanced=json.dumps([{"field": "assignee", "operator": "empty", "values": []}]))["page"]["total"] == 25
@@ -83,7 +83,7 @@ try:
     assert len(exported_rows) == 26 and exported_rows[0] == ["工单编号", "故障描述"]
     assert exported_rows[1][1] == "'=1+1"
     batch_values = [f"({base_id + 26 + i},10001,'{tag}B-{i:03d}','TEST-QUERY','分批导出测试',NOW(),'测试','export batch fixture','集成测试','待派工',{user_id})" for i in range(501)]
-    sql("INSERT INTO eam_repair_order (id,tenant_id,order_no,equipment_code,equipment_name,fault_at,fault_type,description,reporter,status,reporter_user_id) VALUES " + ",".join(batch_values))
+    sql("INSERT INTO eam_repair_order (id,tenant_id,order_no,equipment_code,equipment_name,reported_at,fault_type,description,reporter,status,reporter_user_id) VALUES " + ",".join(batch_values))
     status, batch_export = http("/api/v1/repairs/export?" + urllib.parse.urlencode({"keyword": tag + "B", "sortBy": "orderNo", "direction": "asc", "columns": "orderNo"}), raw=True)
     batch_rows = list(csv.reader(io.StringIO(batch_export)))
     assert status == 200 and len(batch_rows) == 502 and len(set(row[0] for row in batch_rows[1:])) == 501

@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import AppListToolbar from './common/AppListToolbar.vue';
+import { ElTableColumn } from 'element-plus';
+import { ElSelect, ElOption, ElCheckbox } from 'element-plus';
+
+import AppBusinessTable from './common/AppBusinessTable.vue';
+import AppIcon from './common/AppIcon.vue';
 import RowMoreActions from './common/RowMoreActions.vue';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
@@ -52,7 +58,9 @@ const companyTree = computed(() => {
   const included = new Set<string>();
   companies.value
     .filter(
-      (c) => c.type === '公司' && (!companySearch.value || c.name.includes(companySearch.value)),
+      (c) =>
+        ['公司', '集团'].includes(c.type) &&
+        (!companySearch.value || c.name.includes(companySearch.value)),
     )
     .forEach((c) => {
       let node: api.OrganizationRecord | undefined = c;
@@ -142,13 +150,14 @@ onMounted(async () => {
   try {
     companies.value = (await api.listLocationCompanies()).data;
     companyId.value =
-      companies.value.find((c) => c.type === '公司' && c.status === '启用')?.id || '';
+      companies.value.find((c) => ['公司', '集团'].includes(c.type) && c.status === '启用')?.id ||
+      '';
   } catch (e) {
     error.value = e instanceof Error ? e.message : '公司加载失败';
   }
 });
 function chooseCompany(node: CompanyNode) {
-  if (node.type === '公司') companyId.value = node.id;
+  if (['公司', '集团'].includes(node.type)) companyId.value = node.id;
 }
 function toggle(id: string) {
   const next = new Set(collapsed.value);
@@ -266,6 +275,9 @@ function exportRows() {
   a.click();
   URL.revokeObjectURL(url);
 }
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => pageRows.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 <template>
   <section class="locations-page">
@@ -291,14 +303,14 @@ function exportRows() {
       <p v-if="!companyTree.length" class="location-empty">暂无公司</p>
     </aside>
     <div class="location-content">
-      <div class="location-toolbar">
+      <AppListToolbar class="location-toolbar">
         <div class="location-toolbar-left">
           <ElButton
             v-if="can('新增')"
             type="primary"
             :disabled="!companyId || company?.status === '停用'"
             @click="edit()"
-            >＋ 新增</ElButton
+            ><AppIcon name="Plus" /> 新增</ElButton
           ><span class="selected-company">{{ company?.name || '请选择公司' }}</span>
         </div>
         <form class="location-search" @submit.prevent="search = query.trim()">
@@ -312,88 +324,104 @@ function exportRows() {
             >重置</ElButton
           >
         </form>
-      </div>
+      </AppListToolbar>
       <div class="location-table-card">
         <div class="location-table-scroll">
           <p v-if="error" class="location-error">
             {{ error }} <ElButton text @click="loadLocations">重试</ElButton>
           </p>
-          <table class="business-table location-table" aria-label="公司存放地点">
-            <thead>
-              <tr>
-                <th v-for="c in visibleColumns" :key="c.key" :class="'location-col-' + c.key">
+          <AppBusinessTable
+            :rows="pageRows"
+            :pagination="false"
+            :fill="true"
+            :framed="false"
+            class="business-table location-table"
+            ><!-- @vue-generic {TableColumnRow1} -->
+            <ElTableColumn
+              show-overflow-tooltip
+              v-for="c in visibleColumns"
+              :min-width="150"
+              :prop="String(c)"
+              :key="String(c)"
+              ><template #header
+                ><div class="table-header-label">
                   {{ c.label }}
-                </th>
-                <th class="list-action-column">操作</th>
-              </tr>
-              <tr v-if="filterOpen">
-                <th v-for="c in visibleColumns" :key="c.key">
+                </div>
+                <div v-if="filterOpen" class="table-column-filter" @click.stop>
                   <ElInput
                     v-if="c.key === 'code' || c.key === 'name'"
                     v-model="filters[c.key]"
                     clearable
                     placeholder="筛选"
-                  /><select v-if="c.key === 'status'" v-model="filters.status">
-                    <option value="">全部</option>
-                    <option>启用</option>
-                    <option>停用</option>
-                  </select>
-                </th>
-                <th class="list-action-column"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in pageRows" :key="r.id">
-                <td v-for="c in visibleColumns" :key="c.key">
-                  <template v-if="c.key === 'name'"
-                    ><div class="location-node" :style="{ paddingLeft: `${r.depth * 20}px` }">
-                      <button
-                        class="location-expand"
-                        :disabled="!r.hasChildren"
-                        :aria-label="collapsed.has(r.id) ? '展开' : '收起'"
-                        @click="toggle(r.id)"
-                      >
-                        {{ r.hasChildren ? (collapsed.has(r.id) ? '›' : '⌄') : '·' }}</button
-                      ><span>{{ r.name }}</span>
-                    </div></template
+                  /><ElSelect v-if="c.key === 'status'" v-model="filters.status"
+                    ><ElOption value="" :label="'全部'" /><ElOption
+                      :value="'启用'"
+                      :label="'启用'" /><ElOption :value="'停用'" :label="'停用'"
+                  /></ElSelect></div></template
+              ><template #default="{ row: r, $index: tableRowIndex }">
+                <template v-if="c.key === 'name'"
+                  ><div class="location-node" :style="{ paddingLeft: `${r.depth * 20}px` }">
+                    <ElButton
+                      class="location-expand"
+                      :disabled="!r.hasChildren"
+                      :aria-label="collapsed.has(r.id) ? '展开' : '收起'"
+                      @click="toggle(r.id)"
+                      ><AppIcon
+                        :name="
+                          r.hasChildren ? (collapsed.has(r.id) ? 'Right' : 'Down') : ''
+                        " /></ElButton
+                    ><span>{{ r.name }}</span>
+                  </div></template
+                >
+                <template v-else-if="c.key === 'parent'">{{
+                  rows.find((p) => p.id === r.parentId)?.name || ''
+                }}</template
+                ><span
+                  v-else-if="c.key === 'status'"
+                  class="location-status"
+                  :class="{ disabled: r.status === '停用' }"
+                  >{{ r.status }}</span
+                ><template v-else-if="c.key === 'sort'">{{ r.sortNo }}</template
+                ><template v-else>{{ r.code }}</template>
+              </template></ElTableColumn
+            ><!-- @vue-generic {TableColumnRow1} -->
+            <ElTableColumn
+              class-name="list-action-column"
+              fixed="right"
+              :width="170"
+              :min-width="156"
+              :resizable="false"
+              ><template #header><div class="table-header-label">操作</div></template
+              ><template #default="{ row: r, $index: tableRowIndex }">
+                <div class="location-actions">
+                  <ElButton link type="primary" v-if="can('新增')" @click="edit(undefined, r.id)"
+                    >新增下级</ElButton
+                  ><ElButton link type="primary" v-if="can('编辑')" @click="edit(r)">编辑</ElButton
+                  ><RowMoreActions
+                    v-if="can('删除') && can('新增') && can('编辑')"
+                    :actions="[{ label: '删除', danger: true, run: () => remove(r) }]"
+                  /><ElButton
+                    v-else-if="can('删除')"
+                    class="danger"
+                    @click="remove(r)"
+                    type="danger"
+                    link
+                    >删除</ElButton
                   >
-                  <template v-else-if="c.key === 'parent'">{{
-                    rows.find((p) => p.id === r.parentId)?.name || ''
-                  }}</template
-                  ><span
-                    v-else-if="c.key === 'status'"
-                    class="location-status"
-                    :class="{ disabled: r.status === '停用' }"
-                    >{{ r.status }}</span
-                  ><template v-else-if="c.key === 'sort'">{{ r.sortNo }}</template
-                  ><template v-else>{{ r.code }}</template>
-                </td>
-                <td class="list-action-column">
-                  <div class="location-actions">
-                    <button v-if="can('新增')" @click="edit(undefined, r.id)">新增下级</button
-                    ><button v-if="can('编辑')" @click="edit(r)">编辑</button
-                    ><RowMoreActions
-                      v-if="can('删除') && can('新增') && can('编辑')"
-                      :actions="[{ label: '删除', danger: true, run: () => remove(r) }]"
-                    /><button v-else-if="can('删除')" class="danger" @click="remove(r)">
-                      删除
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="!pageRows.length">
-                <td :colspan="visibleColumns.length + 1" class="location-empty">
-                  {{
-                    loading
-                      ? '正在加载…'
-                      : companyId
-                        ? '暂无位置，可新增车间、区域或工位'
-                        : '请先在左侧选择公司'
-                  }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                </div>
+              </template></ElTableColumn
+            ><template #empty
+              ><div v-if="!pageRows.length">
+                {{
+                  loading
+                    ? '正在加载…'
+                    : companyId
+                      ? '暂无位置，可新增车间、区域或工位'
+                      : '请先在左侧选择公司'
+                }}
+              </div></template
+            ></AppBusinessTable
+          >
         </div>
         <footer class="location-footer">
           <span>共 {{ matching.length }} 条</span
@@ -409,12 +437,12 @@ function exportRows() {
             @toggle-columns="columnsOpen = !columnsOpen"
             @export="exportRows"
             ><template #columns
-              ><label v-for="c in columns" :key="c.key"
-                ><input
-                  v-model="c.show"
-                  type="checkbox"
-                  :disabled="c.show && visibleColumns.length === 1"
-                />{{ c.label }}</label
+              ><ElCheckbox
+                v-for="c in columns"
+                :key="c.key"
+                v-model="c.show"
+                :disabled="c.show && visibleColumns.length === 1"
+                >{{ c.label }}</ElCheckbox
               ></template
             ></ListToolbarIcons
           >
@@ -522,16 +550,11 @@ function exportRows() {
   gap: 12px;
   min-height: 0;
 }
-.location-toolbar,
 .location-toolbar-left,
 .location-search {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-.location-toolbar {
-  justify-content: space-between;
-  flex-wrap: wrap;
 }
 .selected-company {
   font-weight: 600;
@@ -557,21 +580,10 @@ function exportRows() {
   border-spacing: 0;
   min-width: 820px;
 }
-.location-table th,
-.location-table td {
-  padding: 10px 14px;
-  text-align: left;
-  border-bottom: 1px solid #e9edf3;
-  white-space: nowrap;
-}
-.location-table th {
-  background: #f5f7fa;
+.location-table :deep(th) {
   position: sticky;
   top: 0;
   z-index: 2;
-}
-.location-col-name {
-  width: 30%;
 }
 .location-table .list-action-column {
   min-width: 200px;
@@ -674,20 +686,9 @@ function exportRows() {
   align-items: center;
   padding: 6px;
 }
-.location-table select {
-  height: 32px;
-  border: 1px solid #dfe5ee;
-  border-radius: 4px;
-  color: #263246;
-  width: 100%;
-  background: white;
-}
 @media (max-width: 1100px) {
   .location-company-panel {
     width: 200px;
-  }
-  .location-toolbar {
-    align-items: flex-start;
   }
   .location-search {
     margin-left: auto;

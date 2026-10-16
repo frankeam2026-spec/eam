@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ElTableColumn } from 'element-plus';
+import AppBusinessTable from './AppBusinessTable.vue';
 import { computed, ref, watch } from 'vue';
 import { ElButton, ElCheckbox } from 'element-plus';
 import AppDialog from './AppDialog.vue';
@@ -11,6 +13,7 @@ const props = withDefaults(
   defineProps<{
     modelValue: boolean;
     multiple?: boolean;
+    disabledIds?: string[];
     showStock?: boolean;
     stockContext?: string;
     loadRows: (
@@ -19,7 +22,7 @@ const props = withDefaults(
       size: number,
     ) => Promise<{ data: InventoryMaster[]; page: { total: number } }>;
   }>(),
-  { multiple: true },
+  { multiple: true, disabledIds: () => [] },
 );
 const emit = defineEmits<{ 'update:modelValue': [boolean]; select: [InventoryMaster[]] }>();
 const query = ref(''),
@@ -33,7 +36,12 @@ const loading = ref(false),
   error = ref('');
 let revision = 0;
 const allChecked = computed(
-  () => rows.value.length > 0 && rows.value.every((r) => selected.value.has(r.id)),
+  () =>
+    rows.value.length > 0 &&
+    rows.value.filter((r) => !props.disabledIds.includes(r.id)).length > 0 &&
+    rows.value
+      .filter((r) => !props.disabledIds.includes(r.id))
+      .every((r) => selected.value.has(r.id)),
 );
 const someChecked = computed(
   () => rows.value.some((r) => selected.value.has(r.id)) && !allChecked.value,
@@ -76,6 +84,7 @@ function search() {
   load();
 }
 function toggle(row: InventoryMaster, checked: boolean) {
+  if (props.disabledIds.includes(row.id)) return;
   const next = props.multiple ? new Map(selected.value) : new Map<string, InventoryMaster>();
   if (checked) next.set(row.id, row);
   else next.delete(row.id);
@@ -83,13 +92,18 @@ function toggle(row: InventoryMaster, checked: boolean) {
 }
 function togglePage(checked: boolean) {
   const next = new Map(selected.value);
-  rows.value.forEach((r) => (checked ? next.set(r.id, r) : next.delete(r.id)));
+  rows.value
+    .filter((r) => !props.disabledIds.includes(r.id))
+    .forEach((r) => (checked ? next.set(r.id, r) : next.delete(r.id)));
   selected.value = next;
 }
 function confirm() {
   emit('select', [...selected.value.values()]);
   emit('update:modelValue', false);
 }
+// Preserve the row type while using native ElTableColumn slots.
+const tableColumnRows1 = () => rows.value;
+type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 
 <template>
@@ -107,53 +121,91 @@ function confirm() {
     </form>
     <div class="material-picker-table" :aria-busy="loading">
       <p v-if="error" role="alert">{{ error }} <ElButton text @click="load">重试</ElButton></p>
-      <table v-else class="business-table" :class="{ 'with-stock': showStock }">
-        <thead>
-          <tr>
-            <th class="selection">
+      <AppBusinessTable
+        :rows="rows"
+        :pagination="false"
+        :fill="false"
+        :framed="false"
+        v-else
+        class="business-table"
+        :row-class="(row, tableRowIndex) => ({ selected: selected.has(row.id) })"
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn
+          fixed="left"
+          :min-width="44"
+          :width="44"
+          :resizable="false"
+          class-name="selection"
+          ><template #header
+            ><div class="table-header-label">
               <ElCheckbox
                 v-if="multiple"
                 :model-value="allChecked"
                 :indeterminate="someChecked"
                 aria-label="选择当前页物料"
                 @change="togglePage(Boolean($event))"
-              />
-            </th>
-            <th>料号</th>
-            <th>物料名称</th>
-            <th>规格型号</th>
-            <th>单位</th>
-            <th>分类</th>
-            <th v-if="showStock" class="numeric">在库数量</th>
-            <th v-if="showStock" class="numeric">预留数量</th>
-            <th v-if="showStock" class="numeric">可用数量</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in rows" :key="row.id" :class="{ selected: selected.has(row.id) }">
-            <td class="selection">
-              <ElCheckbox
-                :model-value="selected.has(row.id)"
-                :aria-label="`选择${row.code} ${row.name}`"
-                @change="toggle(row, Boolean($event))"
-              />
-            </td>
-            <td>{{ row.code }}</td>
-            <td>{{ row.name }}</td>
-            <td>{{ row.model }}</td>
-            <td>{{ row.unit }}</td>
-            <td>{{ row.category }}</td>
-            <td v-if="showStock" class="numeric">{{ formatNumber(row.stockQuantity) }}</td>
-            <td v-if="showStock" class="numeric">{{ formatNumber(row.reservedQuantity) }}</td>
-            <td v-if="showStock" class="numeric">{{ formatNumber(row.availableQuantity) }}</td>
-          </tr>
-          <tr v-if="!rows.length">
-            <td :colspan="showStock ? 9 : 6" class="empty">
-              {{ loading ? '正在加载…' : applied ? '没有符合条件的物料' : '暂无可选物料' }}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              /></div></template
+          ><template #default="{ row: row, $index: tableRowIndex }">
+            <ElCheckbox
+              :model-value="selected.has(row.id) || disabledIds.includes(row.id)"
+              :disabled="disabledIds.includes(row.id)"
+              :aria-label="`选择${row.code} ${row.name}`"
+              @change="toggle(row, Boolean($event))"
+            /> </template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">料号</div></template
+          ><template #default="{ row: row, $index: tableRowIndex }">{{
+            row.code
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="210"
+          ><template #header><div class="table-header-label">物料名称</div></template
+          ><template #default="{ row: row, $index: tableRowIndex }">{{
+            row.name
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">规格型号</div></template
+          ><template #default="{ row: row, $index: tableRowIndex }">{{
+            row.model
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">单位</div></template
+          ><template #default="{ row: row, $index: tableRowIndex }">{{
+            row.unit
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150"
+          ><template #header><div class="table-header-label">分类</div></template
+          ><template #default="{ row: row, $index: tableRowIndex }">{{
+            row.category
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn v-if="showStock" :min-width="150" class-name="numeric"
+          ><template #header><div class="table-header-label">在库数量</div></template
+          ><template #default="{ row: row, $index: tableRowIndex }">{{
+            formatNumber(row.stockQuantity)
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn v-if="showStock" :min-width="150" class-name="numeric"
+          ><template #header><div class="table-header-label">预留数量</div></template
+          ><template #default="{ row: row, $index: tableRowIndex }">{{
+            formatNumber(row.reservedQuantity)
+          }}</template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn v-if="showStock" :min-width="150" class-name="numeric"
+          ><template #header><div class="table-header-label">可用数量</div></template
+          ><template #default="{ row: row, $index: tableRowIndex }">{{
+            formatNumber(row.availableQuantity)
+          }}</template></ElTableColumn
+        ><template #empty
+          ><div v-if="!rows.length">
+            {{ loading ? '正在加载…' : applied ? '没有符合条件的物料' : '暂无可选物料' }}
+          </div></template
+        ></AppBusinessTable
+      >
     </div>
     <div class="material-picker-footer">
       <span>共 {{ total }} 条</span
@@ -197,26 +249,19 @@ function confirm() {
   min-width: 720px;
   table-layout: fixed;
 }
-.material-picker-table th {
-  background: var(--el-fill-color-light);
+.material-picker-table :deep(th) {
   position: sticky;
   top: 0;
   z-index: 1;
 }
-.material-picker-table th,
-.material-picker-table td {
-  padding: 9px 12px;
-  text-align: left;
+.material-picker-table :deep(th),
+.material-picker-table :deep(td) {
   overflow-wrap: anywhere;
-  white-space: normal;
 }
 .material-picker-table .numeric {
   text-align: right;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-}
-.material-picker-table table.with-stock {
-  min-width: 1000px;
 }
 .stock-context {
   max-width: 220px;
@@ -226,7 +271,7 @@ function confirm() {
 .material-picker-table .selection {
   width: 42px;
 }
-.material-picker-table tr.selected {
+.material-picker-table :deep(tr.selected) {
   background: var(--el-color-primary-light-9);
 }
 .material-picker-table .empty {
