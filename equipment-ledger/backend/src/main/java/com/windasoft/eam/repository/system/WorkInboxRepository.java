@@ -15,7 +15,7 @@ public class WorkInboxRepository {
   private static final String ROWS =
       """
 (SELECT CAST(i.id AS CHAR) id,'repair' module,CAST(r.id AS CHAR) orderId,
-  r.order_no orderNo,r.equipment_name equipmentName,r.status,i.kind,i.title,
+  r.order_no orderNo,r.equipment_name equipmentName,r.status,i.kind,i.title,i.message_key messageKey,i.message_args messageArgs,
   i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,
   DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time
  FROM eam_repair_inbox i JOIN eam_repair_order r ON r.id=i.order_id AND r.tenant_id=i.tenant_id
@@ -23,32 +23,32 @@ public class WorkInboxRepository {
  UNION ALL
  SELECT CAST(i.id AS CHAR) id,'maintenance' module,CAST(t.id AS CHAR) orderId,
   t.code orderNo,JSON_UNQUOTE(JSON_EXTRACT(t.snapshot,'$.equipmentName')) equipmentName,
-  t.status,i.kind,i.title,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,
+  t.status,i.kind,i.title,i.message_key messageKey,i.message_args messageArgs,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,
   DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time
- FROM eam_maintenance_inbox i JOIN eam_maintenance_task t ON t.id=i.task_id AND t.tenant_id=i.tenant_id
+ FROM eam_maintenance_inbox i JOIN v_maintenance_task t ON t.id=i.task_id AND t.tenant_id=i.tenant_id
  WHERE i.tenant_id=? AND i.user_id=?
  UNION ALL
  SELECT CAST(i.id AS CHAR) id,'inspection' module,CAST(t.id AS CHAR) orderId,
   t.code orderNo,JSON_UNQUOTE(JSON_EXTRACT(t.snapshot,'$.equipmentName')) equipmentName,
-  t.status,i.kind,i.title,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,
+  t.status,i.kind,i.title,i.message_key messageKey,i.message_args messageArgs,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,
   DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time
- FROM eam_inspection_inbox i JOIN eam_inspection_task t ON t.id=i.task_id AND t.tenant_id=i.tenant_id
+ FROM eam_inspection_inbox i JOIN v_inspection_task t ON t.id=i.task_id AND t.tenant_id=i.tenant_id
  WHERE i.tenant_id=? AND i.user_id=? AND t.deleted=0
  UNION ALL
  SELECT CAST(i.id AS CHAR) id,'inventory' module,CAST(r.id AS CHAR) orderId,
- r.code orderNo,r.task_code equipmentName,r.status,i.kind,i.title,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,
+ r.code orderNo,r.task_code equipmentName,r.status,i.kind,i.title,i.message_key messageKey,i.message_args messageArgs,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,
  DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time
  FROM inv_inbox i JOIN inv_requisition r ON r.tenant_id=i.tenant_id AND r.id=i.document_id
  WHERE i.tenant_id=? AND i.user_id=? AND r.deleted=0 AND i.route_kind='requisitions'
  UNION ALL
  SELECT CAST(i.id AS CHAR) id,IF(i.route_kind='returns','inventoryReturn','inventoryTransfer') module,CAST(d.id AS CHAR) orderId,
- d.code orderNo,w.name equipmentName,d.status,i.kind,i.title,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,
- DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time FROM inv_inbox i JOIN inv_operation d ON d.tenant_id=i.tenant_id AND d.id=i.document_id JOIN inv_warehouse w ON w.tenant_id=d.tenant_id AND w.id=IF(i.route_kind='returns',d.warehouse_id,d.target_warehouse_id)
+ d.code orderNo,w.name equipmentName,d.status,i.kind,i.title,i.message_key messageKey,i.message_args messageArgs,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,
+ DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time FROM inv_inbox i JOIN v_inv_operation d ON d.tenant_id=i.tenant_id AND d.id=i.document_id JOIN inv_warehouse w ON w.tenant_id=d.tenant_id AND w.id=IF(i.route_kind='returns',d.warehouse_id,d.target_warehouse_id)
  WHERE i.tenant_id=? AND i.user_id=? AND d.deleted=0 AND i.route_kind IN ('transfers','returns')
  UNION ALL
- SELECT CAST(i.id AS CHAR) id,'inventoryOutbound' module,CAST(d.id AS CHAR) orderId,d.code orderNo,w.name equipmentName,d.status,i.kind,i.title,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time FROM inv_inbox i JOIN inv_issue d ON d.tenant_id=i.tenant_id AND d.id=i.document_id JOIN inv_warehouse w ON w.tenant_id=d.tenant_id AND w.id=d.warehouse_id WHERE i.tenant_id=? AND i.user_id=? AND d.deleted=0 AND i.route_kind='outbounds'
- UNION ALL SELECT CAST(i.id AS CHAR) id,'anomaly' module,CAST(a.id AS CHAR) orderId,a.code orderNo,e.name equipmentName,a.status,i.kind,i.title,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time FROM eam_experience_inbox i JOIN eam_equipment_anomaly a ON a.tenant_id=i.tenant_id AND a.id=i.object_id JOIN eam_equipment e ON e.tenant_id=a.tenant_id AND e.id=a.equipment_id WHERE i.tenant_id=? AND i.user_id=? AND i.object_kind='anomaly'
- UNION ALL SELECT CAST(i.id AS CHAR) id,'repairPlan' module,CAST(p.id AS CHAR) orderId,p.code orderNo,e.name equipmentName,p.status,i.kind,i.title,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time FROM eam_experience_inbox i JOIN eam_single_repair_plan p ON p.tenant_id=i.tenant_id AND p.id=i.object_id JOIN eam_equipment e ON e.tenant_id=p.tenant_id AND e.id=p.equipment_id WHERE i.tenant_id=? AND i.user_id=? AND i.object_kind='repairPlan') inbox
+ SELECT CAST(i.id AS CHAR) id,'inventoryOutbound' module,CAST(d.id AS CHAR) orderId,d.code orderNo,w.name equipmentName,d.status,i.kind,i.title,i.message_key messageKey,i.message_args messageArgs,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time FROM inv_inbox i JOIN inv_issue d ON d.tenant_id=i.tenant_id AND d.id=i.document_id JOIN inv_warehouse w ON w.tenant_id=d.tenant_id AND w.id=d.warehouse_id WHERE i.tenant_id=? AND i.user_id=? AND d.deleted=0 AND i.route_kind='outbounds'
+ UNION ALL SELECT CAST(i.id AS CHAR) id,'anomaly' module,CAST(a.id AS CHAR) orderId,a.code orderNo,e.name equipmentName,a.status,i.kind,i.title,i.message_key messageKey,i.message_args messageArgs,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time FROM eam_experience_inbox i JOIN v_anomaly a ON a.tenant_id=i.tenant_id AND a.id=i.object_id JOIN eam_equipment e ON e.tenant_id=a.tenant_id AND e.id=a.equipment_id WHERE i.tenant_id=? AND i.user_id=? AND i.object_kind='anomaly'
+ UNION ALL SELECT CAST(i.id AS CHAR) id,'repairPlan' module,CAST(p.id AS CHAR) orderId,p.code orderNo,e.name equipmentName,p.status,i.kind,i.title,i.message_key messageKey,i.message_args messageArgs,i.is_todo todo,i.done,(i.read_at IS NOT NULL) isRead,DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time FROM eam_experience_inbox i JOIN v_single_repair_plan p ON p.tenant_id=i.tenant_id AND p.id=i.object_id JOIN eam_equipment e ON e.tenant_id=p.tenant_id AND e.id=p.equipment_id WHERE i.tenant_id=? AND i.user_id=? AND i.object_kind='repairPlan') inbox
 """;
 
   private Object[] identity(long tenantId, long userId) {

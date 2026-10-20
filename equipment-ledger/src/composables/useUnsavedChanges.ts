@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import { ElMessageBox } from 'element-plus';
@@ -31,8 +32,8 @@ export function useUnsavedChanges(
       '内容尚未保存。废弃将离开；保存将保留当前编辑内容并留在本页。',
       '离开当前页面？',
       {
-        confirmButtonText: '保存',
-        cancelButtonText: '废弃',
+        get confirmButtonText() { return tr('ui.equipment.text0159'); },
+        get cancelButtonText() { return tr('ui.equipment.text1619'); },
         type: 'warning',
         closeOnClickModal: false,
         distinguishCancelAndClose: true,

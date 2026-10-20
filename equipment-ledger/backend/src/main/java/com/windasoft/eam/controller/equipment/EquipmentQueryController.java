@@ -8,6 +8,7 @@ import com.windasoft.eam.dto.equipment.EquipmentPage;
 import com.windasoft.eam.dto.equipment.EquipmentView;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 
@@ -39,7 +40,11 @@ public class EquipmentQueryController {
       @RequestParam(required = false) LocalDate acquiredTo,
       @RequestParam(required = false) LocalDate warrantyBefore,
       @RequestParam(defaultValue = "createdAt") String sortBy,
-      @RequestParam(defaultValue = "desc") String direction) {
+      @RequestParam(defaultValue = "desc") String direction,
+      @RequestParam(required = false) String advanced,
+      @RequestParam(required = false) String scopeType,
+      @RequestParam(required = false) String scopeIds,
+      @RequestParam(required = false) String scopeCompanyId) {
     return service.list(
         new EquipmentListQuery(
             page,
@@ -59,7 +64,47 @@ public class EquipmentQueryController {
             acquiredTo,
             warrantyBefore,
             sortBy,
-            direction));
+            direction,
+            advanced,
+            scopeType,
+            scopeIds,
+            scopeCompanyId));
+  }
+
+  @GetMapping("/export")
+  public void export(
+      @RequestParam Map<String, String> p, jakarta.servlet.http.HttpServletResponse response)
+      throws java.io.IOException {
+    var query =
+        new EquipmentListQuery(
+            1,
+            500,
+            p.get("keyword"),
+            p.get("category"),
+            p.get("state"),
+            p.get("department"),
+            p.get("company"),
+            p.get("model"),
+            p.get("serial"),
+            p.get("owner"),
+            p.get("brand"),
+            p.get("useState"),
+            p.get("source"),
+            null,
+            null,
+            null,
+            p.getOrDefault("sortBy", "createdAt"),
+            p.getOrDefault("direction", "desc"),
+            p.get("advanced"),
+            p.get("scopeType"),
+            p.get("scopeIds"),
+            p.get("scopeCompanyId"));
+    response.setContentType("text/csv;charset=UTF-8");
+    response.setHeader("Content-Disposition", "attachment; filename=equipment.csv");
+    service.export(
+        query,
+        Arrays.asList(p.getOrDefault("columns", "code,name").split(",", -1)),
+        response.getWriter());
   }
 
   @GetMapping("/{id}")
@@ -79,6 +124,13 @@ public class EquipmentQueryController {
   @GetMapping("/navigation-tree")
   public Map<String, java.util.List<EquipmentNavigationNode>> navigationTree() {
     return Map.of("data", service.navigationTree());
+  }
+
+  @GetMapping("/owner-candidates")
+  public com.windasoft.eam.dto.common.PageResult<EquipmentOptions.Employee> ownerCandidates(
+      @RequestParam(defaultValue = "编辑") String action,
+      @RequestParam Map<String, String> parameters) {
+    return service.ownerCandidates(action, com.windasoft.eam.dto.common.ListQuery.from(parameters));
   }
 
   @GetMapping("/batch-options")

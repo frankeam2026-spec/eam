@@ -1,0 +1,104 @@
+[
+  {
+    "case": "builtin-languages",
+    "result": true
+  },
+  {
+    "case": "builtin-resources-and-components",
+    "result": 3257
+  },
+  {
+    "case": "save-locale-preserves-theme",
+    "result": true
+  },
+  {
+    "case": "save-theme-preserves-locale",
+    "result": true
+  },
+  {
+    "case": "localized-api-error",
+    "result": {
+      "message": "The language is deactivated or unavailable",
+      "code": "INVALID_ARGUMENT"
+    }
+  },
+  {
+    "case": "null-locale-field-error",
+    "result": true
+  },
+  {
+    "case": "localized-field-errors",
+    "result": {
+      "message": "Please select your department；Location required；Please select usage status；Please select a device category；Device status required；Please select the unit；Device name required",
+      "fieldErrors": {
+        "departmentOrgId": "Please select your department",
+        "locationId": "Location required",
+        "useStateId": "Please select usage status",
+        "categoryId": "Please select a device category",
+        "state": "Device status required",
+        "unitId": "Please select the unit",
+        "name": "Device name required"
+      },
+      "code": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "case": "partial-package-and-unknown-keys",
+    "result": {
+      "accepted": 2,
+      "missing": 3255
+    }
+  },
+  {
+    "case": "publish-enable-french-and-chinese-fallback",
+    "result": true
+  },
+  {
+    "case": "stale-package-version-rejected",
+    "result": true
+  },
+  {
+    "case": "disabled-preference-retained-with-fallback",
+    "result": true
+  },
+  {
+    "case": "builtin-disable-rejected",
+    "result": true
+  },
+  {
+    "case": "placeholder-mismatch-rejected",
+    "result": true
+  },
+  {
+    "case": "prototype-rejected",
+    "result": true
+  },
+  {
+    "case": "html-rejected",
+    "result": true
+  },
+  {
+    "case": "rtl-deferred-explicitly",
+    "result": true
+  },
+  {
+    "case": "unclosed-parameter-rejected",
+    "result": true
+  },
+  {
+    "case": "broken-calendar-rejected",
+    "result": true
+  },
+  {
+    "case": "three-language-import-templates",
+    "result": true
+  },
+  {
+    "case": "builtin-override-and-restore",
+    "result": true
+  },
+  {
+    "case": "all-scenarios-complete",
+    "result": true
+  }
+]

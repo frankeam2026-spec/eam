@@ -1,3 +1,6 @@
+import type { AcceptanceDecisionValue } from './config/acceptance';
+import { request, requestFile } from './api';
+import type { CustomRecord } from './businessConfig';
 import type { RepairAttachment, StockRow } from './api';
 export type MaintenanceKind = 'types' | 'standards' | 'plans' | 'tasks';
 export type Choice = {
@@ -10,6 +13,7 @@ export type Choice = {
   code?: string;
   model?: string;
   category?: string;
+  categoryId?: string;
 };
 export type MaintenanceItem = {
   id: string;
@@ -41,11 +45,13 @@ export type PlanDetail = {
   unit: string;
   nextDate: string;
   validDays: number;
+  validDuration?: number;
+  validUnit?: string;
   owners: string[];
   reviewers: string[];
   remark: string;
 };
-export type MaintenanceDefinition = {
+export type MaintenanceDefinition = CustomRecord & {
   id: string;
   code: string;
   name: string;
@@ -61,6 +67,8 @@ export type MaintenanceDefinition = {
   remark: string;
   equipmentIds: string[];
   categoryNames: string[];
+  categoryIds: string[];
+  legacyCategoryNames?: string[];
   items: MaintenanceItem[];
   owners: string[];
   reviewers: string[];
@@ -93,13 +101,29 @@ export type TaskResult = {
   attachments?: RepairAttachment[];
   items?: ItemResult[];
   acceptance?: {
-    decision: string;
+    decision: AcceptanceDecisionValue;
     score: number;
     description: string;
     attachments: RepairAttachment[];
   };
 };
-export type MaintenanceTask = {
+export type MaintenanceTaskStatistics = {
+  total: number;
+  completed: number | null;
+  abnormal: number | null;
+  completionRate: number | null;
+  completedItemIds: string[];
+  abnormalItemIds: string[];
+  submitted: boolean;
+  reliable: boolean;
+};
+export type MaintenanceProjectFilter = 'all' | 'completed' | 'abnormal';
+export type MaintenanceTask = CustomRecord & {
+  statistics?: MaintenanceTaskStatistics;
+  reviewMode?: string;
+  canDelete?: boolean;
+  canPostpone?: boolean;
+  typeId: string;
   companyId?: string;
   departmentId?: string;
   id: string;
@@ -108,6 +132,7 @@ export type MaintenanceTask = {
   rowVersion: number;
   dueDate: string;
   expiresDate: string;
+  equipmentId?: string;
   equipmentName: string;
   equipmentCode: string;
   model: string;
@@ -115,6 +140,9 @@ export type MaintenanceTask = {
   functionLocation: string;
   typeName: string;
   planName: string;
+  planId: string;
+  actualStartAt: string;
+  actualEndAt: string;
   standardName: string;
   ownerId: string;
   owners: string[];
@@ -129,20 +157,44 @@ export type MaintenanceTask = {
   autoFill: string;
   events: { action: string; actor: string; time: string; details: Record<string, unknown> }[];
 };
-const root = '/api/v1/maintenance';
 async function call<T>(path: string, body?: unknown, method = 'GET'): Promise<T> {
-  const r = await fetch(root + path, {
+  return request<T>('/maintenance' + path, {
     method,
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.message || '请求失败');
-  return d;
 }
 export const maintenanceApi = {
-  list: (kind: MaintenanceKind) => call<{ data: MaintenanceDefinition[] }>('/' + kind),
+  listContext: (kind: MaintenanceKind) =>
+    call<{ organizations: Choice[] }>('/list-context?kind=' + kind),
+  export: (kind: MaintenanceKind, parameters: Record<string, string | number>) =>
+    requestFile(
+      '/maintenance/' +
+        kind +
+        '/export?' +
+        new URLSearchParams(
+          Object.fromEntries(
+            Object.entries(parameters).map(([key, value]) => [key, String(value)]),
+          ),
+        ),
+    ),
+  query: (kind: MaintenanceKind, parameters: Record<string, string | number>) =>
+    call<{
+      data: (MaintenanceDefinition | MaintenanceTask)[];
+      page: { number: number; size: number; total: number };
+    }>(
+      '/' +
+        kind +
+        '?' +
+        new URLSearchParams(
+          Object.fromEntries(
+            Object.entries(parameters).map(([key, value]) => [key, String(value)]),
+          ),
+        ),
+    ),
+  list: (kind: MaintenanceKind, conditions = '[]') =>
+    call<{ data: MaintenanceDefinition[] }>(
+      '/' + kind + '?conditions=' + encodeURIComponent(conditions),
+    ),
   get: (kind: MaintenanceKind, id: string) =>
     call<{ data: MaintenanceDefinition }>('/' + kind + '/' + id),
   save: (kind: MaintenanceKind, body: MaintenanceDefinition) =>
@@ -152,28 +204,36 @@ export const maintenanceApi = {
       body.id ? 'PUT' : 'POST',
     ),
   remove: (kind: MaintenanceKind, id: string) => call('/' + kind + '/' + id, undefined, 'DELETE'),
-  choices: () =>
+  choices: (paged = false) =>
     call<{
+      types?: MaintenanceDefinition[];
       equipment: Choice[];
       organizations: Choice[];
       users: Choice[];
       categories: Choice[];
       stocks: StockRow[];
-    }>('/choices'),
-  tasks: () => call<{ data: MaintenanceTask[] }>('/tasks'),
+    }>('/choices?paged=' + paged),
+  tasks: (conditions = '[]') =>
+    call<{ data: MaintenanceTask[] }>('/tasks?conditions=' + encodeURIComponent(conditions)),
   task: (id: string) => call<{ data: MaintenanceTask }>('/tasks/' + id),
   action: (id: string, action: string, body: unknown) =>
     call<{ data: MaintenanceTask }>('/tasks/' + id + '/' + action, body, 'POST'),
   acceptBatch: (body: unknown) => call('/batch-accept', body, 'POST'),
+  deleteTasks: (tasks: { id: string; rowVersion: number }[]) =>
+    call('/batch-delete', tasks, 'POST'),
+  postponeTasks: (body: {
+    tasks: { id: string; rowVersion: number }[];
+    endDate: string;
+    reason: string;
+  }) => call('/batch-postpone', body, 'POST'),
   generate: (id: string) => call<{ count: number }>('/plans/' + id + '/generate', {}, 'POST'),
 };
 export async function maintenanceUpload(file: File): Promise<RepairAttachment> {
   const f = new FormData();
   f.append('file', file);
-  const r = await fetch(root + '/files', { method: 'POST', body: f });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.message || '上传失败');
-  return d.data;
+  return (
+    await request<{ data: RepairAttachment }>('/maintenance/files', { method: 'POST', body: f })
+  ).data;
 }
 export function emptyDefinition(): MaintenanceDefinition {
   return {
@@ -189,6 +249,8 @@ export function emptyDefinition(): MaintenanceDefinition {
     remark: '',
     equipmentIds: [],
     categoryNames: [],
+    categoryIds: [],
+    legacyCategoryNames: [],
     items: [],
     owners: [],
     reviewers: [],
@@ -197,8 +259,8 @@ export function emptyDefinition(): MaintenanceDefinition {
     remindDays: 0,
     autoFill: '无',
     scanStart: false,
-    reviewMode: '整机验收',
-    reviewRule: '任一人验收',
+    reviewMode: '无需验收',
+    reviewRule: '',
     details: [],
   };
 }

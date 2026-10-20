@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElButton, ElBadge } from 'element-plus';
 import 'element-plus/es/components/badge/style/css';
 
@@ -34,7 +35,7 @@ async function show(channel: string) {
     if (revision === requestRevision && visible.value === channel) rows.value = data.data;
   } catch (e) {
     if (revision === requestRevision && visible.value === channel)
-      error.value = e instanceof Error ? e.message : '加载失败';
+      error.value = e instanceof Error ? e.message : tr('ui.equipment.text0160');
   } finally {
     if (revision === requestRevision) busy.value = false;
   }
@@ -45,7 +46,7 @@ async function open(row: InboxItem) {
     try {
       await inbox.read(row);
     } catch {
-      ElMessage.warning('提醒未能标为已读');
+      ElMessage.warning(tr('ui.equipment.text1021'));
     }
   }
   visible.value = '';
@@ -64,7 +65,7 @@ async function readAll() {
     await inbox.read();
     await show('notification');
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '操作失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0197'));
   }
 }
 function center(channel: string) {
@@ -107,8 +108,8 @@ onUnmounted(() => {
         <ElButton
           class="inbox-tool"
           circle
-          :aria-label="channel === 'todo' ? '待办' : '提醒'"
-          :title="channel === 'todo' ? '需要我处理的事项' : '需要我知道的消息'"
+          :aria-label="channel === 'todo' ? tr('ui.equipment.text1573') : tr('ui.equipment.text1574')"
+          :title="channel === 'todo' ? tr('ui.equipment.text1575') : tr('ui.equipment.text1576')"
         >
           <ElBadge
             class="inbox-count"
@@ -121,16 +122,16 @@ onUnmounted(() => {
         </ElButton>
       </template>
       <div class="notification-title">
-        <strong>{{ channel === 'todo' ? '待办' : '提醒' }}</strong
+        <strong>{{ channel === 'todo' ? tr('ui.equipment.text1573') : tr('ui.equipment.text1574') }}</strong
         ><ElButton
           v-if="channel === 'notification' && inbox.summary.counts.unread"
           @click="readAll"
         >
-          全部已读</ElButton
-        ><ElButton @click="center(channel)">查看全部</ElButton>
+          {{ tr('ui.equipment.text1033') }}</ElButton
+        ><ElButton @click="center(channel)">{{ tr('ui.equipment.text0892') }}</ElButton>
       </div>
       <div class="notification-items">
-        <p v-if="busy">加载中…</p>
+        <p v-if="busy">{{ tr('ui.equipment.text0396') }}</p>
         <p v-else-if="error" role="alert">{{ error }}</p>
         <ElButton
           v-for="item in rows"
@@ -152,7 +153,7 @@ onUnmounted(() => {
           ><small>{{ formatDateTime(item.time) }}</small></ElButton
         >
         <p v-if="!busy && !error && !rows.length">
-          {{ channel === 'todo' ? '当前没有待办事项' : '暂无提醒' }}
+          {{ channel === 'todo' ? tr('ui.equipment.text1034') : tr('ui.equipment.text1038') }}
         </p>
       </div>
     </ElPopover>

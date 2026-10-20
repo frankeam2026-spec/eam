@@ -1,5 +1,15 @@
 /* 产品样式变量在这里映射到组件库，弹层与工作区共用同一套主题。 */
 :root {
+  /* 仅供设备状态使用，列表与设备档案共用，不改变任务或使用状态。 */
+  --equipment-state-success-color: #16a34a;
+  --equipment-state-success-background: #e3faed;
+  --equipment-state-success-border: #c0efd3;
+  --equipment-state-warning-color: #e88412;
+  --equipment-state-warning-background: #fff3d6;
+  --equipment-state-warning-border: #ffdda1;
+  --equipment-state-danger-color: #f04452;
+  --equipment-state-danger-background: #ffe8ec;
+  --equipment-state-danger-border: #ffc7d0;
   --el-color-primary: var(--brand);
   --el-color-primary-light-3: color-mix(in srgb, var(--brand), white 30%);
   --el-color-primary-light-5: color-mix(in srgb, var(--brand), white 50%);

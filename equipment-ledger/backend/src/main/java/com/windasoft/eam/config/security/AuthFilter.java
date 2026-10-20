@@ -48,10 +48,25 @@ public class AuthFilter extends OncePerRequestFilter {
       }
     }
     if ("GET".equals(request.getMethod())
-        && (request.getRequestURI().equals("/api/v1/branding/public")
+        && (request.getRequestURI().equals("/api/v1/i18n/languages")
+            || request.getRequestURI().matches("/api/v1/i18n/resources/[a-zA-Z0-9-]+")
+            || request.getRequestURI().equals("/api/v1/branding/public")
             || request
                 .getRequestURI()
                 .matches("/api/v1/branding/public/assets/[0-9]+/[0-9a-f-]{36}"))) {
+      // Public translation resources may use an existing session to select the tenant,
+      // but stay readable when anonymous or when that session has expired.
+      if (request.getRequestURI().startsWith("/api/v1/i18n/") && request.getCookies() != null)
+        for (Cookie cookie : request.getCookies())
+          if (COOKIE.equals(cookie.getName())
+              && cookie.getValue().matches("[A-Za-z0-9_-]{40,80}")) {
+            var session = repository.activeSession(hash(cookie.getValue()), LocalDateTime.now());
+            if (session != null) {
+              var user = repository.activeUserById(session.getTenantId(), session.getUserId());
+              if (user != null) request.setAttribute(AuthContext.ATTRIBUTE, user);
+            }
+            break;
+          }
       chain.doFilter(request, response);
       return;
     }
@@ -62,7 +77,7 @@ public class AuthFilter extends OncePerRequestFilter {
     if (environment.acceptsProfiles(org.springframework.core.env.Profiles.of("local-dev"))) {
       var user = repository.activeUser(demoTenant, "admin");
       if (user == null) {
-        reject(response);
+        reject(request, response);
         return;
       }
       request.setAttribute(AuthContext.ATTRIBUTE, user);
@@ -74,7 +89,7 @@ public class AuthFilter extends OncePerRequestFilter {
       for (Cookie cookie : request.getCookies())
         if (COOKIE.equals(cookie.getName())) token = cookie.getValue();
     if (token == null || !token.matches("[A-Za-z0-9_-]{40,80}")) {
-      reject(response);
+      reject(request, response);
       return;
     }
     if (!safeMethod(request.getMethod()) && request.getHeader("Origin") == null) {
@@ -83,12 +98,12 @@ public class AuthFilter extends OncePerRequestFilter {
     }
     var session = repository.activeSession(hash(token), LocalDateTime.now());
     if (session == null) {
-      reject(response);
+      reject(request, response);
       return;
     }
     var user = repository.activeUserById(session.getTenantId(), session.getUserId());
     if (user == null) {
-      reject(response);
+      reject(request, response);
       return;
     }
     request.setAttribute(AuthContext.ATTRIBUTE, user);
@@ -109,9 +124,35 @@ public class AuthFilter extends OncePerRequestFilter {
     return "GET".equals(method) || "HEAD".equals(method) || "OPTIONS".equals(method);
   }
 
-  private void reject(HttpServletResponse response) throws IOException {
+  private String publicMessage(HttpServletRequest request, String key) {
+    String locale = "zh-CN";
+    try {
+      for (var range :
+          java.util.Locale.LanguageRange.parse(
+              java.util.Objects.toString(request.getHeader("Accept-Language"), "zh-CN"))) {
+        String tag = java.util.Locale.forLanguageTag(range.getRange()).toLanguageTag();
+        if (com.windasoft.eam.common.BuiltinMessages.NAMES.containsKey(tag)) {
+          locale = tag;
+          break;
+        }
+      }
+    } catch (IllegalArgumentException ignored) {
+    }
+    return com.windasoft.eam.common.BuiltinMessages.get(locale).getOrDefault(key, "请求无法完成");
+  }
+
+  private void reject(HttpServletRequest request, HttpServletResponse response) throws IOException {
     response.setStatus(401);
     response.setContentType("application/json;charset=UTF-8");
-    response.getWriter().write("{\"code\":\"UNAUTHENTICATED\",\"message\":\"请先登录\"}");
+    response
+        .getWriter()
+        .write(
+            new com.fasterxml.jackson.databind.ObjectMapper()
+                .writeValueAsString(
+                    java.util.Map.of(
+                        "code",
+                        "UNAUTHENTICATED",
+                        "message",
+                        publicMessage(request, "auth.error.signInRequired"))));
   }
 }

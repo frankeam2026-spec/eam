@@ -20,6 +20,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class InventoryFlowService {
+  @org.springframework.beans.factory.annotation.Autowired private InventoryListService listQueries;
   private final InventoryOperationRepository repository;
   private final InventoryService masters;
   private final AuthContext auth;
@@ -71,7 +72,8 @@ public class InventoryFlowService {
     try {
       return json.writeValueAsString(value);
     } catch (Exception e) {
-      throw new IllegalArgumentException("单据数据无效", e);
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          com.windasoft.eam.common.MessageRef.of("server.inventory.message0019"), e);
     }
   }
 
@@ -85,9 +87,13 @@ public class InventoryFlowService {
 
   @SuppressWarnings("unchecked")
   private List<Map<String, Object>> lines(Map<String, Object> body) {
-    require(body.get("lines") instanceof List<?>, "请添加明细");
+    require(
+        body.get("lines") instanceof List<?>,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0086"));
     var rows = (List<?>) body.get("lines");
-    require(!rows.isEmpty() && rows.size() <= 500, "明细须为1至500行");
+    require(
+        !rows.isEmpty() && rows.size() <= 500,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0087"));
     for (Object r : rows) require(r instanceof Map<?, ?>, "明细格式无效");
     return (List<Map<String, Object>>) rows;
   }
@@ -99,20 +105,25 @@ public class InventoryFlowService {
           n.scale() <= 6
               && n.precision() - n.scale() <= 14
               && (zero ? n.signum() >= 0 : n.signum() > 0),
-          "数值必须" + (zero ? "非负" : "大于零") + "，最多6位小数");
+          com.windasoft.eam.common.MessageContext.text(
+              "server.inventory.message0088", (zero ? "非负" : "大于零")));
       return n;
     } catch (NumberFormatException e) {
-      throw new IllegalArgumentException("数量或单价格式无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0020");
     }
   }
 
   private Map<String, Object> one(List<Map<String, Object>> rows) {
-    require(rows.size() == 1, "来源记录不存在或已变化");
+    require(
+        rows.size() == 1,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0089"));
     return rows.getFirst();
   }
 
   private Map<String, Object> operation(String kind, long doc, boolean locked, String action) {
-    require(NAMES.containsKey(kind), "单据类型无效");
+    require(
+        NAMES.containsKey(kind),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0022"));
     var row = one(repository.loadOperation(auth.tenantId(), kind, doc, locked));
     // Personal return requests expose only their own document; receipt and all other operations
     // keep warehouse permission checks.
@@ -196,53 +207,16 @@ public class InventoryFlowService {
   }
 
   public Object list(String kind, String q, String filters, int page, int size, boolean export) {
-    require(NAMES.containsKey(kind) && page > 0 && size > 0 && size <= 100, "查询参数无效");
-    permissions.require(menu(kind), export ? "导出" : "查看");
-    require(q.length() <= 200 && filters.length() <= 4000, "筛选条件过长");
-    Map<String, String> f;
-    try {
-      f = json.readValue(filters, new TypeReference<Map<String, String>>() {});
-    } catch (Exception e) {
-      throw new IllegalArgumentException("筛选条件无效");
-    }
-    require(
-        f != null && Set.of("code", "warehouseName", "status", "createdAt").containsAll(f.keySet()),
-        "筛选字段无效");
-    var values = new ArrayList<Map<String, Object>>();
-    for (var r : repository.searchOperations(auth.tenantId(), kind)) {
-      try {
-        operation(kind, id(r.get("id")), false, "查看");
-      } catch (ResponseStatusException denied) {
-        if (denied.getStatusCode().value() == 403) continue;
-        throw denied;
-      }
-      var v = masters.view(r);
-      v.remove("payload");
-      if (!(text(v, "code") + " " + text(v, "warehouseName") + " " + text(v, "status"))
-          .contains(q.trim())) continue;
-      if (f.entrySet().stream()
-          .allMatch(
-              e ->
-                  text(v, e.getKey())
-                      .replace('T', ' ')
-                      .contains(Objects.toString(e.getValue(), "").trim()))) values.add(v);
-    }
-    if (export) {
-      values.removeIf(
-          v -> !permissions.inventoryWarehouseAllowed(menu(kind), id(v.get("warehouseId")), "导出"));
-      return Map.of("data", values);
-    }
-    int from = (int) Math.min(((long) page - 1) * size, values.size());
-    return Map.of(
-        "data",
-        values.subList(from, Math.min(from + size, values.size())),
-        "page",
-        Map.of("total", values.size()));
+    return export
+        ? listQueries.exportOperations(kind, q, filters)
+        : listQueries.operations(kind, q, filters, page, size, false);
   }
 
   public Object choices(String kind) {
     permissions.require(menu(kind), "查看");
-    require(NAMES.containsKey(kind), "单据类型无效");
+    require(
+        NAMES.containsKey(kind),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0022"));
     @SuppressWarnings("unchecked")
     var result = new LinkedHashMap<String, Object>((Map<String, Object>) masters.stockChoices());
     result.put(
@@ -320,39 +294,53 @@ public class InventoryFlowService {
   @Transactional
   public Map<String, Object> save(String kind, Long doc, Map<String, Object> body) {
     lock();
-    require(NAMES.containsKey(kind), "单据类型无效");
+    require(
+        NAMES.containsKey(kind),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0022"));
     permissions.require(menu(kind), doc == null ? "新增" : "编辑");
     var previous = doc == null ? null : operation(kind, doc, true, "编辑");
     if (previous != null) {
-      require(text(previous, "status").equals("草稿"), "已生效单据不能编辑");
+      require(
+          text(previous, "status").equals("草稿"),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0090"));
       VersionGuard.checkPayload((Number) previous.get("row_version"), body);
     }
     long warehouseId = id(body.get("warehouseId"));
     permissions.checkInventoryWarehouse(menu(kind), warehouseId, doc == null ? "新增" : "编辑");
     var w = checkWarehouse(warehouseId, "新增");
-    require(flag(w.get("enabled")), "仓库已停用");
+    require(
+        flag(w.get("enabled")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0035"));
     var data = new LinkedHashMap<String, Object>();
     data.put("remark", text(body, "remark"));
-    require(text(body, "remark").length() <= 1000, "备注过长");
+    require(
+        text(body, "remark").length() <= 1000,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0091"));
     if (kind.equals("openings") && id(body.get("conversionMaterialId")) != 0) {
       long material = id(body.get("conversionMaterialId"));
       var m = masters.row("materials", material, true);
-      require(!flag(m.get("batch_enabled")), "物料已启用批次");
+      require(
+          !flag(m.get("batch_enabled")),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0092"));
       validateConversion(material, doc == null ? 0 : doc);
       var normalized = new ArrayList<Map<String, Object>>();
       Set<Long> seen = new HashSet<>();
       for (var line : lines(body)) {
         long bid = id(line.get("balanceId"));
-        require(seen.add(bid), "初始化余额重复");
+        require(
+            seen.add(bid),
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0093"));
         var b = balance(bid, true);
         require(
             id(b.get("material_id")) == material
                 && id(b.get("batch_id")) == 0
                 && ((BigDecimal) b.get("quantity")).signum() > 0,
-            "初始化库存已变化");
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0094"));
         permissions.checkInventoryWarehouse(
             "inventoryOpening", id(b.get("warehouse_id")), doc == null ? "新增" : "编辑");
-        require(text(line, "batchCode").length() <= 64, "批次号过长");
+        require(
+            text(line, "batchCode").length() <= 64,
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0095"));
         var l = new LinkedHashMap<String, Object>();
         l.put("balanceId", Long.toString(bid));
         l.put("materialId", Long.toString(material));
@@ -368,7 +356,7 @@ public class InventoryFlowService {
       }
       require(
           repository.countMaterialStock(auth.tenantId(), material) == normalized.size(),
-          "必须一次初始化该物料全部仓库库存；请确认所有仓库的权限");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0096"));
       data.put("conversionMaterialId", Long.toString(material));
       data.put("lines", normalized);
     } else if (kind.equals("counts")) {
@@ -385,20 +373,31 @@ public class InventoryFlowService {
           line.put("batchCode", Objects.toString(b.get("batch_code"), ""));
           snapshots.add(line);
         }
-        require(!snapshots.isEmpty(), "仓库暂无库存，不能建立盘点单");
+        require(
+            !snapshots.isEmpty(),
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0097"));
         data.put("lines", snapshots);
         data.put("baselineAt", LocalDateTime.now().toString());
       } else {
-        require(id(previous.get("warehouse_id")) == warehouseId, "盘点仓库不能变更");
+        require(
+            id(previous.get("warehouse_id")) == warehouseId,
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0098"));
         var original = payload(previous);
         var old = lines(original);
         var entered = lines(body);
-        require(old.size() == entered.size(), "不能更改盘点基准明细");
+        require(
+            old.size() == entered.size(),
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0099"));
         var byId = new HashMap<Long, Map<String, Object>>();
-        for (var l : entered) require(byId.put(id(l.get("balanceId")), l) == null, "盘点明细重复");
+        for (var l : entered)
+          require(
+              byId.put(id(l.get("balanceId")), l) == null,
+              com.windasoft.eam.common.MessageContext.text("server.inventory.message0100"));
         for (var l : old) {
           var input = byId.get(id(l.get("balanceId")));
-          require(input != null, "盘点明细缺失");
+          require(
+              input != null,
+              com.windasoft.eam.common.MessageContext.text("server.inventory.message0101"));
           if (!text(input, "countedQuantity").isBlank())
             decimal(input.get("countedQuantity"), true);
           if (!text(input, "unitCost").isBlank()) decimal(input.get("unitCost"), true);
@@ -424,24 +423,34 @@ public class InventoryFlowService {
       require(
           Set.of("receipt", "issue", "returns", "transfers", "counts", "openings")
               .contains(sourceKind),
-          "纠正来源无效");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0102"));
       String table =
           sourceKind.equals("receipt")
               ? "inv_receipt"
-              : sourceKind.equals("issue") ? "inv_issue" : "inv_operation";
+              : sourceKind.equals("issue") ? "inv_issue" : "v_inv_operation";
       var source = one(repository.loadSource(auth.tenantId(), sourceId, table));
-      require(id(source.get("warehouse_id")) == warehouseId, "请选择本仓库生效单据");
+      require(
+          id(source.get("warehouse_id")) == warehouseId,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0103"));
       if (sourceKind.equals("issue"))
         require(
-            !flag(source.get("reversed")) && text(source, "status").equals("已出库"), "来源出库单尚未生效或已冲销");
-      else require(Set.of("已入库", "已完成", "在途").contains(text(source, "status")), "来源单据未生效或已冲销");
-      if (table.equals("inv_operation")) {
-        require(sourceKind.equals(text(source, "kind")), "单据类型不匹配");
+            !flag(source.get("reversed")) && text(source, "status").equals("已出库"),
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0104"));
+      else
+        require(
+            Set.of("已入库", "已完成", "在途").contains(text(source, "status")),
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0105"));
+      if (table.equals("v_inv_operation")) {
+        require(
+            sourceKind.equals(text(source, "kind")),
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0106"));
         if (source.get("target_warehouse_id") != null)
           permissions.checkInventoryWarehouse(
               menu(kind), id(source.get("target_warehouse_id")), "查看");
       }
-      require(!text(body, "remark").isBlank(), "请填写冲销原因");
+      require(
+          !text(body, "remark").isBlank(),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0107"));
       data.put("sourceKind", sourceKind);
       data.put("sourceId", Long.toString(sourceId));
       data.put("sourceCode", source.get("code"));
@@ -456,10 +465,14 @@ public class InventoryFlowService {
         l.put("quantity", qty.toPlainString());
         if (kind.equals("returns")) {
           long allocationId = id(line.get("allocationId"));
-          require(duplicates.add(allocationId), "原发料明细不能重复");
+          require(
+              duplicates.add(allocationId),
+              com.windasoft.eam.common.MessageContext.text("server.inventory.message0108"));
           var a = issueAllocation(allocationId, false);
           permissions.checkInventoryWarehouse(menu(kind), id(a.get("warehouse_id")), "查看");
-          require(id(a.get("company_id")) == id(w.get("company_id")), "退料不能跨公司");
+          require(
+              id(a.get("company_id")) == id(w.get("company_id")),
+              com.windasoft.eam.common.MessageContext.text("server.inventory.message0109"));
           var bin = validBin(id(line.get("binId")), warehouseId);
           l.put("allocationId", Long.toString(allocationId));
           l.put("binId", Objects.toString(bin.get("id")));
@@ -468,9 +481,13 @@ public class InventoryFlowService {
         }
         if (kind.equals("transfers")) {
           long balanceId = id(line.get("balanceId"));
-          require(duplicates.add(balanceId), "库存明细不能重复");
+          require(
+              duplicates.add(balanceId),
+              com.windasoft.eam.common.MessageContext.text("server.inventory.message0110"));
           var b = balance(balanceId, false);
-          require(id(b.get("warehouse_id")) == warehouseId, "库存不属于源仓库");
+          require(
+              id(b.get("warehouse_id")) == warehouseId,
+              com.windasoft.eam.common.MessageContext.text("server.inventory.message0111"));
           l.put("balanceId", Long.toString(balanceId));
           l.put("targetBinId", Long.toString(id(line.get("targetBinId"))));
           l.put(
@@ -480,7 +497,9 @@ public class InventoryFlowService {
         if (kind.equals("openings")) {
           long materialId = id(line.get("materialId"));
           var m = masters.row("materials", materialId, false);
-          require(flag(m.get("enabled")), "物料已停用");
+          require(
+              flag(m.get("enabled")),
+              com.windasoft.eam.common.MessageContext.text("server.inventory.message0057"));
           validBin(id(line.get("binId")), warehouseId);
           decimal(line.get("unitPrice"), true);
           for (String k :
@@ -497,13 +516,17 @@ public class InventoryFlowService {
           l.put("materialName", m.get("name"));
           if (id(line.get("legacyStockId")) != 0) {
             long stock = id(line.get("legacyStockId"));
-            require(duplicates.add(stock), "历史库存不能重复初始化");
+            require(
+                duplicates.add(stock),
+                com.windasoft.eam.common.MessageContext.text("server.inventory.message0112"));
             var legacy = one(repository.loadLegacyStock(auth.tenantId(), stock));
             require(
                 id(legacy.get("company_id")) == 0
                     || id(legacy.get("company_id")) == id(w.get("company_id")),
-                "历史库存所属公司与仓库不一致");
-            require(((BigDecimal) legacy.get("quantity")).compareTo(qty) == 0, "历史库存应按当前结存数量完整初始化");
+                com.windasoft.eam.common.MessageContext.text("server.inventory.message0113"));
+            require(
+                ((BigDecimal) legacy.get("quantity")).compareTo(qty) == 0,
+                com.windasoft.eam.common.MessageContext.text("server.inventory.message0114"));
           }
         }
         normalized.add(l);
@@ -519,7 +542,7 @@ public class InventoryFlowService {
           target != warehouseId
               && id(tw.get("company_id")) == id(w.get("company_id"))
               && flag(tw.get("enabled")),
-          "请选择同公司其他有效仓库");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0115"));
       for (var l : lines(data)) validBin(id(l.get("targetBinId")), target);
       data.put("targetWarehouseId", target.toString());
     }
@@ -550,20 +573,30 @@ public class InventoryFlowService {
   public Map<String, Object> requestSurplusReturn(long allocation, Map<String, Object> body) {
     lock();
     var available = repository.lockPersonalReturnAllocation(auth.tenantId(), allocation);
-    require(available.size() == 1, "余料不存在或已处理");
+    require(
+        available.size() == 1,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0116"));
     var row = available.getFirst();
     if (id(row.get("holderId")) != auth.userId())
-      throw new ResponseStatusException(
-          org.springframework.http.HttpStatus.FORBIDDEN, "只能申请退回本人保管的余料");
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          org.springframework.http.HttpStatus.FORBIDDEN, "server.inventory.message0021");
     var qty = decimal(body.get("quantity"), false);
-    require(qty.compareTo((BigDecimal) row.get("remaining")) <= 0, "退料数量超过剩余未用数量");
+    require(
+        qty.compareTo((BigDecimal) row.get("remaining")) <= 0,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0117"));
     String reason = text(body, "remark");
-    require(!reason.isBlank() && reason.length() <= 1000, "请填写退料说明，最多1000字");
+    require(
+        !reason.isBlank() && reason.length() <= 1000,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0118"));
     var pending = repository.findPendingReturn(auth.tenantId(), Long.toString(allocation));
-    require(pending.isEmpty(), "该余料已有待处理退料单，请等待仓库处理");
+    require(
+        pending.isEmpty(),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0119"));
     long warehouse = id(row.get("warehouseId"));
     var bins = repository.listEnabledBins(auth.tenantId(), warehouse);
-    require(!bins.isEmpty(), "原仓库没有有效库位，请联系仓管");
+    require(
+        !bins.isEmpty(),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0120"));
     var payload = new LinkedHashMap<String, Object>();
     payload.put("remark", reason);
     payload.put("surplusRequestedBy", Long.toString(auth.userId()));
@@ -608,7 +641,9 @@ public class InventoryFlowService {
 
   private Map<String, Object> validBin(long bin, long warehouse) {
     var b = masters.row("bins", bin, false);
-    require(id(b.get("warehouse_id")) == warehouse && flag(b.get("enabled")), "请选择有效目标库位");
+    require(
+        id(b.get("warehouse_id")) == warehouse && flag(b.get("enabled")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0121"));
     return b;
   }
 
@@ -618,7 +653,9 @@ public class InventoryFlowService {
 
   private long targetBalance(long warehouse, long bin, long material, long batch, String state) {
     var w = checkWarehouse(warehouse, "入库");
-    require(flag(w.get("enabled")), "目标仓库已停用");
+    require(
+        flag(w.get("enabled")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0122"));
     validBin(bin, warehouse);
     repository.ensureBalance(
         IdWorker.getId(),
@@ -705,11 +742,15 @@ public class InventoryFlowService {
         qty.compareTo(
                 ((BigDecimal) b.get("quantity")).subtract((BigDecimal) b.get("reserved_quantity")))
             <= 0,
-        "可用库存不足或存在预留");
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0123"));
     if (normal) {
-      require(text(b, "stock_status").equals("可用"), "冻结库存不能调出");
+      require(
+          text(b, "stock_status").equals("可用"),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0124"));
       var m = masters.row("materials", id(b.get("material_id")), false);
-      require(flag(m.get("enabled")), "物料已停用");
+      require(
+          flag(m.get("enabled")),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0057"));
       validBin(id(b.get("bin_id")), id(b.get("warehouse_id")));
       if (id(b.get("batch_id")) != 0) {
         var pc = one(repository.loadBatch(auth.tenantId(), b.get("batch_id")));
@@ -717,15 +758,19 @@ public class InventoryFlowService {
             pc.get("expiry_date") == null
                 || !LocalDate.parse(pc.get("expiry_date").toString())
                     .isBefore(LocalDate.now(ZoneId.of("Asia/Shanghai"))),
-            "过期库存不能正常调出");
-        require(!flag(m.get("expiry_enabled")) || pc.get("expiry_date") != null, "批次缺少有效期");
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0125"));
+        require(
+            !flag(m.get("expiry_enabled")) || pc.get("expiry_date") != null,
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0126"));
       }
     }
     var result = new ArrayList<Map<String, Object>>();
     var need = qty;
     for (var layer : repository.lockLayers(auth.tenantId(), b.get("id"))) {
       if (need.signum() == 0) break;
-      require(layer.get("remaining_cost") != null && layer.get("unit_cost") != null, "成本待补录，不能确认");
+      require(
+          layer.get("remaining_cost") != null && layer.get("unit_cost") != null,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0127"));
       var remain = (BigDecimal) layer.get("remaining_quantity");
       var taken = remain.min(need);
       var cost = (BigDecimal) layer.get("remaining_cost");
@@ -764,7 +809,9 @@ public class InventoryFlowService {
               layer.get("origin_received_at")));
       need = need.subtract(taken);
     }
-    require(need.signum() == 0, "成本层与库存数量不一致");
+    require(
+        need.signum() == 0,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0128"));
     repository.takeBalance(qty, auth.tenantId(), b.get("id"));
     return result;
   }
@@ -785,12 +832,19 @@ public class InventoryFlowService {
     if (kind.equals("transfers") && !receive && text(raw, "status").equals("在途"))
       return detail(kind, doc);
     VersionGuard.checkPayload((Number) raw.get("row_version"), body);
-    require(text(raw, "status").equals(receive ? "在途" : "草稿"), "单据状态不能执行此操作");
+    require(
+        text(raw, "status").equals(receive ? "在途" : "草稿"),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0129"));
     var data = payload(raw);
     long warehouse = id(raw.get("warehouse_id"));
-    if (!receive) require(flag(checkWarehouse(warehouse, "出库").get("enabled")), "仓库已停用");
+    if (!receive)
+      require(
+          flag(checkWarehouse(warehouse, "出库").get("enabled")),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0035"));
     if (receive) {
-      require(kind.equals("transfers"), "仅调拨单可以接收");
+      require(
+          kind.equals("transfers"),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0130"));
       long target = id(raw.get("target_warehouse_id"));
       for (var a : repository.lockOutgoingMovements(auth.tenantId(), doc)) {
         var source = balance(id(a.get("balance_id")), true);
@@ -825,10 +879,12 @@ public class InventoryFlowService {
                 ((BigDecimal) a.get("quantity"))
                     .subtract((BigDecimal) a.get("used_quantity"))
                     .subtract((BigDecimal) a.get("returned_quantity"));
-            require(qty.compareTo(available) <= 0, "退料数量超过已发未用数量");
+            require(
+                qty.compareTo(available) <= 0,
+                com.windasoft.eam.common.MessageContext.text("server.inventory.message0131"));
             require(
                 ((Number) a.getOrDefault("missing_used_cost", 0)).intValue() == 0,
-                "历史用料成本缺失，请先核对原出库分配");
+                com.windasoft.eam.common.MessageContext.text("server.inventory.message0132"));
             var issued = (BigDecimal) a.get("quantity");
             var remainingAmount =
                 ((BigDecimal) a.get("amount"))
@@ -863,16 +919,22 @@ public class InventoryFlowService {
         case "transfers" -> {
           for (var l : lines(data)) {
             var b = balance(id(l.get("balanceId")), true);
-            require(id(b.get("warehouse_id")) == warehouse, "来源仓库不匹配");
+            require(
+                id(b.get("warehouse_id")) == warehouse,
+                com.windasoft.eam.common.MessageContext.text("server.inventory.message0133"));
             validBin(id(l.get("targetBinId")), id(raw.get("target_warehouse_id")));
             take(doc, b, decimal(l.get("quantity"), false), id(l.get("targetBinId")), "调拨调出", true);
           }
         }
         case "counts" -> {
           for (var l : lines(data)) {
-            require(!text(l, "countedQuantity").isBlank(), "请填写所有实盘数量");
+            require(
+                !text(l, "countedQuantity").isBlank(),
+                com.windasoft.eam.common.MessageContext.text("server.inventory.message0134"));
             var b = balance(id(l.get("balanceId")), true);
-            require(id(b.get("warehouse_id")) == warehouse, "盘点库存不属于本仓库");
+            require(
+                id(b.get("warehouse_id")) == warehouse,
+                com.windasoft.eam.common.MessageContext.text("server.inventory.message0135"));
             var difference =
                 decimal(l.get("countedQuantity"), true)
                     .subtract(decimal(l.get("observedQuantity"), true));
@@ -917,12 +979,14 @@ public class InventoryFlowService {
               require(
                   ((BigDecimal) legacy.get("quantity")).compareTo(decimal(l.get("quantity"), false))
                       == 0,
-                  "历史库存数量已变化");
+                  com.windasoft.eam.common.MessageContext.text("server.inventory.message0136"));
               var mapped = repository.lockLegacyMapping(auth.tenantId(), stock);
               require(
                   mapped.isEmpty() || text(mapped.getFirst(), "migration_status").equals("待初始化"),
-                  "历史库存已初始化");
-              require(repository.countLegacyWaiting(auth.tenantId(), stock) == 0, "请先撤回历史库存待出库申请");
+                  com.windasoft.eam.common.MessageContext.text("server.inventory.message0137"));
+              require(
+                  repository.countLegacyWaiting(auth.tenantId(), stock) == 0,
+                  com.windasoft.eam.common.MessageContext.text("server.inventory.message0138"));
             }
           var receipt = receipts.opening(receiptBody);
           data.put("receiptId", receipt.get("id"));
@@ -939,7 +1003,9 @@ public class InventoryFlowService {
           }
         }
         case "reversals" -> reverse(doc, data);
-        default -> throw new IllegalArgumentException("单据类型无效");
+        default ->
+            throw new com.windasoft.eam.common.LocalizedArgumentException(
+                "server.inventory.message0022");
       }
     if (kind.equals("transfers")) {
       if (receive) repository.closeTransferTodos(auth.tenantId(), doc);
@@ -976,29 +1042,39 @@ public class InventoryFlowService {
   }
 
   private void validateConversion(long material, long except) {
-    require(repository.countReservedMaterial(auth.tenantId(), material) == 0, "存在预留，不能初始化批次");
-    require(repository.countDraftReceipts(auth.tenantId(), material) == 0, "存在入库草稿，不能初始化批次");
-    require(repository.countOpenRequisitions(auth.tenantId(), material) == 0, "存在未完成领料单，不能初始化批次");
+    require(
+        repository.countReservedMaterial(auth.tenantId(), material) == 0,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0139"));
+    require(
+        repository.countDraftReceipts(auth.tenantId(), material) == 0,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0140"));
+    require(
+        repository.countOpenRequisitions(auth.tenantId(), material) == 0,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0141"));
     require(
         repository.countOpenOperations(auth.tenantId(), except, Long.toString(material), material)
             == 0,
-        "存在库存草稿或在途库存，不能初始化批次");
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0142"));
   }
 
   private void convert(long doc, Map<String, Object> data) {
     long material = id(data.get("conversionMaterialId"));
     var m = masters.row("materials", material, true);
-    require(!flag(m.get("batch_enabled")), "批次模式已变化");
+    require(
+        !flag(m.get("batch_enabled")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0143"));
     validateConversion(material, doc);
     require(
         repository.countStockForConversion(auth.tenantId(), material) == lines(data).size(),
-        "库存范围已变化，请重新保存初始化草稿");
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0144"));
     for (var line : lines(data)) {
       var b = balance(id(line.get("balanceId")), true);
       VersionGuard.checkPayload(
           (Number) b.get("row_version"), Map.of("rowVersion", line.get("balanceVersion")));
       permissions.checkInventoryWarehouse("inventoryOpening", id(b.get("warehouse_id")), "入库");
-      require(id(b.get("material_id")) == material && id(b.get("batch_id")) == 0, "来源库存模式已变化");
+      require(
+          id(b.get("material_id")) == material && id(b.get("batch_id")) == 0,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0145"));
       String code = text(line, "batchCode");
       if (code.isBlank()) {
         String month =
@@ -1018,7 +1094,7 @@ public class InventoryFlowService {
           production == null
               || expiry == null
               || !((LocalDate) expiry).isBefore((LocalDate) production),
-          "有效期不能早于生产日期");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0146"));
       var found = repository.lockBatch(auth.tenantId(), code);
       long batch;
       if (found.isEmpty()) {
@@ -1034,7 +1110,7 @@ public class InventoryFlowService {
                 && Objects.equals(
                     Objects.toString(existing.get("expiry_date"), ""),
                     Objects.toString(expiry, "")),
-            "已有批次归属或日期不一致");
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0147"));
         batch = id(existing.get("id"));
       }
       line.put("batchCode", code);
@@ -1068,7 +1144,7 @@ public class InventoryFlowService {
     require(
         ((BigDecimal) layer.get("remaining_quantity")).compareTo(qty) == 0
             && ((BigDecimal) layer.get("remaining_cost")).compareTo(amount) == 0,
-        "来源库存已被使用、调拨或调整，不能直接冲销");
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0148"));
     var b = balance(id(layer.get("balance_id")), true);
     permissions.checkInventoryWarehouse("inventoryReversal", id(b.get("warehouse_id")), "冲销");
     require(
@@ -1076,7 +1152,7 @@ public class InventoryFlowService {
                 .subtract((BigDecimal) b.get("reserved_quantity"))
                 .compareTo(qty)
             >= 0,
-        "库存被预留，不能冲销");
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0149"));
     long allocation = IdWorker.getId();
     repository.closeCostLayer(auth.tenantId(), layerId);
     repository.takeBalanceForReversal(qty, auth.tenantId(), b.get("id"));
@@ -1097,7 +1173,9 @@ public class InventoryFlowService {
     var layer = one(repository.loadMovementLayer(auth.tenantId(), a.get("cost_layer_id")));
     var b = balance(id(a.get("balance_id")), true);
     permissions.checkInventoryWarehouse("inventoryReversal", id(b.get("warehouse_id")), "冲销");
-    require(flag(checkWarehouse(id(b.get("warehouse_id")), "冲销").get("enabled")), "来源仓库停用，不能冲销");
+    require(
+        flag(checkWarehouse(id(b.get("warehouse_id")), "冲销").get("enabled")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0150"));
     add(
         doc,
         id(b.get("id")),
@@ -1112,7 +1190,9 @@ public class InventoryFlowService {
 
   private void reverseReceipt(long doc, long receipt) {
     var r = one(repository.lockReceipt(auth.tenantId(), receipt));
-    require(text(r, "status").equals("已入库"), "来源入库单已冲销");
+    require(
+        text(r, "status").equals("已入库"),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0151"));
     for (var layer : repository.listReceiptLayers(auth.tenantId(), receipt))
       undoLayer(
           doc,
@@ -1133,12 +1213,14 @@ public class InventoryFlowService {
     }
     if (kind.equals("issue")) {
       var issue = one(repository.lockIssue(auth.tenantId(), source));
-      require(!flag(issue.get("reversed")), "出库单已冲销");
+      require(
+          !flag(issue.get("reversed")),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0152"));
       for (var a : repository.lockIssueAllocations(auth.tenantId(), source)) {
         require(
             ((BigDecimal) a.get("used_quantity")).signum() == 0
                 && ((BigDecimal) a.get("returned_quantity")).signum() == 0,
-            "出库已使用、安装或退料，不能直接冲销");
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0153"));
         restore(doc, a);
         repository.restoreRequestedQuantity(
             a.get("quantity"), auth.tenantId(), a.get("requisition_line_id"));
@@ -1159,10 +1241,11 @@ public class InventoryFlowService {
     require(
         text(original, "kind").equals(kind)
             && Set.of("已完成", "在途").contains(text(original, "status")),
-        "来源单据已冲销或状态无效");
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0154"));
     var sourceData = payload(original);
     require(
-        id(sourceData.get("conversionMaterialId")) == 0, "批次初始化已改变物料追踪模式，不能直接冲销；请通过库存调拨或盘点纠正数量");
+        id(sourceData.get("conversionMaterialId")) == 0,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0155"));
     if (kind.equals("openings") && id(sourceData.get("conversionMaterialId")) == 0)
       reverseReceipt(doc, id(sourceData.get("receiptId")));
     else {
@@ -1190,7 +1273,9 @@ public class InventoryFlowService {
   public void delete(String kind, long doc, Map<String, Object> body) {
     lock();
     var r = operation(kind, doc, true, "删除");
-    require(text(r, "status").equals("草稿"), "只能删除草稿，生效单据请办理关联纠正");
+    require(
+        text(r, "status").equals("草稿"),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0156"));
     VersionGuard.checkPayload((Number) r.get("row_version"), body);
     repository.deleteOperation(auth.tenantId(), doc);
     event(doc, kind, "删除草稿");
@@ -1209,10 +1294,16 @@ public class InventoryFlowService {
     checkWarehouse(id(b.get("warehouse_id")), "冻结");
     VersionGuard.checkPayload((Number) b.get("row_version"), body);
     String target = text(body, "stockStatus");
-    require(Set.of("冻结", "可用").contains(target), "库存状态无效");
-    require(!text(body, "reason").isBlank() && text(body, "reason").length() <= 1000, "请填写冻结或解冻说明");
+    require(
+        Set.of("冻结", "可用").contains(target),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0157"));
+    require(
+        !text(body, "reason").isBlank() && text(body, "reason").length() <= 1000,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0158"));
     if (text(b, "stock_status").equals(target)) return masters.view(b);
-    require(((BigDecimal) b.get("reserved_quantity")).signum() == 0, "库存已预留，请先释放后冻结");
+    require(
+        ((BigDecimal) b.get("reserved_quantity")).signum() == 0,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0159"));
     long destination =
         targetBalance(
             id(b.get("warehouse_id")),

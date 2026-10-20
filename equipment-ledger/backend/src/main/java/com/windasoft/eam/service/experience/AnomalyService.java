@@ -23,6 +23,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AnomalyService {
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.business.BusinessConfigService businessConfig;
+
+  private final com.windasoft.eam.service.basedata.BaseDataReferenceService references;
   final AnomalyRepository repository;
   final AuthContext auth;
   final PermissionService permissions;
@@ -40,7 +44,9 @@ public class AnomalyService {
       com.windasoft.eam.service.repair.RepairOrderService repairs,
       RepairWorkflowService workflow,
       MaintenanceService maintenance,
-      InspectionService inspection) {
+      InspectionService inspection,
+      com.windasoft.eam.service.basedata.BaseDataReferenceService references) {
+    this.references = references;
     this.repository = repository;
     this.auth = auth;
     this.permissions = permissions;
@@ -102,8 +108,8 @@ public class AnomalyService {
   void checkAction(Map<String, Object> r, String action) {
     permissions.require("anomaly", action);
     if (!scope("anomaly", action, eq(id(r.get("equipment_id"))), id(r.get("discovered_by"))))
-      throw new ResponseStatusException(
-          org.springframework.http.HttpStatus.FORBIDDEN, "没有此异常的操作权限");
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          org.springframework.http.HttpStatus.FORBIDDEN, "server.experience.message0019");
   }
 
   String number(String prefix) {
@@ -276,8 +282,8 @@ public class AnomalyService {
   public Object detail(long id) {
     var r = raw(id, false);
     if (!canView(r))
-      throw new ResponseStatusException(
-          org.springframework.http.HttpStatus.FORBIDDEN, "没有查看此异常的权限");
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          org.springframework.http.HttpStatus.FORBIDDEN, "server.experience.message0020");
     var v = viewAnomaly(r);
     v.put("events", events("anomaly", id));
     v.put(
@@ -360,7 +366,10 @@ public class AnomalyService {
           items.stream()
               .filter(i -> text(i, "id").equals(sourceKey))
               .findFirst()
-              .orElseThrow(() -> new IllegalArgumentException("来源项目不存在"));
+              .orElseThrow(
+                  () ->
+                      new com.windasoft.eam.common.LocalizedArgumentException(
+                          "server.experience.message0021"));
       long sourceEq =
           kind.equals("保养")
               ? id(repository.findCaptureEquipment(auth.tenantId(), taskId).get("equipment_id"))
@@ -411,7 +420,9 @@ public class AnomalyService {
           case "resolve" -> "消除";
           case "report", "link" -> "报修";
           case "void" -> "作废";
-          default -> throw new IllegalArgumentException("未知异常操作");
+          default ->
+              throw new com.windasoft.eam.common.LocalizedArgumentException(
+                  "server.experience.message0022");
         };
     checkAction(r, grant);
     if (id(r.get("row_version")) != id(b.get("rowVersion"))) conflict();
@@ -460,7 +471,10 @@ public class AnomalyService {
                 e.getEquipmentCode(),
                 e.getName(),
                 e.getDepartment(),
-                required(b, "faultType", 150),
+                references
+                    .required(
+                        auth.tenantId(), b.get("faultTypeId"), "FAULT_TYPE", "faultTypeId", "故障类型")
+                    .getId(),
                 required(b, "severity", 40),
                 text(r, "description"),
                 auth.user().getDisplayName(),
@@ -472,7 +486,10 @@ public class AnomalyService {
                         ? viewAnomaly(r).get("attachments")
                         : repository.listPlanAnomalies(auth.tenantId(), r.get("id")).stream()
                             .flatMap(a -> rows(viewAnomaly(a).get("attachments")).stream())
-                            .toList())));
+                            .toList()),
+                json.createObjectNode(),
+                ((Number) businessConfig.current("repair_report", false).get("published_version"))
+                    .intValue()));
     return id(((Map<String, Object>) result.get("data")).get("id"));
   }
 
@@ -685,7 +702,11 @@ public class AnomalyService {
     long eqId = id(b.get("equipmentId"));
     check(scope("repairPlan", pid == null ? "新增" : "编辑", eq(eqId), auth.userId()), "没有维护维修计划权限");
     String description = required(b, "description", 4000),
-        fault = required(b, "faultType", 150),
+        fault =
+            references
+                .required(
+                    auth.tenantId(), b.get("faultTypeId"), "FAULT_TYPE", "faultTypeId", "故障类型")
+                .getName(),
         severity = required(b, "severity", 40);
     var planned = LocalDateTime.parse(required(b, "plannedAt", 30));
     long owner = id(b.get("ownerId"));
@@ -735,6 +756,8 @@ public class AnomalyService {
       repository.attachPlanAnomaly(pid, auth.tenantId(), aid);
       event("anomaly", aid, "安排维修计划", Map.of("planId", pid.toString()));
     }
+    repository.setPlanFaultTypeId(
+        auth.tenantId(), pid, Long.parseLong(b.get("faultTypeId").toString()));
     event("repairPlan", pid, "保存维修计划", Map.of("plannedAt", planned.toString()));
     var r = planRaw(pid, false);
     if (r.get("status").equals("待生成")
@@ -774,7 +797,9 @@ public class AnomalyService {
     var r = planRaw(pid, true);
     check(r.get("status").equals("待生成"), "计划不在待生成状态");
     planAccess(r, "启用");
-    var b = Map.of("faultType", r.get("fault_type"), "severity", r.get("severity"));
+    var b = new HashMap<String, Object>();
+    b.put("faultTypeId", r.get("fault_type_id"));
+    b.put("severity", r.get("severity"));
     long repair = createRepair(r, b);
     repository.finishGeneration(repair, auth.tenantId(), pid);
     var affected = repository.lockPendingAnomalies(auth.tenantId(), pid);

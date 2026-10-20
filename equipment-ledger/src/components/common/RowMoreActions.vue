@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElButton } from 'element-plus';
 
 import AppIcon from './AppIcon.vue';
@@ -7,7 +8,7 @@ defineProps<{ actions: { label: string; run: () => unknown; danger?: boolean }[]
 </script>
 <template>
   <ElDropdown trigger="click" placement="bottom-end" popper-class="eam-dropdown"
-    ><ElButton class="row-more" aria-label="更多操作" title="更多操作"
+    ><ElButton class="row-more" :aria-label="tr('ui.equipment.text0673')" :title="tr('ui.equipment.text0673')"
       ><AppIcon name="More" /></ElButton
     ><template #dropdown
       ><ElDropdownMenu

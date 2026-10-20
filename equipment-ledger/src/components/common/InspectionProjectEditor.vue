@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElTableColumn } from 'element-plus';
 import AppBusinessTable from './AppBusinessTable.vue';
 import AppIcon from './AppIcon.vue';
@@ -54,15 +55,15 @@ const sharedOptions = computed(() => {
 });
 function apply() {
   if (batch.value === 'type' && !batchType.value) {
-    ElMessage.warning('请选择巡检类型');
+    ElMessage.warning(tr('ui.equipment.text1467'));
     return;
   }
   if (batch.value === 'options' && values.value.length < 2) {
-    ElMessage.warning('请填写至少两个可选项');
+    ElMessage.warning(tr('ui.equipment.text1468'));
     return;
   }
   if (batch.value === 'normal' && !values.value.length) {
-    ElMessage.warning('请选择正常选项');
+    ElMessage.warning(tr('ui.equipment.text0750'));
     return;
   }
   items.value.forEach((i) => {
@@ -85,21 +86,21 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   <section class="inspection-projects">
     <div class="inspection-section-tools">
       <h3>
-        检查项目 <span>{{ items.length }}</span>
+        {{ tr('ui.equipment.text0377') }} <span>{{ items.length }}</span>
       </h3>
-      <ElButton type="primary" @click="add"><AppIcon name="Plus" /> 添加项目</ElButton
-      ><ElButton @click="$emit('addType')">巡检类型</ElButton
+      <ElButton type="primary" @click="add"><AppIcon name="Plus" /> {{ tr('ui.equipment.text0779') }}</ElButton
+      ><ElButton @click="$emit('addType')">{{ tr('ui.equipment.text0325') }}</ElButton
       ><ElDropdown :disabled="!selected.length" @command="openBatch"
-        ><ElButton :disabled="!selected.length">批量操作<AppIcon name="Down" /></ElButton
+        ><ElButton :disabled="!selected.length">{{ tr('ui.equipment.text0373') }}<AppIcon name="Down" /></ElButton
         ><template #dropdown
           ><ElDropdownMenu
-            ><ElDropdownItem command="type">修改巡检类型</ElDropdownItem
-            ><ElDropdownItem command="options">修改可选项</ElDropdownItem
-            ><ElDropdownItem command="normal">修改正常选项</ElDropdownItem
-            ><ElDropdownItem divided command="delete">删除</ElDropdownItem></ElDropdownMenu
+            ><ElDropdownItem command="type">{{ tr('ui.equipment.text1469') }}</ElDropdownItem
+            ><ElDropdownItem command="options">{{ tr('ui.equipment.text0777') }}</ElDropdownItem
+            ><ElDropdownItem command="normal">{{ tr('ui.equipment.text0778') }}</ElDropdownItem
+            ><ElDropdownItem divided command="delete">{{ tr('ui.equipment.text0146') }}</ElDropdownItem></ElDropdownMenu
           ></template
         ></ElDropdown
-      ><span v-if="selected.length">已选 {{ selected.length }} 项</span>
+      ><span v-if="selected.length">{{ tr('ui.equipment.text0295') }} {{ selected.length }} {{ tr('ui.equipment.text0394') }}</span>
     </div>
     <div class="inspection-project-scroll">
       <AppBusinessTable
@@ -115,19 +116,19 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         class="business-table inspection-project-table"
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="55" :width="52" class-name="project-sequence" fixed="left"
-          ><template #header><div class="table-header-label">序号</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0376') }}</div></template
           ><template #default="{ row: item, $index: index }">{{
             index + 1
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="210" :width="200" class-name="project-name" fixed="left"
           ><template #header
-            ><div class="table-header-label">项目名称 <b>*</b></div></template
+            ><div class="table-header-label">{{ tr('ui.equipment.text0398') }} <b>*</b></div></template
           ><template #default="{ row: item, $index: index }"
-            ><ElInput v-model="item.name" placeholder="项目名称" /></template></ElTableColumn
+            ><ElInput v-model="item.name" :placeholder="tr('ui.equipment.text0398')" /></template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150" :width="130" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">巡检类型</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0325') }}</div></template
           ><template #default="{ row: item, $index: index }">
             <ElSelect v-model="item.typeId"
               ><ElOption v-for="t in types" :key="t.id" :value="t.id" :label="t.name"
@@ -135,42 +136,42 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150" :width="260" v-if="items.length > 0"
           ><template #header
-            ><div class="table-header-label">方法及基准 <b>*</b></div></template
+            ><div class="table-header-label">{{ tr('ui.equipment.text0399') }} <b>*</b></div></template
           ><template #default="{ row: item, $index: index }">
             <ElInput
               v-model="item.content"
               type="textarea"
               :autosize="{ minRows: 1, maxRows: 4 }"
-              placeholder="检查方法及基准"
+              :placeholder="tr('ui.equipment.text1470')"
             /> </template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150" :width="120" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">结果类型</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0400') }}</div></template
           ><template #default="{ row: item, $index: index }">
             <ElSelect v-model="item.valueType"
               ><ElOption v-for="v in ['选项', '数值', '文本']" :key="v" :value="v"
             /></ElSelect> </template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150" :width="100" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">下限</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1471') }}</div></template
           ><template #default="{ row: item, $index: index }">
             <AppDecimalInput
               v-if="item.valueType === '数值'"
               v-model="item.lower"
-              placeholder="不限"
+              :placeholder="tr('ui.equipment.text0792')"
             /><span v-else></span> </template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150" :width="100" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">上限</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1472') }}</div></template
           ><template #default="{ row: item, $index: index }">
             <AppDecimalInput
               v-if="item.valueType === '数值'"
               v-model="item.upper"
-              placeholder="不限"
+              :placeholder="tr('ui.equipment.text0792')"
             /><span v-else></span> </template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150" :width="220" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">可选项</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0787') }}</div></template
           ><template #default="{ row: item, $index: index }">
             <ElSelect
               v-if="item.valueType === '选项'"
@@ -179,7 +180,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               filterable
               allow-create
               default-first-option
-              placeholder="输入后回车"
+              :placeholder="tr('ui.equipment.text1473')"
               @change="
                 item.normalOptions = item.normalOptions.filter((o) => item.options.includes(o))
               "
@@ -187,28 +188,28 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             ><span v-else></span> </template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150" :width="220" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">正常选项</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0789') }}</div></template
           ><template #default="{ row: item, $index: index }">
             <ElSelect
               v-if="item.valueType === '选项'"
               v-model="item.normalOptions"
               multiple
-              placeholder="选择正常选项"
+              :placeholder="tr('ui.equipment.text0790')"
               ><ElOption v-for="o in item.options" :key="o" :value="o" /></ElSelect
             ><span v-else></span> </template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150" :width="82" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">必填</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0794') }}</div></template
           ><template #default="{ row: item, $index: index }"
             ><ElSwitch v-model="item.required" /></template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150" :width="100" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">必须拍照</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1474') }}</div></template
           ><template #default="{ row: item, $index: index }"
             ><ElSwitch v-model="item.photoRequired" /></template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150" :width="200" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">备注</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0130') }}</div></template
           ><template #default="{ row: item, $index: index }">
             <ElInput
               v-model="item.remark"
@@ -217,7 +218,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             /> </template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150" :width="220" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">参考附件</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0798') }}</div></template
           ><template #default="{ row: item, $index: index }">
             <MaintenanceAttachments
               v-model="item.references"
@@ -225,7 +226,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             /> </template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-          ><template #header><div class="table-header-label">操作</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
           ><template #default="{ row: item, $index: index }">
             <ElButton
               class="inspection-text-button danger"
@@ -233,18 +234,18 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               type="danger"
               link
             >
-              删除
+              {{ tr('ui.equipment.text0146') }}
             </ElButton>
           </template></ElTableColumn
         ><template #empty
-          ><div v-if="!items.length">暂无检查项目，点击“添加项目”开始维护</div></template
+          ><div v-if="!items.length">{{ tr('ui.equipment.text1475') }}</div></template
         ></AppBusinessTable
       >
     </div>
     <AppDialog
       v-model="batchOpen"
       :title="
-        batch === 'type' ? '修改巡检类型' : batch === 'options' ? '修改可选项' : '修改正常选项'
+        batch === 'type' ? tr('ui.equipment.text1469') : batch === 'options' ? tr('ui.equipment.text0777') : tr('ui.equipment.text0778')
       "
       ><ElSelect v-if="batch === 'type'" v-model="batchType"
         ><ElOption v-for="t in types" :key="t.id" :value="t.id" :label="t.name" /></ElSelect
@@ -255,15 +256,15 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         filterable
         :allow-create="batch === 'options'"
         default-first-option
-        placeholder="输入后回车"
+        :placeholder="tr('ui.equipment.text1473')"
         ><ElOption
           v-for="o in batch === 'normal' ? sharedOptions : values"
           :key="o"
           :value="o" /></ElSelect
       ><template #footer
         ><div class="inspection-dialog-actions">
-          <ElButton @click="batchOpen = false">取消</ElButton
-          ><ElButton type="primary" @click="apply">确定</ElButton>
+          <ElButton @click="batchOpen = false">{{ tr('ui.equipment.text0157') }}</ElButton
+          ><ElButton type="primary" @click="apply">{{ tr('ui.equipment.text0402') }}</ElButton>
         </div></template
       ></AppDialog
     >

@@ -16,8 +16,13 @@ public class SystemRole {
   private String description;
   private Integer status;
   private String dataScope;
+
+  @TableField(exist = false)
   private String orgIdsJson;
+
+  @TableField(exist = false)
   private String permissionsJson;
+
   @TableLogic private Integer deleted;
   private LocalDateTime createdAt;
   private LocalDateTime updatedAt;

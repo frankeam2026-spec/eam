@@ -1,19 +1,26 @@
 <script setup lang="ts">
+import { tr } from '../../i18n';
+
 import { ElInput, ElButton } from 'element-plus';
 import AppIcon from './AppIcon.vue';
-withDefaults(defineProps<{ modelValue: string; placeholder?: string }>(), { placeholder: '搜索' });
+withDefaults(defineProps<{ modelValue: string; placeholder?: string }>(), { placeholder: '' });
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 </script>
 <template>
   <ElInput
     class="list-search-input"
     :model-value="modelValue"
-    :placeholder="placeholder"
-    :aria-label="placeholder"
+    :placeholder="placeholder || tr('ui.equipment.text1482')"
+    :aria-label="placeholder || tr('ui.equipment.text1482')"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template #suffix
-      ><ElButton text native-type="submit" class="list-search-submit" aria-label="查询" title="查询"
+      ><ElButton
+        text
+        native-type="submit"
+        class="list-search-submit"
+        :aria-label="tr('ui.equipment.text0700')"
+        :title="tr('ui.equipment.text0700')"
         ><AppIcon name="Search" /></ElButton
     ></template>
   </ElInput>

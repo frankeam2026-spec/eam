@@ -1,4 +1,5 @@
-<script setup lang="ts" generic="Row extends object">
+<script setup lang="ts" generic="Row extends object">import { tr } from '../../i18n';
+
 import { ref, normalizeClass, watch, onMounted } from 'vue';
 import { ElTable, ElTableColumn, ElButton, ElLoading } from 'element-plus';
 import type { TableInstance } from 'element-plus';
@@ -17,6 +18,8 @@ const props = withDefaults(
     borderMode?: 'all' | 'header' | 'none';
     showHeader?: boolean;
     maxHeight?: number;
+    highlightCurrentRow?: boolean;
+    currentRowKey?: string | number;
     rowClass?: (row: Row, index: number) => unknown;
     columns?: BusinessColumn<Row>[];
     rowKey?: Extract<keyof Row, string>;
@@ -175,6 +178,8 @@ defineExpose({
         :row-class-name="rowClassName"
         :show-header="showHeader"
         :max-height="maxHeight"
+        :highlight-current-row="highlightCurrentRow"
+        :current-row-key="currentRowKey"
         :default-sort="defaultSort"
         :height="fill ? '100%' : undefined"
         table-layout="fixed"
@@ -226,7 +231,7 @@ defineExpose({
         </ElTableColumn>
         <ElTableColumn
           v-if="$slots.actions"
-          label="操作"
+          :label="tr('ui.equipment.text0145')"
           fixed="right"
           :width="170"
           :min-width="156"
@@ -241,12 +246,12 @@ defineExpose({
         <template #empty>
           <slot name="empty"
             ><div class="empty-state" :role="error ? 'alert' : 'status'">
-              <template v-if="loading">正在加载…</template>
+              <template v-if="loading">{{ tr('ui.equipment.text0162') }}</template>
               <template v-else-if="error">
                 <span>{{ error }}</span
-                ><ElButton link type="primary" @click="emit('retry')">重试</ElButton>
+                ><ElButton link type="primary" @click="emit('retry')">{{ tr('ui.equipment.text0299') }}</ElButton>
               </template>
-              <template v-else>{{ filtered ? '没有符合条件的数据' : '暂无数据' }}</template>
+              <template v-else>{{ filtered ? tr('ui.equipment.text1339') : tr('ui.equipment.text0308') }}</template>
             </div></slot
           >
         </template>
@@ -255,7 +260,7 @@ defineExpose({
     <slot v-if="$slots.footer" name="footer" />
     <footer v-else-if="pagination || $slots['footer-actions']" class="table-footer">
       <div v-if="pagination" class="pagination">
-        <span>共 {{ total }} 条</span>
+        <span>{{ tr('ui.equipment.text0309') }} {{ total }} {{ tr('ui.equipment.text0296') }}</span>
         <AppPagination v-model:page="page" v-model:page-size="pageSize" :total="total" />
       </div>
       <div v-if="$slots['footer-actions']" class="footer-actions">

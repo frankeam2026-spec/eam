@@ -1,8 +1,14 @@
-<script setup lang="ts">
+<script setup lang="ts">import { enumLabel } from '../i18n';
+import { tr } from '../i18n';
+
+import { useBusinessExtension } from '../composables/useBusinessExtension';
+const { extension, extensionErrors, prepareExtension, extensionError } = useBusinessExtension();
+import BusinessFields from './business/BusinessFields.vue';
 import { ElTableColumn } from 'element-plus';
+import MaintenanceStatus from './common/MaintenanceStatus.vue';
 import AppAttachments from './common/AppAttachments.vue';
 import AppAttachmentList from './common/AppAttachmentList.vue';
-import { ElButton, ElSelect, ElOption, ElRadio, ElInput } from 'element-plus';
+import { ElButton, ElSelect, ElOption, ElRadio, ElInput, ElAlert } from 'element-plus';
 
 import TaskAnomalies from './common/TaskAnomalies.vue';
 import { confirmSurplus } from '../services/surplusConfirmation';
@@ -19,6 +25,8 @@ import { ElMessage, ElRate } from 'element-plus';
 import AppDialog from './common/AppDialog.vue';
 import AppLoadState from './common/AppLoadState.vue';
 import AppFormFooter from './common/AppFormFooter.vue';
+import AcceptanceResultPicker from './common/AcceptanceResultPicker.vue';
+import { AcceptanceDecision } from '../config/acceptance';
 import RepairUserPicker from './common/RepairUserPicker.vue';
 import TreeSelect from './TreeSelect.vue';
 import { useBaseDataStore } from '../stores/baseData';
@@ -38,8 +46,8 @@ const picker = ref(false),
   dialog = ref('');
 const reason = ref(''),
   vendor = ref(''),
-  score = ref(5),
-  acceptResult = ref('accept'),
+  score = ref(),
+  acceptResult = ref<AcceptanceDecision>(AcceptanceDecision.ACCEPT),
   comment = ref(''),
   reviewAttachments = ref<api.RepairAttachment[]>([]);
 const stockRows = ref<api.StockRow[]>([]),
@@ -50,11 +58,12 @@ const stockRows = ref<api.StockRow[]>([]),
   replacementMode = ref<'install' | 'remove'>('install'),
   materialPanel = ref(false);
 const form = ref({
-  faultCause: '',
-  faultType: '',
+  ...({} as import('../businessConfig').CustomRecord),
+  faultCauseId: '',
+  faultTypeId: '',
   repairMethod: '自修',
   content: '',
-  result: '已解决',
+  processingResultId: '',
   prevention: '',
   collaborators: [] as { id: string; name: string }[],
   attachments: [] as api.RepairAttachment[],
@@ -68,6 +77,15 @@ async function cancelProcess() {
   if (busy.value || !(await permitLeave())) return;
   pageMode.value = 'detail';
 }
+const legacyReferences = computed(() => {
+  const r = order.value;
+  if (!r) return [];
+  return [
+    !r.faultTypeId && r.faultType ? `故障类型：${r.faultType}` : '',
+    !r.faultCauseId && r.faultCause ? `故障原因：${r.faultCause}` : '',
+    !r.processingResultId && r.processingResult ? `处理结果：${r.processingResult}` : '',
+  ].filter(Boolean);
+});
 const faultNodes = computed(() => base.faultTypeData.filter((x) => x.status === '启用'));
 const faultCauses = computed(() => base.faultCauseData.filter((x) => x.status === '启用'));
 function requestMaterial() {
@@ -117,7 +135,7 @@ async function load(): Promise<boolean> {
     return true;
   } catch (e) {
     if (revision === loadRevision && requestedId === id.value)
-      error.value = e instanceof Error ? e.message : '工单加载失败';
+      error.value = e instanceof Error ? e.message : tr('ui.equipment.text1052');
     return false;
   } finally {
     if (revision === loadRevision) loading.value = false;
@@ -163,11 +181,12 @@ async function run(action: string, extra: Record<string, unknown> = {}) {
     window.dispatchEvent(new Event('repair-inbox-changed'));
     if (requestedId !== id.value) return false;
     await load();
-    ElMessage.success('操作已保存');
+    ElMessage.success(tr('ui.equipment.text1085'));
     return true;
   } catch (e) {
+    if (extensionError(e)) return;
     if (requestedId !== id.value) return false;
-    ElMessage.error(e instanceof Error ? e.message : '操作失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0197'));
     await load();
     return false;
   } finally {
@@ -197,11 +216,15 @@ async function startProcess() {
   await Promise.all([base.load('故障类型'), base.load('故障原因')]);
   if (requestedId !== id.value || order.value !== r || !detail.value?.canProcess) return;
   form.value = {
-    faultCause: r.faultCause || '',
-    faultType: r.faultType,
+    ...detail.value?.processingFields,
+    faultCauseId: r.faultCauseId || '',
+    faultTypeId: r.faultTypeId || '',
     repairMethod: r.repairMethod || '自修',
     content: r.repairAction || '',
-    result: r.processingResult || '已解决',
+    processingResultId:
+      r.processingResultId ||
+      (r.processingResult ? '' : detail.value?.results.find((x) => x.resolved)?.id) ||
+      '',
     prevention: r.preventiveMeasures || '',
     collaborators: (r.collaborators || []).map((u) => ({ ...u })),
     attachments: (r.processAttachments || []).map((a) => ({ ...a })),
@@ -210,12 +233,15 @@ async function startProcess() {
   markSaved();
 }
 async function submitProcess() {
+  if (!prepareExtension(form.value)) return;
   const f = form.value;
-  if (!f.faultCause.trim() || !f.faultType || !f.content.trim() || !f.result) {
-    ElMessage.warning('请填写必填项');
+  if (!f.faultCauseId || !f.faultTypeId || !f.content.trim() || !f.processingResultId) {
+    ElMessage.warning(tr('ui.equipment.text1086'));
     return;
   }
-  const surplus = f.result === '已解决' ? await confirmSurplus('维修', id.value) : {};
+  const surplus = detail.value?.results.some((x) => x.id === f.processingResultId && x.resolved)
+    ? await confirmSurplus('维修', id.value)
+    : {};
   if (surplus === null) return;
   if (
     await run('process', { ...f, ...surplus, collaboratorIds: f.collaborators.map((x) => x.id) })
@@ -229,8 +255,8 @@ async function openDialog(kind: string, row?: api.MaterialRow | api.InstalledSpa
   reason.value = '';
   vendor.value = order.value?.outsourceVendor || '';
   comment.value = '';
-  score.value = 5;
-  acceptResult.value = 'accept';
+  // score.value = 5;
+  acceptResult.value = AcceptanceDecision.ACCEPT;
   reviewAttachments.value = [];
   quantity.value = 1;
   if (kind === 'material') {
@@ -255,13 +281,13 @@ async function submitDialog() {
     dialog.value === 'replace' &&
     !(action === 'install' ? materialId.value : installedId.value)
   ) {
-    ElMessage.warning('请选择备件');
+    ElMessage.warning(tr('ui.equipment.text1087'));
     return;
   }
   let payload: Record<string, unknown> = { reason: reason.value };
   if (action === 'review') {
     if (!comment.value.trim()) {
-      ElMessage.warning('请填写验收说明');
+      ElMessage.warning(tr('ui.equipment.text1088'));
       return;
     }
     payload = { score: score.value, comment: comment.value, attachments: reviewAttachments.value };
@@ -273,7 +299,7 @@ async function submitDialog() {
       !(quantity.value > 0) ||
       (dialog.value === 'replace' && quantity.value > replacementLimit.value)
     ) {
-      ElMessage.warning('换上数量必须大于 0，且不能超过已出库的可用数量');
+      ElMessage.warning(tr('ui.equipment.text1089'));
       return;
     }
     payload = { materialId: materialId.value, quantity: quantity.value };
@@ -290,7 +316,7 @@ async function upload(files: File[], target: 'process' | 'review') {
       (target === 'process' ? form.value.attachments : reviewAttachments.value).push(item);
     }
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '上传失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0926'));
   } finally {
     busy.value = false;
   }
@@ -355,14 +381,14 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
       <div>
         <ElButton
           class="workflow-back"
-          :title="workspaceReturn(route.query.returnTo) ? '返回工作台' : '返回工单列表'"
+          :title="workspaceReturn(route.query.returnTo) ? tr('ui.equipment.text0418') : tr('ui.equipment.text1090')"
           :disabled="busy"
           @click="router.push(workspaceReturn(route.query.returnTo) || { name: 'repairs' })"
           native-type="button"
-          ><AppIcon name="Left" />返回</ElButton
-        ><strong>{{ pageMode === 'process' ? '处理工单' : '工单详情' }}</strong
+          ><AppIcon name="Left" />{{ tr('ui.equipment.text0208') }}</ElButton
+        ><strong>{{ pageMode === 'process' ? tr('ui.equipment.text1091') : tr('ui.equipment.text1056') }}</strong
         ><span v-if="order">{{ order.orderNo }}</span
-        ><b v-if="order" class="order-status">{{ order.status }}</b>
+        ><MaintenanceStatus v-if="order" :status="order.status" />
       </div>
       <div v-if="detail && order && pageMode === 'detail'" class="workflow-actions">
         <ElButton
@@ -372,7 +398,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
           @click="run('claim')"
           type="primary"
         >
-          接单
+          {{ tr('ui.equipment.text1092') }}
         </ElButton>
         <ElButton
           v-if="detail.canDispatch && order.status === '待派工'"
@@ -380,7 +406,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
           @click="openPicker('dispatch')"
           type="primary"
         >
-          派工
+          {{ tr('ui.equipment.text1053') }}
         </ElButton>
         <ElButton
           v-if="detail.canProcess && order.status === '处理中'"
@@ -388,7 +414,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
           @click="startProcess"
           type="primary"
         >
-          处理
+          {{ tr('ui.equipment.text0766') }}
         </ElButton>
         <ElButton
           v-if="detail.canProcess && order.status === '挂起'"
@@ -396,30 +422,30 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
           @click="openDialog('resume')"
           type="primary"
         >
-          恢复
+          {{ tr('ui.equipment.text0422') }}
         </ElButton>
         <ElButton
           v-if="canWork && order.status === '处理中'"
           class=""
           @click="openDialog('suspend')"
         >
-          挂起
+          {{ tr('ui.equipment.text0421') }}
         </ElButton>
         <ElButton
           v-if="canWork || (detail.canDispatch && order.status === '待接单')"
           class=""
           @click="openPicker('transfer')"
         >
-          转派
+          {{ tr('ui.equipment.text0423') }}
         </ElButton>
-        <ElButton v-if="canWork" class="" @click="openDialog('outsource')">委外</ElButton>
-        <ElButton v-if="canWork" class="" @click="requestMaterial">申请领料</ElButton>
+        <ElButton v-if="canWork" class="" @click="openDialog('outsource')">{{ tr('ui.equipment.text1093') }}</ElButton>
+        <ElButton v-if="canWork" class="" @click="requestMaterial">{{ tr('ui.equipment.text1094') }}</ElButton>
         <ElButton
           v-if="detail.materials.length && (canWork || detail.canIssue)"
           class=""
           @click="materialPanel = true"
         >
-          历史领料
+          {{ tr('ui.equipment.text1095') }}
         </ElButton>
         <ElButton
           v-if="detail.canAccept && order.status === '待验收'"
@@ -427,13 +453,13 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
           @click="openDialog('review')"
           type="primary"
         >
-          验收
+          {{ tr('ui.equipment.text0763') }}
         </ElButton>
       </div>
     </header>
     <AppLoadState v-if="!detail" :loading="loading" :error="error" @retry="load" />
     <div v-else-if="error" class="workflow-error">
-      {{ error }}<ElButton class="" @click="load">重试</ElButton>
+      {{ error }}<ElButton class="" @click="load">{{ tr('ui.equipment.text0299') }}</ElButton>
     </div>
     <div
       v-if="detail && order"
@@ -442,104 +468,118 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
     >
       <div class="workflow-main">
         <div class="report-summary">
-          <h3 v-if="pageMode === 'process'" class="reference-heading">报修信息</h3>
+          <h3 v-if="pageMode === 'process'" class="reference-heading">{{ tr('ui.equipment.text1096') }}</h3>
           <div>
-            <small>设备名称</small><strong>{{ order.equipmentName }}</strong>
+            <small>{{ tr('ui.equipment.text0081') }}</small><strong>{{ order.equipmentName }}</strong>
           </div>
           <div>
-            <small>设备编号</small><span>{{ order.equipmentCode }}</span>
+            <small>{{ tr('ui.equipment.text0078') }}</small><span>{{ order.equipmentCode }}</span>
           </div>
           <div>
-            <small>规格型号</small><span>{{ detail.model || '—' }}</span>
+            <small>{{ tr('ui.equipment.text0091') }}</small><span>{{ detail.model || '—' }}</span>
           </div>
           <div>
-            <small>维修人</small><span>{{ order.assignee || '待派工' }}</span>
+            <small>{{ tr('ui.equipment.text1046') }}</small><span>{{ order.assignee || tr('ui.equipment.text1097') }}</span>
           </div>
           <div>
-            <small>报修人</small><span>{{ order.reporter }}</span>
+            <small>{{ tr('ui.equipment.text1045') }}</small><span>{{ order.reporter }}</span>
           </div>
           <div>
-            <small>报修时间</small><span>{{ order.reportedAt.replace('T', ' ') }}</span>
+            <small>{{ tr('ui.equipment.text1047') }}</small><span>{{ order.reportedAt.replace('T', ' ') }}</span>
           </div>
           <div>
-            <small>所属部门</small><span>{{ order.department }}</span>
+            <small>{{ tr('ui.equipment.text0098') }}</small><span>{{ order.department }}</span>
           </div>
           <div>
-            <small>紧急程度</small><span>{{ order.severity }}</span>
+            <small>{{ tr('ui.equipment.text1042') }}</small><span>{{ order.severity }}</span>
           </div>
           <div class="summary-wide">
-            <small>故障描述</small><span>{{ order.description }}</span>
+            <small>{{ tr('ui.equipment.text1044') }}</small><span>{{ order.description }}</span>
           </div>
           <div class="summary-wide">
-            <small>报修附件</small>
+            <small>{{ tr('ui.equipment.text1098') }}</small>
             <AppAttachmentList :files="order.attachments" />
           </div>
         </div>
+        <BusinessFields
+          :model-value="order"
+          object="repair_report"
+          :category-id="detail.categoryId"
+          readonly
+        />
         <template v-if="pageMode === 'process'">
           <form class="processing-form" @submit.prevent="submitProcess">
-            <h3 class="process-heading">维修处理</h3>
+            <h3 class="process-heading">{{ tr('ui.equipment.text1099') }}</h3>
+            <ElAlert
+              v-if="legacyReferences.length"
+              class="full"
+              type="warning"
+              :closable="false"
+              :title="`历史关联待确认（${legacyReferences.join('；')}），请重新选择后提交。`"
+            />
             <label
-              ><span>故障原因 <i>*</i></span
-              ><ElSelect v-model="form.faultCause" aria-label="故障原因"
-                ><ElOption value="" :label="'请选择故障原因'" /><ElOption
-                  v-if="form.faultCause && !faultCauses.some((x) => x.name === form.faultCause)"
-                  :value="form.faultCause"
-                  disabled
-                  :label="String(form.faultCause) + '（历史值） '" /><ElOption
+              ><span>{{ tr('ui.equipment.text1100') }} <i>*</i></span
+              ><ElSelect
+                v-model="form.faultCauseId"
+                :aria-label="tr('ui.equipment.text1100')"
+                :placeholder="tr('ui.equipment.text1101')"
+              >
+                <ElOption
                   v-for="cause in faultCauses"
                   :key="cause.id"
-                  :value="cause.name"
-                  :label="String(cause.name)"
-              /></ElSelect>
+                  :value="cause.id"
+                  :label="cause.name"
+                />
+              </ElSelect>
             </label>
             <label
-              ><span>故障类型 <i>*</i></span
+              ><span>{{ tr('ui.equipment.text1040') }} <i>*</i></span
               ><TreeSelect
-                v-model="form.faultType"
-                :nodes="faultNodes"
-                placeholder="请选择故障类型"
+                v-model="form.faultTypeId"
+                :nodes="faultNodes.map((x) => ({ ...x, value: x.id }))"
+                :placeholder="tr('ui.equipment.text1061')"
             /></label>
             <label
-              ><span>维修方式 <i>*</i></span>
+              ><span>{{ tr('ui.equipment.text1102') }} <i>*</i></span>
               <div class="radio-line">
-                <ElRadio v-model="form.repairMethod" :value="'自修'">自修</ElRadio
-                ><ElRadio v-model="form.repairMethod" :value="'外协'">外协</ElRadio>
+                <ElRadio v-model="form.repairMethod" :value="'自修'">{{ tr('ui.equipment.text1103') }}</ElRadio
+                ><ElRadio v-model="form.repairMethod" :value="'外协'">{{ tr('ui.equipment.text1104') }}</ElRadio>
               </div></label
             >
             <label
-              ><span>处理结果 <i>*</i></span
-              ><ElSelect v-model="form.result"
+              ><span>{{ tr('ui.equipment.text1105') }} <i>*</i></span
+              ><ElSelect v-model="form.processingResultId"
                 ><ElOption
                   v-for="result in detail.results"
-                  :key="result"
-                  :value="String(result)"
-                  :label="String(result)" /></ElSelect
+                  :key="result.id"
+                  :value="result.id"
+                  :label="result.name" /></ElSelect
             ></label>
             <label class="full"
-              ><span>处理内容 <i>*</i></span
+              ><span>{{ tr('ui.equipment.text1106') }} <i>*</i></span
               ><ElInput
                 v-model="form.content"
                 :rows="4"
                 maxlength="20000"
-                placeholder="记录本次处理内容"
+                :placeholder="tr('ui.equipment.text1107')"
                 type="textarea"
               />
             </label>
             <label class="full"
-              ><span>预防措施</span
+              ><span>{{ tr('ui.equipment.text1108') }}</span
               ><ElInput
                 v-model="form.prevention"
                 :rows="3"
                 maxlength="20000"
-                placeholder="填写后续预防措施"
+                :placeholder="tr('ui.equipment.text1109')"
                 type="textarea"
               />
             </label>
             <label class="full"
-              ><span>协同处理人</span>
+              ><span>{{ tr('ui.equipment.text0887') }}</span>
               <div class="collaborators">
                 <ElButton class="" @click="openPicker('collaborators')" native-type="button">
-                  选择人员</ElButton
+                  {{ tr('ui.equipment.text0335') }}</ElButton
                 ><span v-for="user in form.collaborators" :key="user.id"
                   >{{ user.name
                   }}<ElButton
@@ -549,7 +589,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                 ></span></div
             ></label>
             <label class="full"
-              ><span>附件 / 图片</span>
+              ><span>{{ tr('ui.equipment.text1110') }}</span>
               <AppAttachments
                 :files="form.attachments"
                 :uploading="busy"
@@ -559,41 +599,55 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
             </label>
           </form>
         </template>
+        <BusinessFields
+          v-if="pageMode === 'process'"
+          ref="extension"
+          v-model="form"
+          object="repair_process"
+          :category-id="detail.categoryId"
+          :errors="extensionErrors"
+        />
+        <BusinessFields
+          v-else-if="detail.processingFields"
+          :model-value="detail.processingFields"
+          object="repair_process"
+          :category-id="detail.categoryId"
+          readonly
+        />
         <section v-if="pageMode === 'detail' && order.repairAction" class="processing-summary">
-          <h3>处理信息</h3>
+          <h3>{{ tr('ui.equipment.text1111') }}</h3>
           <dl>
             <div>
-              <dt>故障原因</dt>
+              <dt>{{ tr('ui.equipment.text1100') }}</dt>
               <dd>{{ order.faultCause || '—' }}</dd>
             </div>
             <div>
-              <dt>故障类型</dt>
+              <dt>{{ tr('ui.equipment.text1040') }}</dt>
               <dd>{{ order.faultType || '—' }}</dd>
             </div>
             <div>
-              <dt>维修方式</dt>
+              <dt>{{ tr('ui.equipment.text1102') }}</dt>
               <dd>{{ order.repairMethod || '—' }}</dd>
             </div>
             <div>
-              <dt>处理结果</dt>
+              <dt>{{ tr('ui.equipment.text1105') }}</dt>
               <dd>{{ order.processingResult || '—' }}</dd>
             </div>
             <div class="full">
-              <dt>处理内容</dt>
+              <dt>{{ tr('ui.equipment.text1106') }}</dt>
               <dd>{{ order.repairAction }}</dd>
             </div>
             <div class="full">
-              <dt>预防措施</dt>
+              <dt>{{ tr('ui.equipment.text1108') }}</dt>
               <dd>{{ order.preventiveMeasures || '—' }}</dd>
             </div>
             <div class="full">
-              <dt>协同处理人</dt>
+              <dt>{{ tr('ui.equipment.text0887') }}</dt>
               <dd>{{ order.collaborators?.map((x) => x.name).join('、') || '—' }}</dd>
             </div>
           </dl>
           <AppAttachmentList :files="order.processAttachments || []" :show-empty="false" />
         </section>
-        <TaskAnomalies kind="维修" :task-id="id" :can-record="false" />
         <TaskMaterials
           :task-id="id"
           kind="维修"
@@ -601,12 +655,13 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
           :can-request="!!canWork"
           @changed="load"
         />
+        <TaskAnomalies kind="维修" :task-id="id" :can-record="false" />
         <section
           v-if="detail?.materials?.length || (pageMode === 'detail' && spareChanges.length)"
           class="spare-section"
         >
           <header>
-            <h3>更换备件</h3>
+            <h3>{{ tr('ui.equipment.text1112') }}</h3>
             <div>
               <ElButton
                 v-if="pageMode === 'process' && canWork && order.status === '处理中'"
@@ -614,7 +669,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                 :disabled="busy"
                 @click="openReplacement"
               >
-                更换备件
+                {{ tr('ui.equipment.text1112') }}
               </ElButton>
             </div>
           </header>
@@ -627,43 +682,43 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
               class="business-table"
               ><!-- @vue-generic {TableColumnRow1} -->
               <ElTableColumn :min-width="210"
-                ><template #header><div class="table-header-label">备件名称</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0168') }}</div></template
                 ><template #default="{ row: event, $index: tableRowIndex }">{{
                   event.details.name
                 }}</template></ElTableColumn
               ><!-- @vue-generic {TableColumnRow1} -->
               <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-                ><template #header><div class="table-header-label">操作</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
                 ><template #default="{ row: event, $index: tableRowIndex }">{{
-                  event.action === '换上备件' ? '换上' : '换下'
+                  event.action === '换上备件' ? tr('ui.equipment.text1113') : tr('ui.equipment.text1114')
                 }}</template></ElTableColumn
               ><!-- @vue-generic {TableColumnRow1} -->
               <ElTableColumn :min-width="150"
-                ><template #header><div class="table-header-label">数量</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0144') }}</div></template
                 ><template #default="{ row: event, $index: tableRowIndex }">{{
                   formatNumber(event.details.quantity)
                 }}</template></ElTableColumn
               ><!-- @vue-generic {TableColumnRow1} -->
               <ElTableColumn :min-width="156" :width="240" :resizable="false"
-                ><template #header><div class="table-header-label">操作人</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1115') }}</div></template
                 ><template #default="{ row: event, $index: tableRowIndex }">{{
                   event.actor
                 }}</template></ElTableColumn
               ><!-- @vue-generic {TableColumnRow1} -->
               <ElTableColumn :min-width="150"
-                ><template #header><div class="table-header-label">时间</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0174') }}</div></template
                 ><template #default="{ row: event, $index: tableRowIndex }">{{
                   event.time
                 }}</template></ElTableColumn
               ><template #empty
-                ><div v-if="!spareChanges.length">本次工单暂无备件更换</div></template
+                ><div v-if="!spareChanges.length">{{ tr('ui.equipment.text1116') }}</div></template
               ></AppBusinessTable
             >
           </div>
         </section>
       </div>
       <section class="timeline-section">
-        <h3>维修时间轴</h3>
+        <h3>{{ tr('ui.equipment.text1117') }}</h3>
         <ol class="workflow-timeline">
           <li v-for="event in timelineEvents" :key="event.id">
             <div class="event-title">
@@ -679,34 +734,36 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
             </dl>
             <AppAttachmentList :files="eventFiles(event)" :show-empty="false" />
           </li>
-          <li v-if="!detail.events.length" class="empty">暂无维修记录</li>
+          <li v-if="!detail.events.length" class="empty">{{ tr('ui.equipment.text1118') }}</li>
         </ol>
       </section>
     </div>
     <AppFormFooter v-if="pageMode === 'process'">
       <template #hint>{{
-        form.result === '已解决' ? '提交后进入验收环节' : '提交后继续处理工单'
+        detail?.results.some((x) => x.id === form.processingResultId && x.resolved)
+          ? tr('ui.equipment.text1119')
+          : tr('ui.equipment.text1120')
       }}</template>
       <ElButton class="" :disabled="busy" @click="cancelProcess" native-type="button">
-        取消</ElButton
+        {{ tr('ui.equipment.text0157') }}</ElButton
       ><ElButton class="" :disabled="busy" @click="submitProcess" type="primary">{{
-        busy ? '保存中…' : '提交'
+        busy ? tr('ui.equipment.text0158') : tr('ui.equipment.text0253')
       }}</ElButton>
     </AppFormFooter>
     <RepairUserPicker
       v-model="picker"
       :title="
         pickerPurpose === 'collaborators'
-          ? '协同处理人'
+          ? tr('ui.equipment.text0887')
           : pickerPurpose === 'transfer'
-            ? '转派'
-            : '派工'
+            ? tr('ui.equipment.text0423')
+            : tr('ui.equipment.text1053')
       "
       :selected="pickerPurpose === 'collaborators' ? form.collaborators.map((x) => x.id) : []"
       :busy="busy"
       @confirm="confirmUsers"
     />
-    <AppDialog v-model="materialPanel" title="历史领料" width="760px" :busy="busy">
+    <AppDialog v-model="materialPanel" :title="tr('ui.equipment.text1095')" width="760px" :busy="busy">
       <div class="material-tools">
         <ElButton
           v-if="canWork"
@@ -717,7 +774,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
           "
           type="primary"
         >
-          领料
+          {{ tr('ui.equipment.text1121') }}
         </ElButton>
       </div>
       <AppBusinessTable
@@ -728,37 +785,37 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
         class="business-table material-table"
         ><!-- @vue-generic {TableColumnRow2} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">备件</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1122') }}</div></template
           ><template #default="{ row: item, $index: tableRowIndex }">
             {{ item.name }}<small>{{ item.code }}</small>
           </template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow2} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">申请数量</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0650') }}</div></template
           ><template #default="{ row: item, $index: tableRowIndex }">{{
             formatNumber(item.quantity)
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow2} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">已出库</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0656') }}</div></template
           ><template #default="{ row: item, $index: tableRowIndex }">{{
             formatNumber(item.issuedQuantity)
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow2} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">已换上</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1123') }}</div></template
           ><template #default="{ row: item, $index: tableRowIndex }">{{
             formatNumber(item.installedQuantity)
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow2} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">状态</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0170') }}</div></template
           ><template #default="{ row: item, $index: tableRowIndex }">{{
-            item.status
+            enumLabel('status',item.status)
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow2} -->
         <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-          ><template #header><div class="table-header-label">操作</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
           ><template #default="{ row: item, $index: tableRowIndex }">
             <ElButton
               v-if="item.status === '待出库' && canWork"
@@ -768,16 +825,16 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
               type="primary"
               link
             >
-              撤回
+              {{ tr('ui.equipment.text1124') }}
             </ElButton>
           </template></ElTableColumn
         ><template #empty
-          ><div v-if="!detail?.materials.length">暂无申请</div></template
+          ><div v-if="!detail?.materials.length">{{ tr('ui.equipment.text1125') }}</div></template
         ></AppBusinessTable
       >
       <template #footer
         ><ElButton class="" :disabled="busy" @click="materialPanel = false">
-          关闭
+          {{ tr('ui.equipment.text0076') }}
         </ElButton></template
       >
     </AppDialog>
@@ -786,15 +843,15 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
       :title="
         (
           {
-            review: '验收',
-            material: '领料',
-            install: '换上备件',
-            replace: '更换备件',
-            remove: '换下备件',
-            transfer: '转派',
-            suspend: '挂起',
-            resume: '恢复处理',
-            outsource: '委外',
+            review: tr('ui.equipment.text0763'),
+            material: tr('ui.equipment.text1121'),
+            install: tr('ui.equipment.text1126'),
+            replace: tr('ui.equipment.text1112'),
+            remove: tr('ui.equipment.text1127'),
+            transfer: tr('ui.equipment.text0423'),
+            suspend: tr('ui.equipment.text0421'),
+            resume: tr('ui.equipment.text1076'),
+            outsource: tr('ui.equipment.text1093'),
           } as Record<string, string>
         )[dialog] || ''
       "
@@ -804,23 +861,20 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
     >
       <form class="action-form" @submit.prevent="submitDialog">
         <template v-if="dialog === 'review'"
-          ><label><span>评分</span><ElRate v-model="score" :max="5" show-score /></label
+          ><label><span>{{ tr('ui.equipment.text1128') }}</span><ElRate v-model="score" :max="5" show-score /></label
           ><label
-            ><span>结果</span>
-            <div class="radio-line">
-              <ElRadio v-model="acceptResult" :value="'accept'">通过</ElRadio
-              ><ElRadio v-model="acceptResult" :value="'return'">打回</ElRadio>
-            </div></label
+            ><span>{{ tr('ui.equipment.text0454') }}</span>
+            <AcceptanceResultPicker v-model="acceptResult" :disabled="busy" /></label
           ><label
-            ><span>说明 <i>*</i></span
+            ><span>{{ tr('ui.equipment.text0177') }} <i>*</i></span
             ><ElInput
               v-model="comment"
               :rows="4"
               maxlength="10000"
-              placeholder="填写验收说明"
+              :placeholder="tr('ui.equipment.text1129')"
               type="textarea" /></label
           ><label
-            ><span>附件</span>
+            ><span>{{ tr('ui.equipment.text0222') }}</span>
             <AppAttachments
               :files="reviewAttachments"
               :uploading="busy"
@@ -831,9 +885,9 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
         ></template>
         <template v-else-if="dialog === 'material'"
           ><label
-            ><span>备件 <i>*</i></span
+            ><span>{{ tr('ui.equipment.text1122') }} <i>*</i></span
             ><ElSelect v-model="stockId"
-              ><ElOption value="" :label="'请选择备件'" /><ElOption
+              ><ElOption value="" :label="tr('ui.equipment.text1087')" /><ElOption
                 v-for="stock in stockRows"
                 :key="stock.id"
                 :value="stock.id"
@@ -841,26 +895,26 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                   String(stock.name) +
                   ' · ' +
                   String(stock.code) +
-                  ' · 库存 ' +
+                  tr('ui.equipment.text1130') +
                   String(formatNumber(stock.quantity))
                 " /></ElSelect
           ></label>
-          <p v-if="!stockRows.length">本公司暂无库存备件，请先在仓库与库存中维护。</p>
+          <p v-if="!stockRows.length">{{ tr('ui.equipment.text1131') }}</p>
           <label
-            ><span>数量 <i>*</i></span
+            ><span>{{ tr('ui.equipment.text0144') }} <i>*</i></span
             ><AppDecimalInput
               :model-value="quantity"
               @update:model-value="quantity = Number($event)" /></label
         ></template>
         <template v-else-if="dialog === 'replace'">
           <div class="replacement-mode">
-            <span>操作</span><ElRadio v-model="replacementMode" :value="'install'">换上</ElRadio
-            ><ElRadio v-model="replacementMode" :value="'remove'">换下</ElRadio>
+            <span>{{ tr('ui.equipment.text0145') }}</span><ElRadio v-model="replacementMode" :value="'install'">{{ tr('ui.equipment.text1113') }}</ElRadio
+            ><ElRadio v-model="replacementMode" :value="'remove'">{{ tr('ui.equipment.text1114') }}</ElRadio>
           </div>
           <label
-            ><span>备件 <i>*</i></span>
+            ><span>{{ tr('ui.equipment.text1122') }} <i>*</i></span>
             <ElSelect v-if="replacementMode === 'install'" v-model="materialId"
-              ><ElOption value="" :label="'请选择已出库备件'" /><ElOption
+              ><ElOption value="" :label="tr('ui.equipment.text1132')" /><ElOption
                 v-for="item in availableMaterials"
                 :key="item.id"
                 :value="item.id"
@@ -868,12 +922,12 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                   String(item.name) +
                   ' · ' +
                   String(item.code) +
-                  ' · 可用 ' +
+                  tr('ui.equipment.text1133') +
                   String(formatNumber(Number(item.issuedQuantity) - Number(item.installedQuantity)))
                 "
             /></ElSelect>
             <ElSelect v-else v-model="installedId"
-              ><ElOption value="" :label="'请选择需要换下的备件'" /><ElOption
+              ><ElOption value="" :label="tr('ui.equipment.text1134')" /><ElOption
                 v-for="item in detail?.installed"
                 :key="item.id"
                 :value="item.id"
@@ -881,54 +935,54 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                   String(item.name) +
                   ' · ' +
                   String(item.code) +
-                  ' · 数量 ' +
+                  tr('ui.equipment.text1135') +
                   String(formatNumber(item.quantity))
                 "
             /></ElSelect>
           </label>
           <label v-if="replacementMode === 'install'"
-            ><span>数量 <i>*</i></span
+            ><span>{{ tr('ui.equipment.text0144') }} <i>*</i></span
             ><AppDecimalInput
               :model-value="quantity"
               @update:model-value="quantity = Number($event)"
           /></label>
           <p v-if="replacementMode === 'install' && !availableMaterials.length">
-            暂无可用备件，请先领料并由仓管执行出库。
+            {{ tr('ui.equipment.text1136') }}
           </p>
-          <p v-if="replacementMode === 'remove'">换下所选安装记录的全部数量，不自动退回库存。</p>
+          <p v-if="replacementMode === 'remove'">{{ tr('ui.equipment.text1137') }}</p>
           <label
-            ><span>说明</span
+            ><span>{{ tr('ui.equipment.text0177') }}</span
             ><ElInput
               v-model="reason"
               :rows="3"
               maxlength="2000"
-              placeholder="填写更换说明"
+              :placeholder="tr('ui.equipment.text1138')"
               type="textarea"
             />
           </label>
         </template>
         <label v-else-if="dialog === 'install'"
-          ><span>安装数量 <i>*</i></span
+          ><span>{{ tr('ui.equipment.text1139') }} <i>*</i></span
           ><AppDecimalInput :model-value="quantity" @update:model-value="quantity = Number($event)"
         /></label>
         <template v-else
           ><label v-if="dialog === 'outsource'"
-            ><span>外协单位 <i>*</i></span
-            ><ElInput v-model="vendor" maxlength="200" placeholder="填写外协单位" /></label
+            ><span>{{ tr('ui.equipment.text1140') }} <i>*</i></span
+            ><ElInput v-model="vendor" maxlength="200" :placeholder="tr('ui.equipment.text1141')" /></label
           ><label
-            ><span>说明 <i v-if="['transfer', 'suspend', 'resume'].includes(dialog)">*</i></span
+            ><span>{{ tr('ui.equipment.text0177') }} <i v-if="['transfer', 'suspend', 'resume'].includes(dialog)">*</i></span
             ><ElInput
               v-model="reason"
               :rows="4"
               maxlength="2000"
-              placeholder="填写操作说明"
+              :placeholder="tr('ui.equipment.text1142')"
               type="textarea" /></label
         ></template>
       </form>
       <template #footer
-        ><ElButton class="" :disabled="busy" @click="dialog = ''">取消</ElButton
+        ><ElButton class="" :disabled="busy" @click="dialog = ''">{{ tr('ui.equipment.text0157') }}</ElButton
         ><ElButton class="" :disabled="busy" @click="submitDialog" type="primary">{{
-          dialog === 'transfer' ? '选择人员' : '提交'
+          dialog === 'transfer' ? tr('ui.equipment.text0335') : tr('ui.equipment.text0253')
         }}</ElButton></template
       >
     </AppDialog>
@@ -988,13 +1042,6 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
 }
 .workflow-header span {
   color: var(--text-secondary);
-}
-.order-status {
-  font-weight: 500;
-  background: #eef3ff;
-  color: var(--primary, #2458f5);
-  padding: 4px 8px;
-  border-radius: 3px;
 }
 .workflow-actions {
   flex-wrap: wrap;
@@ -1078,6 +1125,12 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
   display: flex;
   align-items: center;
   gap: 6px;
+}
+.acceptance-result {
+  column-gap: 16px;
+}
+.acceptance-result :deep(.el-radio) {
+  margin-right: 0;
 }
 .collaborators {
   display: flex;

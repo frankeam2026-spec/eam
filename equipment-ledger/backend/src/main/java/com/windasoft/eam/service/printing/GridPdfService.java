@@ -50,7 +50,7 @@ public class GridPdfService {
       List<List<Map<String, String>>> details)
       throws IOException {
     if (fontPath.isBlank() || !new File(fontPath).isFile())
-      throw new IllegalArgumentException("打印字体未配置，请配置EAM_PRINT_FONT为支持中文的TTF字体路径");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.printing.message0010");
     try (var doc = new PDDocument();
         var input = new FileInputStream(fontPath);
         var out = new ByteArrayOutputStream()) {
@@ -62,13 +62,17 @@ public class GridPdfService {
         for (int i = 0; i < data.size(); i++) {
           var expanded = expand(layout, i < details.size() ? details.get(i) : List.of());
           cellCount += expanded.path("cells").size();
-          if (cellCount > 100000) throw new IllegalArgumentException("打印内容过多，请分批打印");
+          if (cellCount > 100000)
+            throw new com.windasoft.eam.common.LocalizedArgumentException(
+                "server.printing.message0011");
           layouts.add(expanded);
           var group = segments(expanded, height);
           pageGroups.add(group);
           total += group.size() * copies;
         }
-        if (total > 1000) throw new IllegalArgumentException("单次打印最多1000页");
+        if (total > 1000)
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.printing.message0012");
         int number = 0;
         for (int index = 0; index < data.size(); index++)
           for (int copy = 0; copy < copies; copy++)
@@ -89,7 +93,9 @@ public class GridPdfService {
               }
             }
       } else {
-        if (data.size() * copies > 1000) throw new IllegalArgumentException("单次打印最多1000页");
+        if (data.size() * copies > 1000)
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.printing.message0012");
         for (var record : data)
           for (int copy = 0; copy < copies; copy++) {
             var page = new PDPage(new PDRectangle((float) width * MM, (float) height * MM));
@@ -133,7 +139,7 @@ public class GridPdfService {
         length = end - start + 1,
         count = Math.max(1, records.size());
     if ((long) grid.path("cells").size() * count > 50000)
-      throw new IllegalArgumentException("明细区域内容过多，请分批打印");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.printing.message0013");
     var rows = ((com.fasterxml.jackson.databind.node.ObjectNode) out).putArray("rows");
     for (int r = 0; r < start; r++) rows.add(grid.path("rows").get(r));
     for (int n = 0; n < count; n++)
@@ -210,7 +216,8 @@ public class GridPdfService {
         }
       }
       if (used + blockHeight > capacity + 0.01)
-        throw new IllegalArgumentException("单行或合并区域超过可打印高度，请调整行高或纸张");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.printing.message0014");
       for (int i = r; i < blockEnd; i++) current.add(i);
       used += blockHeight;
       r = blockEnd;
@@ -304,12 +311,15 @@ public class GridPdfService {
           byte[] bytes = Base64.getDecoder().decode(uri.substring(uri.indexOf(',') + 1));
           try (var in = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
             var readers = ImageIO.getImageReaders(in);
-            if (!readers.hasNext()) throw new IllegalArgumentException("图片无法读取");
+            if (!readers.hasNext())
+              throw new com.windasoft.eam.common.LocalizedArgumentException(
+                  "server.printing.message0015");
             var reader = readers.next();
             try {
               reader.setInput(in);
               if ((long) reader.getWidth(0) * reader.getHeight(0) > 16000000)
-                throw new IllegalArgumentException("图片分辨率过大");
+                throw new com.windasoft.eam.common.LocalizedArgumentException(
+                    "server.printing.message0016");
               image = reader.read(0);
             } finally {
               reader.dispose();
@@ -328,7 +338,8 @@ public class GridPdfService {
                       Map.of(EncodeHintType.CHARACTER_SET, "UTF-8", EncodeHintType.MARGIN, 2));
           image = MatrixToImageWriter.toBufferedImage(matrix);
         } catch (Exception e) {
-          throw new IllegalArgumentException("二维码或条形码内容无效；条形码请使用英文、数字");
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.printing.message0017");
         }
       }
       if (image != null) {

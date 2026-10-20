@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 import { ElMessageBox } from 'element-plus';
 import { request } from '../api';
 import { remainingMaterialQuantity } from '../utils/taskMaterialQuantities';
@@ -16,9 +17,9 @@ export async function confirmSurplus(
       '确认余料暂存',
       {
         inputType: 'textarea',
-        inputValidator: (v) => !!v?.trim() || '请填写暂存说明',
-        confirmButtonText: '确认暂存',
-        cancelButtonText: '继续编辑',
+        inputValidator: (v) => !!v?.trim() || tr('ui.validation.message39'),
+        get confirmButtonText() { return tr('ui.equipment.text1811'); },
+        get cancelButtonText() { return tr('ui.equipment.text1707'); },
         closeOnClickModal: false,
         closeOnPressEscape: false,
       },

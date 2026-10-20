@@ -7,9 +7,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class HomeRepository {
   private final JdbcTemplate db;
+  private final com.fasterxml.jackson.databind.ObjectMapper json;
 
-  public HomeRepository(JdbcTemplate db) {
+  public HomeRepository(JdbcTemplate db, com.fasterxml.jackson.databind.ObjectMapper json) {
     this.db = db;
+    this.json = json;
   }
 
   public List<Map<String, Object>> loadPagePreference(long tenantId, long userId, Object key) {
@@ -48,32 +50,36 @@ public class HomeRepository {
       Object value6,
       long userId,
       Object key) {
-    return db.update(
-        "INSERT IGNORE INTO"
-            + " eam_home_template(id,tenant_id,name,draft,role_ids,priority,created_by,preset_key)"
-            + " VALUES(?,?,?,?,?,?,?,?)",
-        tid,
-        tenantId,
-        value,
-        payload,
-        payload5,
-        value6,
-        userId,
-        key);
+    int changed =
+        db.update(
+            "INSERT IGNORE INTO"
+                + " eam_home_template(id,tenant_id,name,draft,priority,created_by,preset_key)"
+                + " VALUES(?,?,?,?,?,?,?)",
+            tid,
+            tenantId,
+            value,
+            payload,
+            value6,
+            userId,
+            key);
+    if (changed > 0) saveRoles(tenantId, tid, null, payload5);
+    return changed;
   }
 
   public int insertPresetVersion(
       long tenantId, Object tid, String payload, String payload4, Object value, long userId) {
-    return db.update(
-        "INSERT INTO"
-            + " eam_home_template_version(tenant_id,template_id,version,payload,role_ids,priority,published_by)"
-            + " VALUES(?,?,1,?,?,?,?)",
-        tenantId,
-        tid,
-        payload,
-        payload4,
-        value,
-        userId);
+    int changed =
+        db.update(
+            "INSERT INTO"
+                + " eam_home_template_version(tenant_id,template_id,version,payload,priority,published_by)"
+                + " VALUES(?,?,1,?,?,?)",
+            tenantId,
+            tid,
+            payload,
+            value,
+            userId);
+    if (changed > 0) saveRoles(tenantId, tid, 1, payload4);
+    return changed;
   }
 
   public int publishPreset(long tenantId, Object tid) {
@@ -85,12 +91,12 @@ public class HomeRepository {
 
   public List<Map<String, Object>> listTemplates(long tenantId) {
     return db.queryForList(
-        "SELECT * FROM eam_home_template WHERE tenant_id=? ORDER BY priority,id", tenantId);
+        "SELECT * FROM v_home_template WHERE tenant_id=? ORDER BY priority,id", tenantId);
   }
 
   public List<Map<String, Object>> loadTemplate(long tenantId, Object id, boolean lock) {
     return db.queryForList(
-        "SELECT * FROM eam_home_template WHERE tenant_id=? AND id=?" + (lock ? " FOR UPDATE" : ""),
+        "SELECT * FROM v_home_template WHERE tenant_id=? AND id=?" + (lock ? " FOR UPDATE" : ""),
         tenantId,
         id);
   }
@@ -111,30 +117,34 @@ public class HomeRepository {
       String payload5,
       Object priority,
       long userId) {
-    return db.update(
-        "INSERT INTO eam_home_template(id,tenant_id,name,draft,role_ids,priority,created_by)"
-            + " VALUES(?,?,?,?,?,?,?)",
-        tid,
-        tenantId,
-        name,
-        payload,
-        payload5,
-        priority,
-        userId);
+    int changed =
+        db.update(
+            "INSERT INTO eam_home_template(id,tenant_id,name,draft,priority,created_by)"
+                + " VALUES(?,?,?,?,?,?)",
+            tid,
+            tenantId,
+            name,
+            payload,
+            priority,
+            userId);
+    if (changed > 0) saveRoles(tenantId, tid, null, payload5);
+    return changed;
   }
 
   public int updateTemplate(
       Object name, String payload, String payload3, Object priority, long tenantId, Object tid) {
-    return db.update(
-        "UPDATE eam_home_template SET"
-            + " name=?,draft=?,role_ids=?,priority=?,row_version=row_version+1,updated_at=NOW(3)"
-            + " WHERE tenant_id=? AND id=?",
-        name,
-        payload,
-        payload3,
-        priority,
-        tenantId,
-        tid);
+    int changed =
+        db.update(
+            "UPDATE eam_home_template SET"
+                + " name=?,draft=?,priority=?,row_version=row_version+1,updated_at=NOW(3)"
+                + " WHERE tenant_id=? AND id=?",
+            name,
+            payload,
+            priority,
+            tenantId,
+            tid);
+    if (changed > 0) saveRoles(tenantId, tid, null, payload3);
+    return changed;
   }
 
   public void overviewDraft(long tenant, Object template, String payload) {
@@ -153,17 +163,19 @@ public class HomeRepository {
       Object roleIds,
       Object priority,
       long userId) {
-    return db.update(
-        "INSERT INTO"
-            + " eam_home_template_version(tenant_id,template_id,version,payload,role_ids,priority,published_by)"
-            + " VALUES(?,?,?,?,?,?,?)",
-        tenantId,
-        tid,
-        next,
-        payload,
-        roleIds,
-        priority,
-        userId);
+    int changed =
+        db.update(
+            "INSERT INTO"
+                + " eam_home_template_version(tenant_id,template_id,version,payload,priority,published_by)"
+                + " VALUES(?,?,?,?,?,?)",
+            tenantId,
+            tid,
+            next,
+            payload,
+            priority,
+            userId);
+    if (changed > 0) saveRoles(tenantId, tid, next, roleIds);
+    return changed;
   }
 
   public int publishVersion(Object next, long tenantId, Object tid) {
@@ -195,7 +207,7 @@ public class HomeRepository {
   public List<Map<String, Object>> listPublishedTemplates(long tenantId) {
     return db.queryForList(
         "SELECT t.id,t.name,t.published_version,v.payload,v.role_ids,v.priority FROM"
-            + " eam_home_template t JOIN eam_home_template_version v ON v.tenant_id=t.tenant_id"
+            + " v_home_template t JOIN v_home_template_version v ON v.tenant_id=t.tenant_id"
             + " AND v.template_id=t.id AND v.version=t.published_version WHERE t.tenant_id=?"
             + " AND t.enabled=1 ORDER BY v.priority,t.id",
         tenantId);
@@ -218,7 +230,7 @@ public class HomeRepository {
 
   public int countTemplateVersion(long tenantId, Object tid, Object templateVersion) {
     return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_home_template_version WHERE tenant_id=? AND"
+        "SELECT COUNT(*) FROM v_home_template_version WHERE tenant_id=? AND"
             + " template_id=? AND version=?",
         Integer.class,
         tenantId,
@@ -279,5 +291,42 @@ public class HomeRepository {
         "SELECT CAST(id AS CHAR) id,name FROM eam_sys_role WHERE tenant_id=? AND status=1 AND"
             + " deleted=0 ORDER BY name,id",
         tenantId);
+  }
+
+  private void saveRoles(long tenant, Object template, Object version, Object content) {
+    String table = version == null ? "eam_home_template_role" : "eam_home_template_version_role";
+    List<?> roles;
+    try {
+      roles = json.readValue(content.toString(), List.class);
+    } catch (Exception e) {
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          com.windasoft.eam.common.MessageRef.of("server.experience.message0003"), e);
+    }
+    if (version == null)
+      db.update("DELETE FROM " + table + " WHERE tenant_id=? AND template_id=?", tenant, template);
+    else
+      db.update(
+          "DELETE FROM " + table + " WHERE tenant_id=? AND template_id=? AND version=?",
+          tenant,
+          template,
+          version);
+    int at = 0;
+    for (Object role : new LinkedHashSet<>(roles)) {
+      if (version == null)
+        db.update(
+            "INSERT INTO " + table + " VALUES(?,?,?,?)",
+            tenant,
+            template,
+            Long.parseLong(role.toString()),
+            at++);
+      else
+        db.update(
+            "INSERT INTO " + table + " VALUES(?,?,?,?,?)",
+            tenant,
+            template,
+            version,
+            Long.parseLong(role.toString()),
+            at++);
+    }
   }
 }

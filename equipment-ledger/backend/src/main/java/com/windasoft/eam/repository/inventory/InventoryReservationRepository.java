@@ -37,8 +37,8 @@ public class InventoryReservationRepository {
   }
 
   public List<Map<String, Object>> loadTask(Object t, Object taskId, String kind, String table) {
-    if (!Set.of("eam_repair_order", "eam_maintenance_task", "eam_inspection_task").contains(table))
-      throw new IllegalArgumentException("未知任务类型");
+    if (!Set.of("eam_repair_order", "v_maintenance_task", "v_inspection_task").contains(table))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0003");
     return db.queryForList(
         "SELECT status"
             + (kind.equals("保养") ? "" : ",deleted")

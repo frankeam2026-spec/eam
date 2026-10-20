@@ -1,4 +1,8 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
+import { onUnmounted } from 'vue';
+import { useInventoryMasterList } from '../composables/inventory/useInventoryLists';
+const { rows, total, refresh: refreshList, invalidate: invalidateList } = useInventoryMasterList();
 import AppListToolbar from './common/AppListToolbar.vue';
 import { ElTableColumn } from 'element-plus';
 import { ElCheckboxGroup, ElCheckbox } from 'element-plus';
@@ -11,9 +15,18 @@ import { formatNumber, isDecimalField } from '../utils/number';
 import { listBase, type BaseRecord } from '../api';
 import TreeSelect from './TreeSelect.vue';
 import { inventoryMenu } from '../inventory';
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, toRaw, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
-import { ElButton, ElInput, ElSelect, ElOption, ElSwitch, ElMessage, ElTag } from 'element-plus';
+import {
+  ElButton,
+  ElInput,
+  ElSelect,
+  ElOption,
+  ElSwitch,
+  ElMessage,
+  ElTag,
+  ElAlert,
+} from 'element-plus';
 import AppDialog from './common/AppDialog.vue';
 import AppPagination from './common/AppPagination.vue';
 import ListSearchInput from './common/ListSearchInput.vue';
@@ -61,7 +74,7 @@ async function openBins(row: InventoryMaster) {
   try {
     await loadBins();
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '库位加载失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0462'));
   }
 }
 async function saveBin() {
@@ -80,16 +93,14 @@ async function saveBin() {
     binRemark.value = '';
     binEditing.value = undefined;
     await loadBins();
-    ElMessage.success('库位已保存');
+    ElMessage.success(tr('ui.equipment.text0463'));
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '保存失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0195'));
   } finally {
     binBusy.value = false;
   }
 }
-const rows = ref<InventoryMaster[]>([]),
-  total = ref(0),
-  page = ref(1),
+const page = ref(1),
   size = ref(10),
   query = ref(''),
   applied = ref('');
@@ -108,7 +119,9 @@ const empty = (): InventoryMaster => ({
   remark: '',
   model: '',
   unit: '',
+  unitId: '',
   category: '',
+  categoryId: '',
   usageType: '消耗型',
   referencePrice: '',
   batchEnabled: false,
@@ -186,6 +199,10 @@ function display(row: InventoryMaster, key: string): string {
 }
 const visible = computed(() => rows.value);
 let revision = 0;
+onUnmounted(() => {
+  revision++;
+  invalidateList();
+});
 async function load() {
   const current = ++revision,
     requested = kind.value;
@@ -193,15 +210,15 @@ async function load() {
   error.value = '';
   try {
     const [result, options] = await Promise.all([
-      inventoryApi.list(requested, applied.value, page.value, size.value, filters.value),
+      refreshList(requested, applied.value, page.value, size.value, filters.value),
       inventoryApi.choices(),
     ]);
     if (current !== revision) return;
-    rows.value = result.data;
-    total.value = result.page.total;
+    if (!result) return;
     choices.value = options.data;
     if (kind.value === 'materials') {
       const [u, c] = await Promise.all([listBase('单位'), listBase('物料分类')]);
+      if (current !== revision) return;
       units.value = u.data;
       materialCategories.value = c.data;
     }
@@ -212,21 +229,28 @@ async function load() {
   } catch (e) {
     if (current === revision) {
       rows.value = [];
-      error.value = e instanceof Error ? e.message : '加载失败';
+      error.value = e instanceof Error ? e.message : tr('ui.equipment.text0160');
     }
   } finally {
     if (current === revision) loading.value = false;
   }
 }
-function edit(row?: InventoryMaster) {
-  form.value = row ? structuredClone(row) : empty();
-  guard.markSaved();
+const legacyCategory = ref('');
+async function edit(row?: InventoryMaster) {
+  form.value = row ? structuredClone(toRaw(row)) : empty();
+  legacyCategory.value = row && !row.categoryId ? row.category || '' : '';
   open.value = true;
+  await nextTick();
+  guard.markSaved();
 }
 async function save() {
   if (busy.value) return;
   if (!form.value.name.trim()) {
-    ElMessage.warning('请输入名称');
+    ElMessage.warning(tr('ui.equipment.text0464'));
+    return;
+  }
+  if (kind.value === 'materials' && legacyCategory.value && !form.value.categoryId) {
+    ElMessage.warning(tr('ui.equipment.text0465'));
     return;
   }
   busy.value = true;
@@ -234,10 +258,10 @@ async function save() {
     await inventoryApi.save(kind.value, form.value);
     guard.markSaved();
     open.value = false;
-    ElMessage.success('已保存');
+    ElMessage.success(tr('ui.equipment.text0194'));
     await load();
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '保存失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0195'));
   } finally {
     busy.value = false;
   }
@@ -260,7 +284,7 @@ async function exportRows() {
     link.click();
     URL.revokeObjectURL(url);
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '导出失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0185'));
   }
 }
 function search() {
@@ -330,7 +354,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
   <section class="inventory-master-page">
     <AppListToolbar class="master-toolbar">
       <ElButton v-if="auth.can(inventoryMenu(kind), '新增')" type="primary" @click="edit()"
-        ><AppIcon name="Plus" /> 新增</ElButton
+        ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}</ElButton
       >
       <form class="master-search" @submit.prevent="search">
         <ListToolbarIcons
@@ -342,13 +366,13 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
         /><ListSearchInput
           v-model="query"
           :placeholder="
-            kind === 'materials' ? '搜索料号、物料名称、型号' : `搜索${title}编码、名称`
+            kind === 'materials' ? tr('ui.equipment.text0466') : `搜索${title}编码、名称`
           "
-        /><ElButton text @click="reset">重置</ElButton>
+        /><ElButton text @click="reset">{{ tr('ui.equipment.text0204') }}</ElButton>
       </form>
     </AppListToolbar>
     <p v-if="error" role="alert" class="master-error">
-      {{ error }} <ElButton text @click="load">重试</ElButton>
+      {{ error }} <ElButton text @click="load">{{ tr('ui.equipment.text0299') }}</ElButton>
     </p>
     <div class="master-card">
       <div class="master-scroll">
@@ -386,29 +410,29 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
             :width="170"
             :min-width="156"
             :resizable="false"
-            ><template #header><div class="table-header-label">操作</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
             ><template #default="{ row: row, $index: tableRowIndex }">
               <ElButton
                 v-if="auth.can(inventoryMenu(kind), '编辑')"
                 link
                 type="primary"
                 @click="edit(row)"
-                >编辑</ElButton
+                >{{ tr('ui.equipment.text0207') }}</ElButton
               >
               <ElButton v-if="kind === 'warehouses'" link type="primary" @click="openBins(row)"
-                >库位</ElButton
+                >{{ tr('ui.equipment.text0467') }}</ElButton
               >
             </template></ElTableColumn
           ><template #empty
             ><div v-if="!visible.length">
-              {{ loading ? '正在加载…' : error ? '加载失败，请重试' : '暂无数据' }}
+              {{ loading ? tr('ui.equipment.text0162') : error ? tr('ui.equipment.text0468') : tr('ui.equipment.text0308') }}
             </div></template
           ></AppBusinessTable
         >
       </div>
       <footer>
         <div class="master-paging">
-          <span>共 {{ total }} 条</span
+          <span>{{ tr('ui.equipment.text0309') }} {{ total }} {{ tr('ui.equipment.text0296') }}</span
           ><AppPagination v-model:page="page" v-model:page-size="size" :total="total" />
         </div>
         <ListToolbarIcons
@@ -430,7 +454,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
     </div>
     <AppDialog
       :model-value="!!binWarehouse"
-      :title="(binWarehouse?.name || '') + ' · 库位'"
+      :title="(binWarehouse?.name || '') + tr('ui.equipment.text0469')"
       width="680px"
       :busy="binBusy"
       @update:model-value="
@@ -440,18 +464,18 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
       "
     >
       <div style="display: flex; gap: 8px; margin-bottom: 12px">
-        <ElInput v-model="binCode" placeholder="库位编码，留空自动生成" maxlength="64" />
-        <ElInput v-model="binName" placeholder="库位名称" maxlength="120" /><ElButton
+        <ElInput v-model="binCode" :placeholder="tr('ui.equipment.text0470')" maxlength="64" />
+        <ElInput v-model="binName" :placeholder="tr('ui.equipment.text0471')" maxlength="120" /><ElButton
           v-if="auth.can('inventoryWarehouse', binEditing ? '编辑' : '新增')"
           type="primary"
           :loading="binBusy"
           @click="saveBin"
-          >{{ binEditing ? '保存' : '新增' }}</ElButton
+          >{{ binEditing ? tr('ui.equipment.text0159') : tr('ui.equipment.text0149') }}</ElButton
         >
       </div>
       <ElInput
         v-model="binRemark"
-        placeholder="备注"
+        :placeholder="tr('ui.equipment.text0130')"
         maxlength="1000"
         style="margin-bottom: 12px"
       />
@@ -463,25 +487,25 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
         class="business-table"
         ><!-- @vue-generic {TableColumnRow2} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">库位编码</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0472') }}</div></template
           ><template #default="{ row: bin, $index: tableRowIndex }">{{
             bin.code
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow2} -->
         <ElTableColumn :min-width="210"
-          ><template #header><div class="table-header-label">库位名称</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0471') }}</div></template
           ><template #default="{ row: bin, $index: tableRowIndex }">{{
             bin.name
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow2} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">状态</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0170') }}</div></template
           ><template #default="{ row: bin, $index: tableRowIndex }">{{
-            bin.enabled ? '启用' : '停用'
+            bin.enabled ? tr('ui.equipment.text0216') : tr('ui.equipment.text0260')
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow2} -->
         <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-          ><template #header><div class="table-header-label">操作</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
           ><template #default="{ row: bin, $index: tableRowIndex }">
             <ElButton
               v-if="auth.can('inventoryWarehouse', '编辑')"
@@ -493,7 +517,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                 binCode = bin.code;
                 binRemark = bin.remark;
               "
-              >编辑</ElButton
+              >{{ tr('ui.equipment.text0207') }}</ElButton
             ><ElButton
               v-if="auth.can('inventoryWarehouse', '编辑')"
               link
@@ -503,7 +527,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                   .then(loadBins)
                   .catch((e) => ElMessage.error(e.message))
               "
-              >{{ bin.enabled ? '停用' : '启用' }}</ElButton
+              >{{ bin.enabled ? tr('ui.equipment.text0260') : tr('ui.equipment.text0216') }}</ElButton
             >
           </template></ElTableColumn
         ></AppBusinessTable
@@ -514,79 +538,102 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
             v-model:page="binPage"
             v-model:page-size="binPageSize"
             :total="binTotal"
-          /><ElButton @click="binWarehouse = undefined">关闭</ElButton>
+          /><ElButton @click="binWarehouse = undefined">{{ tr('ui.equipment.text0076') }}</ElButton>
         </div></template
       >
     </AppDialog>
     <AppDialog
       v-model="open"
-      :title="`${form.id ? '编辑' : '新增'}${title}`"
+      :title="`${form.id ? tr('ui.equipment.text0207') : tr('ui.equipment.text0149')}${title}`"
       width="760px"
       :busy="busy"
       :before-close="guard.permitLeave"
     >
+      <ElAlert
+        v-if="kind === 'materials' && form.unit && !form.unitId"
+        type="warning"
+        :closable="false"
+        :title="`历史单位待确认：${form.unit}，请重新选择单位。`"
+      />
+      <ElAlert
+        v-if="kind === 'materials' && legacyCategory && !form.categoryId"
+        type="warning"
+        :closable="false"
+        :title="`历史分类待确认：${legacyCategory}`"
+        ><ElButton
+          link
+          type="primary"
+          @click="
+            legacyCategory = '';
+            form.category = '';
+          "
+          >{{ tr('ui.equipment.text0473') }}</ElButton
+        ></ElAlert
+      >
       <div class="master-form" :inert="busy">
         <label
-          ><span>{{ kind === 'materials' ? '料号' : '编码' }}</span
-          ><ElInput v-model="form.code" maxlength="64" placeholder="留空自动生成" /></label
+          ><span>{{ kind === 'materials' ? tr('ui.equipment.text0154') : tr('ui.equipment.text0474') }}</span
+          ><ElInput v-model="form.code" maxlength="64" :placeholder="tr('ui.equipment.text0312')" /></label
         ><label
-          ><span>名称 <b>*</b></span
+          ><span>{{ tr('ui.equipment.text0404') }} <b>*</b></span
           ><ElInput v-model="form.name" maxlength="120"
         /></label>
         <template v-if="kind === 'materials'">
-          <label><span>规格型号</span><ElInput v-model="form.model" maxlength="200" /></label
+          <label><span>{{ tr('ui.equipment.text0091') }}</span><ElInput v-model="form.model" maxlength="200" /></label
           ><label
-            ><span>单位 <b>*</b></span
-            ><ElSelect v-model="form.unit" filterable placeholder="选择单位"
+            ><span>{{ tr('ui.equipment.text0095') }} <b>*</b></span
+            ><ElSelect v-model="form.unitId" filterable :placeholder="tr('ui.equipment.text0475')"
               ><ElOption
                 v-for="u in units.filter((x) => x.status === '启用')"
                 :key="u.id"
-                :value="u.name"
+                :value="u.id"
                 :label="u.name" /></ElSelect></label
           ><label
-            ><span>分类</span
+            ><span>{{ tr('ui.equipment.text0476') }}</span
             ><TreeSelect
-              v-model="form.category"
-              :nodes="materialCategories.map((x) => ({ ...x, parentId: x.parentId || '' }))"
-              placeholder="选择物料分类" /></label
+              v-model="form.categoryId"
+              :nodes="
+                materialCategories.map((x) => ({ ...x, parentId: x.parentId || '', value: x.id }))
+              "
+              :placeholder="tr('ui.equipment.text0477')" /></label
           ><label
-            ><span>用途</span
+            ><span>{{ tr('ui.equipment.text0478') }}</span
             ><ElSelect v-model="form.usageType"
               ><ElOption value="消耗型" /><ElOption value="可安装" /></ElSelect></label
           ><label
-            ><span>参考价（元）</span
+            ><span>{{ tr('ui.equipment.text0479') }}</span
             ><AppDecimalInput
               v-model="form.referencePrice"
               :disabled="!auth.can('inventoryMaterial', '编辑参考价')"
               inputmode="decimal"
-              placeholder="未填写表示未知" /></label
+              :placeholder="tr('ui.equipment.text0480')" /></label
           ><label
-            ><span>出库规则</span
-            ><ElSelect v-model="form.allocationRule" placeholder="跟随仓库"
-              ><ElOption value="" label="跟随仓库" /><ElOption
+            ><span>{{ tr('ui.equipment.text0481') }}</span
+            ><ElSelect v-model="form.allocationRule" :placeholder="tr('ui.equipment.text0482')"
+              ><ElOption value="" :label="tr('ui.equipment.text0482')" /><ElOption
                 value="FIFO"
-                label="先进先出" /><ElOption value="FEFO" label="先到期先出" /></ElSelect></label
-          ><label><span>批次管理</span><ElSwitch v-model="form.batchEnabled" /></label
+                :label="tr('ui.equipment.text0483')" /><ElOption value="FEFO" :label="tr('ui.equipment.text0484')" /></ElSelect></label
+          ><label><span>{{ tr('ui.equipment.text0485') }}</span><ElSwitch v-model="form.batchEnabled" /></label
           ><label
-            ><span>有效期管理</span
+            ><span>{{ tr('ui.equipment.text0486') }}</span
             ><ElSwitch v-model="form.expiryEnabled" :disabled="!form.batchEnabled"
           /></label>
         </template>
         <template v-if="kind === 'warehouses'">
           <label
-            ><span>所属公司 <b>*</b></span
+            ><span>{{ tr('ui.equipment.text0487') }} <b>*</b></span
             ><ElSelect
               v-model="form.companyId"
               :disabled="!!form.id"
               filterable
-              placeholder="选择公司"
+              :placeholder="tr('ui.equipment.text0488')"
               ><ElOption
                 v-for="c in choices.companies"
                 :key="c.id"
                 :value="c.id"
                 :label="c.name" /></ElSelect></label
           ><label
-            ><span>仓管</span
+            ><span>{{ tr('ui.equipment.text0489') }}</span
             ><ElSelect v-model="form.managerId" clearable filterable
               ><ElOption
                 v-for="u in managers"
@@ -594,15 +641,15 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                 :value="u.id"
                 :label="u.name" /></ElSelect></label
           ><label
-            ><span>出库规则</span
+            ><span>{{ tr('ui.equipment.text0481') }}</span
             ><ElSelect v-model="form.allocationRule"
-              ><ElOption value="FIFO" label="先进先出" /><ElOption
+              ><ElOption value="FIFO" :label="tr('ui.equipment.text0483')" /><ElOption
                 value="FEFO"
-                label="先到期先出" /></ElSelect
+                :label="tr('ui.equipment.text0484')" /></ElSelect
           ></label>
         </template>
         <label v-if="kind === 'bins'"
-          ><span>所属仓库 <b>*</b></span
+          ><span>{{ tr('ui.equipment.text0490') }} <b>*</b></span
           ><ElSelect v-model="form.warehouseId" :disabled="!!form.id" filterable
             ><ElOption
               v-for="w in choices.warehouses"
@@ -610,9 +657,9 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
               :value="w.id"
               :label="w.name" /></ElSelect
         ></label>
-        <label><span>启用</span><ElSwitch v-model="form.enabled" /></label
+        <label><span>{{ tr('ui.equipment.text0216') }}</span><ElSwitch v-model="form.enabled" /></label
         ><label class="master-wide"
-          ><span>备注</span
+          ><span>{{ tr('ui.equipment.text0130') }}</span
           ><ElInput
             v-model="form.remark"
             type="textarea"
@@ -629,8 +676,8 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
               if (await guard.permitLeave()) open = false;
             }
           "
-          >取消</ElButton
-        ><ElButton type="primary" :loading="busy" @click="save">保存</ElButton></template
+          >{{ tr('ui.equipment.text0157') }}</ElButton
+        ><ElButton type="primary" :loading="busy" @click="save">{{ tr('ui.equipment.text0159') }}</ElButton></template
       >
     </AppDialog>
   </section>

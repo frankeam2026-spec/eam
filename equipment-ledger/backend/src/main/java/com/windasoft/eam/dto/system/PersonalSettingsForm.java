@@ -4,4 +4,5 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
 public record PersonalSettingsForm(
-    @NotBlank @Pattern(regexp = "blue|navy|pink", message = "请选择有效主题") String theme) {}
+    @NotBlank @Pattern(regexp = "blue|navy|pink", message = "{server.system.message0004}")
+        String theme) {}

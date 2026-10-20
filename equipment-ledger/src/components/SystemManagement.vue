@@ -1,4 +1,9 @@
-<script setup lang="ts">
+<script setup lang="ts">import { enumLabel } from '../i18n';
+import { tr } from '../i18n';
+
+import UserEditDialog from './system/UserEditDialog.vue';
+import { useApiFieldErrors } from '../composables/useApiFieldErrors';
+import { useUserList } from '../composables/system/useUserList';
 import {
   ElMessage,
   ElTree,
@@ -29,7 +34,7 @@ import { useUnsavedChanges } from '../composables/useUnsavedChanges';
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import AppPagination from './common/AppPagination.vue';
 import { confirmAction } from '../services/dialog';
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue';
 import * as api from '../api';
 import FilterConditionPopover from './common/FilterConditionPopover.vue';
 import { useConditionPopover } from '../composables/useConditionPopover';
@@ -96,6 +101,9 @@ function normalizeRole(item: any): Role {
 const orgs = ref<Org[]>(load('eam-orgs-v1', []));
 const roles = ref<Role[]>(load('eam-roles-v1', []));
 const users = ref<User[]>(load('eam-users-v1', []));
+const userList = useUserList(),
+  remoteUserTotal = ref(0),
+  roleCounts = ref<Record<string, number>>({});
 const userOrgTree = ref<TreeInstance>();
 const orgSearch = ref('');
 const userOrgNodes = computed(() => organizationTree(orgs.value));
@@ -131,21 +139,21 @@ type ListColumn = {
   align?: 'left' | 'center' | 'right';
 };
 const userColumns: ListColumn[] = [
-  { key: 'account', label: '登录账号', minWidth: 130 },
-  { key: 'name', label: '姓名', minWidth: 100 },
-  { key: 'employeeNo', label: '工号', minWidth: 100 },
-  { key: 'department', label: '所属组织', minWidth: 160 },
-  { key: 'roles', label: '角色', minWidth: 170 },
-  { key: 'phone', label: '手机号', minWidth: 130 },
-  { key: 'status', label: '状态', minWidth: 80, align: 'center' },
+  { key: 'account', get label() { return tr('ui.equipment.text0740'); }, minWidth: 130 },
+  { key: 'name', get label() { return tr('ui.equipment.text1168'); }, minWidth: 100 },
+  { key: 'employeeNo', get label() { return tr('ui.equipment.text1169'); }, minWidth: 100 },
+  { key: 'department', get label() { return tr('ui.equipment.text1170'); }, minWidth: 160 },
+  { key: 'roles', get label() { return tr('ui.equipment.text1171'); }, minWidth: 170 },
+  { key: 'phone', get label() { return tr('ui.equipment.text1172'); }, minWidth: 130 },
+  { key: 'status', get label() { return tr('ui.equipment.text0170'); }, minWidth: 80, align: 'center' },
 ];
 const roleColumns: ListColumn[] = [
-  { key: 'name', label: '角色名称' },
-  { key: 'code', label: '角色编码' },
-  { key: 'description', label: '描述' },
-  { key: 'menuCount', label: '授权菜单' },
-  { key: 'userCount', label: '关联用户' },
-  { key: 'status', label: '状态' },
+  { key: 'name', get label() { return tr('ui.equipment.text1173'); } },
+  { key: 'code', get label() { return tr('ui.equipment.text1174'); } },
+  { key: 'description', get label() { return tr('ui.equipment.text1175'); } },
+  { key: 'menuCount', get label() { return tr('ui.equipment.text1176'); } },
+  { key: 'userCount', get label() { return tr('ui.equipment.text1177'); } },
+  { key: 'status', get label() { return tr('ui.equipment.text0170'); } },
 ];
 const advancedOpen = ref(false);
 const advancedConditions = ref<FilterCondition[]>([]);
@@ -180,16 +188,16 @@ const userBatch = reactive({
 const userBatchError = ref('');
 const batchFormRef = ref<FormInstance>();
 const batchRules: FormRules<typeof userBatch> = {
-  orgId: [{ required: true, message: '请选择部门', trigger: 'change' }],
+  orgId: [{ required: true, get message() { return tr('ui.equipment.text0315'); }, trigger: 'change' }],
   password: [
-    { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 12, max: 72, message: '密码长度需为 12 至 72 位', trigger: 'blur' },
+    { required: true, get message() { return tr('ui.equipment.text1178'); }, trigger: 'blur' },
+    { min: 12, max: 72, get message() { return tr('ui.equipment.text1179'); }, trigger: 'blur' },
   ],
   confirmPassword: [
-    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    { required: true, get message() { return tr('ui.equipment.text1180'); }, trigger: 'blur' },
     {
       validator: (_rule, value, done) =>
-        done(value !== userBatch.password ? new Error('两次输入的密码不一致') : undefined),
+        done(value !== userBatch.password ? new Error(tr('ui.equipment.text1181')) : undefined),
       trigger: 'blur',
     },
   ],
@@ -216,7 +224,7 @@ async function closeUserBatch() {
 async function submitUserBatch() {
   if (userBatchBusy.value || !can('编辑')) return;
   if (!selectedUsers.value.length || selectedUsers.value.length > 200) {
-    userBatchError.value = '请选择 1 至 200 个用户';
+    userBatchError.value = tr('ui.equipment.text1182');
     return;
   }
   if (!(await batchFormRef.value?.validate().catch(() => false))) return;
@@ -232,13 +240,14 @@ async function submitUserBatch() {
     );
     const updated = new Map(result.data.map((u) => [u.id, u]));
     users.value = users.value.map((u) => updated.get(u.id) || u);
+    await loadUserPage();
     batchGuard.markSaved();
     userBatchOpen.value = false;
     userBatch.password = userBatch.confirmPassword = '';
     selectedUsers.value = [];
     flash('批量操作已完成', 'success');
   } catch (e) {
-    userBatchError.value = e instanceof Error ? e.message : '操作失败';
+    userBatchError.value = e instanceof Error ? e.message : tr('ui.equipment.text0197');
   } finally {
     userBatchBusy.value = false;
   }
@@ -254,30 +263,59 @@ const userForm = reactive<User>({
   roleIds: [],
   status: '启用',
 });
-const userFormRef = ref<FormInstance>();
+const userFormRef = ref<InstanceType<typeof UserEditDialog>>();
+const {
+  errors: userServerErrors,
+  capture: captureUserError,
+  clear: clearUserErrors,
+} = useApiFieldErrors([
+  'account',
+  'name',
+  'employeeNo',
+  'phone',
+  'orgId',
+  'password',
+  'status',
+  'roleIds',
+]);
+for (const field of [
+  'account',
+  'name',
+  'employeeNo',
+  'phone',
+  'orgId',
+  'password',
+  'status',
+  'roleIds',
+] as const)
+  watch(
+    () => userForm[field],
+    () => clearUserErrors(field),
+    { deep: true },
+  );
 const userRules: FormRules<User> = {
   account: [
-    { required: true, whitespace: true, message: '请输入登录账号', trigger: 'blur' },
+    { required: true, whitespace: true, get message() { return tr('ui.equipment.text1183'); }, trigger: 'blur' },
     {
       validator: (_rule, value, done) =>
         done(
           users.value.some(
             (item) => item.id !== userForm.id && item.account === String(value).trim(),
           )
-            ? new Error('登录账号已存在')
+            ? new Error(tr('ui.equipment.text1184'))
             : undefined,
         ),
       trigger: 'blur',
     },
   ],
-  name: [{ required: true, whitespace: true, message: '请输入姓名', trigger: 'blur' }],
+  name: [{ required: true, whitespace: true, get message() { return tr('ui.equipment.text1185'); }, trigger: 'blur' }],
   orgId: [
-    { required: true, message: '请选择所属组织', trigger: 'change' },
+    { required: true, get message() { return tr('ui.equipment.text1186'); }, trigger: 'change' },
     {
       validator: (_rule, value, done) =>
         done(
           value && !orgs.value.some((item) => item.id === value && item.status === '启用')
-            ? new Error('请选择启用的组织')
+            ? new Error(tr('ui.equipment.text1187'))
             : undefined,
         ),
       trigger: 'change',
@@ -286,9 +324,9 @@ const userRules: FormRules<User> = {
   password: [
     {
       validator: (_rule, value, done) => {
-        if (!String(value || '').trim() && !editing.value) done(new Error('请输入初始密码'));
+        if (!String(value || '').trim() && !editing.value) done(new Error(tr('ui.equipment.text1188')));
         else if (value && (value.length < 12 || value.length > 72))
-          done(new Error('密码长度需为 12 至 72 位'));
+          done(new Error(tr('ui.equipment.text1179')));
         else done();
       },
       trigger: 'blur',
@@ -318,13 +356,17 @@ async function closeDialog() {
   dialog.value = false;
 }
 function userCell(item: User, key: string) {
-  if (key === 'department') return orgName(item.orgId);
-  if (key === 'roles') return roleNames(item.roleIds);
+  if (key === 'department') return Reflect.get(item, 'department') ?? orgName(item.orgId);
+  if (key === 'roles') return Reflect.get(item, 'roles') ?? roleNames(item.roleIds);
   return String(item[key as keyof User] ?? '');
 }
 function roleCell(item: Role, key: string) {
   if (key === 'userCount')
-    return String(users.value.filter((user) => user.roleIds.includes(item.id)).length);
+    return String(
+      props.apiReady
+        ? roleCounts.value[item.id] || 0
+        : users.value.filter((user) => user.roleIds.includes(item.id)).length,
+    );
   if (key === 'menuCount')
     return `${Object.values(item.menuPermissions).filter((grant) => grant.actions.length).length} 个菜单`;
   return String(item[key as keyof Role] ?? '');
@@ -357,11 +399,48 @@ const filteredRoles = computed(() =>
   ),
 );
 const pageUsers = computed(() =>
-  filteredUsers.value.slice(
-    (sysPage.value - 1) * sysPageSize.value,
-    sysPage.value * sysPageSize.value,
-  ),
+  props.apiReady
+    ? users.value
+    : filteredUsers.value.slice(
+        (sysPage.value - 1) * sysPageSize.value,
+        sysPage.value * sysPageSize.value,
+      ),
 );
+const userTotal = computed(() =>
+  props.apiReady ? remoteUserTotal.value : filteredUsers.value.length,
+);
+function userListParameters(): api.UserListParameters {
+  return {
+    page: sysPage.value,
+    size: sysPageSize.value,
+    q: search.value,
+    conditions: JSON.stringify(advancedConditions.value),
+    filters: JSON.stringify(sysColumnFilters),
+    organization: selectedOrg.value,
+  };
+}
+let userLoadVersion = 0;
+async function loadUserPage() {
+  if (!props.apiReady || props.view !== 'users') return;
+  const current = ++userLoadVersion;
+  usersLoading.value = true;
+  usersError.value = '';
+  try {
+    if (await userList.refresh(userListParameters())) {
+      users.value = userList.rows.value;
+      remoteUserTotal.value = userList.total.value;
+    }
+  } catch (e) {
+    if (current === userLoadVersion)
+      usersError.value = e instanceof Error ? e.message : tr('ui.equipment.text1189');
+  } finally {
+    if (current === userLoadVersion) usersLoading.value = false;
+  }
+}
+onUnmounted(() => {
+  userLoadVersion++;
+  userList.invalidate();
+});
 const pageRoles = computed(() =>
   filteredRoles.value.slice(
     (sysPage.value - 1) * sysPageSize.value,
@@ -372,8 +451,7 @@ const sysPageCount = computed(() =>
   Math.max(
     1,
     Math.ceil(
-      (props.view === 'users' ? filteredUsers.value.length : filteredRoles.value.length) /
-        sysPageSize.value,
+      (props.view === 'users' ? userTotal.value : filteredRoles.value.length) / sysPageSize.value,
     ),
   ),
 );
@@ -395,8 +473,16 @@ function resetSysList() {
   Object.keys(sysColumnFilters).forEach((key) => delete sysColumnFilters[key]);
   sysPage.value = 1;
 }
-function exportSysList() {
-  const rows = props.view === 'users' ? filteredUsers.value : filteredRoles.value;
+async function exportSysList() {
+  let rows: (User | Role)[];
+  if (props.apiReady && props.view === 'users') {
+    try {
+      rows = (await api.exportSystemUsers(userListParameters())).data;
+    } catch (e) {
+      ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0185'));
+      return;
+    }
+  } else rows = props.view === 'users' ? filteredUsers.value : filteredRoles.value;
   const headers = activeColumns.value.map((col) => col.label);
   const values = rows.map((row) =>
     activeColumns.value
@@ -423,6 +509,9 @@ watch(roles, (v) => localStorage.setItem('eam-roles-v1', JSON.stringify(v)), { d
 watch(
   () => props.view,
   () => {
+    userLoadVersion++;
+    userList.invalidate();
+    usersLoading.value = false;
     dialog.value = false;
     resetSysList();
     sysColumnFilterOpen.value = false;
@@ -430,7 +519,7 @@ watch(
   },
 );
 watch(
-  [search, selectedOrg, sysColumnFilters],
+  [search, selectedOrg, sysColumnFilters, advancedConditions],
   () => {
     sysPage.value = 1;
     selectedUsers.value = [];
@@ -503,6 +592,7 @@ async function openUser(item?: User) {
   dialog.value = true;
   await nextTick();
   userFormRef.value?.clearValidate();
+  clearUserErrors();
 }
 const copyRoleId = ref('');
 async function copyRolePermissions() {
@@ -511,7 +601,7 @@ async function copyRolePermissions() {
   if (
     Object.keys(roleForm.menuPermissions).length &&
     !(await confirmAction(
-      `使用“${source.name}”的权限覆盖当前权限配置？角色名称、编码和描述保持不变。`,
+      tr('ui.common.dynamic52',{p0:source.name}),
     ))
   )
     return;
@@ -541,6 +631,7 @@ async function save() {
       !(await userFormRef.value?.validate().catch(() => false)))
   )
     return;
+  clearUserErrors();
   saving.value = true;
   try {
     if (props.view === 'users') {
@@ -549,6 +640,7 @@ async function save() {
         const item = result.data;
         if (editing.value) users.value = users.value.map((x) => (x.id === item.id ? item : x));
         else users.value.push(item);
+        await loadUserPage();
       } else {
         const { password: _password, ...item } = userForm;
         if (editing.value)
@@ -559,14 +651,14 @@ async function save() {
       }
     } else {
       if (!roleForm.code.trim() || !roleForm.name.trim()) {
-        flash('请填写角色编码和名称');
+        flash(tr('ui.validation.message30'));
         return;
       }
       const grants = Object.entries(roleForm.menuPermissions).filter(
         ([, grant]) => grant.actions.length,
       );
       if (!grants.length) {
-        flash('请至少配置一个菜单的权限');
+        flash(tr('ui.validation.message31'));
         return;
       }
       for (const [key, grant] of grants) {
@@ -595,7 +687,8 @@ async function save() {
     flash('已保存', 'success');
     if (props.apiReady) window.dispatchEvent(new Event('eam-permissions-changed'));
   } catch (error) {
-    flash(error instanceof Error ? error.message : '保存失败');
+    if (props.view === 'users' && captureUserError(error)) return;
+    flash(error instanceof Error ? error.message : tr('ui.equipment.text0195'));
   } finally {
     saving.value = false;
   }
@@ -605,12 +698,12 @@ async function removeRole(item: Role) {
     flash('该角色仍分配给用户，不能删除');
     return;
   }
-  if (await confirmAction(`确认删除角色“${item.name}”？`)) {
+  if (await confirmAction(tr('ui.common.dynamic53',{p0:item.name}))) {
     try {
       if (props.apiReady) await api.deleteSystemRole(item.id);
       roles.value = roles.value.filter((x) => x.id !== item.id);
     } catch (error) {
-      flash(error instanceof Error ? error.message : '删除失败');
+      flash(error instanceof Error ? error.message : tr('ui.equipment.text0278'));
     }
   }
 }
@@ -620,34 +713,49 @@ async function toggleUserStatus(item: User) {
     if (props.apiReady) {
       const result = await api.setSystemUserStatus(item.id, updated.status);
       Object.assign(item, result.data);
+      await loadUserPage();
     } else item.status = updated.status;
   } catch (error) {
-    flash(error instanceof Error ? error.message : '状态更新失败');
+    flash(error instanceof Error ? error.message : tr('ui.equipment.text1190'));
   }
 }
 function flash(msg: string, type: 'success' | 'error' | 'info' = 'error') {
   ElMessage({ message: msg, type });
 }
 async function loadRemote() {
-  usersLoading.value = true;
-  usersError.value = orgError.value = '';
-  const [orgResult, userResult, roleResult] = await Promise.allSettled([
+  orgError.value = '';
+  const [orgResult, roleResult, summaryResult] = await Promise.allSettled([
     api.listOrganizations(),
-    api.listSystemUsers(),
     api.listSystemRoles(),
+    api.systemUserSummary(),
   ]);
   if (orgResult.status === 'fulfilled') orgs.value = orgResult.value.data;
   else
-    orgError.value = orgResult.reason instanceof Error ? orgResult.reason.message : '组织加载失败';
-  if (userResult.status === 'fulfilled') users.value = userResult.value.data;
-  else
-    usersError.value =
-      userResult.reason instanceof Error ? userResult.reason.message : '用户加载失败';
+    orgError.value = orgResult.reason instanceof Error ? orgResult.reason.message : tr('ui.equipment.text1191');
   if (roleResult.status === 'fulfilled') roles.value = roleResult.value.data.map(normalizeRole);
-  usersLoading.value = false;
+  if (summaryResult.status === 'fulfilled') roleCounts.value = summaryResult.value.roleCounts;
+  await loadUserPage();
   await nextTick();
   userOrgTree.value?.filter(orgSearch.value);
 }
+watch(
+  [
+    sysPage,
+    sysPageSize,
+    search,
+    selectedOrg,
+    sysColumnFilters,
+    advancedConditions,
+    () => props.view,
+  ],
+  () => {
+    void loadUserPage();
+  },
+  { deep: true, flush: 'post' },
+);
+watch(sysPage, () => {
+  selectedUsers.value = [];
+});
 // Preserve the row type while using native ElTableColumn slots.
 const tableColumnRows1 = () => pageUsers.value;
 type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
@@ -676,27 +784,27 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           :class="view === 'roles' ? 'sys-primary' : undefined"
           @click="view === 'users' ? openUser() : openRole()"
           type="primary"
-          ><AppIcon name="Plus" /> {{ view === 'users' ? '新增用户' : '新增角色' }}</ElButton
+          ><AppIcon name="Plus" /> {{ view === 'users' ? tr('ui.equipment.text1192') : tr('ui.equipment.text1193') }}</ElButton
         ><ElDropdown
           v-if="view === 'users' && can('编辑')"
           trigger="click"
           @command="openUserBatch"
         >
           <ElButton :disabled="!selectedUsers.length">
-            批量操作<span v-if="selectedUsers.length">（{{ selectedUsers.length }}）</span
+            {{ tr('ui.equipment.text0373') }}<span v-if="selectedUsers.length">（{{ selectedUsers.length }}）</span
             ><AppIcon name="Down"
           /></ElButton>
           <template #dropdown
             ><ElDropdownMenu
-              ><ElDropdownItem command="department">更换部门</ElDropdownItem
-              ><ElDropdownItem command="password">重置密码</ElDropdownItem></ElDropdownMenu
+              ><ElDropdownItem command="department">{{ tr('ui.equipment.text1194') }}</ElDropdownItem
+              ><ElDropdownItem command="password">{{ tr('ui.equipment.text1195') }}</ElDropdownItem></ElDropdownMenu
             ></template
           > </ElDropdown
         ><ElButton
           v-if="view === 'users' && can('导入')"
           @click="flash('用户导入模板已准备', 'info')"
         >
-          导入
+          {{ tr('ui.equipment.text1196') }}
         </ElButton>
       </div>
       <form class="sys-filters" @submit.prevent="sysPage = 1">
@@ -713,8 +821,8 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           v-model="search"
           :placeholder="
             view === 'users'
-              ? '搜索账号、姓名、工号、手机号、部门、角色'
-              : '搜索角色名称、编码、描述、菜单'
+              ? tr('ui.equipment.text1197')
+              : tr('ui.equipment.text1198')
           "
         />
         <ElButton
@@ -724,11 +832,11 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           @click="showFilter($event.currentTarget as HTMLElement)"
           native-type="button"
         >
-          添加筛选<span v-if="advancedConditions.length">
+          {{ tr('ui.equipment.text0203') }}<span v-if="advancedConditions.length">
             ({{ advancedConditions.length }})</span
           ></ElButton
         >
-        <ElButton class="sys-reset" @click="resetSysList" native-type="button" text>重置</ElButton>
+        <ElButton class="sys-reset" @click="resetSysList" native-type="button" text>{{ tr('ui.equipment.text0204') }}</ElButton>
       </form>
     </AppListToolbar>
     <AppliedFilterChips
@@ -751,17 +859,17 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
     />
     <div v-if="view === 'users'" class="users-layout" :class="{ 'tree-hidden': !orgTreeVisible }">
       <article v-if="orgTreeVisible" class="sys-card user-org-filter">
-        <header><b>组织部门</b><ElButton @click="selectedOrg = ''">全部</ElButton></header>
+        <header><b>{{ tr('ui.equipment.text1199') }}</b><ElButton @click="selectedOrg = ''">{{ tr('ui.equipment.text0300') }}</ElButton></header>
         <ElInput
           v-model="orgSearch"
           class="user-org-search"
-          placeholder="搜索公司、部门"
+          :placeholder="tr('ui.equipment.text1200')"
           clearable
-          aria-label="搜索公司、部门"
+          :aria-label="tr('ui.equipment.text1200')"
           ><template #prefix><AppIcon name="Search" /></template
         ></ElInput>
         <ElAlert v-if="orgError" :title="orgError" type="error" :closable="false"
-          ><ElButton text type="primary" @click="loadRemote">重试</ElButton></ElAlert
+          ><ElButton text type="primary" @click="loadRemote">{{ tr('ui.equipment.text0299') }}</ElButton></ElAlert
         >
         <div v-else class="org-tree">
           <ElTree
@@ -774,7 +882,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             default-expand-all
             highlight-current
             :expand-on-click-node="false"
-            :empty-text="usersLoading ? '加载中…' : '暂无匹配组织'"
+            :empty-text="usersLoading ? tr('ui.equipment.text0396') : tr('ui.equipment.text0911')"
             @node-click="(item: Org) => (selectedOrg = item.id)"
           >
             <template #default="{ data }"
@@ -790,8 +898,8 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       <ElButton
         class="org-panel-toggle"
         :class="{ collapsed: !orgTreeVisible }"
-        :aria-label="orgTreeVisible ? '收起组织部门' : '展开组织部门'"
-        :title="orgTreeVisible ? '收起组织部门' : '展开组织部门'"
+        :aria-label="orgTreeVisible ? tr('ui.equipment.text1201') : tr('ui.equipment.text1202')"
+        :title="orgTreeVisible ? tr('ui.equipment.text1201') : tr('ui.equipment.text1202')"
         @click="orgTreeVisible = !orgTreeVisible"
         ><AppIcon name="Left" :class="{ flipped: !orgTreeVisible }"
       /></ElButton>
@@ -825,7 +933,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   v-if="col.key === 'status'"
                   :type="item.status === '启用' ? 'success' : 'info'"
                   size="small"
-                  >{{ item.status }}</ElTag
+                  >{{ enumLabel('status',item.status) }}</ElTag
                 ><span v-else>{{ userCell(item, col.key) }}</span>
               </template></ElTableColumn
             ><!-- @vue-generic {TableColumnRow1} -->
@@ -835,25 +943,25 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               :width="170"
               :min-width="156"
               :resizable="false"
-              label="操作"
+              :label="tr('ui.equipment.text0145')"
               ><template #default="{ row: item, $index: tableRowIndex }">
                 <ElButton link type="primary" v-if="can('编辑')" @click="openUser(item)"
-                  >编辑</ElButton
+                  >{{ tr('ui.equipment.text0207') }}</ElButton
                 ><ElButton link type="primary" v-if="can('停用')" @click="toggleUserStatus(item)">{{
-                  item.status === '启用' ? '停用' : '启用'
+                  item.status === '启用' ? tr('ui.equipment.text0260') : tr('ui.equipment.text0216')
                 }}</ElButton>
               </template></ElTableColumn
             ><template #empty
-              ><div v-if="!pageUsers.length">没有匹配的用户</div></template
+              ><div v-if="!pageUsers.length">{{ tr('ui.equipment.text1203') }}</div></template
             ></AppBusinessTable
           >
         </div>
         <footer class="sys-footer">
-          <span>共 {{ filteredUsers.length }} 条用户</span>
+          <span>{{ tr('ui.equipment.text0309') }} {{ userTotal }} {{ tr('ui.equipment.text1204') }}</span>
           <AppPagination
             v-model:page="sysPage"
             v-model:page-size="sysPageSize"
-            :total="filteredUsers.length"
+            :total="userTotal"
           />
           <ListToolbarIcons
             mode="footer"
@@ -895,9 +1003,9 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               ><div class="table-header-label">{{ col.label }}</div>
               <div v-if="sysColumnFilterOpen" class="table-column-filter" @click.stop>
                 <ElSelect v-if="col.key === 'status'" v-model="sysColumnFilters[col.key]"
-                  ><ElOption value="" :label="'全部状态'" /><ElOption
+                  ><ElOption value="" :label="tr('ui.equipment.text1205')" /><ElOption
                     :value="'启用'"
-                    :label="'启用'" /><ElOption :value="'停用'" :label="'停用'" /></ElSelect
+                    :label="tr('ui.equipment.text0216')" /><ElOption :value="'停用'" :label="tr('ui.equipment.text0260')" /></ElSelect
                 ><ElInput
                   v-else
                   v-model="sysColumnFilters[col.key]"
@@ -908,7 +1016,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 v-if="col.key === 'status'"
                 class="sys-status"
                 :class="item.status === '启用' ? 'on' : 'off'"
-                >{{ item.status }}</span
+                >{{ enumLabel('status',item.status) }}</span
               ><b v-else-if="col.key === 'name'">{{ roleCell(item, col.key) }}</b
               ><span v-else>{{ roleCell(item, col.key) }}</span>
             </template></ElTableColumn
@@ -919,30 +1027,30 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             :width="170"
             :min-width="156"
             :resizable="false"
-            ><template #header><div class="table-header-label">操作</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
             ><template #default="{ row: item, $index: tableRowIndex }">
               <ElButton
                 link
                 type="primary"
                 v-if="can('编辑') && can('授权')"
                 @click="openRole(item)"
-                >配置权限</ElButton
+                >{{ tr('ui.equipment.text1206') }}</ElButton
               ><ElButton
                 v-if="can('删除')"
                 class="danger"
                 @click="removeRole(item)"
                 type="danger"
                 link
-                >删除</ElButton
+                >{{ tr('ui.equipment.text0146') }}</ElButton
               >
             </template></ElTableColumn
           ><template #empty
-            ><div v-if="!pageRoles.length">没有匹配的角色</div></template
+            ><div v-if="!pageRoles.length">{{ tr('ui.equipment.text1207') }}</div></template
           ></AppBusinessTable
         >
       </div>
       <footer class="sys-footer">
-        <span>共 {{ filteredRoles.length }} 个角色</span>
+        <span>{{ tr('ui.equipment.text0309') }} {{ filteredRoles.length }} {{ tr('ui.equipment.text1208') }}</span>
         <AppPagination
           v-model:page="sysPage"
           v-model:page-size="sysPageSize"
@@ -974,35 +1082,35 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           <header>
             <AppBackButton
               v-if="view === 'roles'"
-              label="返回角色权限"
+              :label="tr('ui.equipment.text1209')"
               :disabled="saving"
               @click="closeDialog"
             />
-            <b>{{ editing ? '编辑' : '新增' }}角色</b>
+            <b>{{ editing ? tr('ui.equipment.text0207') : tr('ui.equipment.text0149') }}{{ tr('ui.equipment.text1171') }}</b>
           </header>
           <div class="sys-dialog-body role-editor" :inert="saving || undefined">
             <div class="role-basics">
               <label
-                ><span>角色名称<i>*</i></span
-                ><ElInput v-model="roleForm.name" placeholder="例如：设备管理员" /></label
+                ><span>{{ tr('ui.equipment.text1173') }}<i>*</i></span
+                ><ElInput v-model="roleForm.name" :placeholder="tr('ui.equipment.text1210')" /></label
               ><label
-                ><span>角色编码<i>*</i></span
-                ><ElInput v-model="roleForm.code" placeholder="唯一编码" /></label
+                ><span>{{ tr('ui.equipment.text1174') }}<i>*</i></span
+                ><ElInput v-model="roleForm.code" :placeholder="tr('ui.equipment.text1211')" /></label
               ><label
-                ><span>角色描述</span
-                ><ElInput v-model="roleForm.description" placeholder="说明角色职责" /></label
+                ><span>{{ tr('ui.equipment.text1212') }}</span
+                ><ElInput v-model="roleForm.description" :placeholder="tr('ui.equipment.text1213')" /></label
               ><label
-                ><span>状态</span
+                ><span>{{ tr('ui.equipment.text0170') }}</span
                 ><ElSelect v-model="roleForm.status"
-                  ><ElOption :value="'启用'" :label="'启用'" /><ElOption
+                  ><ElOption :value="'启用'" :label="tr('ui.equipment.text0216')" /><ElOption
                     :value="'停用'"
-                    :label="'停用'" /></ElSelect
+                    :label="tr('ui.equipment.text0260')" /></ElSelect
               ></label>
             </div>
             <div class="role-copy-tools">
-              <span>复制角色权限</span>
-              <ElSelect v-model="copyRoleId" aria-label="选择来源角色"
-                ><ElOption value="" :label="'选择已有角色'" /><ElOption
+              <span>{{ tr('ui.equipment.text1214') }}</span>
+              <ElSelect v-model="copyRoleId" :aria-label="tr('ui.equipment.text1215')"
+                ><ElOption value="" :label="tr('ui.equipment.text1216')" /><ElOption
                   v-for="role in roles.filter((item) => item.id !== roleForm.id)"
                   :key="role.id"
                   :value="role.id"
@@ -1013,110 +1121,47 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 :disabled="!copyRoleId || saving"
                 @click="copyRolePermissions"
               >
-                复制权限
+                {{ tr('ui.equipment.text1217') }}
               </ElButton>
             </div>
             <RolePermissionEditor v-model="roleForm.menuPermissions" :orgs="orgs" />
           </div>
           <AppFormFooter v-if="view === 'roles'">
-            <ElButton class="sys-secondary" :disabled="saving" @click="closeDialog">取消</ElButton>
+            <ElButton class="sys-secondary" :disabled="saving" @click="closeDialog">{{ tr('ui.equipment.text0157') }}</ElButton>
             <ElButton class="sys-primary" :disabled="saving" @click="save" type="primary">{{
-              saving ? '保存中…' : '保存'
+              saving ? tr('ui.equipment.text0158') : tr('ui.equipment.text0159')
             }}</ElButton>
           </AppFormFooter>
         </section>
       </div></Transition
     >
 
-    <AppDialog
+    <UserEditDialog
       v-if="view === 'users'"
+      ref="userFormRef"
       v-model="dialog"
-      :title="editing ? '编辑用户' : '新增用户'"
+      :editing="editing"
       :busy="saving"
+      :form="userForm"
+      :rules="userRules"
+      :errors="userServerErrors"
+      :departments="userDepartmentNodes"
+      :roles="userRoleOptions"
+      :can-assign-roles="canAssignRoles"
+      :role-text="roleNames(userForm.roleIds)"
       :before-close="formGuard.permitLeave"
-      width="680px"
-    >
-      <ElForm
-        ref="userFormRef"
-        :model="userForm"
-        :rules="userRules"
-        label-width="88px"
-        :disabled="saving"
-        class="user-edit-form"
-        @submit.prevent="save"
-      >
-        <AppFormField label="登录账号" prop="account"
-          ><ElInput v-model="userForm.account" placeholder="请输入登录账号" autocomplete="off"
-        /></AppFormField>
-        <AppFormField label="姓名" prop="name"
-          ><ElInput v-model="userForm.name" placeholder="请输入姓名"
-        /></AppFormField>
-        <AppFormField label="工号" prop="employeeNo"
-          ><ElInput v-model="userForm.employeeNo" placeholder="请输入工号"
-        /></AppFormField>
-        <AppFormField label="手机号" prop="phone"
-          ><ElInput v-model="userForm.phone" placeholder="请输入手机号"
-        /></AppFormField>
-        <AppFormField label="所属组织" prop="orgId" class="user-form-wide"
-          ><ElTreeSelect
-            v-model="userForm.orgId"
-            :data="userDepartmentNodes"
-            node-key="id"
-            :props="{ label: 'name', children: 'children', disabled: 'disabled' }"
-            check-strictly
-            filterable
-            clearable
-            placeholder="请选择公司或部门"
-        /></AppFormField>
-        <AppFormField
-          :label="editing ? '重置密码' : '初始密码'"
-          prop="password"
-          :required="!editing"
-          class="user-form-wide"
-          ><ElInput
-            v-model="userForm.password"
-            type="password"
-            show-password
-            autocomplete="new-password"
-            :placeholder="editing ? '留空不修改；12 至 72 位' : '请输入 12 至 72 位密码'"
-        /></AppFormField>
-        <AppFormField label="状态" prop="status"
-          ><ElSelect v-model="userForm.status"
-            ><ElOption label="启用" value="启用" /><ElOption label="停用" value="停用" /></ElSelect
-        ></AppFormField>
-        <AppFormField label="角色" prop="roleIds"
-          ><ElSelect
-            v-if="canAssignRoles"
-            v-model="userForm.roleIds"
-            multiple
-            filterable
-            collapse-tags
-            collapse-tags-tooltip
-            :max-collapse-tags="1"
-            placeholder="请选择角色（可多选）"
-            ><ElOption
-              v-for="role in userRoleOptions"
-              :key="role.id"
-              :label="role.name"
-              :value="role.id"
-              :disabled="role.status !== '启用'" /></ElSelect
-          ><span v-else>{{ roleNames(userForm.roleIds) || '未分配角色' }}</span></AppFormField
-        >
-      </ElForm>
-      <template #footer
-        ><ElButton :disabled="saving" @click="closeDialog">取消</ElButton
-        ><ElButton type="primary" :loading="saving" @click="save">保存</ElButton></template
-      >
-    </AppDialog>
+      @save="save"
+      @cancel="closeDialog"
+    />
 
     <AppDialog
       v-model="userBatchOpen"
-      :title="userBatch.operation === 'department' ? '更换部门' : '重置密码'"
+      :title="userBatch.operation === 'department' ? tr('ui.equipment.text1194') : tr('ui.equipment.text1195')"
       :busy="userBatchBusy"
       :before-close="batchGuard.permitLeave"
     >
       <div class="sys-user-batch">
-        <p>已选择 {{ selectedUsers.length }} 个用户</p>
+        <p>{{ tr('ui.equipment.text1218') }} {{ selectedUsers.length }} {{ tr('ui.equipment.text1219') }}</p>
         <ElAlert
           v-if="userBatchError"
           :title="userBatchError"
@@ -1132,7 +1177,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           :disabled="userBatchBusy"
           @submit.prevent="submitUserBatch"
         >
-          <AppFormField v-if="userBatch.operation === 'department'" label="所属部门" prop="orgId"
+          <AppFormField v-if="userBatch.operation === 'department'" :label="tr('ui.equipment.text0098')" prop="orgId"
             ><ElTreeSelect
               v-model="userBatch.orgId"
               :data="userDepartmentNodes"
@@ -1141,33 +1186,33 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               check-strictly
               filterable
               clearable
-              placeholder="请选择部门"
+              :placeholder="tr('ui.equipment.text0315')"
           /></AppFormField>
           <template v-else>
-            <p>重置后所选用户的登录会话将失效，请通过合适的渠道告知新密码。</p>
-            <AppFormField label="新密码" prop="password"
+            <p>{{ tr('ui.equipment.text1220') }}</p>
+            <AppFormField :label="tr('ui.equipment.text1221')" prop="password"
               ><ElInput
                 v-model="userBatch.password"
                 type="password"
                 show-password
                 autocomplete="new-password"
-                placeholder="12 至 72 位"
+                :placeholder="tr('ui.equipment.text1222')"
             /></AppFormField>
-            <AppFormField label="确认密码" prop="confirmPassword"
+            <AppFormField :label="tr('ui.equipment.text1223')" prop="confirmPassword"
               ><ElInput
                 v-model="userBatch.confirmPassword"
                 type="password"
                 show-password
                 autocomplete="new-password"
-                placeholder="再次输入新密码"
+                :placeholder="tr('ui.equipment.text1224')"
             /></AppFormField>
           </template>
         </ElForm>
       </div>
       <template #footer
-        ><ElButton :disabled="userBatchBusy" @click="closeUserBatch"> 取消</ElButton
+        ><ElButton :disabled="userBatchBusy" @click="closeUserBatch"> {{ tr('ui.equipment.text0157') }}</ElButton
         ><ElButton :loading="userBatchBusy" @click="submitUserBatch" type="primary">{{
-          userBatchBusy ? '提交中…' : '提交'
+          userBatchBusy ? tr('ui.equipment.text1080') : tr('ui.equipment.text0253')
         }}</ElButton></template
       >
     </AppDialog>
@@ -1201,22 +1246,6 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.user-edit-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  column-gap: 24px;
-}
-.user-edit-form :deep(.el-select) {
-  width: 100%;
-}
-.user-form-wide {
-  grid-column: 1 / -1;
-}
-@media (max-width: 600px) {
-  .user-edit-form {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 .sys-page {

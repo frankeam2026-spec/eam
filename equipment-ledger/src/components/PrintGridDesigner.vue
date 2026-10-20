@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import AppFilePicker from './common/AppFilePicker.vue';
 import {
   ElButton,
@@ -492,7 +493,7 @@ async function upload(files: File[]) {
   const file = files[0];
   if (!file) return;
   if (!['image/png', 'image/jpeg'].includes(file.type) || file.size > 1024 * 1024) {
-    emit('message', '请选择1MB以内的PNG或JPEG图片');
+    emit('message', tr('ui.validation.message28'));
     return;
   }
   const reader = new FileReader();
@@ -545,50 +546,50 @@ onBeforeUnmount(() => {
     @paste="paste"
   >
     <div class="grid-toolbar">
-      <ElButton :class="{ active: showFields }" @click="showFields = !showFields">字段</ElButton>
+      <ElButton :class="{ active: showFields }" @click="showFields = !showFields">{{ tr('ui.equipment.text0943') }}</ElButton>
       <ElButton :class="{ active: showProperties }" @click="showProperties = !showProperties"
-        >属性</ElButton
+        >{{ tr('ui.equipment.text0944') }}</ElButton
       >
-      <ElButton :disabled="!editable || !undo.length" title="撤销" @click="doUndo"
+      <ElButton :disabled="!editable || !undo.length" :title="tr('ui.equipment.text0945')" @click="doUndo"
         ><AppIcon name="Undo" /></ElButton
-      ><ElButton :disabled="!editable || !redo.length" title="重做" @click="doRedo"
+      ><ElButton :disabled="!editable || !redo.length" :title="tr('ui.equipment.text0946')" @click="doRedo"
         ><AppIcon name="Redo" /></ElButton
-      ><i></i><ElButton :disabled="!editable" @click="merge">合并</ElButton
-      ><ElButton :disabled="!editable" @click="split">拆分</ElButton
+      ><i></i><ElButton :disabled="!editable" @click="merge">{{ tr('ui.equipment.text0947') }}</ElButton
+      ><ElButton :disabled="!editable" @click="split">{{ tr('ui.equipment.text0948') }}</ElButton
       ><ElButton
         :disabled="!editable"
         @click="setStyle('bold', !active.bold)"
         :class="{ active: active.bold }"
-        title="加粗"
+        :title="tr('ui.equipment.text0949')"
         ><b>B</b></ElButton
       ><ElSelect
         :disabled="!editable"
-        aria-label="边框"
+        :aria-label="tr('ui.equipment.text0950')"
         class="grid-border-select"
-        placeholder="边框"
+        :placeholder="tr('ui.equipment.text0950')"
         @change="borders($event as any)"
         :model-value="''"
-        ><ElOption value="" :label="'边框'" /><ElOption value="all" :label="'全部边框'" /><ElOption
+        ><ElOption value="" :label="tr('ui.equipment.text0950')" /><ElOption value="all" :label="tr('ui.equipment.text0951')" /><ElOption
           value="outer"
-          :label="'外框'" /><ElOption value="top" :label="'上边框'" /><ElOption
+          :label="tr('ui.equipment.text0952')" /><ElOption value="top" :label="tr('ui.equipment.text0953')" /><ElOption
           value="bottom"
-          :label="'下边框'" /><ElOption value="left" :label="'左边框'" /><ElOption
+          :label="tr('ui.equipment.text0954')" /><ElOption value="left" :label="tr('ui.equipment.text0955')" /><ElOption
           value="right"
-          :label="'右边框'" /><ElOption value="none" :label="'清除边框'" /></ElSelect
+          :label="tr('ui.equipment.text0956')" /><ElOption value="none" :label="tr('ui.equipment.text0957')" /></ElSelect
       ><i></i
       ><ElSelect
         :disabled="!editable"
         class="grid-axis-select"
-        placeholder="行列操作"
+        :placeholder="tr('ui.equipment.text0958')"
         @change="modifyAxis($event.includes('Row') ? 'row' : 'col', $event.startsWith('insert'))"
         :model-value="''"
-        ><ElOption value="" :label="'行列操作'" /><ElOption
+        ><ElOption value="" :label="tr('ui.equipment.text0958')" /><ElOption
           value="insertRow"
-          :label="'插入行'" /><ElOption value="deleteRow" :label="'删除行'" /><ElOption
+          :label="tr('ui.equipment.text0959')" /><ElOption value="deleteRow" :label="tr('ui.equipment.text0960')" /><ElOption
           value="insertCol"
-          :label="'插入列'" /><ElOption value="deleteCol" :label="'删除列'" /></ElSelect
-      ><ElButton @click="copy" title="复制区域">复制</ElButton
-      ><ElButton :disabled="!editable" @click="pasteCells" title="粘贴区域">粘贴</ElButton
+          :label="tr('ui.equipment.text0961')" /><ElOption value="deleteCol" :label="tr('ui.equipment.text0962')" /></ElSelect
+      ><ElButton @click="copy" :title="tr('ui.equipment.text0963')">{{ tr('ui.equipment.text0270') }}</ElButton
+      ><ElButton :disabled="!editable" @click="pasteCells" :title="tr('ui.equipment.text0964')">{{ tr('ui.equipment.text0965') }}</ElButton
       ><ElButton
         @click="
           paperSettings = !paperSettings;
@@ -596,9 +597,9 @@ onBeforeUnmount(() => {
         "
         :class="{ active: paperSettings }"
       >
-        纸张设置</ElButton
+        {{ tr('ui.equipment.text0966') }}</ElButton
       >
-      <ElSelect v-model="zoomChoice" class="grid-zoom-select" aria-label="缩放比例">
+      <ElSelect v-model="zoomChoice" class="grid-zoom-select" :aria-label="tr('ui.equipment.text0967')">
         <ElOption value="fit" :label="`适应画布 ${Math.round(zoom * 100)}%`" />
         <ElOption
           v-for="ratio in [0.5, 0.75, 1, 1.5, 2, 3, 4]"
@@ -609,7 +610,7 @@ onBeforeUnmount(() => {
       </ElSelect>
     </div>
     <aside v-if="showFields" class="grid-fields">
-      <h3>设备字段</h3>
+      <h3>{{ tr('ui.equipment.text0968') }}</h3>
       <div class="field-list">
         <ElButton
           v-for="f in fields"
@@ -621,7 +622,7 @@ onBeforeUnmount(() => {
           >{{ f.label }}</ElButton
         >
       </div>
-      <p>选中单元格后点击字段，或拖入画布。</p>
+      <p>{{ tr('ui.equipment.text0969') }}</p>
     </aside>
     <div class="print-grid-main">
       <div class="grid-formula">
@@ -631,8 +632,8 @@ onBeforeUnmount(() => {
           :disabled="!editable"
           :model-value="active.content"
           @change="contentChange"
-          placeholder="输入文字，或从左侧插入字段"
-        /><ElCheckbox v-model="sampleMode">示例值</ElCheckbox>
+          :placeholder="tr('ui.equipment.text0970')"
+        /><ElCheckbox v-model="sampleMode">{{ tr('ui.equipment.text0971') }}</ElCheckbox>
       </div>
       <div ref="canvasViewport" class="grid-scroll">
         <div
@@ -725,7 +726,7 @@ onBeforeUnmount(() => {
                         class="code-placeholder"
                         ><AppIcon
                           :name="getCell(grid, r, c)?.kind === 'qrcode' ? 'QrCode' : 'Barcode'"
-                        />{{ getCell(grid, r, c)?.kind === 'qrcode' ? '二维码' : '条形码'
+                        />{{ getCell(grid, r, c)?.kind === 'qrcode' ? tr('ui.equipment.text0972') : tr('ui.equipment.text0973')
                         }}<small>{{ getCell(grid, r, c)?.content }}</small></span
                       ><template v-else>{{
                         sampleMode
@@ -741,8 +742,8 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="grid-status">
-        <span>{{ grid.rows.length }}行 × {{ grid.columns.length }}列</span
-        ><span>拖动行列边界调整大小 · 拖动框选单元格</span
+        <span>{{ grid.rows.length }}{{ tr('ui.equipment.text0974') }} {{ grid.columns.length }}{{ tr('ui.equipment.text0975') }}</span
+        ><span>{{ tr('ui.equipment.text0976') }}</span
         ><span
           :style="{
             color:
@@ -751,18 +752,18 @@ onBeforeUnmount(() => {
                 ? '#cf535f'
                 : undefined,
           }"
-          >列宽 {{ grid.columns.reduce((a, b) => a + b, 0).toFixed(1) }}mm · 纸张 {{ width }}
+          >{{ tr('ui.equipment.text0977') }} {{ grid.columns.reduce((a, b) => a + b, 0).toFixed(1) }}{{ tr('ui.equipment.text0978') }} {{ width }}
           <AppIcon name="Close" /> {{ height }}mm</span
         >
       </div>
     </div>
     <aside v-if="showProperties" class="grid-properties">
       <template v-if="paperSettings"
-        ><h3>纸张与打印</h3>
+        ><h3>{{ tr('ui.equipment.text0979') }}</h3>
         <slot name="paper" />
         <div class="property-pair">
           <label
-            >上边距<ElInputNumber
+            >{{ tr('ui.equipment.text0980') }}<ElInputNumber
               v-model="grid.margin.top"
               :disabled="!editable"
               :min="0"
@@ -771,7 +772,7 @@ onBeforeUnmount(() => {
               @change="afterInput"
               controls-position="right" /></label
           ><label
-            >下边距<ElInputNumber
+            >{{ tr('ui.equipment.text0981') }}<ElInputNumber
               v-model="grid.margin.bottom"
               :disabled="!editable"
               :min="0"
@@ -780,7 +781,7 @@ onBeforeUnmount(() => {
               @change="afterInput"
               controls-position="right" /></label
           ><label
-            >左边距<ElInputNumber
+            >{{ tr('ui.equipment.text0982') }}<ElInputNumber
               v-model="grid.margin.left"
               :disabled="!editable"
               :min="0"
@@ -789,7 +790,7 @@ onBeforeUnmount(() => {
               @change="afterInput"
               controls-position="right" /></label
           ><label
-            >右边距<ElInputNumber
+            >{{ tr('ui.equipment.text0983') }}<ElInputNumber
               v-model="grid.margin.right"
               :disabled="!editable"
               :min="0"
@@ -800,7 +801,7 @@ onBeforeUnmount(() => {
           /></label>
         </div>
         <label
-          >重复表头行数<ElInputNumber
+          >{{ tr('ui.equipment.text0984') }}<ElInputNumber
             v-model="grid.repeatHeader"
             :disabled="!editable"
             :min="0"
@@ -814,7 +815,7 @@ onBeforeUnmount(() => {
           :disabled="!editable"
           @focus="beforeInput"
           @change="afterInput"
-          >显示页码</ElCheckbox
+          >{{ tr('ui.equipment.text0985') }}</ElCheckbox
         ><ElButton
           :disabled="!editable"
           @click="
@@ -830,16 +831,16 @@ onBeforeUnmount(() => {
             })
           "
         >
-          将所选区域设为打印区域</ElButton
+          {{ tr('ui.equipment.text0986') }}</ElButton
         ><ElButton v-if="grid.area" :disabled="!editable" @click="change(() => (grid.area = null))">
-          清除打印区域
+          {{ tr('ui.equipment.text0987') }}
         </ElButton></template
       >
       <template v-else
-        ><h3>单元格 {{ name }}</h3>
+        ><h3>{{ tr('ui.equipment.text0988') }} {{ name }}</h3>
         <div class="property-pair">
           <label
-            >行高（mm）<ElInputNumber
+            >{{ tr('ui.equipment.text0989') }}<ElInputNumber
               :model-value="grid.rows[rect.r0]"
               :disabled="!editable"
               :min="0.1"
@@ -847,7 +848,7 @@ onBeforeUnmount(() => {
               @change="change(() => (grid.rows[rect.r0] = Math.max(0.1, Number($event))))"
               controls-position="right" /></label
           ><label
-            >列宽（mm）<ElInputNumber
+            >{{ tr('ui.equipment.text0990') }}<ElInputNumber
               :model-value="grid.columns[rect.c0]"
               :disabled="!editable"
               :min="0.1"
@@ -857,33 +858,33 @@ onBeforeUnmount(() => {
           /></label>
         </div>
         <label
-          >内容类型<ElSelect
+          >{{ tr('ui.equipment.text0991') }}<ElSelect
             :model-value="active.kind"
             :disabled="!editable"
             @change="setStyle('kind', $event)"
-            ><ElOption value="text" :label="'文本 / 字段'" /><ElOption
+            ><ElOption value="text" :label="tr('ui.equipment.text0992')" /><ElOption
               value="image"
-              :label="'图片'" /><ElOption value="qrcode" :label="'二维码'" /><ElOption
+              :label="tr('ui.equipment.text0993')" /><ElOption value="qrcode" :label="tr('ui.equipment.text0972')" /><ElOption
               value="barcode"
-              :label="'条形码（Code128）'" /></ElSelect></label
+              :label="tr('ui.equipment.text0994')" /></ElSelect></label
         ><template v-if="active.kind === 'image'"
           ><AppFilePicker :disabled="!editable" accept="image/png,image/jpeg" @select="upload"
-            ><ElButton :disabled="!editable">上传图片</ElButton></AppFilePicker
+            ><ElButton :disabled="!editable">{{ tr('ui.equipment.text0995') }}</ElButton></AppFilePicker
           ></template
         ><template v-else
           ><label
-            >内容<ElInput
+            >{{ tr('ui.equipment.text0180') }}<ElInput
               :model-value="active.content"
               :disabled="!editable"
               maxlength="4000"
-              placeholder="设备编号：{code}"
+              :placeholder="tr('ui.equipment.text0996')"
               @change="contentChange"
               type="textarea"
             />
           </label>
           <div class="property-pair">
             <label
-              >字号（pt）<ElInputNumber
+              >{{ tr('ui.equipment.text0997') }}<ElInputNumber
                 :model-value="active.fontSize"
                 :disabled="!editable"
                 :min="6"
@@ -891,7 +892,7 @@ onBeforeUnmount(() => {
                 @change="setStyle('fontSize', Number($event))"
                 controls-position="right" /></label
             ><label
-              >文字颜色<ElColorPicker
+              >{{ tr('ui.equipment.text0998') }}<ElColorPicker
                 :model-value="active.color"
                 :disabled="!editable"
                 @change="setStyle('color', $event)"
@@ -903,50 +904,50 @@ onBeforeUnmount(() => {
               :class="{ active: active[key] }"
               :disabled="!editable"
               @click="setStyle(key, !active[key])"
-              >{{ key === 'bold' ? '加粗' : key === 'italic' ? '斜体' : '下划线' }}</ElButton
+              >{{ key === 'bold' ? tr('ui.equipment.text0949') : key === 'italic' ? tr('ui.equipment.text0999') : tr('ui.equipment.text1000') }}</ElButton
             >
           </div>
           <div class="property-pair">
             <label
-              >水平对齐<ElSelect
+              >{{ tr('ui.equipment.text1001') }}<ElSelect
                 :model-value="active.align"
                 :disabled="!editable"
                 @change="setStyle('align', $event)"
-                ><ElOption value="left" :label="'左对齐'" /><ElOption
+                ><ElOption value="left" :label="tr('ui.equipment.text1002')" /><ElOption
                   value="center"
-                  :label="'居中'" /><ElOption value="right" :label="'右对齐'" /></ElSelect></label
+                  :label="tr('ui.equipment.text1003')" /><ElOption value="right" :label="tr('ui.equipment.text1004')" /></ElSelect></label
             ><label
-              >垂直对齐<ElSelect
+              >{{ tr('ui.equipment.text1005') }}<ElSelect
                 :model-value="active.vertical"
                 :disabled="!editable"
                 @change="setStyle('vertical', $event)"
-                ><ElOption value="top" :label="'顶部'" /><ElOption
+                ><ElOption value="top" :label="tr('ui.equipment.text1006')" /><ElOption
                   value="middle"
-                  :label="'居中'" /><ElOption value="bottom" :label="'底部'" /></ElSelect
+                  :label="tr('ui.equipment.text1003')" /><ElOption value="bottom" :label="tr('ui.equipment.text1007')" /></ElSelect
             ></label>
           </div>
           <label
-            >长文本处理<ElSelect
+            >{{ tr('ui.equipment.text1008') }}<ElSelect
               :model-value="active.overflow"
               :disabled="!editable"
               @change="setStyle('overflow', $event)"
-              ><ElOption value="wrap" :label="'自动换行'" /><ElOption
+              ><ElOption value="wrap" :label="tr('ui.equipment.text1009')" /><ElOption
                 value="shrink"
-                :label="'缩小字号'" /><ElOption value="clip" :label="'截断'" /></ElSelect></label
+                :label="tr('ui.equipment.text1010')" /><ElOption value="clip" :label="tr('ui.equipment.text1011')" /></ElSelect></label
         ></template>
         <div class="property-pair">
           <label
-            >背景色<ElColorPicker
+            >{{ tr('ui.equipment.text1012') }}<ElColorPicker
               :model-value="active.background"
               :disabled="!editable"
               @change="setStyle('background', $event)"
           /></label>
         </div>
-        <h3 class="border-title">边框</h3>
+        <h3 class="border-title">{{ tr('ui.equipment.text0950') }}</h3>
         <div class="border-presets">
-          <ElButton :disabled="!editable" @click="borders('all')">全部</ElButton
-          ><ElButton :disabled="!editable" @click="borders('outer')">外框</ElButton
-          ><ElButton :disabled="!editable" @click="borders('none')">清除</ElButton>
+          <ElButton :disabled="!editable" @click="borders('all')">{{ tr('ui.equipment.text0300') }}</ElButton
+          ><ElButton :disabled="!editable" @click="borders('outer')">{{ tr('ui.equipment.text0952') }}</ElButton
+          ><ElButton :disabled="!editable" @click="borders('none')">{{ tr('ui.equipment.text0107') }}</ElButton>
         </div>
         <div class="border-sides">
           <ElButton
@@ -955,17 +956,17 @@ onBeforeUnmount(() => {
             :disabled="!editable"
             :class="{ active: hasBorder(active, side) }"
             @click="borders(side)"
-            >{{ { top: '上', right: '右', bottom: '下', left: '左' }[side] }}</ElButton
+            >{{ { top: tr('ui.equipment.text1013'), right: tr('ui.equipment.text1014'), bottom: tr('ui.equipment.text1015'), left: tr('ui.equipment.text1016') }[side] }}</ElButton
           >
         </div>
         <div class="property-pair">
           <label
-            >线条颜色<ElColorPicker
+            >{{ tr('ui.equipment.text1017') }}<ElColorPicker
               :model-value="active.borderColor || '#000000'"
               :disabled="!editable"
               @change="setStyle('borderColor', $event)" /></label
           ><label
-            >粗细（pt）<ElSelect
+            >{{ tr('ui.equipment.text1018') }}<ElSelect
               :model-value="active.borderWidth ?? 0.5"
               :disabled="!editable"
               @change="setStyle('borderWidth', Number($event))"
@@ -976,9 +977,9 @@ onBeforeUnmount(() => {
                 :label="'3'" /></ElSelect
           ></label>
         </div>
-        <ElButton :disabled="!editable" @click="clear">清空内容</ElButton>
+        <ElButton :disabled="!editable" @click="clear">{{ tr('ui.equipment.text1019') }}</ElButton>
         <p class="property-note">
-          浅色网格线仅辅助排版；设置的边框会显示在预览和打印中。
+          {{ tr('ui.equipment.text1020') }}
         </p></template
       >
     </aside>

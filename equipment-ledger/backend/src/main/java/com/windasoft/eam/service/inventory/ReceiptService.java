@@ -18,6 +18,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ReceiptService {
   @org.springframework.beans.factory.annotation.Autowired private InventoryMutex mutex;
+
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.business.BusinessValueService custom;
+
+  @org.springframework.beans.factory.annotation.Autowired private InventoryListService listQueries;
   private final ReceiptRepository repository;
   private final InventoryService masters;
   private final AuthContext auth;
@@ -41,7 +46,9 @@ public class ReceiptService {
   private Map<String, Object> receipt(long recordId, boolean lock, String action, String menu) {
     permissions.require(menu, action);
     var found = repository.loadReceipt(auth.tenantId(), recordId, lock);
-    require(!found.isEmpty(), "入库单不存在");
+    require(
+        !found.isEmpty(),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0160"));
     permissions.checkInventoryWarehouse(menu, id(found.getFirst().get("warehouse_id")), action);
     return found.getFirst();
   }
@@ -63,11 +70,11 @@ public class ReceiptService {
     try {
       value = new BigDecimal(text(body, key));
     } catch (Exception e) {
-      throw new IllegalArgumentException("数量、单价或费用格式不正确");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0023");
     }
     require(
         value.signum() >= 0 && value.scale() <= scale && value.precision() - value.scale() <= 14,
-        "数值超出范围或小数位过多");
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0161"));
     return value;
   }
 
@@ -102,80 +109,16 @@ public class ReceiptService {
         repository.listEvents(auth.tenantId(), recordId).stream().map(masters::view).toList());
     if (!permissions.inventoryWarehouseAllowed(menu, id(rendered.get("warehouseId")), "查看金额"))
       InventoryMoney.hide(rendered);
+    custom.attach("inventory_receipt", rendered);
     return rendered;
   }
 
-  public Object list(String q, String filters, int page, int size) {
-    permissions.require("inventoryReceipt", "查看");
-    require(page >= 1 && size >= 1 && size <= 100 && q.length() <= 200, "查询参数无效");
-    var rows = new ArrayList<Map<String, Object>>();
-    Map<String, String> conditions;
-    require(filters.length() <= 4000, "筛选条件过长");
-    try {
-      conditions =
-          new com.fasterxml.jackson.databind.ObjectMapper()
-              .readValue(
-                  filters,
-                  new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {});
-    } catch (Exception e) {
-      throw new IllegalArgumentException("筛选条件无效");
-    }
-    require(
-        conditions != null
-            && Set.of(
-                    "code",
-                    "warehouseName",
-                    "supplier",
-                    "status",
-                    "actorName",
-                    "createdAt",
-                    "confirmedAt")
-                .containsAll(conditions.keySet()),
-        "筛选字段无效");
-    for (var r :
-        repository.searchReceipts(auth.tenantId(), "%" + q + "%", "%" + q + "%", "%" + q + "%")) {
-      try {
-        permissions.checkInventoryWarehouse("inventoryReceipt", id(r.get("warehouse_id")), "查看");
-        var rendered = masters.view(r);
-        if (conditions.entrySet().stream()
-            .allMatch(
-                c ->
-                    text(rendered, c.getKey())
-                        .replace('T', ' ')
-                        .contains(Objects.toString(c.getValue(), "").trim()))) rows.add(rendered);
-      } catch (org.springframework.web.server.ResponseStatusException e) {
-        if (e.getStatusCode().value() != 403) throw e;
-      }
-    }
-    return paginate(rows, page, size);
+  public Object list(String q, String filters, int page, int size, String customConditions) {
+    return listQueries.receipts(q, filters, customConditions, page, size, false);
   }
 
-  private Object paginate(List<Map<String, Object>> rows, int page, int size) {
-    int from = (int) Math.min(((long) page - 1) * size, rows.size());
-    return Map.of(
-        "data",
-        rows.subList(from, Math.min(from + size, rows.size())),
-        "page",
-        Map.of("total", rows.size()));
-  }
-
-  public Object export(String q, String filters) {
-    permissions.require("inventoryReceipt", "导出");
-    // Reuse the same authorized matching and page through all records.
-    var rows = new ArrayList<Object>();
-    int page = 1, total;
-    do {
-      @SuppressWarnings("unchecked")
-      var result = (Map<String, Object>) list(q, filters, page++, 100);
-      rows.addAll((List<?>) result.get("data"));
-      total = ((Number) ((Map<?, ?>) result.get("page")).get("total")).intValue();
-    } while (rows.size() < total);
-    return rows.stream()
-        .filter(
-            v ->
-                permissions.inventoryWarehouseAllowed(
-                    "inventoryReceipt", id(((Map<?, ?>) v).get("warehouseId")), "导出"))
-        .toList();
+  public Object export(String q, String filters, String conditions) {
+    return listQueries.exportReceipts(q, filters, conditions);
   }
 
   public Object choices() {
@@ -210,7 +153,9 @@ public class ReceiptService {
 
   public Object materials(String q, int page, int size) {
     permissions.require("inventoryReceipt", "查看");
-    require(q.length() <= 200 && page >= 1 && size >= 1 && size <= 100, "查询参数无效");
+    require(
+        q.length() <= 200 && page >= 1 && size >= 1 && size <= 100,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0032"));
     String match = "%" + q.trim() + "%";
     Long total = repository.countMaterials(auth.tenantId(), match);
     var data =
@@ -230,20 +175,28 @@ public class ReceiptService {
     permissions.require(menu, recordId == null ? "新增" : "编辑");
     var previous = recordId == null ? null : receipt(recordId, true, "编辑", menu);
     if (previous != null) {
-      require(text(previous, "status").equals("草稿"), "已确认入库单不能编辑");
+      require(
+          text(previous, "status").equals("草稿"),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0162"));
       VersionGuard.checkPayload((Number) previous.get("row_version"), body);
     }
     long warehouseId = id(body.get("warehouseId"));
-    require(warehouseId > 0, "请选择入库仓库");
+    require(warehouseId > 0, com.windasoft.eam.common.MessageContext.text("ui.equipment.text0614"));
     var warehouse = masters.row("warehouses", warehouseId, true);
     permissions.checkInventoryWarehouse(menu, warehouseId, recordId == null ? "新增" : "编辑");
-    require(flag(warehouse.get("enabled")), "仓库已停用");
+    require(
+        flag(warehouse.get("enabled")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0035"));
     require(
         text(body, "supplier").length() <= 120 && text(body, "remark").length() <= 1000,
-        "供应商或备注过长");
-    require(body.get("lines") instanceof List<?>, "请添加入库明细");
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0163"));
+    require(
+        body.get("lines") instanceof List<?>,
+        com.windasoft.eam.common.MessageContext.text("ui.equipment.text0615"));
     var input = (List<?>) body.get("lines");
-    require(!input.isEmpty() && input.size() <= 500, "入库明细须为1至500行");
+    require(
+        !input.isEmpty() && input.size() <= 500,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0164"));
     var orderedMaterials = new TreeSet<Long>();
     for (Object item : input) {
       require(item instanceof Map<?, ?>, "明细格式无效");
@@ -282,7 +235,9 @@ public class ReceiptService {
       var line = (Map<String, Object>) item;
       var old = originalLines.get(id(line.get("id")));
       if (old != null && !permissions.inventoryWarehouseAllowed(menu, warehouseId, "查看金额")) {
-        require(id(old.get("material_id")) == id(line.get("materialId")), "隐藏价格的原行不能更换物料，请删除后添加");
+        require(
+            id(old.get("material_id")) == id(line.get("materialId")),
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0165"));
         line.put("unitPrice", old.get("unit_price"));
         line.put("allocatedFee", old.get("allocated_fee"));
       }
@@ -292,7 +247,9 @@ public class ReceiptService {
         var available = repository.listEnabledBins(auth.tenantId(), warehouseId);
         if (available.isEmpty()) binId = masters.ensureDefaultBin(warehouseId);
         else {
-          require(available.size() == 1, "仓库有多个库位，请选择本行入库库位");
+          require(
+              available.size() == 1,
+              com.windasoft.eam.common.MessageContext.text("server.inventory.message0166"));
           binId = id(available.getFirst().get("id"));
         }
       }
@@ -301,30 +258,37 @@ public class ReceiptService {
           flag(material.get("enabled"))
               && flag(bin.get("enabled"))
               && id(bin.get("warehouse_id")) == warehouseId,
-          "请选择有效物料和本仓库库位");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0167"));
       var qty = decimal(line, "quantity", false, 6);
-      require(qty.signum() > 0, "入库数量必须大于零");
+      require(
+          qty.signum() > 0,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0168"));
       var price = decimal(line, "unitPrice", true, 6);
       var taxRate = decimal(line, "taxRate", true, 6);
       if (taxRate == null) taxRate = BigDecimal.ZERO;
-      require(taxRate.compareTo(BigDecimal.ONE) <= 0, "税率须在0至1之间");
       require(
-          text(line, "currency").isBlank() || text(line, "currency").equals("CNY"), "当前库存核算币种为人民币");
+          taxRate.compareTo(BigDecimal.ONE) <= 0,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0169"));
+      require(
+          text(line, "currency").isBlank() || text(line, "currency").equals("CNY"),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0170"));
       var fee = decimal(line, "allocatedFee", true, 2);
       if (fee == null) fee = BigDecimal.ZERO;
       require(
           text(line, "batchCode").length() <= 64 && text(line, "supplierBatch").length() <= 120,
-          "批次号过长");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0095"));
       var production = date(line, "productionDate");
       var expiry = date(line, "expiryDate");
-      require(production == null || expiry == null || !expiry.isBefore(production), "有效期不能早于生产日期");
+      require(
+          production == null || expiry == null || !expiry.isBefore(production),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0146"));
       require(
           flag(material.get("batch_enabled"))
               || (text(line, "batchCode").isEmpty()
                   && text(line, "supplierBatch").isEmpty()
                   && production == null
                   && expiry == null),
-          "未启用批次的物料不能填写批次信息");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0171"));
       repository.insertLine(
           IdWorker.getId(),
           auth.tenantId(),
@@ -342,6 +306,8 @@ public class ReceiptService {
           taxRate,
           "CNY");
     }
+    if (menu.equals("inventoryReceipt"))
+      custom.saveDraft("inventory_receipt", target, body, recordId == null);
     event(target, previous == null ? "创建草稿" : "修改草稿");
     return detailForMenu(target, menu);
   }
@@ -355,17 +321,28 @@ public class ReceiptService {
     mutex.enter();
     var receipt = receipt(recordId, true, "入库", menu);
     if (text(receipt, "status").equals("已入库")) return detailForMenu(recordId, menu);
-    require(text(receipt, "status").equals("草稿"), "入库单状态不可确认");
+    require(
+        text(receipt, "status").equals("草稿"),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0172"));
+    if (menu.equals("inventoryReceipt")) custom.validateStored("inventory_receipt", recordId);
     VersionGuard.checkPayload((Number) receipt.get("row_version"), body);
     var warehouse = masters.row("warehouses", id(receipt.get("warehouse_id")), true);
-    require(flag(warehouse.get("enabled")), "仓库已停用");
+    require(
+        flag(warehouse.get("enabled")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0035"));
     var lines = repository.lockLines(auth.tenantId(), recordId);
-    require(!lines.isEmpty(), "入库明细不能为空");
+    require(
+        !lines.isEmpty(),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0173"));
     for (var line : lines) {
       var material = masters.row("materials", id(line.get("material_id")), true);
       var bin = masters.row("bins", id(line.get("bin_id")), true);
-      require(flag(material.get("enabled")) && flag(bin.get("enabled")), "物料或库位已停用");
-      require(line.get("unit_price") != null, "请先确定所有明细的不含税单价");
+      require(
+          flag(material.get("enabled")) && flag(bin.get("enabled")),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0174"));
+      require(
+          line.get("unit_price") != null,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0175"));
       long batchId = 0;
       String batchCode = text(line, "batch_code");
       if (flag(material.get("batch_enabled"))) {
@@ -373,10 +350,12 @@ public class ReceiptService {
             line.get("expiry_date") == null
                 ? null
                 : LocalDate.parse(line.get("expiry_date").toString());
-        require(!flag(material.get("expiry_enabled")) || expiry != null, "有效期管理物料必须填写有效期");
+        require(
+            !flag(material.get("expiry_enabled")) || expiry != null,
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0176"));
         require(
             expiry == null || !expiry.isBefore(LocalDate.now(ZoneId.of("Asia/Shanghai"))),
-            "过期物料不能确认入库");
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0177"));
         if (batchCode.isBlank()) batchCode = number("inv_batch", "PC");
         var batches = repository.lockBatch(auth.tenantId(), batchCode);
         if (batches.isEmpty()) {
@@ -391,12 +370,14 @@ public class ReceiptService {
               line.get("expiry_date"));
         } else {
           var batch = batches.getFirst();
-          require(id(batch.get("material_id")) == id(material.get("id")), "批次号已被其他物料使用");
+          require(
+              id(batch.get("material_id")) == id(material.get("id")),
+              com.windasoft.eam.common.MessageContext.text("server.inventory.message0178"));
           for (String key : List.of("supplier_batch", "production_date", "expiry_date"))
             require(
                 Objects.equals(
                     Objects.toString(batch.get(key), ""), Objects.toString(line.get(key), "")),
-                "同一批次的供应商批次及日期必须一致");
+                com.windasoft.eam.common.MessageContext.text("server.inventory.message0179"));
           batchId = id(batch.get("id"));
         }
       } else
@@ -405,7 +386,7 @@ public class ReceiptService {
                 && text(line, "supplier_batch").isEmpty()
                 && line.get("production_date") == null
                 && line.get("expiry_date") == null,
-            "物料追踪规则已变更，请重新编辑入库单");
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0180"));
       BigDecimal qty = (BigDecimal) line.get("quantity"),
           price = (BigDecimal) line.get("unit_price"),
           fee = (BigDecimal) line.get("allocated_fee");
@@ -414,7 +395,7 @@ public class ReceiptService {
       require(
           amount.precision() - amount.scale() <= 14
               && unitCost.precision() - unitCost.scale() <= 14,
-          "成本金额超出范围");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0181"));
       long candidate = IdWorker.getId();
       repository.ensureBalance(
           candidate,
@@ -477,8 +458,11 @@ public class ReceiptService {
   public void delete(long recordId, Map<String, Object> body) {
     mutex.enter();
     var raw = receipt(recordId, true, "删除");
-    require(text(raw, "status").equals("草稿"), "只能删除草稿");
+    require(
+        text(raw, "status").equals("草稿"),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0182"));
     VersionGuard.checkPayload((Number) raw.get("row_version"), body);
+    custom.remove("inventory_receipt", recordId);
     repository.deleteReceipt(auth.tenantId(), recordId);
     event(recordId, "删除草稿");
   }
@@ -496,17 +480,25 @@ public class ReceiptService {
   public Map<String, Object> allocateFees(long recordId, Map<String, Object> body) {
     mutex.enter();
     var raw = receipt(recordId, true, "编辑");
-    require(text(raw, "status").equals("草稿"), "只能修改草稿费用");
+    require(
+        text(raw, "status").equals("草稿"),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0183"));
     VersionGuard.checkPayload((Number) raw.get("row_version"), body);
     var fee = decimal(body, "totalFee", false, 2);
     var lines = repository.lockLinesForFees(auth.tenantId(), recordId);
-    require(!lines.isEmpty(), "明细不能为空");
+    require(
+        !lines.isEmpty(),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0184"));
     BigDecimal sum = BigDecimal.ZERO;
     for (var l : lines) {
-      require(l.get("unit_price") != null, "先填写所有不含税单价");
+      require(
+          l.get("unit_price") != null,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0185"));
       sum = sum.add(((BigDecimal) l.get("quantity")).multiply((BigDecimal) l.get("unit_price")));
     }
-    require(sum.signum() > 0, "金额合计须大于零才能按金额分摊");
+    require(
+        sum.signum() > 0,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0186"));
     BigDecimal remaining = fee;
     for (int i = 0; i < lines.size(); i++) {
       var l = lines.get(i);

@@ -1,20 +1,15 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElTableColumn } from 'element-plus';
 import AppBusinessTable from './AppBusinessTable.vue';
 import { ref, watch, computed } from 'vue';
-import {
-  ElButton,
-  ElInput,
-  ElSelect,
-  ElOption,
-  ElRadioGroup,
-  ElRadioButton,
-  ElMessage,
-} from 'element-plus';
+import { ElButton, ElInput, ElSelect, ElOption, ElMessage } from 'element-plus';
 import type { RepairAttachment } from '../../api';
 import type { MaintenanceItem } from '../../maintenance';
 import { inspectionUpload } from '../../inspection';
 import AppDialog from './AppDialog.vue';
+import AcceptanceResultPicker from './AcceptanceResultPicker.vue';
+import { AcceptanceDecision, acceptanceOptions } from '../../config/acceptance';
 import MaintenanceAttachments from './MaintenanceAttachments.vue';
 const props = withDefaults(
   defineProps<{
@@ -30,39 +25,45 @@ const emit = defineEmits<{
   'update:modelValue': [boolean];
   submit: [
     {
-      decision: string;
+      decision: AcceptanceDecision;
       description: string;
       attachments: RepairAttachment[];
-      reviewItems: { id: string; decision: string; description: string }[];
+      reviewItems: { id: string; decision: AcceptanceDecision; description: string }[];
     },
   ];
 }>();
-const decision = ref('通过'),
+const decision = ref<AcceptanceDecision>(AcceptanceDecision.ACCEPT),
   description = ref(''),
   attachments = ref<RepairAttachment[]>([]),
-  reviews = ref<{ id: string; decision: string; description: string }[]>([]);
+  reviews = ref<{ id: string; decision: AcceptanceDecision; description: string }[]>([]);
 watch(
   () => props.modelValue,
   (open) => {
     if (open) {
-      decision.value = '通过';
+      decision.value = AcceptanceDecision.ACCEPT;
       description.value = '';
       attachments.value = [];
-      reviews.value = props.items.map((i) => ({ id: i.id, decision: '通过', description: '' }));
+      reviews.value = props.items.map((i) => ({
+        id: i.id,
+        decision: AcceptanceDecision.ACCEPT,
+        description: '',
+      }));
     }
   },
 );
 const rejection = computed(
-  () => decision.value === '打回' || reviews.value.some((r) => r.decision === '打回'),
+  () =>
+    decision.value === AcceptanceDecision.REJECT ||
+    reviews.value.some((r) => r.decision === AcceptanceDecision.REJECT),
 );
 function submit() {
   if (props.busy) return;
   if (rejection.value && !description.value.trim()) {
-    ElMessage.warning('打回时请填写说明');
+    ElMessage.warning(tr('ui.equipment.text1476'));
     return;
   }
   emit('submit', {
-    decision: rejection.value ? '打回' : '通过',
+    decision: rejection.value ? AcceptanceDecision.REJECT : AcceptanceDecision.ACCEPT,
     description: description.value,
     attachments: attachments.value,
     reviewItems: reviews.value,
@@ -75,18 +76,15 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 <template>
   <AppDialog
     :model-value="modelValue"
-    :title="count > 1 ? '审核（' + count + ' 条任务）' : '审核检查结果'"
+    :title="count > 1 ? tr('ui.equipment.text1477') + count + tr('ui.equipment.text1478') : tr('ui.equipment.text1479')"
     :width="itemReview ? '900px' : '560px'"
     :busy="busy"
     @update:model-value="emit('update:modelValue', $event)"
     ><div class="inspection-review-form" :inert="busy">
       <label
-        ><span>审核结果</span
-        ><ElRadioGroup v-model="decision"
-          ><ElRadioButton value="通过">通过</ElRadioButton
-          ><ElRadioButton value="打回">打回</ElRadioButton></ElRadioGroup
-        ></label
-      >
+        ><span>{{ tr('ui.equipment.text0453') }}</span
+        ><AcceptanceResultPicker v-model="decision" :disabled="busy" :aria-label="tr('ui.equipment.text0453')"
+      /></label>
       <div v-if="itemReview" class="inspection-picker-scroll">
         <AppBusinessTable
           :rows="reviews"
@@ -96,40 +94,44 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           class="business-table inspection-picker-table"
           ><!-- @vue-generic {TableColumnRow1} -->
           <ElTableColumn :min-width="210"
-            ><template #header><div class="table-header-label">项目名称</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0398') }}</div></template
             ><template #default="{ row: r, $index: index }">{{
               items[index]?.name
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow1} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">结果</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0454') }}</div></template
             ><template #default="{ row: r, $index: index }">
               <ElSelect v-model="r.decision"
-                ><ElOption value="通过" /><ElOption value="打回"
+                ><ElOption
+                  v-for="option in acceptanceOptions"
+                  :key="option.value"
+                  :value="option.value"
+                  :label="option.label"
               /></ElSelect> </template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow1} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">说明</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0177') }}</div></template
             ><template #default="{ row: r, $index: index }"
               ><ElInput v-model="r.description" /></template></ElTableColumn
         ></AppBusinessTable>
       </div>
       <label
-        ><span>说明</span
+        ><span>{{ tr('ui.equipment.text0177') }}</span
         ><ElInput
           v-model="description"
           type="textarea"
           :rows="4"
-          :placeholder="rejection ? '请说明需要修改的内容' : '填写审核说明'" /></label
+          :placeholder="rejection ? tr('ui.equipment.text1480') : tr('ui.equipment.text1481')" /></label
       ><label
-        ><span>附件</span
+        ><span>{{ tr('ui.equipment.text0222') }}</span
         ><MaintenanceAttachments v-model="attachments" :upload-file="inspectionUpload"
       /></label>
     </div>
     <template #footer
       ><div class="inspection-dialog-actions">
-        <ElButton :disabled="busy" @click="emit('update:modelValue', false)">取消</ElButton
-        ><ElButton type="primary" :loading="busy" @click="submit">提交</ElButton>
+        <ElButton :disabled="busy" @click="emit('update:modelValue', false)">{{ tr('ui.equipment.text0157') }}</ElButton
+        ><ElButton type="primary" :loading="busy" @click="submit">{{ tr('ui.equipment.text0253') }}</ElButton>
       </div></template
     ></AppDialog
   >

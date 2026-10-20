@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { computed } from 'vue';
 import { ElSelect, ElOption, ElDatePicker, ElFormItem } from 'element-plus';
 import {
@@ -22,7 +23,7 @@ const range = computed({
       <ElSelect
         :model-value="model.preset"
         :disabled="disabled"
-        aria-label="统计周期"
+        :aria-label="tr('ui.equipment.text1298')"
         @update:model-value="model = { preset: String($event) }"
         ><ElOption
           v-for="p in independent ? widgetPeriodOptions : periodOptions"

@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import { ElButton, ElForm } from 'element-plus';
 
 const cloneLayout = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -23,7 +24,7 @@ const defaultOverview = (): OverviewLayout => ({
     {
       id: 'template-work',
       type: 'work',
-      title: '我的工作',
+      get title(){return tr('ui.common.dynamic38');},
       column: 'main',
       width: 12,
       limit: 5,
@@ -51,7 +52,7 @@ async function load() {
     roles.value = (await homeApi.roles()).data;
     catalog.value = (await request<{ data: string[] }>('/home/catalog')).data;
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '模板加载失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text0254');
   } finally {
     busy.value = false;
   }
@@ -87,9 +88,9 @@ async function save() {
   try {
     current.value = (await homeApi.store(current.value)).data;
     markSaved();
-    ElMessage.success('模板草稿已保存');
+    ElMessage.success(tr('ui.equipment.text0255'));
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '保存失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0195'));
   } finally {
     busy.value = false;
   }
@@ -98,13 +99,13 @@ async function save() {
 async function publish() {
   if (!current.value?.id) return;
   if (dirty.value) {
-    ElMessage.warning('请先保存模板草稿再发布');
+    ElMessage.warning(tr('ui.equipment.text0256'));
     return;
   }
   try {
     await ElMessageBox.confirm('发布后供关联角色使用。已保存的个人布局会保留。', '发布首页模板', {
-      confirmButtonText: '发布',
-      cancelButtonText: '取消',
+      get confirmButtonText() { return tr('ui.equipment.text0257'); },
+      get cancelButtonText() { return tr('ui.equipment.text0157'); },
       closeOnClickModal: false,
     });
   } catch {
@@ -114,9 +115,9 @@ async function publish() {
   try {
     current.value = (await homeApi.publish(current.value)).data;
     markSaved();
-    ElMessage.success('已发布新版本');
+    ElMessage.success(tr('ui.equipment.text0258'));
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '发布失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0259'));
   } finally {
     busy.value = false;
   }
@@ -126,8 +127,8 @@ async function disable() {
   if (!current.value?.id) return;
   try {
     await ElMessageBox.confirm('停用后，使用者将回到其他适用首页。', '停用模板', {
-      confirmButtonText: '停用',
-      cancelButtonText: '取消',
+      get confirmButtonText() { return tr('ui.equipment.text0260'); },
+      get cancelButtonText() { return tr('ui.equipment.text0157'); },
       closeOnClickModal: false,
     });
   } catch {
@@ -139,7 +140,7 @@ async function disable() {
     current.value = undefined;
     markSaved();
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '停用失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0261'));
   } finally {
     busy.value = false;
   }
@@ -155,9 +156,9 @@ onMounted(load);
   <section class="home-template-page">
     <aside class="template-library">
       <header>
-        <strong>首页模板</strong
+        <strong>{{ tr('ui.equipment.text0034') }}</strong
         ><ElButton v-if="auth.can('homeTemplate', '新增')" @click="create()" type="primary"
-          ><AppIcon name="Plus" />新增
+          ><AppIcon name="Plus" />{{ tr('ui.equipment.text0149') }}
         </ElButton>
       </header>
       <p v-if="error" role="alert">{{ error }}</p>
@@ -173,14 +174,14 @@ onMounted(load);
           <p>
             {{
               Number(t.enabled) === 0
-                ? '已停用'
+                ? tr('ui.equipment.text0262')
                 : t.published_version
-                  ? '已发布 V' + t.published_version
-                  : '草稿'
+                  ? tr('ui.equipment.text0263') + t.published_version
+                  : tr('ui.equipment.text0264')
             }}
-            · {{ (t.overviewDraft?.blocks || t.draft.blocks).length }} 个区块
+            · {{ (t.overviewDraft?.blocks || t.draft.blocks).length }} {{ tr('ui.equipment.text0265') }}
           </p>
-          <span>{{ t.roleIds.length }} 个适用角色</span></ElButton
+          <span>{{ t.roleIds.length }} {{ tr('ui.equipment.text0266') }}</span></ElButton
         >
       </div>
     </aside>
@@ -189,17 +190,17 @@ onMounted(load);
         <header class="template-editor-heading">
           <div>
             <h2>{{ current.name }}</h2>
-            <p>设计内容、拖拽位置、预览后发布。</p>
+            <p>{{ tr('ui.equipment.text0267') }}</p>
           </div>
           <div>
-            <ElButton @click="preview = !preview">{{ preview ? '继续设计' : '预览' }}</ElButton
-            ><ElButton v-if="auth.can('homeTemplate', '新增')" @click="create(true)"> 复制</ElButton
+            <ElButton @click="preview = !preview">{{ preview ? tr('ui.equipment.text0268') : tr('ui.equipment.text0269') }}</ElButton
+            ><ElButton v-if="auth.can('homeTemplate', '新增')" @click="create(true)"> {{ tr('ui.equipment.text0270') }}</ElButton
             ><ElButton
               v-if="auth.can('homeTemplate', '停用') && current.id"
               class=""
               @click="disable"
             >
-              停用
+              {{ tr('ui.equipment.text0260') }}
             </ElButton>
           </div>
         </header>
@@ -210,21 +211,21 @@ onMounted(load);
           class="template-properties"
           @submit.prevent
         >
-          <AppFormField label="模板名称" prop="name"
+          <AppFormField :label="tr('ui.equipment.text0271')" prop="name"
             ><ElInput v-model="current.name" maxlength="100"
           /></AppFormField>
-          <AppFormField label="适用角色" prop="roleIds"
+          <AppFormField :label="tr('ui.equipment.text0272')" prop="roleIds"
             ><ElSelect v-model="current.roleIds" multiple collapse-tags collapse-tags-tooltip
               ><ElOption v-for="r in roles" :key="r.id" :value="r.id" :label="r.name" /></ElSelect
           ></AppFormField>
-          <AppFormField label="默认优先级" prop="priority"
+          <AppFormField :label="tr('ui.equipment.text0273')" prop="priority"
             ><ElInputNumber
               v-model="current.priority"
               :min="0"
               :max="10000"
               controls-position="right"
           /></AppFormField>
-          <p>数值越小越优先；未分配角色的模板不会向用户提供。</p>
+          <p>{{ tr('ui.equipment.text0274') }}</p>
         </ElForm>
         <OverviewTemplateDesigner
           v-if="current.overviewDraft"
@@ -237,7 +238,7 @@ onMounted(load);
         />
       </div>
       <AppFormFooter
-        ><ElButton :disabled="busy" @click="cancel">取消</ElButton
+        ><ElButton :disabled="busy" @click="cancel">{{ tr('ui.equipment.text0157') }}</ElButton
         ><ElButton
           v-if="auth.can('homeTemplate', current.id ? '编辑' : '新增')"
           class=""
@@ -245,7 +246,7 @@ onMounted(load);
           @click="save"
           type="primary"
         >
-          保存草稿</ElButton
+          {{ tr('ui.equipment.text0275') }}</ElButton
         ><ElButton
           v-if="auth.can('homeTemplate', '发布') && current.id"
           class=""
@@ -253,11 +254,11 @@ onMounted(load);
           @click="publish"
           type="primary"
         >
-          发布
+          {{ tr('ui.equipment.text0257') }}
         </ElButton></AppFormFooter
       >
     </main>
-    <main v-else class="template-empty">选择一个模板，或新增首页模板。</main>
+    <main v-else class="template-empty">{{ tr('ui.equipment.text0276') }}</main>
   </section>
 </template>
 <style scoped>

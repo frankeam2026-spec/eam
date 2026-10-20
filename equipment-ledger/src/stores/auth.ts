@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import * as api from '../api';
@@ -22,7 +23,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null;
     grantedActions.value = {};
     authState.value = 'login';
-    authMessage.value = '登录已过期，请重新登录';
+    authMessage.value = tr('ui.equipment.text1812');
   }
   async function load(force = false) {
     if (pending) return pending;
@@ -44,7 +45,7 @@ export const useAuthStore = defineStore('auth', () => {
         authState.value =
           error instanceof api.ApiError && error.status === 401 ? 'login' : 'unavailable';
         authMessage.value =
-          authState.value === 'unavailable' ? '服务暂时无法连接，请检查后端服务' : '';
+          authState.value === 'unavailable' ? tr('ui.equipment.text1813') : '';
       }
     })().finally(() => {
       pending = undefined;

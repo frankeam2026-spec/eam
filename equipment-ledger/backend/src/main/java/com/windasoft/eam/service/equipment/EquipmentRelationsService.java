@@ -41,25 +41,28 @@ public class EquipmentRelationsService {
         .forEach(
             id -> {
               var rows = repository.lockCompany(auth.tenantId(), id);
-              if (rows.isEmpty()) throw new IllegalArgumentException("所属公司不存在");
+              if (rows.isEmpty())
+                throw new com.windasoft.eam.common.LocalizedArgumentException(
+                    "server.equipment.message0010");
             });
   }
 
   Equipment device(long id) {
     var e = repository.find(auth.tenantId(), id);
-    if (e == null) throw new IllegalArgumentException("设备不存在");
+    if (e == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
     return e;
   }
 
   public void checkMove(Equipment old, Equipment target) {
     if (!Objects.equals(old.getCompanyOrgId(), target.getCompanyOrgId())
         && repository.relationshipCount(auth.tenantId(), old.getId()) > 0)
-      throw new IllegalArgumentException("设备存在上下级关联，请先解除关联后变更公司");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0011");
   }
 
   public void checkDelete(long id) {
     if (repository.relationshipCount(auth.tenantId(), id) > 0)
-      throw new IllegalArgumentException("设备存在上下级关联，请先移除关联再删除");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0012");
   }
 
   public void cleanup(long id) {
@@ -95,7 +98,9 @@ public class EquipmentRelationsService {
         var rows = repository.parents(auth.tenantId(), next);
         if (rows.isEmpty()) break;
         next = ((Number) rows.getFirst().get("parent_id")).longValue();
-        if (!excluded.add(next)) throw new IllegalArgumentException("设备结构异常");
+        if (!excluded.add(next))
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.equipment.message0013");
       }
     }
     var result =
@@ -158,7 +163,7 @@ public class EquipmentRelationsService {
   List<JsonNode> nodes(JsonNode data) {
     if (data == null || data.isNull()) return List.of();
     if (!data.isArray() || data.size() > 1000)
-      throw new IllegalArgumentException("关联明细格式不正确，单次最多1000行");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0014");
     var out = new ArrayList<JsonNode>();
     data.forEach(out::add);
     return out;
@@ -170,7 +175,7 @@ public class EquipmentRelationsService {
       if (id <= 0) throw new NumberFormatException();
       return id;
     } catch (Exception ex) {
-      throw new IllegalArgumentException("请选择有效的关联记录");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0024");
     }
   }
 
@@ -184,14 +189,19 @@ public class EquipmentRelationsService {
           current.stream()
               .filter(r -> ((Number) r.get("source_index")).intValue() == index)
               .findFirst();
-      if (match.isEmpty()) throw new IllegalArgumentException("历史关联不存在，请刷新");
+      if (match.isEmpty())
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0015");
       try {
         var snapshot = json.readTree(match.get().get("snapshot_json").toString());
         var submitted = ((ObjectNode) n).deepCopy();
         submitted.remove(List.of("legacy", "legacyIndex", "legacyReason"));
-        if (!submitted.equals(snapshot)) throw new IllegalArgumentException("历史关联请移除后重新选择，不能手工修改");
+        if (!submitted.equals(snapshot))
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.equipment.message0016");
       } catch (java.io.IOException ex) {
-        throw new IllegalArgumentException("历史关联格式无效");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0017");
       }
       retained.add(index);
     }
@@ -209,21 +219,29 @@ public class EquipmentRelationsService {
     for (var n : childNodes) {
       if (n.path("legacy").asBoolean()) continue;
       long id = id(n, "equipmentId");
-      if (!childIds.add(id)) throw new IllegalArgumentException("子设备不能重复添加");
-      if (id == parent.getId()) throw new IllegalArgumentException("不能将设备自身作为子设备");
+      if (!childIds.add(id))
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0018");
+      if (id == parent.getId())
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0019");
       var child = device(id);
       permissions.checkEquipment(child, "查看");
       permissions.checkEquipment(child, "编辑");
       if (!Objects.equals(parent.getCompanyOrgId(), child.getCompanyOrgId()))
-        throw new IllegalArgumentException("子设备必须属于同一公司");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0020");
       var current = repository.parents(auth.tenantId(), id);
       if (!current.isEmpty()
           && ((Number) current.getFirst().get("parent_id")).longValue() != parent.getId())
-        throw new IllegalArgumentException("所选设备已属于其他父设备，请先解除原关联");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0021");
       Long ancestor = parent.getId();
       var seen = new HashSet<Long>();
       while (ancestor != null) {
-        if (ancestor == id || !seen.add(ancestor)) throw new IllegalArgumentException("不能建立循环设备结构");
+        if (ancestor == id || !seen.add(ancestor))
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.equipment.message0022");
         var rows = repository.parents(auth.tenantId(), ancestor);
         ancestor = rows.isEmpty() ? null : ((Number) rows.getFirst().get("parent_id")).longValue();
       }
@@ -235,13 +253,18 @@ public class EquipmentRelationsService {
       int lineIndex = index++;
       if (n.path("legacy").asBoolean()) continue;
       long id = id(n, "materialId");
-      if (!materialIds.add(id)) throw new IllegalArgumentException("设备BOM不能重复添加同一物料");
+      if (!materialIds.add(id))
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0023");
       var rows = repository.lockMaterial(auth.tenantId(), id);
-      if (rows.isEmpty()) throw new IllegalArgumentException("所选物料不存在");
+      if (rows.isEmpty())
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0024");
       var m = rows.getFirst();
       boolean existing = repository.bomCount(auth.tenantId(), parent.getId(), id) > 0;
       if (((Number) m.get("enabled")).intValue() != 1 && !existing)
-        throw new IllegalArgumentException("不能添加停用物料");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0025");
       BigDecimal qty;
       String field = "relatedSpares." + lineIndex + ".quantity";
       try {
@@ -271,20 +294,25 @@ public class EquipmentRelationsService {
       var m = materials.get(i);
       repository.addBom(auth.tenantId(), parent.getId(), m, i);
     }
-    // Compatibility snapshots for read-only integrations; canonical relationships live in dedicated
-    // tables.
-    repository.updateSnapshots(
-        auth.tenantId(),
-        parent.getId(),
-        write(children(parent.getId())),
-        write(bom(parent.getId())));
   }
 
-  String write(Object o) {
-    try {
-      return json.writeValueAsString(o);
-    } catch (Exception e) {
-      throw new IllegalArgumentException("关联数据无法保存");
+  /** Import-only append: all child IDs are newly inserted in the same locked transaction. */
+  public void appendImportedChildren(Map<Equipment, List<Equipment>> groups) {
+    if (!org.springframework.transaction.support.TransactionSynchronizationManager
+        .isActualTransactionActive()) throw new IllegalStateException("设备关系必须在事务中执行");
+    for (var entry : groups.entrySet()) {
+      var parent = entry.getKey();
+      int sort = repository.children(auth.tenantId(), parent.getId()).size();
+      for (var child : entry.getValue()) {
+        if (parent.getId().equals(child.getId())
+            || !Objects.equals(parent.getCompanyOrgId(), child.getCompanyOrgId()))
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.equipment.message0026");
+        if (!repository.parents(auth.tenantId(), child.getId()).isEmpty())
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.equipment.message0027");
+        repository.addChild(auth.tenantId(), parent.getId(), child.getId(), sort++);
+      }
     }
   }
 

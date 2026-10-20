@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { tr } from '../../i18n';
+
 import { ElButton } from 'element-plus';
 import AppIcon from './AppIcon.vue';
 withDefaults(defineProps<{ label?: string; disabled?: boolean }>(), {
-  label: '返回',
+  label: '',
   disabled: false,
 });
 </script>
@@ -10,8 +12,8 @@ withDefaults(defineProps<{ label?: string; disabled?: boolean }>(), {
   <ElButton
     class="app-back-button"
     native-type="button"
-    :aria-label="label"
-    :title="label"
+    :aria-label="label || tr('ui.equipment.text0208')"
+    :title="label || tr('ui.equipment.text0208')"
     :disabled="disabled"
   >
     <span aria-hidden="true"><AppIcon name="Left" /></span>

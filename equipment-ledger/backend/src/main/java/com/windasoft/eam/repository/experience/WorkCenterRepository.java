@@ -30,8 +30,8 @@ public class WorkCenterRepository {
     return db.queryForList(
         "SELECT d.creator_id FROM "
             + (module.equals("maintenance")
-                ? "eam_maintenance_task t JOIN eam_maintenance_definition d"
-                : "eam_inspection_task t JOIN eam_inspection_definition d")
+                ? "v_maintenance_task t JOIN v_maintenance_definition d"
+                : "v_inspection_task t JOIN v_inspection_definition d")
             + " ON d.tenant_id=t.tenant_id AND d.id=t.plan_id WHERE t.tenant_id=? AND t.id=?",
         tenantId,
         id);

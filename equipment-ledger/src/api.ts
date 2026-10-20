@@ -1,4 +1,6 @@
-export type EquipmentRecord = {
+import { tr } from './i18n';
+import { currentLocale } from './i18n';
+export type EquipmentRecord = import('./businessConfig').CustomRecord & {
   id: string;
   code: string;
   name: string;
@@ -88,6 +90,7 @@ export type BaseRecord = {
   name: string;
   parentId: string;
   precision?: number;
+  builtin?: boolean;
   status: string;
   sortNo?: number;
 };
@@ -99,7 +102,11 @@ export type RepairAttachment = {
   url: string;
   dataUrl?: string;
 };
-export type RepairRecord = {
+export type RepairRecord = import('./businessConfig').CustomRecord & {
+  equipmentCategoryId?: string;
+  faultTypeId?: string;
+  faultCauseId?: string;
+  processingResultId?: string;
   faultCause?: string;
   repairMethod?: string;
   processingResult?: string;
@@ -171,27 +178,36 @@ export class ApiError extends Error {
     message: string,
     public status: number,
     public fieldErrors: Record<string, string> = {},
+    public code: string = 'REQUEST_ERROR',
   ) {
     super(message);
   }
 }
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(root + path, {
-    ...init,
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
-  });
-  const payload = await response.json().catch(() => ({}));
+async function checkedResponse(path: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  headers.set('Accept-Language', currentLocale.value);
+  if (!(init?.body instanceof FormData) && !headers.has('Content-Type'))
+    headers.set('Content-Type', 'application/json');
+  const response = await fetch(root + path, { ...init, credentials: 'same-origin', headers });
   if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
     if (response.status === 401 && path !== '/auth/me' && path !== '/auth/login')
       window.dispatchEvent(new Event('eam-session-expired'));
     throw new ApiError(
       payload.message || '请求失败 (' + response.status + ')',
       response.status,
       payload.fieldErrors || {},
+      payload.code || 'REQUEST_ERROR',
     );
   }
-  return payload as T;
+  return response;
+}
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await checkedResponse(path, init);
+  return response.json().catch(() => ({})) as Promise<T>;
+}
+export async function requestFile(path: string, init?: RequestInit): Promise<Blob> {
+  return (await checkedResponse(path, init)).blob();
 }
 export async function listEquipment(params: Record<string, string | number | undefined>) {
   const search = new URLSearchParams();
@@ -205,6 +221,8 @@ export async function listEquipment(params: Record<string, string | number | und
 }
 export async function saveEquipment(form: EquipmentRecord, isNew: boolean) {
   const body = {
+    customFields: form.customFields,
+    customSchemaVersion: form.customSchemaVersion,
     code: form.code?.trim() || '',
     name: form.name,
     category: form.category,
@@ -280,16 +298,16 @@ export async function listRepairs(params: Record<string, string | number | undef
 }
 export async function saveRepair(form: RepairRecord, isNew: boolean) {
   const body = {
+    customFields: form.customFields,
+    customSchemaVersion: form.customSchemaVersion,
     equipmentCode: form.equipmentCode,
     equipmentName: form.equipmentName,
     department: form.department,
-    faultType: form.faultType,
+    faultTypeId: form.faultTypeId || null,
     severity: form.severity,
     description: form.description,
     reporter: form.reporter,
     assignee: form.assignee,
-    repairAction: form.repairAction,
-    downtimeMinutes: form.downtimeMinutes,
     attachments: form.attachments || [],
   };
   return request<{ data: RepairRecord }>(
@@ -321,10 +339,10 @@ export async function transitionRepair(
 export async function uploadRepairFile(file: File) {
   const form = new FormData();
   form.append('file', file);
-  const response = await fetch(root + '/repairs/attachments', { method: 'POST', body: form });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.message || '附件上传失败');
-  return payload as { data: RepairAttachment };
+  return request<{ data: RepairAttachment }>('/repairs/attachments', {
+    method: 'POST',
+    body: form,
+  });
 }
 const basePaths: Record<string, string> = {
   设备分类: 'categories',
@@ -388,9 +406,30 @@ export async function saveOrganization(item: Partial<OrganizationRecord>, isNew:
 export async function deleteOrganization(id: string) {
   return request('/system/organizations/' + id, { method: 'DELETE' });
 }
-export async function listSystemUsers() {
-  return request<{ data: SystemUserRecord[] }>('/system/users');
+export type UserListParameters = {
+  page: number;
+  size: number;
+  q: string;
+  conditions: string;
+  filters: string;
+  organization: string;
+};
+export async function querySystemUsers(parameters: UserListParameters) {
+  return request<{
+    data: SystemUserRecord[];
+    page: { number: number; size: number; total: number };
+  }>(
+    '/system/users?' +
+      new URLSearchParams(Object.entries(parameters).map(([key, value]) => [key, String(value)])),
+  );
 }
+export const systemUserSummary = () =>
+  request<{ roleCounts: Record<string, number> }>('/system/users/summary');
+export const exportSystemUsers = (parameters: UserListParameters) =>
+  request<{ data: SystemUserRecord[] }>(
+    '/system/users/export?' +
+      new URLSearchParams(Object.entries(parameters).map(([key, value]) => [key, String(value)])),
+  );
 export async function saveSystemUser(item: Partial<SystemUserRecord>, isNew: boolean) {
   const body = {
     account: item.account,
@@ -492,6 +531,20 @@ export function batchEquipment(
     body: JSON.stringify({ ids, operation, value, ownerIds }),
   });
 }
+export function equipmentOwnerCandidates(
+  q: string,
+  page: number,
+  size: number,
+  action: '新增' | '编辑',
+) {
+  return request<{
+    data: { id: string; name: string; account: string }[];
+    page: { number: number; size: number; total: number };
+  }>(
+    '/equipment/owner-candidates?' +
+      new URLSearchParams({ q, page: String(page), size: String(size), action }),
+  );
+}
 export function equipmentBatchOptions(action: '新增' | '编辑' = '编辑') {
   return request<{ departments: OrganizationRecord[]; users: SystemUserRecord[] }>(
     '/equipment/batch-options?action=' + encodeURIComponent(action),
@@ -546,13 +599,13 @@ export async function labelPdf(id: string, equipmentIds: string[], copies: numbe
   const r = await fetch(root + '/label-templates/' + id + '/pdf', {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Accept-Language': currentLocale.value, 'Content-Type': 'application/json' },
     body: JSON.stringify({ equipmentIds, copies }),
   });
   if (!r.ok) {
     const e = await r.json().catch(() => ({}));
     if (r.status === 401) window.dispatchEvent(new Event('eam-session-expired'));
-    throw new ApiError(e.message || 'PDF生成失败', r.status);
+    throw new ApiError(e.message || tr('ui.validation.message1'), r.status);
   }
   return r.blob();
 }
@@ -560,20 +613,20 @@ export async function labelPreview(template: LabelTemplate) {
   const r = await fetch(root + '/label-templates/preview', {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Accept-Language': currentLocale.value, 'Content-Type': 'application/json' },
     body: JSON.stringify(template),
   });
   if (!r.ok) {
     const e = await r.json().catch(() => ({}));
     if (r.status === 401) window.dispatchEvent(new Event('eam-session-expired'));
-    throw new ApiError(e.message || '预览生成失败', r.status);
+    throw new ApiError(e.message || tr('ui.validation.message2'), r.status);
   }
   return r.blob();
 }
 
 function requiredRowVersion(version: number | undefined): number {
   if (version === undefined || !Number.isInteger(version) || version < 0) {
-    throw new Error('缺少数据版本，请刷新后重试');
+    throw new Error(tr('ui.equipment.text0065'));
   }
   return version;
 }
@@ -583,13 +636,7 @@ export async function exportRepairs(params: Record<string, string | number | und
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== '') search.set(key, String(value));
   });
-  const response = await fetch(root + '/repairs/export?' + search, { credentials: 'same-origin' });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    if (response.status === 401) window.dispatchEvent(new Event('eam-session-expired'));
-    throw new ApiError(payload.message || '导出失败', response.status);
-  }
-  return response.blob();
+  return requestFile('/repairs/export?' + search);
 }
 
 export type DispatchUser = {
@@ -628,18 +675,20 @@ export type WorkflowEvent = {
   details: Record<string, unknown>;
 };
 export type WorkflowDetail = {
+  categoryId?: string;
   order: RepairRecord;
   model: string;
   candidates: { id: string; name: string; status: string }[];
   events: WorkflowEvent[];
   materials: MaterialRow[];
   installed: InstalledSpare[];
+  processingFields?: import('./businessConfig').CustomRecord;
   canClaim: boolean;
   canProcess: boolean;
   canAccept: boolean;
   canDispatch: boolean;
   canIssue: boolean;
-  results: string[];
+  results: { id: string; name: string; resolved: boolean }[];
 };
 export type InboxItem = {
   owner?: string;
@@ -727,10 +776,9 @@ export function listLocationCompanies() {
 export async function uploadEquipmentFile(file: File): Promise<RepairAttachment> {
   const data = new FormData();
   data.append('file', file);
-  const response = await fetch(root + '/equipment/files', { method: 'POST', body: data });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.message || '设备附件上传失败');
-  return payload.data;
+  return (
+    await request<{ data: RepairAttachment }>('/equipment/files', { method: 'POST', body: data })
+  ).data;
 }
 
 export function equipmentChildCandidates(
@@ -754,7 +802,7 @@ export function equipmentBomMaterials(q: string, page: number, size: number) {
   );
 }
 
-export type PersonalSettings = { theme: import('./stores/ui').Theme; roles: string[] };
+export type PersonalSettings = { locale: string; effectiveLocale: string; theme: import('./stores/ui').Theme; roles: string[] };
 export function getPersonalSettings() {
   return request<{ data: PersonalSettings }>('/auth/settings');
 }
@@ -763,4 +811,13 @@ export function savePersonalTheme(theme: import('./stores/ui').Theme) {
     method: 'PUT',
     body: JSON.stringify({ theme }),
   });
+}
+
+export const getEquipment = (id: string) => request<{ data: EquipmentRecord }>(`/equipment/${id}`);
+export async function exportEquipment(params: Record<string, string | number | undefined>) {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') search.set(key, String(value));
+  });
+  return requestFile('/equipment/export?' + search);
 }

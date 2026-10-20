@@ -64,10 +64,13 @@ public class Equipment {
   private String technicalParams;
   private String imageName;
   private String imageFileId;
+
+  @com.baomidou.mybatisplus.annotation.TableField(exist = false)
   private String imagesJson;
+
+  @com.baomidou.mybatisplus.annotation.TableField(exist = false)
   private String documentsJson;
-  private String childrenJson;
-  private String relatedSparesJson;
+
   private String description;
   @Version private Integer rowVersion;
   private Long createdBy;
@@ -75,4 +78,13 @@ public class Equipment {
   private LocalDateTime createdAt;
   private LocalDateTime updatedAt;
   @TableLogic private Integer deleted;
+
+  @TableField(exist = false)
+  private java.util.Map<String, Object> customFields;
+
+  @TableField(exist = false)
+  private java.util.Map<String, String> customFieldLabels;
+
+  @TableField(exist = false)
+  private Integer customSchemaVersion;
 }

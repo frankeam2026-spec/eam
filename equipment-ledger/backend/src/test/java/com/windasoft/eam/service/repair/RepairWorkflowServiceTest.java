@@ -46,10 +46,11 @@ class RepairWorkflowServiceTest {
                 orders,
                 mock(EquipmentMapper.class),
                 mock(SystemUserMapper.class),
-                mock(BaseItemMapper.class)),
+                mock(BaseItemMapper.class), com.windasoft.eam.support.RelationStubs.repair()),
             auth,
             permissions,
-            json);
+            json,
+            mock(com.windasoft.eam.service.basedata.BaseDataReferenceService.class));
     org.springframework.test.util.ReflectionTestUtils.setField(
         service,
         "experienceInventoryMutex",

@@ -1,9 +1,10 @@
+import { tr } from '../i18n';
 import { ElMessageBox } from 'element-plus';
-export async function confirmAction(message: string, title = '确认操作') {
+export async function confirmAction(message: string, title = tr('common.dialog.confirmTitle')) {
   try {
     await ElMessageBox.confirm(message, title, {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+      get confirmButtonText() { return tr('ui.equipment.text0402'); },
+      get cancelButtonText() { return tr('ui.equipment.text0157'); },
       type: 'warning',
       closeOnClickModal: false,
     });

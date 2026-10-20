@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr, enumLabel } from '../i18n';
+
 import AppListToolbar from './common/AppListToolbar.vue';
 import { ElTableColumn } from 'element-plus';
 import { ElSelect, ElOption, ElCheckbox } from 'element-plus';
@@ -45,11 +46,11 @@ const page = ref(1),
   pageSize = ref(20),
   collapsed = ref(new Set<string>());
 const columns = reactive([
-  { key: 'code', label: '位置编码', show: true },
-  { key: 'name', label: '位置名称', show: true },
-  { key: 'parent', label: '上级位置', show: true },
-  { key: 'status', label: '状态', show: true },
-  { key: 'sort', label: '排序', show: true },
+  { key: 'code', get label() { return tr('ui.equipment.text0712'); }, show: true },
+  { key: 'name', get label() { return tr('ui.equipment.text0713'); }, show: true },
+  { key: 'parent', get label() { return tr('ui.equipment.text0714'); }, show: true },
+  { key: 'status', get label() { return tr('ui.equipment.text0170'); }, show: true },
+  { key: 'sort', get label() { return tr('ui.equipment.text0406'); }, show: true },
 ]);
 const visibleColumns = computed(() => columns.filter((c) => c.show));
 const company = computed(() => companies.value.find((c) => c.id === companyId.value));
@@ -135,7 +136,7 @@ async function loadLocations() {
     const result = await api.listBase('存放地点', companyId.value);
     if (version === requestVersion) rows.value = result.data;
   } catch (e) {
-    if (version === requestVersion) error.value = e instanceof Error ? e.message : '位置加载失败';
+    if (version === requestVersion) error.value = e instanceof Error ? e.message : tr('ui.equipment.text0715');
   } finally {
     if (version === requestVersion) loading.value = false;
   }
@@ -153,7 +154,7 @@ onMounted(async () => {
       companies.value.find((c) => ['公司', '集团'].includes(c.type) && c.status === '启用')?.id ||
       '';
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '公司加载失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text0716');
   }
 });
 function chooseCompany(node: CompanyNode) {
@@ -218,7 +219,7 @@ function edit(row?: api.BaseRecord, parentId = '') {
 async function save() {
   if (saving.value) return;
   if (!form.name.trim()) {
-    formError.value = '请输入位置名称';
+    formError.value = tr('ui.equipment.text0717');
     return;
   }
   saving.value = true;
@@ -227,24 +228,24 @@ async function save() {
     await api.saveBase('存放地点', { ...form, status: enabled.value ? '启用' : '停用' }, !form.id);
     formGuard.markSaved();
     dialog.value = false;
-    ElMessage.success('位置已保存');
+    ElMessage.success(tr('ui.equipment.text0718'));
     await loadLocations();
     await base.load('存放地点');
   } catch (e) {
-    formError.value = e instanceof Error ? e.message : '保存失败';
+    formError.value = e instanceof Error ? e.message : tr('ui.equipment.text0195');
   } finally {
     saving.value = false;
   }
 }
 async function remove(row: api.BaseRecord) {
-  if (!(await confirmAction(`删除位置“${row.name}”？`))) return;
+  if (!(await confirmAction(tr('ui.common.dynamic44',{p0:row.name})))) return;
   try {
     await api.deleteBase('存放地点', row.id);
     await loadLocations();
     await base.load('存放地点');
-    ElMessage.success('位置已删除');
+    ElMessage.success(tr('ui.equipment.text0719'));
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '删除失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0278'));
   }
 }
 function reset() {
@@ -282,8 +283,8 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 <template>
   <section class="locations-page">
     <aside class="location-company-panel">
-      <div class="company-panel-heading">公司</div>
-      <ElInput v-model="companySearch" placeholder="搜索公司" clearable />
+      <div class="company-panel-heading">{{ tr('ui.equipment.text0561') }}</div>
+      <ElInput v-model="companySearch" :placeholder="tr('ui.equipment.text0720')" clearable />
       <ElTree
         :data="companyTree"
         :props="{ label: 'name', children: 'children' }"
@@ -300,7 +301,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           ></template
         >
       </ElTree>
-      <p v-if="!companyTree.length" class="location-empty">暂无公司</p>
+      <p v-if="!companyTree.length" class="location-empty">{{ tr('ui.equipment.text0721') }}</p>
     </aside>
     <div class="location-content">
       <AppListToolbar class="location-toolbar">
@@ -310,8 +311,8 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             type="primary"
             :disabled="!companyId || company?.status === '停用'"
             @click="edit()"
-            ><AppIcon name="Plus" /> 新增</ElButton
-          ><span class="selected-company">{{ company?.name || '请选择公司' }}</span>
+            ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}</ElButton
+          ><span class="selected-company">{{ company?.name || tr('ui.equipment.text0722') }}</span>
         </div>
         <form class="location-search" @submit.prevent="search = query.trim()">
           <ListToolbarIcons
@@ -319,16 +320,16 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             :filter-open="filterOpen"
             :columns-open="false"
             @toggle-filter="filterOpen = !filterOpen"
-          /><ListSearchInput v-model="query" placeholder="搜索位置名称、编码" /><ElButton
+          /><ListSearchInput v-model="query" :placeholder="tr('ui.equipment.text0723')" /><ElButton
             @click="reset"
-            >重置</ElButton
+            >{{ tr('ui.equipment.text0204') }}</ElButton
           >
         </form>
       </AppListToolbar>
       <div class="location-table-card">
         <div class="location-table-scroll">
           <p v-if="error" class="location-error">
-            {{ error }} <ElButton text @click="loadLocations">重试</ElButton>
+            {{ error }} <ElButton text @click="loadLocations">{{ tr('ui.equipment.text0299') }}</ElButton>
           </p>
           <AppBusinessTable
             :rows="pageRows"
@@ -352,11 +353,11 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                     v-if="c.key === 'code' || c.key === 'name'"
                     v-model="filters[c.key]"
                     clearable
-                    placeholder="筛选"
+                    :placeholder="tr('ui.equipment.text0301')"
                   /><ElSelect v-if="c.key === 'status'" v-model="filters.status"
-                    ><ElOption value="" :label="'全部'" /><ElOption
+                    ><ElOption value="" :label="tr('ui.equipment.text0300')" /><ElOption
                       :value="'启用'"
-                      :label="'启用'" /><ElOption :value="'停用'" :label="'停用'"
+                      :label="tr('ui.equipment.text0216')" /><ElOption :value="'停用'" :label="tr('ui.equipment.text0260')"
                   /></ElSelect></div></template
               ><template #default="{ row: r, $index: tableRowIndex }">
                 <template v-if="c.key === 'name'"
@@ -364,7 +365,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                     <ElButton
                       class="location-expand"
                       :disabled="!r.hasChildren"
-                      :aria-label="collapsed.has(r.id) ? '展开' : '收起'"
+                      :aria-label="collapsed.has(r.id) ? tr('ui.equipment.text0724') : tr('ui.equipment.text0725')"
                       @click="toggle(r.id)"
                       ><AppIcon
                         :name="
@@ -380,7 +381,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                   v-else-if="c.key === 'status'"
                   class="location-status"
                   :class="{ disabled: r.status === '停用' }"
-                  >{{ r.status }}</span
+                  >{{ enumLabel('status', r.status) }}</span
                 ><template v-else-if="c.key === 'sort'">{{ r.sortNo }}</template
                 ><template v-else>{{ r.code }}</template>
               </template></ElTableColumn
@@ -391,12 +392,12 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               :width="170"
               :min-width="156"
               :resizable="false"
-              ><template #header><div class="table-header-label">操作</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
               ><template #default="{ row: r, $index: tableRowIndex }">
                 <div class="location-actions">
                   <ElButton link type="primary" v-if="can('新增')" @click="edit(undefined, r.id)"
-                    >新增下级</ElButton
-                  ><ElButton link type="primary" v-if="can('编辑')" @click="edit(r)">编辑</ElButton
+                    >{{ tr('ui.equipment.text0726') }}</ElButton
+                  ><ElButton link type="primary" v-if="can('编辑')" @click="edit(r)">{{ tr('ui.equipment.text0207') }}</ElButton
                   ><RowMoreActions
                     v-if="can('删除') && can('新增') && can('编辑')"
                     :actions="[{ label: '删除', danger: true, run: () => remove(r) }]"
@@ -406,7 +407,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                     @click="remove(r)"
                     type="danger"
                     link
-                    >删除</ElButton
+                    >{{ tr('ui.equipment.text0146') }}</ElButton
                   >
                 </div>
               </template></ElTableColumn
@@ -414,17 +415,17 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               ><div v-if="!pageRows.length">
                 {{
                   loading
-                    ? '正在加载…'
+                    ? tr('ui.equipment.text0162')
                     : companyId
-                      ? '暂无位置，可新增车间、区域或工位'
-                      : '请先在左侧选择公司'
+                      ? tr('ui.equipment.text0727')
+                      : tr('ui.equipment.text0728')
                 }}
               </div></template
             ></AppBusinessTable
           >
         </div>
         <footer class="location-footer">
-          <span>共 {{ matching.length }} 条</span
+          <span>{{ tr('ui.equipment.text0309') }} {{ matching.length }} {{ tr('ui.equipment.text0296') }}</span
           ><AppPagination
             v-model:page="page"
             v-model:page-size="pageSize"
@@ -451,40 +452,40 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
     </div>
     <ElDialog
       v-model="dialog"
-      :title="form.id ? '编辑位置' : '新增位置'"
+      :title="form.id ? tr('ui.equipment.text0729') : tr('ui.equipment.text0730')"
       width="580px"
       :close-on-click-modal="false"
       :close-on-press-escape="false"
       :before-close="closeDialog"
     >
       <form class="location-form" :inert="saving || undefined" @submit.prevent="save">
-        <label><span>所属公司</span><ElInput :model-value="company?.name" disabled /></label
+        <label><span>{{ tr('ui.equipment.text0487') }}</span><ElInput :model-value="company?.name" disabled /></label
         ><label
-          ><span>位置编码</span
-          ><ElInput v-model="form.code" maxlength="40" placeholder="不填写则自动生成" /></label
+          ><span>{{ tr('ui.equipment.text0712') }}</span
+          ><ElInput v-model="form.code" maxlength="40" :placeholder="tr('ui.equipment.text0731')" /></label
         ><label
-          ><span><b>*</b> 位置名称</span
-          ><ElInput v-model="form.name" maxlength="100" placeholder="请输入位置名称" /></label
+          ><span><b>*</b> {{ tr('ui.equipment.text0713') }}</span
+          ><ElInput v-model="form.name" maxlength="100" :placeholder="tr('ui.equipment.text0717')" /></label
         ><label
-          ><span>上级位置</span
+          ><span>{{ tr('ui.equipment.text0714') }}</span
           ><TreeSelect
             v-model="form.parentId"
             :nodes="parentNodes"
-            placeholder="不选则作为一级位置" /></label
+            :placeholder="tr('ui.equipment.text0732')" /></label
         ><label
-          ><span>排序</span
+          ><span>{{ tr('ui.equipment.text0406') }}</span
           ><ElInputNumber
             v-model="form.sortNo"
             :min="0"
             :max="999999"
             controls-position="right" /></label
-        ><label><span>启用</span><ElSwitch v-model="enabled" /></label>
+        ><label><span>{{ tr('ui.equipment.text0216') }}</span><ElSwitch v-model="enabled" /></label>
         <p v-if="formError" class="location-error">{{ formError }}</p>
       </form>
       <template #footer
         ><div class="location-dialog-buttons">
-          <ElButton :disabled="saving" @click="closeDialog()">取消</ElButton
-          ><ElButton type="primary" :loading="saving" @click="save">保存</ElButton>
+          <ElButton :disabled="saving" @click="closeDialog()">{{ tr('ui.equipment.text0157') }}</ElButton
+          ><ElButton type="primary" :loading="saving" @click="save">{{ tr('ui.equipment.text0159') }}</ElButton>
         </div></template
       >
     </ElDialog>

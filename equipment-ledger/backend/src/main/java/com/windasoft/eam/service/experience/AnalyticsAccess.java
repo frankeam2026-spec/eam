@@ -45,7 +45,9 @@ public class AnalyticsAccess {
     if (!permissions.menuActions().getOrDefault("workspace", Set.of()).contains("查看")
         || !available(metric)) deny();
     if (scope.equals("team")) permissions.require("workspace", "团队工作查看");
-    else if (!scope.equals("personal")) throw new IllegalArgumentException("统计数据范围无效");
+    else if (!scope.equals("personal"))
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.experience.message0011");
   }
 
   public boolean exportable(AnalyticsCatalog.Metric metric) {
@@ -124,6 +126,7 @@ public class AnalyticsAccess {
   }
 
   public static void deny() {
-    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "没有该统计或数据范围的权限");
+    throw new com.windasoft.eam.common.LocalizedStatusException(
+        HttpStatus.FORBIDDEN, "server.experience.message0012");
   }
 }

@@ -16,7 +16,8 @@ public final class UsageCost {
     if (issuedQuantity.signum() <= 0
         || quantity.signum() <= 0
         || quantity.compareTo(unusedQuantity) > 0
-        || remainingAmount.signum() < 0) throw new IllegalArgumentException("用料数量或剩余成本无效");
+        || remainingAmount.signum() < 0)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0015");
     return quantity.compareTo(unusedQuantity) == 0
         ? remainingAmount
         : issuedAmount

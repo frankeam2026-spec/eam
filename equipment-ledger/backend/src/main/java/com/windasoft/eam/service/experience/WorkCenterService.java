@@ -188,7 +188,7 @@ public class WorkCenterService {
                                 .startsWith(LocalDate.now(ZoneId.of("Asia/Shanghai")).toString())
                             : state.equals("active")
                                 ? Set.of("处理中", "执行中", "挂起").contains(r.get("status"))
-                                : !Set.of("已完成", "已撤销", "已作废", "已取消").contains(r.get("status")))
+                                : !Set.of("已完成", "已撤销", "已作废", "已免检", "已取消").contains(r.get("status")))
             .filter(
                 r ->
                     search.isBlank()
@@ -350,7 +350,7 @@ public class WorkCenterService {
       var counts = new LinkedHashMap<String, Integer>();
       var names = new LinkedHashMap<String, String>();
       for (var t : taskRows)
-        if (!Set.of("已完成", "已撤销", "已作废", "已关闭").contains(t.get("status"))) {
+        if (!Set.of("已完成", "已撤销", "已作废", "已免检", "已关闭").contains(t.get("status"))) {
           String key = text(t, "ownerId").isBlank() ? "unassigned" : text(t, "ownerId");
           names.put(key, text(t, "owner").isBlank() ? "尚未接单" : text(t, "owner"));
           counts.merge(key, 1, Integer::sum);

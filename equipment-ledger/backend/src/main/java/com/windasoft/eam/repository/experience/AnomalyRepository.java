@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class AnomalyRepository {
   private final JdbcTemplate db;
+  private final com.windasoft.eam.repository.common.AttachmentRelationsRepository attachments;
   private final EquipmentMapper equipment;
   private final NumberCounterMapper numbers;
 
@@ -26,10 +27,14 @@ public class AnomalyRepository {
   }
 
   public AnomalyRepository(
-      JdbcTemplate db, EquipmentMapper equipment, NumberCounterMapper numbers) {
+      JdbcTemplate db,
+      EquipmentMapper equipment,
+      NumberCounterMapper numbers,
+      com.windasoft.eam.repository.common.AttachmentRelationsRepository attachments) {
     this.db = db;
     this.equipment = equipment;
     this.numbers = numbers;
+    this.attachments = attachments;
   }
 
   public int insertEvent(
@@ -57,8 +62,7 @@ public class AnomalyRepository {
 
   public Map<String, Object> loadAnomalyState(long tenantId, Object id) {
     return db.queryForMap(
-        "SELECT status,discovered_by,description FROM eam_equipment_anomaly WHERE tenant_id=?"
-            + " AND id=?",
+        "SELECT status,discovered_by,description FROM v_anomaly WHERE tenant_id=?" + " AND id=?",
         tenantId,
         id);
   }
@@ -74,7 +78,7 @@ public class AnomalyRepository {
 
   public Map<String, Object> loadPlanState(long tenantId, Object id) {
     return db.queryForMap(
-        "SELECT status,owner_id,description FROM eam_single_repair_plan WHERE tenant_id=? AND"
+        "SELECT status,owner_id,description FROM v_single_repair_plan WHERE tenant_id=? AND"
             + " id=?",
         tenantId,
         id);
@@ -99,31 +103,38 @@ public class AnomalyRepository {
       Object label,
       Object value,
       Object value8) {
-    return db.update(
-        "INSERT IGNORE INTO"
-            + " eam_experience_inbox(id,tenant_id,object_kind,object_id,user_id,kind,title,is_todo)"
-            + " VALUES(?,?,?,?,?,?,?,?)",
-        recordId,
+    int count =
+        db.update(
+            "INSERT IGNORE INTO"
+                + " eam_experience_inbox(id,tenant_id,object_kind,object_id,user_id,kind,title,is_todo)"
+                + " VALUES(?,?,?,?,?,?,?,?)",
+            recordId,
+            tenantId,
+            kind,
+            id,
+            user,
+            label,
+            value,
+            value8);
+    db.update(
+        "UPDATE eam_experience_inbox SET message_key=?,message_args=? WHERE tenant_id=? AND id=?",
+        com.windasoft.eam.common.NotificationMessages.key(label),
+        com.windasoft.eam.common.NotificationMessages.arguments(label, value),
         tenantId,
-        kind,
-        id,
-        user,
-        label,
-        value,
-        value8);
+        recordId);
+    return count;
   }
 
   public List<Map<String, Object>> loadAnomaly(long tenantId, Object id, boolean lock) {
     return db.queryForList(
-        "SELECT * FROM eam_equipment_anomaly WHERE tenant_id=? AND id=?"
-            + (lock ? " FOR UPDATE" : ""),
+        "SELECT * FROM v_anomaly WHERE tenant_id=? AND id=?" + (lock ? " FOR UPDATE" : ""),
         tenantId,
         id);
   }
 
   public List<Map<String, Object>> searchAnomalies(long tenant, Long equipmentId) {
     return db.queryForList(
-        "SELECT * FROM eam_equipment_anomaly WHERE tenant_id=?"
+        "SELECT * FROM v_anomaly WHERE tenant_id=?"
             + (equipmentId == null ? "" : " AND equipment_id=?")
             + " ORDER BY discovered_at DESC,id DESC",
         equipmentId == null ? new Object[] {tenant} : new Object[] {tenant, equipmentId});
@@ -131,14 +142,14 @@ public class AnomalyRepository {
 
   public Map<String, Object> findMaintenanceEquipment(long tenantId, Object task) {
     return db.queryForMap(
-        "SELECT equipment_id FROM eam_maintenance_task WHERE tenant_id=? AND" + " id=?",
+        "SELECT equipment_id FROM v_maintenance_task WHERE tenant_id=? AND" + " id=?",
         tenantId,
         task);
   }
 
   public List<Map<String, Object>> sourceAnomalies(long tenant, String kind, long task) {
     return db.queryForList(
-        "SELECT * FROM eam_equipment_anomaly WHERE tenant_id=? AND "
+        "SELECT * FROM v_anomaly WHERE tenant_id=? AND "
             + (kind.equals("维修") ? "repair_id=?" : "source_kind=? AND source_task_id=?")
             + " ORDER BY discovered_at,id",
         kind.equals("维修") ? new Object[] {tenant, task} : new Object[] {tenant, kind, task});
@@ -164,7 +175,7 @@ public class AnomalyRepository {
 
   public Map<String, Object> findCaptureEquipment(long tenantId, Object taskId) {
     return db.queryForMap(
-        "SELECT equipment_id FROM eam_maintenance_task WHERE tenant_id=? AND" + " id=?",
+        "SELECT equipment_id FROM v_maintenance_task WHERE tenant_id=? AND" + " id=?",
         tenantId,
         taskId);
   }
@@ -193,29 +204,36 @@ public class AnomalyRepository {
       long userId,
       Object value12,
       Object value13) {
-    return db.update(
-        "INSERT INTO"
-            + " eam_equipment_anomaly(id,tenant_id,code,equipment_id,source_kind,source_task_id,source_item_id,description,severity,attachments,discovered_by,discovered_name,discovered_at)"
-            + " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        aid,
-        tenantId,
-        value,
-        eqId,
-        kind,
-        value6,
-        value7,
-        description,
-        severity,
-        payload,
-        userId,
-        value12,
-        value13);
+    int changed =
+        db.update(
+            "INSERT INTO"
+                + " eam_equipment_anomaly(id,tenant_id,code,equipment_id,source_kind,source_task_id,source_item_id,description,severity,discovered_by,discovered_name,discovered_at)"
+                + " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            aid,
+            tenantId,
+            value,
+            eqId,
+            kind,
+            value6,
+            value7,
+            description,
+            severity,
+            userId,
+            value12,
+            value13);
+    if (changed > 0)
+      attachments.save(
+          com.windasoft.eam.repository.common.AttachmentRelationsRepository.Kind.ANOMALY,
+          tenantId,
+          Long.parseLong(aid.toString()),
+          payload);
+    return changed;
   }
 
   public Map<String, Object> findAnomalyBySource(
       long tenantId, Object kind, Object taskId, Object eqId, Object itemId) {
     return db.queryForMap(
-        "SELECT id FROM eam_equipment_anomaly WHERE tenant_id=? AND source_kind=? AND"
+        "SELECT id FROM v_anomaly WHERE tenant_id=? AND source_kind=? AND"
             + " source_task_id=? AND equipment_id=? AND source_item_id=?",
         tenantId,
         kind,
@@ -225,11 +243,12 @@ public class AnomalyRepository {
   }
 
   public int updateEvidence(String payload, long tenantId, Object aid) {
-    return db.update(
-        "UPDATE eam_equipment_anomaly SET attachments=? WHERE tenant_id=? AND id=?",
-        payload,
+    attachments.save(
+        com.windasoft.eam.repository.common.AttachmentRelationsRepository.Kind.ANOMALY,
         tenantId,
-        aid);
+        Long.parseLong(aid.toString()),
+        payload);
+    return 1;
   }
 
   public int resolveAnomaly(Object value, Object reason, Object value3, long tenantId, Object aid) {
@@ -255,14 +274,12 @@ public class AnomalyRepository {
 
   public List<Map<String, Object>> listPlanAnomalies(long tenantId, Object id) {
     return db.queryForList(
-        "SELECT * FROM eam_equipment_anomaly WHERE tenant_id=? AND" + " plan_id=? ORDER BY id",
-        tenantId,
-        id);
+        "SELECT * FROM v_anomaly WHERE tenant_id=? AND" + " plan_id=? ORDER BY id", tenantId, id);
   }
 
   public List<Map<String, Object>> lockRepairAnomalies(long tenantId, Object value) {
     return db.queryForList(
-        "SELECT * FROM eam_equipment_anomaly WHERE tenant_id=? AND repair_id=? AND status NOT"
+        "SELECT * FROM v_anomaly WHERE tenant_id=? AND repair_id=? AND status NOT"
             + " IN ('已消除','已作废') ORDER BY id FOR UPDATE",
         tenantId,
         value);
@@ -302,7 +319,7 @@ public class AnomalyRepository {
 
   public Map<String, Object> findBackfillEquipment(long tenantId, Object task) {
     return db.queryForMap(
-        "SELECT equipment_id FROM eam_maintenance_task WHERE tenant_id=? AND" + " id=?",
+        "SELECT equipment_id FROM v_maintenance_task WHERE tenant_id=? AND" + " id=?",
         tenantId,
         task);
   }
@@ -323,30 +340,37 @@ public class AnomalyRepository {
       Object resolved,
       Object value14,
       Object resolved15) {
-    return db.update(
-        "INSERT IGNORE INTO"
-            + " eam_equipment_anomaly(id,tenant_id,code,equipment_id,source_kind,source_task_id,source_item_id,description,attachments,discovered_by,discovered_name,discovered_at,status,resolution,resolved_at)"
-            + " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        aid,
-        tenantId,
-        value,
-        eid,
-        kind,
-        task,
-        key,
-        value8,
-        payload,
-        discoveredBy,
-        discoveredName,
-        discoveredAt,
-        resolved,
-        value14,
-        resolved15);
+    int changed =
+        db.update(
+            "INSERT IGNORE INTO"
+                + " eam_equipment_anomaly(id,tenant_id,code,equipment_id,source_kind,source_task_id,source_item_id,description,discovered_by,discovered_name,discovered_at,status,resolution,resolved_at)"
+                + " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            aid,
+            tenantId,
+            value,
+            eid,
+            kind,
+            task,
+            key,
+            value8,
+            discoveredBy,
+            discoveredName,
+            discoveredAt,
+            resolved,
+            value14,
+            resolved15);
+    if (changed > 0)
+      attachments.save(
+          com.windasoft.eam.repository.common.AttachmentRelationsRepository.Kind.ANOMALY,
+          tenantId,
+          Long.parseLong(aid.toString()),
+          payload);
+    return changed;
   }
 
   public List<Map<String, Object>> loadPlan(long tenantId, Object id, boolean lock) {
     return db.queryForList(
-        "SELECT * FROM eam_single_repair_plan WHERE tenant_id=? AND id=?"
+        "SELECT * FROM v_single_repair_plan WHERE tenant_id=? AND id=?"
             + (lock ? " FOR UPDATE" : ""),
         tenantId,
         id);
@@ -354,7 +378,7 @@ public class AnomalyRepository {
 
   public int countPersonalPlans(long tenantId, long userId, long userId3) {
     return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_single_repair_plan WHERE tenant_id=? AND (owner_id=? OR"
+        "SELECT COUNT(*) FROM v_single_repair_plan WHERE tenant_id=? AND (owner_id=? OR"
             + " creator_id=?)",
         Integer.class,
         tenantId,
@@ -364,20 +388,19 @@ public class AnomalyRepository {
 
   public List<Map<String, Object>> listPlans(long tenantId) {
     return db.queryForList(
-        "SELECT * FROM eam_single_repair_plan WHERE tenant_id=? ORDER BY planned_at,id", tenantId);
+        "SELECT * FROM v_single_repair_plan WHERE tenant_id=? ORDER BY planned_at,id", tenantId);
   }
 
   public List<Map<String, Object>> listPlanAnomalyIds(long tenantId, Object id) {
     return db.queryForList(
-        "SELECT CAST(id AS CHAR) id FROM eam_equipment_anomaly WHERE tenant_id=? AND"
-            + " plan_id=?",
+        "SELECT CAST(id AS CHAR) id FROM v_anomaly WHERE tenant_id=? AND" + " plan_id=?",
         tenantId,
         id);
   }
 
   public List<Map<String, Object>> lockGenerationFailure(long tenantId, Object plan) {
     return db.queryForList(
-        "SELECT owner_id,generation_error FROM eam_single_repair_plan WHERE tenant_id=? AND"
+        "SELECT owner_id,generation_error FROM v_single_repair_plan WHERE tenant_id=? AND"
             + " id=? AND status='待生成' FOR UPDATE",
         tenantId,
         plan);
@@ -404,16 +427,24 @@ public class AnomalyRepository {
 
   public int insertFailureNotice(
       long recordId, long tenantId, Object plan, Object ownerId, Object value) {
-    return db.update(
-        "INSERT INTO"
-            + " eam_experience_inbox(id,tenant_id,object_kind,object_id,user_id,kind,title,is_todo)"
-            + " VALUES(?,?,'repairPlan',?,?,'生成失败',?,0) ON DUPLICATE KEY UPDATE"
-            + " title=VALUES(title),read_at=NULL",
-        recordId,
+    int count =
+        db.update(
+            "INSERT INTO"
+                + " eam_experience_inbox(id,tenant_id,object_kind,object_id,user_id,kind,title,is_todo)"
+                + " VALUES(?,?,'repairPlan',?,?,'生成失败',?,0) ON DUPLICATE KEY UPDATE"
+                + " title=VALUES(title),read_at=NULL",
+            recordId,
+            tenantId,
+            plan,
+            ownerId,
+            value);
+    db.update(
+        "UPDATE eam_experience_inbox SET message_key=?,message_args=? WHERE tenant_id=? AND id=?",
+        com.windasoft.eam.common.NotificationMessages.key("生成失败"),
+        com.windasoft.eam.common.NotificationMessages.arguments("生成失败", value),
         tenantId,
-        plan,
-        ownerId,
-        value);
+        recordId);
+    return count;
   }
 
   public int countActiveUser(long tenantId, Object owner) {
@@ -438,8 +469,8 @@ public class AnomalyRepository {
       Object severity) {
     return db.update(
         "INSERT INTO"
-            + " eam_single_repair_plan(id,tenant_id,code,equipment_id,description,planned_at,owner_id,creator_id,fault_type,severity,attachments)"
-            + " VALUES(?,?,?,?,?,?,?,?,?,?,JSON_ARRAY())",
+            + " eam_single_repair_plan(id,tenant_id,code,equipment_id,description,planned_at,owner_id,creator_id,fault_type,severity)"
+            + " VALUES(?,?,?,?,?,?,?,?,?,?)",
         pid,
         tenantId,
         value,
@@ -473,10 +504,17 @@ public class AnomalyRepository {
         pid);
   }
 
+  public void setPlanFaultTypeId(long tenant, long id, long type) {
+    db.update(
+        "UPDATE eam_single_repair_plan SET fault_type_id=? WHERE tenant_id=? AND id=?",
+        type,
+        tenant,
+        id);
+  }
+
   public List<Map<String, Object>> lockPlanAnomalyIds(long tenantId, Object pid) {
     return db.queryForList(
-        "SELECT id FROM eam_equipment_anomaly WHERE tenant_id=? AND plan_id=? ORDER BY id FOR"
-            + " UPDATE",
+        "SELECT id FROM v_anomaly WHERE tenant_id=? AND plan_id=? ORDER BY id FOR" + " UPDATE",
         tenantId,
         pid);
   }
@@ -508,7 +546,7 @@ public class AnomalyRepository {
 
   public List<Map<String, Object>> lockCancelledAnomalies(long tenantId, Object pid) {
     return db.queryForList(
-        "SELECT id FROM eam_equipment_anomaly WHERE tenant_id=? AND plan_id=? AND repair_id"
+        "SELECT id FROM v_anomaly WHERE tenant_id=? AND plan_id=? AND repair_id"
             + " IS NULL ORDER BY id FOR UPDATE",
         tenantId,
         pid);
@@ -542,7 +580,7 @@ public class AnomalyRepository {
 
   public List<Map<String, Object>> lockPendingAnomalies(long tenantId, Object pid) {
     return db.queryForList(
-        "SELECT id FROM eam_equipment_anomaly WHERE tenant_id=? AND plan_id=? AND repair_id IS"
+        "SELECT id FROM v_anomaly WHERE tenant_id=? AND plan_id=? AND repair_id IS"
             + " NULL ORDER BY id FOR UPDATE",
         tenantId,
         pid);

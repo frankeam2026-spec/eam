@@ -18,7 +18,7 @@ public class RepairPlanScheduleRepository {
 
   public List<Map<String, Object>> generationTargets() {
     return db.queryForList(
-        "SELECT id,tenant_id,creator_id FROM eam_single_repair_plan WHERE status='待生成' AND"
+        "SELECT id,tenant_id,creator_id FROM v_single_repair_plan WHERE status='待生成' AND"
             + " planned_at<=NOW(3) ORDER BY planned_at,id LIMIT 100");
   }
 

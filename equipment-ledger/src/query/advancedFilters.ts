@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 import type { TreeSelectNode } from '../components/TreeSelect.vue';
 export type FilterCondition = {
   field: string;
@@ -5,6 +6,7 @@ export type FilterCondition = {
   values: string[];
   /** UI selection only; values contains the deduplicated query scope, including descendants. */
   selectedNodeIds?: string[];
+  valueLabels?: Record<string, string>;
 };
 export type FilterField = {
   key: string;
@@ -13,6 +15,12 @@ export type FilterField = {
   dateOnly?: boolean;
   pathValue?: boolean;
   options?: string[];
+  optionLabels?: Record<string, string>;
+  businessSource?: {
+    object: import('../businessConfig').BusinessObject;
+    source: string;
+    department?: boolean;
+  };
   nodes?: TreeSelectNode[];
 };
 export type FilterTreeOption = {
@@ -57,7 +65,12 @@ const operators: Record<FilterField['type'], string> = {
 export function filterDraft(field: FilterField, existing?: FilterCondition): FilterCondition {
   const values =
     existing && !['empty', 'notEmpty'].includes(existing.operator) ? [...existing.values] : [];
-  const result: FilterCondition = { field: field.key, operator: operators[field.type], values };
+  const result: FilterCondition = {
+    field: field.key,
+    operator: operators[field.type],
+    values,
+    ...(existing?.valueLabels ? { valueLabels: { ...existing.valueLabels } } : {}),
+  };
   if (field.type === 'tree') {
     const options = flattenFilterTree(filterTreeOptions(field));
     const selected =
@@ -87,7 +100,7 @@ export function prepareFilter(field: FilterField, draft: FilterCondition): Filte
 export function filterError(field: FilterField, condition: FilterCondition): string {
   const [lower, upper] = condition.values;
   if (field.type === 'number' && condition.values.some((v) => v && !Number.isFinite(Number(v))))
-    return '请输入有效数值';
+    return tr('ui.validation.message32');
   if (
     condition.operator === 'range' &&
     lower &&
@@ -112,7 +125,7 @@ export function conditionLabel(condition: FilterCondition, fields: FilterField[]
     return `${label}：${lower && upper ? `${lower} 至 ${upper}` : lower ? `≥ ${lower}` : `≤ ${upper}`}`;
   }
   const prefix: Record<string, string> = { contains: '包含 ', empty: '为空', notEmpty: '不为空' };
-  return `${label}：${prefix[condition.operator] ?? ''}${condition.values.join('、')}`;
+  return `${label}：${prefix[condition.operator] ?? ''}${condition.values.map((v) => condition.valueLabels?.[v] ?? field?.optionLabels?.[v] ?? v).join('、') + (field?.businessSource?.department ? '（含下级）' : '')}`;
 }
 
 /** Filters already-authorized collections used by the local list modules. */

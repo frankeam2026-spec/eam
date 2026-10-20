@@ -1,10 +1,12 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElButton } from 'element-plus';
 
 import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { request } from '../../api';
 import type { HomeBlock } from '../../home';
+import MaintenanceStatus from './MaintenanceStatus.vue';
 import AppIcon from './AppIcon.vue';
 import { formatDateTime } from '../../utils/dateTime';
 const props = defineProps<{ block: HomeBlock; editing?: boolean; compact?: boolean }>();
@@ -29,7 +31,7 @@ async function load() {
     });
     if (seq === revision) data.value = result;
   } catch (e) {
-    if (seq === revision) error.value = e instanceof Error ? e.message : '加载失败';
+    if (seq === revision) error.value = e instanceof Error ? e.message : tr('ui.equipment.text0160');
   } finally {
     if (seq === revision) loading.value = false;
   }
@@ -38,10 +40,10 @@ watch(() => JSON.stringify(props.block), load, { immediate: true });
 </script>
 <template>
   <div class="home-widget-content" :class="{ 'compact-widget': compact }" :aria-busy="loading">
-    <p v-if="loading" class="widget-state">正在加载…</p>
+    <p v-if="loading" class="widget-state">{{ tr('ui.equipment.text0162') }}</p>
     <div v-else-if="error" class="widget-state error" role="alert">
       {{ error }}
-      <ElButton class="" @click="load"><AppIcon name="Refresh" />重试</ElButton>
+      <ElButton class="" @click="load"><AppIcon name="Refresh" />{{ tr('ui.equipment.text0299') }}</ElButton>
     </div>
     <template v-else>
       <div v-if="data.counts" class="widget-stats">
@@ -49,13 +51,13 @@ watch(() => JSON.stringify(props.block), load, { immediate: true });
           <span>{{ label }}</span
           ><strong>{{ count }}</strong>
         </div>
-        <p v-if="!Object.keys(data.counts).length">暂无任务</p>
+        <p v-if="!Object.keys(data.counts).length">{{ tr('ui.equipment.text1425') }}</p>
       </div>
       <div v-else-if="block.type === 'shortcuts'" class="widget-shortcuts">
         <ElButton v-for="row in data.data" :key="row.id" @click="!editing && router.push(row.url)"
           ><AppIcon name="Right" />{{ row.name }}</ElButton
         >
-        <p v-if="!data.data.length">暂无授权入口</p>
+        <p v-if="!data.data.length">{{ tr('ui.equipment.text1426') }}</p>
       </div>
       <div v-else class="widget-list">
         <ElButton
@@ -70,11 +72,10 @@ watch(() => JSON.stringify(props.block), load, { immediate: true });
               ><strong :title="String(row.name || row.materialName || '')">{{
                 row.name || row.materialName
               }}</strong
-              ><span v-if="row.count !== undefined" class="load-value">{{ row.count }} 项</span>
+              ><span v-if="row.count !== undefined" class="load-value">{{ row.count }} {{ tr('ui.equipment.text0394') }}</span>
             </div>
             <p v-if="row.status || row.due || row.time || row.remaining">
-              <span v-if="row.status" class="widget-status">{{ row.status }}</span
-              ><span
+              <MaintenanceStatus v-if="row.status" :status="row.status" /><span
                 class="widget-time"
                 :title="
                   row.due ? formatDateTime(row.due) : row.time ? formatDateTime(row.time) : ''
@@ -92,12 +93,12 @@ watch(() => JSON.stringify(props.block), load, { immediate: true });
             </p>
           </div></ElButton
         >
-        <p v-if="!data.data.length" class="widget-state">暂无相关事项</p>
+        <p v-if="!data.data.length" class="widget-state">{{ tr('ui.equipment.text1427') }}</p>
       </div>
       <footer v-if="data.url">
-        <span>共 {{ data.total }} 项</span
+        <span>{{ tr('ui.equipment.text0309') }} {{ data.total }} {{ tr('ui.equipment.text0394') }}</span
         ><ElButton :disabled="editing" @click="router.push(data.url)">
-          查看全部<AppIcon name="Right"
+          {{ tr('ui.equipment.text0892') }}<AppIcon name="Right"
         /></ElButton>
       </footer>
     </template>
@@ -198,15 +199,6 @@ watch(() => JSON.stringify(props.block), load, { immediate: true });
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.widget-status {
-  text-align: center;
-  white-space: nowrap;
-  font-size: 12px;
-  background: var(--brand-soft);
-  color: var(--brand);
-  border-radius: 4px;
-  padding: 2px 6px;
 }
 .widget-shortcuts {
   display: grid;

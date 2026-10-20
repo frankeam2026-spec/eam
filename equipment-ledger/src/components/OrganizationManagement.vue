@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr, enumLabel } from '../i18n';
+
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 import {
   ElAlert,
@@ -120,7 +121,7 @@ async function loadOrganizations() {
     tree.value?.setCurrentKey(selectedId.value);
   } catch (error) {
     if (version === requestVersion)
-      loadError.value = error instanceof Error ? error.message : '组织架构加载失败';
+      loadError.value = error instanceof Error ? error.message : tr('ui.equipment.text0897');
   } finally {
     if (version === requestVersion) loading.value = false;
   }
@@ -177,26 +178,26 @@ const parentRequired = computed(
   () => form.type === '部门' || !!(root.value && root.value.id !== form.id),
 );
 const rules: FormRules<OrganizationRecord> = {
-  name: [{ required: true, whitespace: true, message: '请输入组织名称', trigger: 'blur' }],
+  name: [{ required: true, whitespace: true, get message() { return tr('ui.equipment.text0898'); }, trigger: 'blur' }],
   code: [
-    { required: true, whitespace: true, message: '请输入组织编码', trigger: 'blur' },
+    { required: true, whitespace: true, get message() { return tr('ui.equipment.text0899'); }, trigger: 'blur' },
     {
       validator: (_rule, value, done) =>
         done(
           orgs.value.some((item) => item.id !== form.id && item.code === String(value).trim())
-            ? new Error('组织编码已存在')
+            ? new Error(tr('ui.equipment.text0900'))
             : undefined,
         ),
       trigger: 'blur',
     },
   ],
-  type: [{ required: true, message: '请选择组织类型', trigger: 'change' }],
+  type: [{ required: true, get message() { return tr('ui.equipment.text0901'); }, trigger: 'change' }],
   parentId: [
     {
       validator: (_rule, value, done) => {
-        if (!value && parentRequired.value) done(new Error('请选择上级组织'));
+        if (!value && parentRequired.value) done(new Error(tr('ui.equipment.text0902')));
         else if (value && !orgs.value.some((item) => item.id === value && parentAllowed(item)))
-          done(new Error('请选择符合层级的启用组织'));
+          done(new Error(tr('ui.equipment.text0903')));
         else done();
       },
       trigger: 'change',
@@ -265,10 +266,10 @@ async function save() {
     dialog.value = false;
     await nextTick();
     selectOrg(result);
-    ElMessage.success('已保存');
+    ElMessage.success(tr('ui.equipment.text0194'));
     if (props.apiReady) window.dispatchEvent(new Event('eam-permissions-changed'));
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '保存失败');
+    ElMessage.error(error instanceof Error ? error.message : tr('ui.equipment.text0195'));
   } finally {
     saving.value = false;
   }
@@ -277,10 +278,10 @@ async function removeSelected() {
   const item = selected.value;
   if (!item || !can('删除') || removing.value) return;
   if (children.value.length) {
-    ElMessage.error('请先移除下级组织');
+    ElMessage.error(tr('ui.equipment.text0904'));
     return;
   }
-  if (!(await confirmAction(`确认删除“${item.name}”？`))) return;
+  if (!(await confirmAction(tr('ui.common.dynamic50',{p0:item.name})))) return;
   removing.value = true;
   try {
     if (props.apiReady) await api.deleteOrganization(item.id);
@@ -288,16 +289,16 @@ async function removeSelected() {
       const users: api.SystemUserRecord[] = JSON.parse(
         localStorage.getItem('eam-users-v1') || '[]',
       );
-      if (users.some((user) => user.orgId === item.id)) throw new Error('该组织仍有用户，不能删除');
+      if (users.some((user) => user.orgId === item.id)) throw new Error(tr('ui.equipment.text0905'));
     }
     orgs.value = orgs.value.filter((row) => row.id !== item.id);
     if (!props.apiReady) localStorage.setItem('eam-orgs-v1', JSON.stringify(orgs.value));
     selectedId.value = byId.value.has(item.parentId) ? item.parentId : orgs.value[0]?.id || '';
     tree.value?.setCurrentKey(selectedId.value);
-    ElMessage.success('已删除');
+    ElMessage.success(tr('ui.equipment.text0906'));
     if (props.apiReady) window.dispatchEvent(new Event('eam-permissions-changed'));
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '删除失败');
+    ElMessage.error(error instanceof Error ? error.message : tr('ui.equipment.text0278'));
   } finally {
     removing.value = false;
   }
@@ -312,34 +313,34 @@ async function removeSelected() {
         type="primary"
         :disabled="loading || !!loadError"
         @click="openEditor()"
-        ><AppIcon name="Plus" />新增组织</ElButton
+        ><AppIcon name="Plus" />{{ tr('ui.equipment.text0907') }}</ElButton
       >
       <div class="organization-tools">
         <ElInput
           v-model="search"
-          placeholder="搜索组织名称、编码、负责人"
+          :placeholder="tr('ui.equipment.text0908')"
           clearable
-          aria-label="搜索组织"
+          :aria-label="tr('ui.equipment.text0909')"
           ><template #prefix><AppIcon name="Search" /></template
         ></ElInput>
         <ElButton :loading="loading" @click="loadOrganizations"
-          ><AppIcon name="Refresh" />刷新</ElButton
+          ><AppIcon name="Refresh" />{{ tr('ui.equipment.text0424') }}</ElButton
         >
       </div>
     </AppListToolbar>
     <ElAlert v-if="loadError" :title="loadError" type="error" show-icon :closable="false"
-      ><ElButton text type="primary" @click="loadOrganizations">重新加载</ElButton></ElAlert
+      ><ElButton text type="primary" @click="loadOrganizations">{{ tr('ui.equipment.text0910') }}</ElButton></ElAlert
     >
     <ElSkeleton v-else-if="loading" :rows="8" animated class="organization-loading" />
     <div v-else class="organization-layout">
       <section class="organization-panel tree-panel">
         <div class="organization-panel-header">
           <strong
-            >组织架构<span class="organization-count">{{ orgs.length }}</span></strong
+            >{{ tr('ui.equipment.text0036') }}<span class="organization-count">{{ orgs.length }}</span></strong
           >
           <div class="organization-actions">
-            <ElButton text @click="expandAll(true)">展开</ElButton
-            ><ElButton text @click="expandAll(false)">收起</ElButton>
+            <ElButton text @click="expandAll(true)">{{ tr('ui.equipment.text0724') }}</ElButton
+            ><ElButton text @click="expandAll(false)">{{ tr('ui.equipment.text0725') }}</ElButton>
           </div>
         </div>
         <div class="organization-tree-scroll">
@@ -354,7 +355,7 @@ async function removeSelected() {
             :filter-node-method="filterNode"
             :expand-on-click-node="false"
             highlight-current
-            empty-text="暂无匹配组织"
+            :empty-text="tr('ui.equipment.text0911')"
             @node-click="selectOrg"
             @node-expand="rememberExpanded"
             @node-collapse="rememberCollapsed"
@@ -365,7 +366,7 @@ async function removeSelected() {
                   class="organization-node-name"
                   :title="data.name"
                   >{{ data.name }}</span
-                ><ElTag v-if="data.status === '停用'" type="info" size="small">停用</ElTag
+                ><ElTag v-if="data.status === '停用'" type="info" size="small">{{ tr('ui.equipment.text0260') }}</ElTag
                 ><span class="organization-node-code" :title="data.code">{{
                   data.code
                 }}</span></span
@@ -388,31 +389,31 @@ async function removeSelected() {
           </div>
           <div class="organization-detail-actions">
             <ElButton v-if="can('新增')" @click="openEditor()"
-              ><AppIcon name="Plus" />新增下级</ElButton
-            ><ElButton v-if="can('编辑')" @click="openEditor(selected)">编辑</ElButton
+              ><AppIcon name="Plus" />{{ tr('ui.equipment.text0726') }}</ElButton
+            ><ElButton v-if="can('编辑')" @click="openEditor(selected)">{{ tr('ui.equipment.text0207') }}</ElButton
             ><ElButton
               v-if="can('删除')"
               type="danger"
               plain
               :loading="removing"
               @click="removeSelected"
-              >删除</ElButton
+              >{{ tr('ui.equipment.text0146') }}</ElButton
             >
           </div>
           <div class="organization-detail-scroll">
             <ElDescriptions :column="1" border label-width="96px">
-              <ElDescriptionsItem label="组织类型">{{ selected.type }}</ElDescriptionsItem>
-              <ElDescriptionsItem label="上级组织">{{
-                byId.get(selected.parentId)?.name || (selected.parentId ? '' : '无（根公司）')
+              <ElDescriptionsItem :label="tr('ui.equipment.text0912')">{{ selected.type }}</ElDescriptionsItem>
+              <ElDescriptionsItem :label="tr('ui.equipment.text0913')">{{
+                byId.get(selected.parentId)?.name || (selected.parentId ? '' : tr('ui.equipment.text0914'))
               }}</ElDescriptionsItem>
-              <ElDescriptionsItem label="组织路径"
+              <ElDescriptionsItem :label="tr('ui.equipment.text0915')"
                 ><span class="organization-path">{{ selectedPath }}</span></ElDescriptionsItem
               >
-              <ElDescriptionsItem label="负责人">{{ selected.manager }}</ElDescriptionsItem>
-              <ElDescriptionsItem label="直属下级">{{ children.length }} 个</ElDescriptionsItem>
+              <ElDescriptionsItem :label="tr('ui.equipment.text0102')">{{ selected.manager }}</ElDescriptionsItem>
+              <ElDescriptionsItem :label="tr('ui.equipment.text0916')">{{ children.length }} {{ tr('ui.equipment.text0917') }}</ElDescriptionsItem>
             </ElDescriptions>
             <div class="organization-children-heading">
-              <strong>直属下级</strong><span>{{ children.length }} 个</span>
+              <strong>{{ tr('ui.equipment.text0916') }}</strong><span>{{ children.length }} {{ tr('ui.equipment.text0917') }}</span>
             </div>
             <AppBusinessTable
               v-if="children.length"
@@ -423,24 +424,24 @@ async function removeSelected() {
               :max-height="280"
               @row-click="selectOrg"
             >
-              <ElTableColumn prop="name" label="组织名称" min-width="160" show-overflow-tooltip
+              <ElTableColumn prop="name" :label="tr('ui.equipment.text0918')" min-width="160" show-overflow-tooltip
                 ><template #default="{ row }"
                   ><ElButton type="primary" link @click.stop="selectOrg(byId.get(row.id)!)">{{
                     row.name
                   }}</ElButton></template
                 ></ElTableColumn
               >
-              <ElTableColumn prop="code" label="组织编码" min-width="100" show-overflow-tooltip />
-              <ElTableColumn prop="type" label="类型" width="75" />
-              <ElTableColumn prop="status" label="状态" width="80" align="center"
+              <ElTableColumn prop="code" :label="tr('ui.equipment.text0919')" min-width="100" show-overflow-tooltip />
+              <ElTableColumn prop="type" :label="tr('ui.equipment.text0142')" width="75" />
+              <ElTableColumn :formatter="(_row:unknown,_column:unknown,value:unknown)=>enumLabel('status',value)" prop="status" :label="tr('ui.equipment.text0170')" width="80" align="center"
                 ><template #default="{ row }"
                   ><ElTag :type="row.status === '启用' ? 'success' : 'info'" size="small">{{
-                    row.status
+                    enumLabel('status',row.status)
                   }}</ElTag></template
                 ></ElTableColumn
               >
             </AppBusinessTable>
-            <p v-else class="organization-empty-note">暂无直属下级组织</p>
+            <p v-else class="organization-empty-note">{{ tr('ui.equipment.text0920') }}</p>
           </div>
         </template>
         <ElEmpty v-else description="选择左侧组织查看详情" :image-size="72" />
@@ -448,7 +449,7 @@ async function removeSelected() {
     </div>
     <AppDialog
       v-model="dialog"
-      :title="editing ? '编辑组织' : '新增组织'"
+      :title="editing ? tr('ui.equipment.text0921') : tr('ui.equipment.text0907')"
       :busy="saving"
       :before-close="guard.permitLeave"
     >
@@ -461,11 +462,11 @@ async function removeSelected() {
         :disabled="saving"
         @submit.prevent="save"
       >
-        <AppFormField label="组织类型" prop="type"
+        <AppFormField :label="tr('ui.equipment.text0912')" prop="type"
           ><ElSelect v-model="form.type"
-            ><ElOption v-for="type in types" :key="type" :label="type" :value="type" /></ElSelect
+            ><ElOption v-for="type in types" :key="type" :label="enumLabel('systemOption', type)" :value="type" /></ElSelect
         ></AppFormField>
-        <AppFormField label="上级组织" prop="parentId" :required="parentRequired"
+        <AppFormField :label="tr('ui.equipment.text0913')" prop="parentId" :required="parentRequired"
           ><ElTreeSelect
             v-model="form.parentId"
             :data="parentNodes"
@@ -475,25 +476,25 @@ async function removeSelected() {
             filterable
             clearable
             :render-after-expand="false"
-            :placeholder="parentRequired ? '请选择上级组织' : '无（根公司）'"
+            :placeholder="parentRequired ? tr('ui.equipment.text0902') : tr('ui.equipment.text0914')"
         /></AppFormField>
-        <AppFormField label="组织名称" prop="name"
-          ><ElInput v-model="form.name" placeholder="请输入组织名称"
+        <AppFormField :label="tr('ui.equipment.text0918')" prop="name"
+          ><ElInput v-model="form.name" :placeholder="tr('ui.equipment.text0898')"
         /></AppFormField>
-        <AppFormField label="组织编码" prop="code"
-          ><ElInput v-model="form.code" placeholder="请输入唯一编码"
+        <AppFormField :label="tr('ui.equipment.text0919')" prop="code"
+          ><ElInput v-model="form.code" :placeholder="tr('ui.equipment.text0922')"
         /></AppFormField>
-        <AppFormField label="负责人" prop="manager"
-          ><ElInput v-model="form.manager" placeholder="请输入负责人"
+        <AppFormField :label="tr('ui.equipment.text0102')" prop="manager"
+          ><ElInput v-model="form.manager" :placeholder="tr('ui.equipment.text0923')"
         /></AppFormField>
-        <AppFormField label="状态" prop="status"
+        <AppFormField :label="tr('ui.equipment.text0170')" prop="status"
           ><ElSelect v-model="form.status"
-            ><ElOption label="启用" value="启用" /><ElOption label="停用" value="停用" /></ElSelect
+            ><ElOption :label="tr('ui.equipment.text0216')" value="启用" /><ElOption :label="tr('ui.equipment.text0260')" value="停用" /></ElSelect
         ></AppFormField>
       </ElForm>
       <template #footer
-        ><ElButton :disabled="saving" @click="closeEditor">取消</ElButton
-        ><ElButton type="primary" :loading="saving" @click="save">保存</ElButton></template
+        ><ElButton :disabled="saving" @click="closeEditor">{{ tr('ui.equipment.text0157') }}</ElButton
+        ><ElButton type="primary" :loading="saving" @click="save">{{ tr('ui.equipment.text0159') }}</ElButton></template
       >
     </AppDialog>
   </section>

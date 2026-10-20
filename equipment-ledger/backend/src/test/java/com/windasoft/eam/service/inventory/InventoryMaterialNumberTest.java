@@ -26,7 +26,8 @@ class InventoryMaterialNumberTest {
             new InventoryMasterRepository(db, counter),
             auth,
             mock(PermissionService.class),
-            new ObjectMapper());
+            new ObjectMapper(),
+            mock(com.windasoft.eam.service.basedata.BaseDataReferenceService.class));
     assertEquals("WL00001", service.number("materials"));
     verify(counter).nextMonthlyNumber("inv-materials-lifetime-10001", "all");
   }
@@ -45,7 +46,8 @@ class InventoryMaterialNumberTest {
             new InventoryMasterRepository(db, counter),
             auth,
             mock(PermissionService.class),
-            new ObjectMapper());
+            new ObjectMapper(),
+            mock(com.windasoft.eam.service.basedata.BaseDataReferenceService.class));
     assertEquals("WL100000", service.number("materials"));
     verify(counter, times(2)).nextMonthlyNumber("inv-materials-lifetime-10001", "all");
   }

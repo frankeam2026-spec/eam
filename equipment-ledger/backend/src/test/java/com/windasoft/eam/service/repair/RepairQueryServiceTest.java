@@ -36,10 +36,30 @@ class RepairQueryServiceTest {
     service =
         new RepairQueryService(
             new com.windasoft.eam.repository.repair.RepairQueryRepository(
-                mapper, new ObjectMapper()),
+                mapper, new ObjectMapper(), com.windasoft.eam.support.RelationStubs.repair()),
             auth,
             permissions,
             new ObjectMapper());
+    var repo = mock(com.windasoft.eam.repository.business.BusinessConfigRepository.class);
+    when(repo.schema(anyLong(), anyString(), anyBoolean()))
+        .thenReturn(Map.of("published", "{\"fields\":[]}"));
+    var config =
+        new com.windasoft.eam.service.business.BusinessConfigService(
+            repo, new ObjectMapper(), auth, permissions);
+    var query =
+        new com.windasoft.eam.service.business.BusinessQueryService(
+            config,
+            repo,
+            mock(com.windasoft.eam.service.business.BusinessReferenceService.class),
+            auth,
+            new ObjectMapper(),
+            new com.windasoft.eam.repository.business.BusinessQueryRepository(
+                mock(org.springframework.jdbc.core.JdbcTemplate.class)));
+    var custom = mock(com.windasoft.eam.service.business.BusinessValueService.class);
+    when(custom.batch(anyString(), anyCollection())).thenReturn(Map.of());
+    when(custom.repairCategories(anyCollection())).thenReturn(Map.of());
+    org.springframework.test.util.ReflectionTestUtils.setField(service, "customQueries", query);
+    org.springframework.test.util.ReflectionTestUtils.setField(service, "custom", custom);
   }
 
   @Test

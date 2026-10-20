@@ -34,7 +34,9 @@ public class InventoryMasterRepository {
           allowed.addAll(
               Set.of(
                   "model",
+                  "unit_id",
                   "unit",
+                  "category_id",
                   "category",
                   "usage_type",
                   "reference_price",
@@ -43,9 +45,12 @@ public class InventoryMasterRepository {
                   "allocation_rule"));
       case "warehouses" -> allowed.addAll(Set.of("company_id", "manager_id", "allocation_rule"));
       case "bins" -> allowed.add("warehouse_id");
-      default -> throw new IllegalArgumentException("未知库存档案");
+      default ->
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.inventory.message0010");
     }
-    if (!allowed.containsAll(fields.keySet())) throw new IllegalArgumentException("库存档案字段无效");
+    if (!allowed.containsAll(fields.keySet()))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0011");
   }
 
   public static String table(String kind) {
@@ -53,7 +58,9 @@ public class InventoryMasterRepository {
       case "materials" -> "inv_material";
       case "warehouses" -> "inv_warehouse";
       case "bins" -> "inv_bin";
-      default -> throw new IllegalArgumentException("未知库存档案");
+      default ->
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.inventory.message0010");
     };
   }
 
@@ -84,7 +91,7 @@ public class InventoryMasterRepository {
 
   public List<Map<String, Object>> lookupParent(long tenantId, Object parent, String source) {
     if (!Set.of("eam_org_unit", "inv_warehouse").contains(source))
-      throw new IllegalArgumentException("未知父档案");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0012");
     return db.queryForList(
         "SELECT name FROM " + source + " WHERE tenant_id=? AND id=?", tenantId, parent);
   }
@@ -193,12 +200,12 @@ public class InventoryMasterRepository {
 
   public int countOpenOperations(long tenantId, Object value, Object recordId) {
     return db.queryForObject(
-        "SELECT COUNT(*) FROM inv_operation d WHERE d.tenant_id=? AND d.deleted=0 AND"
-            + " d.status IN ('草稿','在途') AND"
-            + " (JSON_CONTAINS(d.payload,JSON_OBJECT('materialId',?), '$.lines') OR"
+        "SELECT COUNT(*) FROM v_inv_operation d WHERE d.tenant_id=? AND d.deleted=0 AND d.status IN"
+            + " ('草稿','在途') AND (EXISTS(SELECT 1 FROM v_inv_operation_material l WHERE"
+            + " l.tenant_id=d.tenant_id AND l.document_id=d.id AND l.material_id=?) OR"
             + " EXISTS(SELECT 1 FROM inv_movement_allocation a JOIN inv_balance s ON"
-            + " s.tenant_id=a.tenant_id AND s.id=a.balance_id WHERE"
-            + " a.tenant_id=d.tenant_id AND a.document_id=d.id AND s.material_id=?))",
+            + " s.tenant_id=a.tenant_id AND s.id=a.balance_id WHERE a.tenant_id=d.tenant_id AND"
+            + " a.document_id=d.id AND s.material_id=?))",
         Integer.class,
         tenantId,
         value,
@@ -211,24 +218,6 @@ public class InventoryMasterRepository {
         Integer.class,
         tenantId,
         recordId);
-  }
-
-  public int countUnit(long tenantId, Object value) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_base_item WHERE tenant_id=? AND item_type='UNIT' AND"
-            + " name=? AND deleted=0 AND status=1",
-        Integer.class,
-        tenantId,
-        value);
-  }
-
-  public int countMaterialCategory(long tenantId, Object value) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_base_item WHERE tenant_id=? AND"
-            + " item_type='MATERIAL_CATEGORY' AND name=? AND deleted=0 AND status=1",
-        Integer.class,
-        tenantId,
-        value);
   }
 
   public List<Map<String, Object>> findManager(long tenantId, Object manager) {

@@ -1,0 +1,14 @@
+{
+  "formatVersion": 1,
+  "locale": "fr-FR",
+  "nativeName": "Français",
+  "direction": "ltr",
+  "messages": {
+    "language.field.displayLanguage": "Langue d’affichage",
+    "language.manager.menu": "Langues",
+    "language.manager.cancel": "Annuler",
+    "language.manager.enable": "Activer",
+    "language.manager.disable": "Désactiver",
+    "common.dialog.confirmTitle": "Confirmer"
+  }
+}

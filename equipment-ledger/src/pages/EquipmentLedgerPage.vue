@@ -1,4 +1,17 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr, enumLabel } from '../i18n';
+
+import {
+  businessApi,
+  customColumns,
+  customFilters,
+  customCell,
+  type BusinessField,
+} from '../businessConfig';
+const customDefinitions = ref<BusinessField[]>([]);
+const serverTotal = ref(0);
+const customInitializationClean = ref(true);
+
+import EquipmentImportDialog from '../components/EquipmentImportDialog.vue';
 import AppListTabs from '../components/common/AppListTabs.vue';
 import AppListToolbar from '../components/common/AppListToolbar.vue';
 import 'element-plus/es/components/tabs/style/css';
@@ -8,6 +21,7 @@ import AppBusinessTable from '../components/common/AppBusinessTable.vue';
 import AppIcon from '../components/common/AppIcon.vue';
 import { formatNumber } from '../utils/number';
 import { normalizeLocationPath } from '../utils/locationPath';
+import { formatOrganizationPath } from '../utils/organizationPath';
 import { useUnsavedChanges } from '../composables/useUnsavedChanges';
 import FilterConditionPopover from '../components/common/FilterConditionPopover.vue';
 import { useConditionPopover } from '../composables/useConditionPopover';
@@ -31,6 +45,7 @@ import {
   ElOption,
 } from 'element-plus';
 import AppDialog from '../components/common/AppDialog.vue';
+import ExportFieldsDialog from '../components/common/ExportFieldsDialog.vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
@@ -45,17 +60,18 @@ import EquipmentImage from '../components/common/EquipmentImage.vue';
 import EquipmentNavigationTree, {
   type EquipmentTreeSelection,
 } from '../components/common/EquipmentNavigationTree.vue';
-import { EQUIPMENT_STATES, EQUIPMENT_TABS } from '../config/equipment';
+import { EQUIPMENT_STATES, EQUIPMENT_TABS, equipmentUseStatusStyle } from '../config/equipment';
 
 type Equipment = api.EquipmentRecord;
 
 type Column = {
-  key: keyof Equipment;
+  key: string;
   label: string;
   width: number;
   required?: boolean;
   align?: 'left' | 'center' | 'right';
   resizable?: boolean;
+  sortable?: boolean;
 };
 
 const rows = ref<Equipment[]>([]);
@@ -82,6 +98,23 @@ const { categoryData, locationData, unitData, useStateData, sourceData } = store
 const router = useRouter();
 
 const route = useRoute();
+const importOpen = computed(
+  () => route.query.import === '1' && can('equipment', '导入') && can('equipment', '新增'),
+);
+function openImport() {
+  void router.replace({ query: { ...route.query, import: '1' } });
+}
+function importBatchChanged(id: string) {
+  void router.replace({ query: { ...route.query, import: '1', batch: id } });
+}
+async function closeImport(open: boolean) {
+  if (open) return;
+  const query = { ...route.query };
+  delete query.import;
+  delete query.batch;
+  await router.replace({ query });
+  await refreshEquipment();
+}
 
 const historyId = computed(() =>
   route.name === 'equipment-history' ? String(route.params.id || '') : '',
@@ -138,7 +171,7 @@ async function openBatch(operation: string) {
       batchOptions.value = await api.equipmentBatchOptions();
     batchOpen.value = true;
   } catch (e) {
-    notify(e instanceof Error ? e.message : '加载失败', 'error');
+    notify(e instanceof Error ? e.message : tr('ui.equipment.text0160'), 'error');
   }
 }
 
@@ -157,7 +190,7 @@ async function submitBatch() {
     await refreshEquipment();
     notify(`已修改 ${result.data.count} 台设备`);
   } catch (e) {
-    notify(e instanceof Error ? e.message : '批量修改失败', 'error');
+    notify(e instanceof Error ? e.message : tr('ui.equipment.text1665'), 'error');
   } finally {
     batchBusy.value = false;
   }
@@ -183,15 +216,13 @@ function commitConditions(conditions: FilterCondition[]) {
   page.value = 1;
   selectedRows.value = [];
 }
-const sortKey = ref<keyof Equipment | null>(null);
+const sortKey = ref<string | null>(null);
 
 const sortDirection = ref<'asc' | 'desc' | null>(null);
 
 const storedWidths = (() => {
   try {
-    return JSON.parse(localStorage.getItem('eam-column-widths') || '{}') as Partial<
-      Record<keyof Equipment, number>
-    >;
+    return JSON.parse(localStorage.getItem('eam-column-widths') || '{}') as Record<string, number>;
   } catch {
     return {};
   }
@@ -225,7 +256,7 @@ const equipmentSaving = ref(false);
 
 const equipmentUploading = ref(false);
 
-const { markSaved: markEquipmentSaved } = useUnsavedChanges(
+const { markSaved: markEquipmentSaved, dirty: equipmentDirty } = useUnsavedChanges(
   () => editing.value,
   () => drawer.value && !!editing.value,
   () => equipmentSaving.value || equipmentUploading.value,
@@ -236,27 +267,32 @@ function closeEquipment() {
   router.push({ name: 'equipment' });
 }
 
-const columns: Column[] = [
+const baseColumns: Column[] = [
   // { key: 'imageFileId', label: '图片', width: 72, resizable: false },
-  { key: 'code', label: '设备编号', width: 190, required: true },
-  { key: 'name', label: '设备名称', width: 150, required: true },
-  { key: 'state', label: '设备状态', width: 100, align: 'center' },
-  { key: 'useState', label: '使用状态', width: 100, align: 'center' },
-  { key: 'assetNo', label: '资产编号', width: 132 },
-  { key: 'category', label: '设备分类', width: 124 },
-  { key: 'department', label: '所属部门', width: 142 },
-  { key: 'functionLocation', label: '位置', width: 150 },
-  { key: 'model', label: '规格型号', width: 138 },
-  { key: 'serial', label: '出厂编号', width: 140 },
-  { key: 'owner', label: '责任人', width: 92 },
-  { key: 'brand', label: '品牌', width: 116 },
-  { key: 'source', label: '设备来源', width: 100 },
-  { key: 'unit', label: '单位', width: 80 },
-  { key: 'supplier', label: '供应商', width: 130 },
-  { key: 'acquiredAt', label: '购置日期', width: 116 },
-  { key: 'amount', label: '采购金额（元）', width: 122 },
-  { key: 'warranty', label: '保修期至', width: 116 },
+  { key: 'code', get label() { return tr('ui.equipment.text0078'); }, width: 190, required: true },
+  { key: 'name', get label() { return tr('ui.equipment.text0081'); }, width: 150, required: true },
+  { key: 'state', get label() { return tr('ui.equipment.text0111'); }, width: 100, align: 'center' },
+  { key: 'useState', get label() { return tr('ui.equipment.text0112'); }, width: 100, align: 'center' },
+  { key: 'assetNo', get label() { return tr('ui.equipment.text0085'); }, width: 132 },
+  { key: 'category', get label() { return tr('ui.equipment.text1082'); }, width: 124 },
+  { key: 'department', get label() { return tr('ui.equipment.text0098'); }, width: 142 },
+  { key: 'functionLocation', get label() { return tr('ui.equipment.text0108'); }, width: 150 },
+  { key: 'model', get label() { return tr('ui.equipment.text0091'); }, width: 138 },
+  { key: 'serial', get label() { return tr('ui.equipment.text1666'); }, width: 140 },
+  { key: 'owner', get label() { return tr('ui.equipment.text1667'); }, width: 92 },
+  { key: 'brand', get label() { return tr('ui.equipment.text0093'); }, width: 116 },
+  { key: 'source', get label() { return tr('ui.equipment.text0117'); }, width: 100 },
+  { key: 'unit', get label() { return tr('ui.equipment.text0095'); }, width: 80 },
+  { key: 'supplier', get label() { return tr('ui.equipment.text0118'); }, width: 130 },
+  { key: 'acquiredAt', get label() { return tr('ui.equipment.text0122'); }, width: 116 },
+  { key: 'amount', get label() { return tr('ui.equipment.text1668'); }, width: 122 },
+  { key: 'warranty', get label() { return tr('ui.equipment.text0125'); }, width: 116 },
 ];
+
+const columns = computed<Column[]>(() => [
+  ...baseColumns,
+  ...customColumns(customDefinitions.value),
+]);
 
 const equipmentFilterOrder = [
   'code',
@@ -286,8 +322,8 @@ const equipmentFilterOrder = [
 
 const equipmentFilterFields = computed<FilterField[]>(() =>
   [
-    ...columns
-      .filter((c) => c.key !== 'imageFileId')
+    ...columns.value
+      .filter((c) => c.key !== 'imageFileId' && !c.key.startsWith('custom:'))
       .map((c) => ({ key: c.key, label: c.label, type: 'text' as const })),
     ...[
       ['company', '所属公司'],
@@ -315,16 +351,19 @@ const equipmentFilterFields = computed<FilterField[]>(() =>
               : null;
       return options ? { ...f, type: 'choice', options: options.map((v) => v.name) } : f;
     })
-    .sort((a, b) => equipmentFilterOrder.indexOf(a.key) - equipmentFilterOrder.indexOf(b.key)),
+    .sort((a, b) => equipmentFilterOrder.indexOf(a.key) - equipmentFilterOrder.indexOf(b.key))
+    .concat(customFilters(customDefinitions.value, 'equipment')),
 );
 
-const defaultEquipmentColumns = columns.slice(0, 12).map((c) => c.key);
+const defaultEquipmentColumns = columns.value.slice(0, 12).map((c) => c.key);
 
 function loadEquipmentColumns(): string[] {
   try {
     const saved = JSON.parse(localStorage.getItem('eam-columns') || 'null');
     if (!Array.isArray(saved)) return [...defaultEquipmentColumns];
-    const keys = saved.filter((key) => columns.some((c) => c.key === key));
+    const keys = saved.filter(
+      (key) => key.startsWith('custom:') || columns.value.some((c) => c.key === key),
+    );
     if (localStorage.getItem('eam-equipment-columns-version') !== '2') {
       if (!keys.includes('imageFileId')) keys.push('imageFileId');
       localStorage.setItem('eam-equipment-columns-version', '2');
@@ -346,75 +385,38 @@ const locationTreeOptions = computed<TreeSelectNode[]>(() =>
   locationData.value.filter((x) => x.status === '启用'),
 );
 
-const filtered = computed(() => {
-  const term = appliedQuery.value.keyword.trim().toLocaleLowerCase();
-  return rows.value.filter((r) => {
-    const tree = equipmentTreeSelection.value;
-    if (tree?.type === 'location' && tree.companyId && String(r.companyOrgId) !== tree.companyId)
-      return false;
-    if (
-      tree &&
-      !(tree.type === 'organization'
-        ? tree.ids.includes(String(r.departmentOrgId)) || tree.ids.includes(String(r.companyOrgId))
-        : tree.type === 'location'
-          ? r.locationId
-            ? tree.ids.includes(r.locationId)
-            : tree.names.some(
-                (value) =>
-                  normalizeLocationPath(value) === normalizeLocationPath(r.functionLocation),
-              )
-          : r.categoryId
-            ? tree.ids.includes(r.categoryId)
-            : tree.names.includes(String(r.category)))
-    )
-      return false;
-    const searchable = [
-      r.code,
-      r.name,
-      r.assetNo,
-      r.category,
-      r.model,
-      r.serial,
-      r.department,
-      r.owner,
-      r.brand,
-      r.state,
-      r.useState,
-      r.source,
-      r.functionLocation,
-      r.supplier,
-    ]
-      .join(' ')
-      .toLocaleLowerCase();
-    const matchesKeyword = !term || searchable.includes(term);
-    return (
-      matchesKeyword && matchesAdvanced(equipmentAdvanced.value, (key) => r[key as keyof Equipment])
-    );
-  });
-});
+const filtered = computed(() => rows.value);
+const pageCount = computed(() => Math.max(1, Math.ceil(serverTotal.value / pageSize.value)));
+const pageRows = computed(() => rows.value);
+function cell(row: Equipment, key: string) {
+  if (key === 'functionLocation') return normalizeLocationPath(row.functionLocation);
+  return key.startsWith('custom:') ? customCell(row, key) : (row[key as keyof Equipment] ?? '');
+}
+function equipmentParams() {
+  const scope = equipmentTreeSelection.value;
+  const sortMap: Record<string, string> = {
+    code: 'equipmentCode',
+    state: 'equipmentStatus',
+    useState: 'useStatus',
+    serial: 'serialNo',
+    owner: 'ownerName',
+    amount: 'acquiredAmount',
+    warranty: 'warrantyUntil',
+  };
+  return {
+    keyword: appliedQuery.value.keyword,
+    advanced: JSON.stringify(equipmentAdvanced.value),
+    sortBy: sortKey.value ? sortMap[sortKey.value] || sortKey.value : 'createdAt',
+    direction: sortDirection.value || 'desc',
+    scopeType: scope?.type,
+    scopeIds: scope?.ids.join(','),
+    scopeCompanyId: scope?.companyId,
+  };
+}
 
-const sortedFiltered = computed(() => {
-  if (!sortKey.value || !sortDirection.value) return filtered.value;
-  const key = sortKey.value,
-    direction = sortDirection.value === 'asc' ? 1 : -1;
-  return [...filtered.value].sort((a, b) => {
-    const av = String(a[key] ?? ''),
-      bv = String(b[key] ?? '');
-    const compared =
-      key === 'amount'
-        ? Number(av || 0) - Number(bv || 0)
-        : av.localeCompare(bv, 'zh-CN', { numeric: true, sensitivity: 'base' });
-    return compared * direction;
-  });
-});
-
-const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize.value)));
-
-const pageRows = computed(() =>
-  sortedFiltered.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value),
+const selectedColumns = computed(() =>
+  columns.value.filter((c) => visibleKeys.value.includes(c.key)),
 );
-
-const selectedColumns = computed(() => columns.filter((c) => visibleKeys.value.includes(c.key)));
 
 let equipmentLoadRevision = 0;
 
@@ -437,18 +439,20 @@ async function refreshEquipment() {
     return;
   }
   try {
-    const q = appliedQuery.value;
     const result = await api.listEquipment({
-      page: 1,
-      size: 10000,
-      keyword: q.keyword,
+      ...equipmentParams(),
+      page: page.value,
+      size: pageSize.value,
     });
-    if (revision === equipmentLoadRevision) rows.value = result.data;
+    if (revision === equipmentLoadRevision) {
+      rows.value = result.data;
+      serverTotal.value = result.page.total;
+    }
   } catch (error) {
     if (revision !== equipmentLoadRevision) return;
     rows.value = [];
     selected.value = [];
-    notify(error instanceof Error ? error.message : '设备列表加载失败', 'error');
+    notify(error instanceof Error ? error.message : tr('ui.equipment.text1669'), 'error');
   }
 }
 
@@ -478,8 +482,8 @@ function onTableSort(sort: BusinessSort) {
   page.value = 1;
 }
 
-function columnWidth(key: keyof Equipment) {
-  const column = columns.find((c) => c.key === key);
+function columnWidth(key: string) {
+  const column = columns.value.find((c) => c.key === key);
   return Math.max(
     (column?.label.length || 0) * 13 + 56,
     columnWidths.value[key] || column?.width || 100,
@@ -505,11 +509,13 @@ function resizeEnd() {
 }
 
 function toggleColumn(key: string) {
-  const c = columns.find((c) => c.key === key);
+  const c = columns.value.find((c) => c.key === key);
   if (c?.required) return;
   visibleKeys.value = visibleKeys.value.includes(key)
     ? visibleKeys.value.filter((k) => k !== key)
-    : columns.filter((x) => visibleKeys.value.includes(x.key) || x.key === key).map((x) => x.key);
+    : columns.value
+        .filter((x) => visibleKeys.value.includes(x.key) || x.key === key)
+        .map((x) => x.key);
 }
 
 function create() {
@@ -625,7 +631,10 @@ async function save() {
   try {
     if (isNew.value && !f.code.trim() && !apiMode.value) f.code = generatedEquipmentCode();
     if (apiMode.value) {
-      const result = await api.saveEquipment(f, isNew.value);
+      const result = await api.saveEquipment(
+        { ...f, customFields: equipmentEditor.value?.prepareCustomFields() ?? f.customFields },
+        isNew.value,
+      );
       if (isNew.value) rows.value.unshift(result.data);
       else rows.value = rows.value.map((x) => (x.id === result.data.id ? result.data : x));
     } else if (isNew.value) {
@@ -642,61 +651,86 @@ async function save() {
     drawer.value = false;
     notify(isNew.value ? '设备已新增' : '设备信息已保存');
   } catch (error) {
+    if (error instanceof api.ApiError && error.status === 409 && error.message.includes('字段配置'))
+      await equipmentEditor.value?.reloadCustomFields();
     if (error instanceof api.ApiError && Object.keys(error.fieldErrors).length)
       void equipmentEditor.value?.showErrors(error.fieldErrors);
-    else notify(error instanceof Error ? error.message : '设备保存失败', 'error');
+    else notify(error instanceof Error ? error.message : tr('ui.equipment.text1670'), 'error');
   } finally {
     equipmentSaving.value = false;
   }
 }
 
 async function remove(row: Equipment) {
-  if (!(await confirmAction(`确认删除设备「${row.name}（${row.code}）」？`))) return;
+  if (!(await confirmAction(tr('ui.common.dynamic62',{p0:row.name,p1:row.code})))) return;
   try {
     if (apiMode.value) await api.deleteEquipment(row.id);
     rows.value = rows.value.filter((r) => r.id !== row.id);
     selected.value = selected.value.filter((id) => id !== row.id);
     notify('设备已删除');
   } catch (error) {
-    notify(error instanceof Error ? error.message : '删除失败', 'error');
+    notify(error instanceof Error ? error.message : tr('ui.equipment.text0278'), 'error');
   }
 }
 
 async function removeSelected() {
   if (!selected.value.length) return;
-  if (!(await confirmAction(`确认删除选中的 ${selected.value.length} 台设备？`))) return;
+  if (!(await confirmAction(tr('ui.common.dynamic63',{p0:selected.value.length})))) return;
   try {
     await api.batchEquipment([...selected.value], 'delete', '');
     selected.value = [];
     await refreshEquipment();
     notify('已删除所选设备');
   } catch (error) {
-    notify(error instanceof Error ? error.message : '批量删除失败', 'error');
+    notify(error instanceof Error ? error.message : tr('ui.equipment.text1671'), 'error');
   }
 }
 
+const exportOpen = ref(false),
+  exportBusy = ref(false);
+const exportColumns = computed(() => [
+  ...baseColumns.filter((c) => c.key !== 'imageFileId'),
+  ...customDefinitions.value
+    .filter((f) => f.exportable)
+    .map((f) => ({ key: `custom:${f.id}`, label: f.name })),
+]);
+const exportDefaultKeys = computed(() =>
+  exportColumns.value
+    .filter((c) => (!c.key.startsWith('custom:') ? visibleKeys.value.includes(c.key) : true))
+    .map((c) => c.key),
+);
 function exportCsv() {
-  const list = filtered.value;
-  const exportColumns = selectedColumns.value.filter((c) => c.key !== 'imageFileId');
-  const heads = exportColumns.map((c) => c.label);
-  const lines = list.map((r) =>
-    exportColumns.map((c) => `"${String(r[c.key] ?? '').replaceAll('"', '""')}"`).join(','),
-  );
-  const blob = new Blob(['\ufeff' + [heads.join(','), ...lines].join('\r\n')], {
-    type: 'text/csv;charset=utf-8',
-  });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = '设备台账.csv';
-  a.click();
-  URL.revokeObjectURL(a.href);
-  notify(`已导出 ${list.length} 条记录`);
+  exportOpen.value = true;
+}
+async function confirmExport(keys: string[]) {
+  exportBusy.value = true;
+  try {
+    const blob = await api.exportEquipment({ ...equipmentParams(), columns: keys.join(',') });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '设备台账.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    exportOpen.value = false;
+    notify('导出成功');
+  } catch (e) {
+    notify((e as Error).message, 'error');
+  } finally {
+    exportBusy.value = false;
+  }
 }
 
 function formatAmount(value: string) {
   return formatNumber(value);
 }
 
+const useStatusCodes = computed(
+  () => new Map(useStateData.value.map((item) => [item.id, item.code])),
+);
+function useStatusStyle(row: Equipment) {
+  return equipmentUseStatusStyle(useStatusCodes.value.get(row.useStateId || ''), row.useState);
+}
 function statusClass(value: string) {
   return value === '正常'
     ? 'success'
@@ -714,15 +748,28 @@ watch(columnWidths, (v) => localStorage.setItem('eam-column-widths', JSON.string
 watch(filtered, () => {
   if (page.value > pageCount.value) page.value = pageCount.value;
 });
+let editRouteRevision = 0;
 watch(
   [() => route.name, () => route.params.id, rows],
-  () => {
+  async () => {
+    const revision = ++editRouteRevision;
     if (route.name === 'equipment-new') {
       if (!editing.value || !isNew.value) create();
       drawer.value = true;
     } else if (route.name === 'equipment-edit') {
-      const row = rows.value.find((item) => item.id === String(route.params.id));
-      if (row && (!drawer.value || editing.value?.id !== row.id)) edit(row);
+      const id = String(route.params.id);
+      if (drawer.value && editing.value?.id === id) return;
+      try {
+        const row = rows.value.find((item) => item.id === id) || (await api.getEquipment(id)).data;
+        if (
+          revision === editRouteRevision &&
+          route.name === 'equipment-edit' &&
+          String(route.params.id) === id
+        )
+          edit(row);
+      } catch (e) {
+        if (revision === editRouteRevision) notify((e as Error).message, 'error');
+      }
     }
   },
   { immediate: true },
@@ -749,7 +796,23 @@ async function reloadEquipmentPermissions() {
   await auth.load(true);
   await refreshEquipment();
 }
+watch([page, pageSize, sortKey, sortDirection], () => void refreshEquipment());
+watch(
+  [equipmentAdvanced, equipmentTreeSelection],
+  () => {
+    selectedRows.value = [];
+    page.value = 1;
+    void refreshEquipment();
+  },
+  { deep: true },
+);
 onMounted(() => {
+  void businessApi
+    .runtime('equipment')
+    .then((r) => {
+      customDefinitions.value = r.configuration.fields;
+    })
+    .catch((e) => notify(e.message, 'error'));
   window.addEventListener('keydown', onKey);
   window.addEventListener('pointermove', resizeMove);
   window.addEventListener('pointerup', resizeEnd);
@@ -773,18 +836,28 @@ const {
 </script>
 
 <template>
+  <ExportFieldsDialog
+    v-model="exportOpen"
+    :columns="exportColumns"
+    :default-keys="exportDefaultKeys"
+    :busy="exportBusy"
+    @confirm="confirmExport"
+  />
   <section class="content">
     <AppListTabs
       class="equipment-tabs"
       :active="quickTab"
-      :items="EQUIPMENT_TABS.map((tab) => ({ key: tab, label: tab }))"
+      :items="EQUIPMENT_TABS.map((tab) => ({ key: tab, label: enumLabel('tab',tab) }))"
       @select="selectQuickTab"
       @reselect="selectQuickTab"
     />
     <AppListToolbar class="toolbar">
       <div class="toolbar-left">
         <ElButton type="primary" v-if="can('equipment', '新增')" @click="create">
-          <span class="plus"> <AppIcon name="Plus" /> </span>新增</ElButton
+          <span class="plus"> <AppIcon name="Plus" /> </span>{{ tr('ui.equipment.text0149') }}</ElButton
+        >
+        <ElButton v-if="can('equipment', '导入') && can('equipment', '新增')" @click="openImport"
+          ><AppIcon name="Upload" />{{ tr('ui.equipment.text1196') }}</ElButton
         >
         <ElDropdown
           v-if="can('equipment', '编辑') || can('equipment', '删除')"
@@ -793,7 +866,7 @@ const {
           @command="openBatch"
         >
           <ElButton :disabled="!selected.length"
-            >批量操作<span v-if="selected.length" class="count-pill">{{ selected.length }}</span
+            >{{ tr('ui.equipment.text0373') }}<span v-if="selected.length" class="count-pill">{{ selected.length }}</span
             ><AppIcon name="Down"
           /></ElButton>
           <template #dropdown
@@ -811,16 +884,16 @@ const {
         </ElDropdown>
       </div>
       <form class="filters" @submit.prevent="search">
-        <ListSearchInput v-model="query.keyword" placeholder="搜索名称、编码、型号、部门、责任人" />
+        <ListSearchInput v-model="query.keyword" :placeholder="tr('ui.equipment.text1672')" />
         <ElButton
           class="advanced-filter-trigger"
           :class="{ active: equipmentAdvanced.length }"
           native-type="button"
           @click="openFilter($event.currentTarget as HTMLElement)"
         >
-          添加筛选<span v-if="equipmentAdvanced.length"> ({{ equipmentAdvanced.length }})</span>
+          {{ tr('ui.equipment.text0203') }}<span v-if="equipmentAdvanced.length"> ({{ equipmentAdvanced.length }})</span>
         </ElButton>
-        <ElButton text class="reset-btn" native-type="button" @click="reset">重置</ElButton>
+        <ElButton text class="reset-btn" native-type="button" @click="reset">{{ tr('ui.equipment.text0204') }}</ElButton>
       </form>
     </AppListToolbar>
     <AppliedFilterChips
@@ -833,7 +906,7 @@ const {
       <template v-if="equipmentTreeSelection" #leading>
         <ElTag closable @close="selectEquipmentTree(null)">
           <ElButton link @click="navigationTree?.revealSelection()"
-            >范围：{{ equipmentTreeSelection.names[0] }}（含下级）</ElButton
+            >{{ tr('ui.equipment.text1673') }}{{ equipmentTreeSelection.names[0] }}{{ tr('ui.equipment.text1674') }}</ElButton
           >
         </ElTag>
       </template>
@@ -884,7 +957,7 @@ const {
               :min-width="col.key === 'imageFileId' ? 72 : col.key === 'code' ? 190 : 150"
               :width="col.key === 'imageFileId' ? 72 : columnWidth(col.key)"
               :resizable="col.resizable ?? true"
-              :sortable="col.key === 'imageFileId' ? false : 'custom'"
+              :sortable="col.key === 'imageFileId' || col.sortable === false ? false : 'custom'"
               show-overflow-tooltip
               :prop="col.key"
               :key="col.key"
@@ -900,29 +973,30 @@ const {
                 ><template v-else-if="col.key === 'imageFileId'">
                   <EquipmentImage :file-id="row.imageFileId" :name="row.name" /> </template
                 ><template v-else-if="col.key === 'department'"
-                  ><span :title="row.departmentPath">{{
-                    row.departmentPath || row.department
+                  ><span :title="formatOrganizationPath(row.departmentPath || row.department)">{{
+                    formatOrganizationPath(row.departmentPath || row.department)
                   }}</span></template
                 ><template v-else-if="col.key === 'name'"
                   ><span class="equipment-name-text">{{ row.name }}</span></template
                 ><template v-else-if="col.key === 'state' || col.key === 'useState'"
                   ><span
                     v-if="row[col.key]"
-                    class="status"
+                    class="status ledger-status"
+                    :style="col.key === 'useState' ? useStatusStyle(row) : undefined"
                     :class="[
-                      statusClass(String(row[col.key])),
+                      col.key === 'state' ? statusClass(String(row[col.key])) : '',
                       { 'equipment-status': col.key === 'state' },
                     ]"
-                    ><i></i>{{ row[col.key] }}</span
+                    ><i></i>{{ col.key === 'state' ? enumLabel('equipmentStatus',row.state) : row[col.key] }}</span
                   ></template
                 ><template v-else-if="col.key === 'amount'"
                   ><span class="amount">{{ formatAmount(row.amount) }}</span></template
-                ><template v-else>{{ row[col.key] ?? '' }}</template>
+                ><template v-else>{{ cell(row, col.key) }}</template>
               </template></ElTableColumn
             >
             <!-- @vue-generic {Equipment} -->
             <ElTableColumn
-              label="操作"
+              :label="tr('ui.equipment.text0145')"
               class-name="row-actions list-action-column"
               fixed="right"
               :width="170"
@@ -930,10 +1004,10 @@ const {
               :resizable="false"
               ><template #default="{ row }">
                 <ElButton type="primary" link v-if="can('equipment', '编辑')" @click="edit(row)">
-                  编辑
+                  {{ tr('ui.equipment.text0207') }}
                 </ElButton>
                 <ElButton type="primary" link v-if="can('equipment', '新增')" @click="clone(row)">
-                  复制</ElButton
+                  {{ tr('ui.equipment.text0270') }}</ElButton
                 >
 
                 <ElDropdown
@@ -948,7 +1022,7 @@ const {
                     <ElDropdownMenu>
                       <!-- <ElDropdownItem v-if="can('equipment', '新增')" command="clone">复制</ElDropdownItem> -->
                       <ElDropdownItem v-if="can('equipment', '删除')" command="delete"
-                        >删除</ElDropdownItem
+                        >{{ tr('ui.equipment.text0146') }}</ElDropdownItem
                       >
                     </ElDropdownMenu>
                   </template></ElDropdown
@@ -959,12 +1033,12 @@ const {
                 <div class="empty-icon">
                   <AppIcon name="Search" />
                 </div>
-                <b>{{ rows.length ? '没有找到匹配的设备' : '暂无设备' }}</b
+                <b>{{ rows.length ? tr('ui.equipment.text1675') : tr('ui.equipment.text0701') }}</b
                 ><span>{{
-                  rows.length ? '调整筛选条件或清空搜索后重试' : '点击“新增”建立第一条设备档案'
+                  rows.length ? tr('ui.equipment.text1676') : tr('ui.equipment.text1677')
                 }}</span
                 ><ElButton type="primary" link v-if="rows.length" @click="reset"
-                  >清空筛选条件</ElButton
+                  >{{ tr('ui.equipment.text1678') }}</ElButton
                 >
               </div>
             </template>
@@ -972,15 +1046,11 @@ const {
         </div>
         <footer class="table-footer">
           <div class="result-count">
-            共 <b>{{ filtered.length }}</b> 条<span v-if="selected.length" class="selected-label"
-              >已选 {{ selected.length }} 条</span
+            {{ tr('ui.equipment.text0309') }} <b>{{ serverTotal }}</b> {{ tr('ui.equipment.text0296') }}<span v-if="selected.length" class="selected-label"
+              >{{ tr('ui.equipment.text0295') }} {{ selected.length }} {{ tr('ui.equipment.text0296') }}</span
             >
           </div>
-          <AppPagination
-            v-model:page="page"
-            v-model:page-size="pageSize"
-            :total="filtered.length"
-          />
+          <AppPagination v-model:page="page" v-model:page-size="pageSize" :total="serverTotal" />
           <ListToolbarIcons
             mode="footer"
             :can-export="can('equipment', '导出')"
@@ -989,9 +1059,9 @@ const {
             @export="exportCsv"
             ><template #columns>
               <div class="popover-head">
-                <b>表格列设置</b
+                <b>{{ tr('ui.equipment.text1679') }}</b
                 ><ElButton native-type="button" @click="visibleKeys = [...defaultEquipmentColumns]">
-                  恢复默认
+                  {{ tr('ui.equipment.text0553') }}
                 </ElButton>
               </div>
               <ElCheckbox
@@ -1002,9 +1072,9 @@ const {
                 :disabled="col.required"
                 @change="toggleColumn(col.key)"
               >
-                {{ col.label }}<small v-if="col.required">固定</small>
+                {{ col.label }}<small v-if="col.required">{{ tr('ui.equipment.text1680') }}</small>
               </ElCheckbox>
-              <div class="popover-foot">显示 {{ visibleKeys.length }} 列</div>
+              <div class="popover-foot">{{ tr('ui.equipment.text1681') }} {{ visibleKeys.length }} {{ tr('ui.equipment.text0975') }}</div>
             </template></ListToolbarIcons
           >
         </footer>
@@ -1020,7 +1090,7 @@ const {
     width="440px"
   >
     <div class="batch-dialog-content">
-      <p>已选择 {{ selected.length }} 台设备</p>
+      <p>{{ tr('ui.equipment.text1218') }} {{ selected.length }} {{ tr('ui.equipment.text1682') }}</p>
       <label
         ><span>{{ batchLabels[batchForm.operation].replace('修改', '') }}</span>
         <TreeSelect
@@ -1031,13 +1101,13 @@ const {
               (x) => ({ ...x, value: x.id }),
             )
           "
-          placeholder="请选择"
+          :placeholder="tr('ui.equipment.text0096')"
         />
         <TreeSelect
           v-else-if="batchForm.operation === 'department'"
           v-model="batchForm.value"
           :nodes="batchDepartmentNodes"
-          placeholder="请选择部门"
+          :placeholder="tr('ui.equipment.text0315')"
         />
         <ElSelect
           v-else-if="batchForm.operation === 'owner'"
@@ -1045,7 +1115,7 @@ const {
           multiple
           filterable
           clearable
-          placeholder="留空则清除负责人"
+          :placeholder="tr('ui.equipment.text1683')"
         >
           <ElOption
             v-for="user in batchOptions.users"
@@ -1053,29 +1123,43 @@ const {
             :value="user.id"
             :label="user.name"
           /> </ElSelect
-        ><ElSelect v-else v-model="batchForm.value" placeholder="请选择状态" clearable>
-          <ElOption v-for="state in EQUIPMENT_STATES" :key="state" :label="state" :value="state" />
+        ><ElSelect v-else v-model="batchForm.value" :placeholder="tr('ui.equipment.text1684')" clearable>
+          <ElOption v-for="state in EQUIPMENT_STATES" :key="state" :label="enumLabel('equipmentStatus',state)" :value="state" />
         </ElSelect>
       </label>
     </div>
     <template #footer
-      ><ElButton :disabled="batchBusy" @click="batchOpen = false">取消</ElButton
+      ><ElButton :disabled="batchBusy" @click="batchOpen = false">{{ tr('ui.equipment.text0157') }}</ElButton
       ><ElButton
         type="primary"
         :loading="batchBusy"
         :disabled="batchForm.operation !== 'owner' && !batchForm.value"
         @click="submitBatch"
       >
-        {{ batchBusy ? '保存中…' : '确定' }}
+        {{ batchBusy ? tr('ui.equipment.text0158') : tr('ui.equipment.text0402') }}
       </ElButton></template
     >
   </AppDialog>
+  <EquipmentImportDialog
+    v-if="importOpen"
+    :model-value="importOpen"
+    :batch-id="String(route.query.batch || '')"
+    @update:model-value="closeImport"
+    @batch-change="importBatchChanged"
+    @open-record="(row) => router.push({ name: 'equipment-history', params: { id: row.id } })"
+  />
   <EquipmentEditor
     ref="equipmentEditor"
     v-model="editing"
     v-model:open="drawer"
     :is-new="isNew"
     :busy="equipmentSaving || equipmentUploading"
+    @custom-initialize="customInitializationClean = !equipmentDirty"
+    @custom-ready="
+      () => {
+        if (customInitializationClean) markEquipmentSaved();
+      }
+    "
     @uploading="equipmentUploading = $event"
     @save="save"
     @close="closeEquipment"
@@ -1149,8 +1233,18 @@ const {
   margin: 0;
 }
 
+/* 台账的设备状态和使用状态统一宽度与对齐。 */
+.equipment-ledger-table .status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 80px;
+  white-space: nowrap;
+}
+
 /* 设备状态采用轻量语义标签，不改变其他模块的状态样式。 */
-.equipment-ledger-table .equipment-status {
+.equipment-ledger-table .ledger-status {
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
@@ -1160,20 +1254,20 @@ const {
 }
 
 .equipment-ledger-table .equipment-status.success {
-  color: #11934a;
-  background: #e8faf0;
-  border-color: #d1f2de;
+  color: var(--equipment-state-success-color);
+  background: var(--equipment-state-success-background);
+  border-color: var(--equipment-state-success-border);
 }
 
 .equipment-ledger-table .equipment-status.warning {
-  color: #c66a00;
-  background: #fff1d6;
-  border-color: #ffe4ae;
+  color: var(--equipment-state-warning-color);
+  background: var(--equipment-state-warning-background);
+  border-color: var(--equipment-state-warning-border);
 }
 
 .equipment-ledger-table .equipment-status.danger {
-  color: #e33535;
-  background: #ffe8e8;
-  border-color: #ffd1d1;
+  color: var(--equipment-state-danger-color);
+  background: var(--equipment-state-danger-background);
+  border-color: var(--equipment-state-danger-border);
 }
 </style>

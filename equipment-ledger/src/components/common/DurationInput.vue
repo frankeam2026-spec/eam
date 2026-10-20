@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { computed } from 'vue';
 import { ElInputNumber, ElSelect, ElOption } from 'element-plus';
 const props = withDefaults(
@@ -25,7 +26,7 @@ function changeUnit(unit: string) {
       controls-position="right"
       @update:model-value="emit('update:modelValue', $event ?? min)"
     />
-    <ElSelect :model-value="unit" aria-label="时间单位" @update:model-value="changeUnit"
+    <ElSelect :model-value="unit" :aria-label="tr('ui.equipment.text1359')" @update:model-value="changeUnit"
       ><ElOption v-for="u in ['时', '日', '周', '月']" :key="u" :label="u" :value="u"
     /></ElSelect>
   </div>

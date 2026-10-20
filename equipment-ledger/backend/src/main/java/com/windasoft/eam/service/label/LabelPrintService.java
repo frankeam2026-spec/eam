@@ -46,7 +46,9 @@ public class LabelPrintService {
             .map(
                 key -> {
                   var e = repository.equipment(auth.tenantId(), key);
-                  if (e == null) throw new IllegalArgumentException("设备不存在");
+                  if (e == null)
+                    throw new com.windasoft.eam.common.LocalizedArgumentException(
+                        "server.common.message0064");
                   permissions.checkEquipment(e, "查看");
                   return equipmentData(e);
                 })
@@ -56,7 +58,9 @@ public class LabelPrintService {
       for (Long key : f.equipmentIds().stream().distinct().toList()) {
         var e = repository.equipmentById(key);
         var records = repository.repairs(auth.tenantId(), e.getEquipmentCode());
-        if (records.size() > 1000) throw new IllegalArgumentException("单设备维修明细超过1000条，请缩小打印范围");
+        if (records.size() > 1000)
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.common.message0065");
         details.add(
             records.stream()
                 .filter(

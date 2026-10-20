@@ -1,3 +1,4 @@
+import { tr } from './i18n';
 export type DataScope =
   | 'all'
   | 'company'
@@ -14,22 +15,30 @@ export type PermissionMenu = { key: string; name: string; actions: string[]; sco
 
 export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
   {
-    name: '首页与工作台',
+    get name() {
+      return tr('ui.common.label1');
+    },
     menus: [
       {
         key: 'workspace',
-        name: '首页与工作台',
+        get name() {
+          return tr('ui.common.label1');
+        },
         actions: ['查看', '团队工作查看'],
         scopes: ['all'],
       },
     ],
   },
   {
-    name: '设备管理',
+    get name() {
+      return tr('ui.equipment.text0001');
+    },
     menus: [
       {
         key: 'equipment',
-        name: '设备台账',
+        get name() {
+          return tr('ui.equipment.text0002');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导入', '导出'],
         scopes: [
           'all',
@@ -42,21 +51,27 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
           'companies',
         ],
       },
-      // { key: 'category', name: '设备分类', actions: ['查看','新增','编辑','删除'], scopes: ['all'] },
+      // { key: 'category', get name(){return tr('ui.equipment.text1082');}, actions: ['查看','新增','编辑','删除'], scopes: ['all'] },
       {
         key: 'equipmentTag',
-        name: '设备标签',
+        get name() {
+          return tr('ui.equipment.text0003');
+        },
         actions: ['查看', '新增', '编辑', '删除', '打印', '导出'],
         scopes: ['all'],
       },
     ],
   },
   {
-    name: '运维管理',
+    get name() {
+      return tr('ui.common.label2');
+    },
     menus: [
       {
         key: 'anomaly',
-        name: '异常库',
+        get name() {
+          return tr('ui.equipment.text0005');
+        },
         actions: ['查看', '新增', '消除', '报修', '安排维修', '作废', '导出'],
         scopes: [
           'all',
@@ -71,7 +86,9 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
       },
       {
         key: 'repairPlan',
-        name: '维修计划',
+        get name() {
+          return tr('ui.equipment.text0209');
+        },
         actions: ['查看', '新增', '编辑', '启用', '生成工单', '取消', '导出'],
         scopes: [
           'all',
@@ -86,7 +103,9 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
       },
       {
         key: 'materialCustody',
-        name: '领用余料',
+        get name() {
+          return tr('ui.equipment.text0025');
+        },
         actions: ['查看', '登记暂存', '导出'],
         scopes: [
           'all',
@@ -101,7 +120,9 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
       },
       {
         key: 'repair',
-        name: '维修工单',
+        get name() {
+          return tr('ui.equipment.text0006');
+        },
         actions: ['查看', '报修', '编辑', '派工', '处理', '验收', '撤回', '删除', '导出'],
         scopes: [
           'all',
@@ -117,17 +138,23 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
     ],
   },
   {
-    name: '保养管理',
+    get name() {
+      return tr('ui.equipment.text0007');
+    },
     menus: [
       {
         key: 'maintenanceType',
-        name: '保养类型',
+        get name() {
+          return tr('ui.equipment.text0008');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导出'],
         scopes: ['all'],
       },
       {
         key: 'maintenanceStandard',
-        name: '保养标准',
+        get name() {
+          return tr('ui.equipment.text0009');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导出'],
         scopes: [
           'all',
@@ -142,7 +169,9 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
       },
       {
         key: 'maintenancePlan',
-        name: '保养计划',
+        get name() {
+          return tr('ui.equipment.text0010');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导出'],
         scopes: [
           'all',
@@ -157,7 +186,9 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
       },
       {
         key: 'maintenanceTask',
-        name: '保养任务',
+        get name() {
+          return tr('ui.equipment.text0011');
+        },
         actions: ['查看', '编辑', '执行', '验收', '删除', '导出'],
         scopes: [
           'all',
@@ -173,17 +204,23 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
     ],
   },
   {
-    name: '点巡检管理',
+    get name() {
+      return tr('ui.equipment.text0012');
+    },
     menus: [
       {
         key: 'inspectionType',
-        name: '巡检类型',
+        get name() {
+          return tr('ui.equipment.text0325');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导出'],
         scopes: ['all'],
       },
       {
         key: 'inspectionStandard',
-        name: '点巡检标准',
+        get name() {
+          return tr('ui.equipment.text0013');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导出'],
         scopes: [
           'all',
@@ -198,7 +235,9 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
       },
       {
         key: 'inspectionDailyPlan',
-        name: '日常点检计划',
+        get name() {
+          return tr('ui.equipment.text0014');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导出'],
         scopes: [
           'all',
@@ -213,8 +252,10 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
       },
       {
         key: 'inspectionDailyTask',
-        name: '日常点检任务',
-        actions: ['查看', '执行', '审核', '转派', '删除', '导出'],
+        get name() {
+          return tr('ui.equipment.text0015');
+        },
+        actions: ['查看', '执行', '审核', '转派', '免检', '删除', '导出'],
         scopes: [
           'all',
           'company',
@@ -228,7 +269,9 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
       },
       {
         key: 'inspectionPeriodicPlan',
-        name: '周期巡检计划',
+        get name() {
+          return tr('ui.equipment.text0016');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导出'],
         scopes: [
           'all',
@@ -243,7 +286,9 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
       },
       {
         key: 'inspectionPeriodicTask',
-        name: '周期巡检任务',
+        get name() {
+          return tr('ui.equipment.text0017');
+        },
         actions: ['查看', '执行', '审核', '转派', '删除', '导出'],
         scopes: [
           'all',
@@ -259,29 +304,39 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
     ],
   },
   {
-    name: '库存管理',
+    get name() {
+      return tr('ui.equipment.text0018');
+    },
     menus: [
       {
         key: 'inventoryMaterial',
-        name: '物料档案',
+        get name() {
+          return tr('ui.equipment.text0019');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导入', '导出', '查看金额', '编辑参考价'],
         scopes: ['all'],
       },
       {
         key: 'inventoryWarehouse',
-        name: '仓库与库位',
+        get name() {
+          return tr('ui.common.label3');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导出'],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
         key: 'inventoryReceipt',
-        name: '入库管理',
+        get name() {
+          return tr('ui.equipment.text0021');
+        },
         actions: ['查看', '新增', '编辑', '删除', '入库', '导出', '查看金额'],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
         key: 'inventoryOutbound',
-        name: '出库管理',
+        get name() {
+          return tr('ui.equipment.text0023');
+        },
         actions: [
           '查看',
           '新增直接出库',
@@ -299,67 +354,112 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
       },
       {
         key: 'inventoryRequisition',
-        name: '领料申请',
+        get name() {
+          return tr('ui.equipment.text0022');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导出', '查看金额'],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
         key: 'inventoryReturn',
-        name: '退料管理',
+        get name() {
+          return tr('ui.equipment.text0026');
+        },
         actions: ['查看', '新增', '编辑', '删除', '入库', '导出', '查看金额'],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
         key: 'inventoryTransfer',
-        name: '调拨管理',
+        get name() {
+          return tr('ui.equipment.text0027');
+        },
         actions: ['查看', '新增', '编辑', '删除', '出库', '入库', '导出', '查看金额'],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
         key: 'inventoryCount',
-        name: '盘点管理',
+        get name() {
+          return tr('ui.equipment.text0028');
+        },
         actions: ['查看', '新增', '编辑', '删除', '出库', '入库', '导出', '查看金额'],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
         key: 'inventoryOpening',
-        name: '期初与初始化',
+        get name() {
+          return tr('ui.equipment.text0029');
+        },
         actions: ['查看', '新增', '编辑', '删除', '入库', '导入', '导出', '查看金额'],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
         key: 'inventoryReversal',
-        name: '单据纠正',
+        get name() {
+          return tr('ui.equipment.text0030');
+        },
         actions: ['查看', '新增', '编辑', '删除', '冲销', '导出', '查看金额'],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
         key: 'inventoryQuery',
-        name: '库存查询',
+        get name() {
+          return tr('ui.equipment.text0024');
+        },
         actions: ['查看', '导出', '冻结', '查看金额'],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
     ],
   },
   {
-    name: '系统管理',
+    get name() {
+      return tr('ui.equipment.text0031');
+    },
     menus: [
       {
         key: 'printTemplate',
-        name: '打印模板',
+        get name() {
+          return tr('ui.equipment.text0035');
+        },
         actions: ['查看', '新增', '编辑', '删除'],
         scopes: ['all', 'company', 'companyTree', 'companies'],
       },
-      { key: 'personalization', name: '个性化设置', actions: ['查看'], scopes: ['all'] },
+      {
+        key: 'businessConfig',
+        get name() {
+          return tr('ui.equipment.text0032');
+        },
+        actions: ['查看', '编辑', '发布'],
+        scopes: ['all'],
+      },
+      {
+        key: 'personalization',
+        get name() {
+          return tr('ui.equipment.text0033');
+        },
+        actions: ['查看'],
+        scopes: ['all'],
+      },
+      {
+        key: 'language',
+        get name() {
+          return tr('language.manager.menu');
+        },
+        actions: ['查看'],
+        scopes: ['all'],
+      },
       {
         key: 'homeTemplate',
-        name: '首页模板',
+        get name() {
+          return tr('ui.equipment.text0034');
+        },
         actions: ['查看', '新增', '编辑', '发布', '停用'],
         scopes: ['all'],
       },
       {
         key: 'org',
-        name: '组织架构',
+        get name() {
+          return tr('ui.equipment.text0036');
+        },
         actions: ['查看', '新增', '编辑', '删除'],
         scopes: [
           'all',
@@ -373,7 +473,9 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
       },
       {
         key: 'user',
-        name: '用户管理',
+        get name() {
+          return tr('ui.equipment.text0037');
+        },
         actions: ['查看', '新增', '编辑', '停用', '分配角色', '删除', '导入', '导出'],
         scopes: [
           'all',
@@ -387,19 +489,25 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
       },
       {
         key: 'role',
-        name: '角色权限',
+        get name() {
+          return tr('ui.equipment.text0038');
+        },
         actions: ['查看', '新增', '编辑', '授权', '删除', '导出'],
         scopes: ['all'],
       },
       {
         key: 'location',
-        name: '存放地点',
+        get name() {
+          return tr('ui.equipment.text0039');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导出'],
         scopes: ['all'],
       },
       {
         key: 'base',
-        name: '基础数据',
+        get name() {
+          return tr('ui.equipment.text0040');
+        },
         actions: ['查看', '新增', '编辑', '删除', '导入', '导出'],
         scopes: ['all'],
       },

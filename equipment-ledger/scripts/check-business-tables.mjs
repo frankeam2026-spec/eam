@@ -47,7 +47,11 @@ async function scan(dir) {
           const label =
             node.props.find((prop) => prop.type === 6 && prop.name === 'label')?.value?.content ||
             header?.loc.source.replace(/<[^>]+>/g, '').trim();
-          if (label === '操作') {
+          // A data column named 操作 (event action text) is not an action-button column.
+          if (
+            label === '操作' &&
+            !node.props.some((prop) => prop.type === 6 && prop.name === 'prop')
+          ) {
             const fixed = node.props.find((prop) => prop.type === 6 && prop.name === 'fixed')?.value
               ?.content;
             const width = node.props.find(

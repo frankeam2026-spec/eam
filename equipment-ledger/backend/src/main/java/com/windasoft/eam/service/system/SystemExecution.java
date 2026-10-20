@@ -17,7 +17,7 @@ public final class SystemExecution {
     if (user == null
         || !Integer.valueOf(1).equals(user.getStatus())
         || Integer.valueOf(1).equals(user.getDeleted()))
-      throw new IllegalArgumentException("计划创建人已停用");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0017");
     if (USER.get() != null) throw new IllegalStateException("不允许嵌套系统身份");
     USER.set(user);
     try {

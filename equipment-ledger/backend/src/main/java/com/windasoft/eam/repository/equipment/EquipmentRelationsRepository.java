@@ -12,20 +12,26 @@ import org.springframework.stereotype.Repository;
 public class EquipmentRelationsRepository {
   private final JdbcTemplate db;
   private final EquipmentMapper equipment;
+  private final EquipmentMediaRepository media;
   private final EquipmentQueryRepository queries;
 
   public EquipmentRelationsRepository(
-      JdbcTemplate db, EquipmentMapper equipment, EquipmentQueryRepository queries) {
+      JdbcTemplate db,
+      EquipmentMapper equipment,
+      EquipmentMediaRepository media,
+      EquipmentQueryRepository queries) {
     this.db = db;
     this.equipment = equipment;
+    this.media = media;
     this.queries = queries;
   }
 
   public Equipment find(long tenant, long id) {
-    return equipment.selectOne(
-        new LambdaQueryWrapper<Equipment>()
-            .eq(Equipment::getTenantId, tenant)
-            .eq(Equipment::getId, id));
+    return media.hydrate(
+        equipment.selectOne(
+            new LambdaQueryWrapper<Equipment>()
+                .eq(Equipment::getTenantId, tenant)
+                .eq(Equipment::getId, id)));
   }
 
   public List<Map<String, Object>> lockCompany(long tenant, long id) {
@@ -120,15 +126,6 @@ public class EquipmentRelationsRepository {
         sort);
   }
 
-  public void updateSnapshots(long tenant, long id, String children, String bom) {
-    db.update(
-        "UPDATE eam_equipment SET children_json=?,related_spares_json=? WHERE tenant_id=? AND id=?",
-        children,
-        bom,
-        tenant,
-        id);
-  }
-
   public List<Map<String, Object>> children(long tenant, long id) {
     return queries.children(tenant, id);
   }
@@ -173,7 +170,7 @@ public class EquipmentRelationsRepository {
 
   private String materialWhere() {
     return " tenant_id=? AND enabled=1 AND (code LIKE ? OR name LIKE ? OR model LIKE ? OR category"
-               + " LIKE ?)";
+        + " LIKE ?)";
   }
 
   private Object[] materialArgs(long tenant, String q) {

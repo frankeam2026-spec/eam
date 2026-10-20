@@ -47,36 +47,42 @@ public class InventoryUsageService {
 
   private Map<String, Object> task(String kind, long task, boolean write) {
     if (write) {
-      require(Set.of("维修", "保养", "点巡检").contains(kind), "任务类型无效");
+      require(
+          Set.of("维修", "保养", "点巡检").contains(kind),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0018"));
       String table =
           kind.equals("维修")
               ? "eam_repair_order"
-              : kind.equals("保养") ? "eam_maintenance_task" : "eam_inspection_task";
+              : kind.equals("保养") ? "v_maintenance_task" : "v_inspection_task";
       repository.lockTask(auth.tenantId(), task, table);
     }
     if (kind.equals("维修")) {
       var order = repository.findRepair(task);
       require(
           order != null && order.getTenantId() == auth.tenantId() && order.getDeleted() == 0,
-          "工单不存在");
+          com.windasoft.eam.common.MessageContext.text("server.repair.message0012"));
       permissions.checkRepair(order, "查看");
       if (write)
         require(
             Objects.equals(order.getAssigneeUserId(), auth.userId())
                 && Set.of("处理中", "挂起").contains(order.getStatus()),
-            "仅当前工单负责人可以登记用料");
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0244"));
       var eq = repository.findEquipmentByCode(auth.tenantId(), order.getEquipmentCode());
-      require(eq.size() == 1, "任务设备不存在");
+      require(
+          eq.size() == 1,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0245"));
       return Map.of("equipment", eq, "code", order.getOrderNo());
     }
-    require(Set.of("保养", "点巡检").contains(kind), "任务类型无效");
+    require(
+        Set.of("保养", "点巡检").contains(kind),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0018"));
     var view = kind.equals("保养") ? maintenance.task(task) : inspection.task(task);
     if (write)
       require(
           Boolean.TRUE.equals(view.get("canExecute"))
               && Objects.equals(text(view, "ownerId"), Long.toString(auth.userId()))
               && Set.of("执行中", "挂起").contains(text(view, "status")),
-          "请先开始执行任务，仅执行人可以登记用料");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0246"));
     if (kind.equals("点巡检"))
       return Map.of(
           "equipment", view.getOrDefault("equipment", List.of()), "code", view.get("code"));
@@ -134,9 +140,13 @@ public class InventoryUsageService {
     var source = task(kind, taskId, true);
     long allocation = id(body.get("allocationId"));
     var found = repository.loadAllocation(auth.tenantId(), allocation);
-    require(found.size() == 1, "发料明细不存在");
+    require(
+        found.size() == 1,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0247"));
     var a = found.getFirst();
-    require(text(a, "task_kind").equals(kind) && id(a.get("task_id")) == taskId, "发料明细不属于当前任务");
+    require(
+        text(a, "task_kind").equals(kind) && id(a.get("task_id")) == taskId,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0248"));
     var qty = InventoryFlowService.decimal(body.get("quantity"), false);
 
     boolean install = text(a, "usage_type").equals("可安装");
@@ -147,37 +157,48 @@ public class InventoryUsageService {
     if (eq == 0 && equipment.size() == 1) eq = id(equipment.getFirst().get("id"));
     if (eq > 0) {
       final long selectedEquipment = eq;
-      require(equipment.stream().anyMatch(e -> id(e.get("id")) == selectedEquipment), "设备不属于当前任务");
+      require(
+          equipment.stream().anyMatch(e -> id(e.get("id")) == selectedEquipment),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0249"));
       attribution = "equipment";
     } else {
-      require(!install, "安装必须选择设备");
-      require(attribution.equals("shared"), "请选择归属设备或任务公共用料");
+      require(
+          !install, com.windasoft.eam.common.MessageContext.text("server.inventory.message0250"));
+      require(
+          attribution.equals("shared"),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0251"));
     }
     String key = text(body, "confirmationKey");
-    require(key.matches("[a-zA-Z0-9-]{16,64}"), "确认标识无效");
+    require(
+        key.matches("[a-zA-Z0-9-]{16,64}"),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0066"));
     var previous = repository.findUsageByKey(auth.tenantId(), key);
     if (!previous.isEmpty()) {
       require(
           id(previous.getFirst().get("allocation_id")) == allocation
               && ((BigDecimal) previous.getFirst().get("quantity")).compareTo(qty) == 0,
-          "不能复用其他用料请求的确认标识");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0252"));
       require(
           Objects.equals(
                   Objects.toString(previous.getFirst().get("equipment_id"), "0"), Long.toString(eq))
               && text(previous.getFirst(), "attribution").equals(attribution),
-          "不能更换已确认用料的归属");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0253"));
       return list(kind, taskId);
     }
     var available =
         ((BigDecimal) a.get("quantity"))
             .subtract((BigDecimal) a.get("used_quantity"))
             .subtract((BigDecimal) a.get("returned_quantity"));
-    require(qty.compareTo(available) <= 0, "数量超过已发未用数量");
+    require(
+        qty.compareTo(available) <= 0,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0254"));
     BigDecimal remainingCost =
         ((BigDecimal) a.get("amount"))
             .subtract((BigDecimal) a.get("returned_amount"))
             .subtract(repository.usedAmount(auth.tenantId(), allocation));
-    require(remainingCost.signum() >= 0, "历史使用成本需核对，不能继续登记");
+    require(
+        remainingCost.signum() >= 0,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0255"));
     BigDecimal cost =
         com.windasoft.eam.common.inventory.UsageCost.portion(
             (BigDecimal) a.get("quantity"),
@@ -236,17 +257,19 @@ public class InventoryUsageService {
     var source = task(kind, taskId, true);
     long usage = id(body.get("usageId"));
     var found = repository.lockUsage(auth.tenantId(), usage);
-    require(found.size() == 1, "在用备件不存在");
+    require(
+        found.size() == 1,
+        com.windasoft.eam.common.MessageContext.text("server.repair.message0023"));
     var u = found.getFirst();
     long eq = id(u.get("equipment_id"));
     require(
         ((List<?>) source.get("equipment"))
             .stream().anyMatch(e -> id(((Map<?, ?>) e).get("id")) == eq),
-        "备件不属于当前任务设备");
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0256"));
     if (text(u, "status").equals("已换下")) return list(kind, taskId);
     require(
         !text(body, "destination").isBlank() && text(body, "destination").length() <= 500,
-        "请填写换下去向");
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0257"));
     repository.removeUsage(text(body, "destination"), auth.tenantId(), usage);
     history(
         eq,
@@ -285,7 +308,7 @@ public class InventoryUsageService {
     try {
       payload = json.writeValueAsString(details);
     } catch (Exception e) {
-      throw new IllegalArgumentException("操作记录无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0028");
     }
     if (kind.equals("维修"))
       repository.insertRepairEvent(

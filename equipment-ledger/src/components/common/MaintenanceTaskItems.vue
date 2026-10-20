@@ -1,5 +1,7 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElTableColumn } from 'element-plus';
+import { computed } from 'vue';
 import AppBusinessTable from './AppBusinessTable.vue';
 import AppDecimalInput from './AppDecimalInput.vue';
 import { formatNumber } from '../../utils/number';
@@ -11,14 +13,17 @@ import MaintenanceAttachments from './MaintenanceAttachments.vue';
 const props = withDefaults(
   defineProps<{
     items: MaintenanceItem[];
+    visibleItemIds?: string[];
     modelValue: ItemResult[];
     readonly?: boolean;
     hideModule?: boolean;
     compact?: boolean;
+    wideLayout?: boolean;
     label?: string;
+    mode?: 'maintenance' | 'inspection';
     uploadFile?: (file: File) => Promise<RepairAttachment>;
   }>(),
-  { readonly: false, hideModule: false, compact: false, label: '保养' },
+  { readonly: false, hideModule: false, compact: false, label: '', mode: 'maintenance' },
 );
 const emit = defineEmits<{ 'update:modelValue': [ItemResult[]] }>();
 function result(id: string): ItemResult {
@@ -57,39 +62,59 @@ function abnormal(item: MaintenanceItem) {
   return false;
 }
 // Preserve the row type while using native ElTableColumn slots.
-const tableColumnRows1 = () => props.items;
+const visibleItems = computed(() => {
+  if (props.visibleItemIds === undefined) return props.items;
+  const ids = new Set(props.visibleItemIds);
+  return props.items.filter((item) => ids.has(item.id));
+});
+const tableColumnRows1 = () => visibleItems.value;
 type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 
 <template>
-  <div class="task-project-table-scroll">
+  <div class="task-project-table-scroll" :class="{ 'wide-layout': wideLayout }">
     <AppBusinessTable
-      :rows="items"
+      :rows="visibleItems"
       :pagination="false"
       :fill="false"
       :framed="false"
       class="business-table task-project-table"
       ><!-- @vue-generic {TableColumnRow1} -->
-      <ElTableColumn :min-width="55" :width="52" class-name="fixed-sequence"
-        ><template #header><div class="table-header-label">序号</div></template
-        ><template #default="{ row: item, $index: index }">{{ index + 1 }}</template></ElTableColumn
+      <ElTableColumn
+        :min-width="55"
+        :width="52"
+        :fixed="wideLayout ? 'left' : undefined"
+        class-name="fixed-sequence"
+        ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0376') }}</div></template
+        ><template #default="{ row: item, $index: index }">{{
+          items.findIndex((value) => value.id === item.id) + 1
+        }}</template></ElTableColumn
       ><!-- @vue-generic {TableColumnRow1} -->
-      <ElTableColumn v-if="!hideModule" :min-width="150" :width="130" class-name="fixed-module"
-        ><template #header><div class="table-header-label">模块</div></template
+      <ElTableColumn
+        v-if="!hideModule"
+        :min-width="150"
+        :width="130"
+        :fixed="wideLayout ? 'left' : undefined"
+        class-name="fixed-module"
+        ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0783') }}</div></template
         ><template #default="{ row: item, $index: index }">{{
           item.module || ''
         }}</template></ElTableColumn
       ><!-- @vue-generic {TableColumnRow1} -->
-      <ElTableColumn :min-width="210" :width="190" class-name="fixed-name"
-        ><template #header><div class="table-header-label">项目名称</div></template
+      <ElTableColumn
+        :min-width="210"
+        :width="190"
+        :fixed="wideLayout ? 'left' : undefined"
+        class-name="fixed-name"
+        ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0398') }}</div></template
         ><template #default="{ row: item, $index: index }">
           <strong>{{ item.name }}</strong>
         </template></ElTableColumn
       ><!-- @vue-generic {TableColumnRow1} -->
-      <ElTableColumn :min-width="210" :width="260" class-name="long-text"
+      <ElTableColumn :min-width="260" :width="wideLayout ? undefined : 260" class-name="long-text"
         ><template #header
           ><div class="table-header-label">
-            {{ label === '保养' ? '保养内容' : '方法及基准' }}
+            {{ mode === 'maintenance' ? tr('ui.equipment.text0849') : tr('ui.equipment.text0399') }}
           </div></template
         ><template #default="{ row: item, $index: index }">
           {{ item.content || '' }}
@@ -97,31 +122,31 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             v-if="compact && (item.remark || item.references?.length)"
             class="check-reference"
           >
-            <summary>参考资料</summary>
+            <summary>{{ tr('ui.equipment.text1487') }}</summary>
             <p v-if="item.remark">{{ item.remark }}</p>
             <MaintenanceAttachments :model-value="item.references || []" readonly />
           </details> </template></ElTableColumn
       ><!-- @vue-generic {TableColumnRow1} -->
-      <ElTableColumn :min-width="150" :width="310"
+      <ElTableColumn :min-width="310" :width="wideLayout ? undefined : 310"
         ><template #header
-          ><div class="table-header-label">{{ label }}结果</div></template
+          ><div class="table-header-label">{{ label || tr('ui.equipment.text1486') }}{{ tr('ui.equipment.text0454') }}</div></template
         ><template #default="{ row: item, $index: index }">
           <div class="result-value">
-            <span v-if="item.required && !readonly" class="required-mark" title="必填">*</span>
+            <span v-if="item.required && !readonly" class="required-mark" :title="tr('ui.equipment.text0794')">*</span>
             <template v-if="readonly"
               ><span>{{
                 result(item.id).skipped
-                  ? '已跳过'
+                  ? tr('ui.equipment.text0442')
                   : (item.valueType === '数值'
                       ? formatNumber(result(item.id).value)
                       : result(item.id).value) ||
-                    (result(item.id).implicitNormal ? '正常（仅异常填报）' : '')
+                    (result(item.id).implicitNormal ? tr('ui.equipment.text1488') : '')
               }}</span></template
             >
             <ElSelect
               v-else-if="item.valueType === '选项'"
               :model-value="result(item.id).value"
-              placeholder="选择结果"
+              :placeholder="tr('ui.equipment.text1489')"
               @update:model-value="update(item.id, { value: String($event) })"
             >
               <ElOption
@@ -134,14 +159,14 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             <AppDecimalInput
               v-else-if="item.valueType === '数值'"
               :model-value="result(item.id).value"
-              placeholder="输入测量值"
+              :placeholder="tr('ui.equipment.text1490')"
               @update:model-value="update(item.id, { value: $event })"
             />
             <ElInput
               v-else
               :model-value="result(item.id).value"
               type="text"
-              placeholder="填写结果"
+              :placeholder="tr('ui.equipment.text1491')"
               @update:model-value="update(item.id, { value: $event })"
             />
             <span v-if="item.valueType === '数值'" class="numeric-interval"
@@ -149,15 +174,15 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               {{ formatNumber(item.upper) || '+∞' }}</span
             >
           </div>
-          <small
+          <!-- <small
             v-if="item.valueType === '选项' && item.normalOptions.length"
             class="normal-options"
             >正常选项：{{ item.normalOptions.join('、') }}</small
-          >
+          > -->
         </template></ElTableColumn
       ><!-- @vue-generic {TableColumnRow1} -->
       <ElTableColumn :min-width="150" :width="92"
-        ><template #header><div class="table-header-label">判定</div></template
+        ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1492') }}</div></template
         ><template #default="{ row: item, $index: index }">
           <ElTag
             :type="
@@ -170,39 +195,39 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             size="small"
             >{{
               result(item.id).skipped
-                ? '已跳过'
+                ? tr('ui.equipment.text0442')
                 : !result(item.id).value && !result(item.id).implicitNormal
-                  ? '未填写'
+                  ? tr('ui.equipment.text1382')
                   : abnormal(item)
-                    ? '异常'
-                    : '正常'
+                    ? tr('ui.equipment.text0210')
+                    : tr('ui.equipment.text1493')
             }}</ElTag
           >
         </template></ElTableColumn
       ><!-- @vue-generic {TableColumnRow1} -->
       <ElTableColumn v-if="!compact" :min-width="150" :width="110"
-        ><template #header><div class="table-header-label">异常已处理</div></template
+        ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1494') }}</div></template
         ><template #default="{ row: item, $index: index }">
           <template v-if="readonly">{{
-            abnormal(item) ? (result(item.id).resolved ? '是' : '否') : ''
+            abnormal(item) ? (result(item.id).resolved ? tr('ui.equipment.text0067') : tr('ui.equipment.text0068')) : ''
           }}</template>
           <ElSwitch
             v-else-if="abnormal(item)"
             :model-value="result(item.id).resolved"
-            :aria-label="item.name + '异常已处理'"
+            :aria-label="item.name + tr('ui.equipment.text1494')"
             @update:model-value="update(item.id, { resolved: Boolean($event) })"
           />
           <span v-else class="muted"></span> </template></ElTableColumn
       ><!-- @vue-generic {TableColumnRow1} -->
-      <ElTableColumn :min-width="150" :width="240" class-name="long-text"
+      <ElTableColumn :min-width="240" :width="wideLayout ? undefined : 240" class-name="long-text"
         ><template #header
           ><div class="table-header-label">
-            {{ compact ? '异常处理 / 说明' : '处理措施' }}
+            {{ compact ? tr('ui.equipment.text1495') : tr('ui.equipment.text1496') }}
           </div></template
         ><template #default="{ row: item, $index: index }">
           <div v-if="compact && abnormal(item)" class="check-resolution">
-            <span>异常已处理</span
-            ><span v-if="readonly">{{ result(item.id).resolved ? '是' : '否' }}</span
+            <span>{{ tr('ui.equipment.text1494') }}</span
+            ><span v-if="readonly">{{ result(item.id).resolved ? tr('ui.equipment.text0067') : tr('ui.equipment.text0068') }}</span
             ><ElSwitch
               v-else
               :model-value="result(item.id).resolved"
@@ -216,7 +241,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               :model-value="result(item.id).measure"
               type="textarea"
               :autosize="{ minRows: 1, maxRows: 4 }"
-              placeholder="填写处理措施"
+              :placeholder="tr('ui.equipment.text1497')"
               @update:model-value="update(item.id, { measure: $event })"
             />
           </div>
@@ -228,12 +253,12 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             v-if="compact && !readonly"
             :model-value="result(item.id).remark"
             class="check-note"
-            placeholder="检查说明（选填）"
+            :placeholder="tr('ui.equipment.text1498')"
             @update:model-value="update(item.id, { remark: $event })"
           /> </template></ElTableColumn
       ><!-- @vue-generic {TableColumnRow1} -->
       <ElTableColumn v-if="!compact" :min-width="210" :width="220" class-name="long-text"
-        ><template #header><div class="table-header-label">项目说明</div></template
+        ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1499') }}</div></template
         ><template #default="{ row: item, $index: index }">
           <template v-if="readonly">{{ result(item.id).remark || '' }}</template>
           <ElInput
@@ -241,13 +266,13 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             :model-value="result(item.id).remark"
             type="textarea"
             :autosize="{ minRows: 1, maxRows: 4 }"
-            placeholder="填写说明"
+            :placeholder="tr('ui.equipment.text0770')"
             @update:model-value="update(item.id, { remark: $event })"
           /> </template></ElTableColumn
       ><!-- @vue-generic {TableColumnRow1} -->
       <ElTableColumn :min-width="150" :width="210"
         ><template #header
-          ><div class="table-header-label">{{ label }}图片</div></template
+          ><div class="table-header-label">{{ label || tr('ui.equipment.text1486') }}{{ tr('ui.equipment.text0993') }}</div></template
         ><template #default="{ row: item, $index: index }">
           <span v-if="item.photoRequired && !readonly" class="required-mark">*</span
           ><MaintenanceAttachments
@@ -259,7 +284,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           /> </template></ElTableColumn
       ><!-- @vue-generic {TableColumnRow1} -->
       <ElTableColumn v-if="!compact" :min-width="150" :width="220" class-name="long-text"
-        ><template #header><div class="table-header-label">参考说明 / 附件</div></template
+        ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1500') }}</div></template
         ><template #default="{ row: item, $index: index }">
           <p v-if="item.remark" class="reference-note">{{ item.remark }}</p>
           <MaintenanceAttachments
@@ -267,7 +292,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             readonly
           /> </template></ElTableColumn
       ><template #empty
-        ><div v-if="!items.length">暂无{{ label }}项目</div></template
+        ><div v-if="!items.length">{{ tr('ui.equipment.text0182') }}{{ label || tr('ui.equipment.text1486') }}{{ tr('ui.equipment.text1501') }}</div></template
       ></AppBusinessTable
     >
   </div>
@@ -279,6 +304,13 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   overflow: auto;
   border: 1px solid #e3e8f0;
   border-radius: 6px;
+}
+.wide-layout {
+  overflow: hidden;
+}
+.wide-layout .task-project-table {
+  width: 100%;
+  min-width: 0;
 }
 .task-project-table {
   width: 2034px;

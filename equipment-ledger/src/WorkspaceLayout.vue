@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from './i18n';
+
 import { canUseBaseTab } from './utils/baseDataAccess';
 import { ElButton, ElInput, ElMenu, ElSubMenu, ElMenuItem, ElIcon } from 'element-plus';
 import 'element-plus/es/components/menu/style/css';
@@ -74,7 +75,9 @@ function canMenu(item: MenuItem) {
     'repair-plans': 'repairPlan',
     'home-templates': 'homeTemplate',
     'print-templates': 'printTemplate',
+    'business-config': 'businessConfig',
     personalization: 'personalization',
+    languages: 'language',
     'material-custody': 'materialCustody',
   };
   if (item.page && experienceMenus[item.page]) return can(experienceMenus[item.page]!);
@@ -103,7 +106,7 @@ function canMenu(item: MenuItem) {
                       ? 'role'
                       : item.page === 'locations'
                         ? 'location'
-                        : item.label === '工作台'
+                        : item.page === 'workspace'
                           ? 'workspace'
                           : null;
   return key ? can(key) : false;
@@ -135,50 +138,50 @@ type MenuGroup = { id: string; label: string; icon: string; items: MenuItem[] };
 const navGroups: MenuGroup[] = [
   {
     id: 'assets',
-    label: '设备管理',
+    get label() { return tr('ui.equipment.text0001'); },
     icon: 'Equipment',
     items: [
-      { label: '设备台账', icon: 'Equipment', page: 'equipment' },
-      { label: '设备标签', icon: 'Document', page: 'labels' },
+      { get label() { return tr('ui.equipment.text0002'); }, icon: 'Equipment', page: 'equipment' },
+      { get label() { return tr('ui.equipment.text0003'); }, icon: 'Document', page: 'labels' },
     ],
   },
   {
     id: 'operations',
-    label: '运维管理',
+    get label() { return tr('ui.equipment.text0004'); },
     icon: 'Tool',
     items: [
-      { label: '异常库', icon: 'Warning', page: 'anomalies' },
+      { get label() { return tr('ui.equipment.text0005'); }, icon: 'Warning', page: 'anomalies' },
       // { label: '维修计划', icon: 'Clock', page: 'repair-plans' },
-      { label: '维修工单', icon: 'Tool', page: 'repairs' },
+      { get label() { return tr('ui.equipment.text0006'); }, icon: 'Tool', page: 'repairs' },
     ],
   },
   {
     id: 'maintenance',
-    label: '保养管理',
+    get label() { return tr('ui.equipment.text0007'); },
     icon: 'Clock',
     items: [
-      { label: '保养类型', icon: 'Clock', page: 'maintenance', maintenanceKind: 'types' },
-      { label: '保养标准', icon: 'Document', page: 'maintenance', maintenanceKind: 'standards' },
-      { label: '保养计划', icon: 'Grid', page: 'maintenance', maintenanceKind: 'plans' },
-      { label: '保养任务', icon: 'Check', page: 'maintenance', maintenanceKind: 'tasks' },
+      { get label() { return tr('ui.equipment.text0008'); }, icon: 'Clock', page: 'maintenance', maintenanceKind: 'types' },
+      { get label() { return tr('ui.equipment.text0009'); }, icon: 'Document', page: 'maintenance', maintenanceKind: 'standards' },
+      { get label() { return tr('ui.equipment.text0010'); }, icon: 'Grid', page: 'maintenance', maintenanceKind: 'plans' },
+      { get label() { return tr('ui.equipment.text0011'); }, icon: 'Check', page: 'maintenance', maintenanceKind: 'tasks' },
     ],
   },
   {
     id: 'inspection',
-    label: '点巡检管理',
+    get label() { return tr('ui.equipment.text0012'); },
     icon: 'Check',
     items: [
-      { label: '点巡检标准', icon: 'Document', page: 'inspection', maintenanceKind: 'standards' },
-      { label: '日常点检计划', icon: 'Grid', page: 'inspection', maintenanceKind: 'daily-plans' },
-      { label: '日常点检任务', icon: 'Check', page: 'inspection', maintenanceKind: 'daily-tasks' },
+      { get label() { return tr('ui.equipment.text0013'); }, icon: 'Document', page: 'inspection', maintenanceKind: 'standards' },
+      { get label() { return tr('ui.equipment.text0014'); }, icon: 'Grid', page: 'inspection', maintenanceKind: 'daily-plans' },
+      { get label() { return tr('ui.equipment.text0015'); }, icon: 'Check', page: 'inspection', maintenanceKind: 'daily-tasks' },
       {
-        label: '周期巡检计划',
+        get label() { return tr('ui.equipment.text0016'); },
         icon: 'Clock',
         page: 'inspection',
         maintenanceKind: 'periodic-plans',
       },
       {
-        label: '周期巡检任务',
+        get label() { return tr('ui.equipment.text0017'); },
         icon: 'Check',
         page: 'inspection',
         maintenanceKind: 'periodic-tasks',
@@ -187,36 +190,38 @@ const navGroups: MenuGroup[] = [
   },
   {
     id: 'spares',
-    label: '库存管理',
+    get label() { return tr('ui.equipment.text0018'); },
     icon: 'Warehouse',
     items: [
-      { label: '物料档案', icon: 'Document', page: 'inventory', maintenanceKind: 'materials' },
-      { label: '仓库管理', icon: 'Warehouse', page: 'inventory', maintenanceKind: 'warehouses' },
-      { label: '入库管理', icon: 'Download', page: 'inventory', maintenanceKind: 'receipts' },
-      { label: '领料申请', icon: 'Right', page: 'inventory', maintenanceKind: 'requisitions' },
-      { label: '出库管理', icon: 'Right', page: 'inventory', maintenanceKind: 'outbounds' },
-      { label: '库存查询', icon: 'Grid', page: 'inventory', maintenanceKind: 'balances' },
-      { label: '领用余料', icon: 'Warehouse', page: 'material-custody' },
-      { label: '退料管理', icon: 'Return', page: 'inventory', maintenanceKind: 'returns' },
-      { label: '调拨管理', icon: 'Transfer', page: 'inventory', maintenanceKind: 'transfers' },
-      { label: '盘点管理', icon: 'Document', page: 'inventory', maintenanceKind: 'counts' },
-      { label: '期初与初始化', icon: 'Warehouse', page: 'inventory', maintenanceKind: 'openings' },
-      { label: '单据纠正', icon: 'Undo', page: 'inventory', maintenanceKind: 'reversals' },
+      { get label() { return tr('ui.equipment.text0019'); }, icon: 'Document', page: 'inventory', maintenanceKind: 'materials' },
+      { get label() { return tr('ui.equipment.text0020'); }, icon: 'Warehouse', page: 'inventory', maintenanceKind: 'warehouses' },
+      { get label() { return tr('ui.equipment.text0021'); }, icon: 'Download', page: 'inventory', maintenanceKind: 'receipts' },
+      { get label() { return tr('ui.equipment.text0022'); }, icon: 'Right', page: 'inventory', maintenanceKind: 'requisitions' },
+      { get label() { return tr('ui.equipment.text0023'); }, icon: 'Right', page: 'inventory', maintenanceKind: 'outbounds' },
+      { get label() { return tr('ui.equipment.text0024'); }, icon: 'Grid', page: 'inventory', maintenanceKind: 'balances' },
+      { get label() { return tr('ui.equipment.text0025'); }, icon: 'Warehouse', page: 'material-custody' },
+      { get label() { return tr('ui.equipment.text0026'); }, icon: 'Return', page: 'inventory', maintenanceKind: 'returns' },
+      { get label() { return tr('ui.equipment.text0027'); }, icon: 'Transfer', page: 'inventory', maintenanceKind: 'transfers' },
+      { get label() { return tr('ui.equipment.text0028'); }, icon: 'Document', page: 'inventory', maintenanceKind: 'counts' },
+      { get label() { return tr('ui.equipment.text0029'); }, icon: 'Warehouse', page: 'inventory', maintenanceKind: 'openings' },
+      { get label() { return tr('ui.equipment.text0030'); }, icon: 'Undo', page: 'inventory', maintenanceKind: 'reversals' },
     ],
   },
   {
     id: 'system',
-    label: '系统管理',
+    get label() { return tr('ui.equipment.text0031'); },
     icon: 'Settings',
     items: [
-      { label: '个性化设置', icon: 'Settings', page: 'personalization' },
-      { label: '首页模板', icon: 'Grid', page: 'home-templates' },
-      { label: '打印模板', icon: 'Printer', page: 'print-templates' },
-      { label: '组织架构', icon: 'Organization', page: 'organization' },
-      { label: '用户管理', icon: 'User', page: 'users' },
-      { label: '角色权限', icon: 'Permissions', page: 'roles' },
-      { label: '存放地点', icon: 'Location', page: 'locations' },
-      { label: '基础数据', icon: 'Grid', page: 'base' },
+      { get label() { return tr('ui.equipment.text0032'); }, icon: 'Settings', page: 'business-config' },
+      { get label() { return tr('ui.equipment.text0033'); }, icon: 'Settings', page: 'personalization' },
+      { get label(){ return tr('language.manager.menu'); }, icon:'Settings',page:'languages' },
+      { get label() { return tr('ui.equipment.text0034'); }, icon: 'Grid', page: 'home-templates' },
+      { get label() { return tr('ui.equipment.text0035'); }, icon: 'Printer', page: 'print-templates' },
+      { get label() { return tr('ui.equipment.text0036'); }, icon: 'Organization', page: 'organization' },
+      { get label() { return tr('ui.equipment.text0037'); }, icon: 'User', page: 'users' },
+      { get label() { return tr('ui.equipment.text0038'); }, icon: 'Permissions', page: 'roles' },
+      { get label() { return tr('ui.equipment.text0039'); }, icon: 'Location', page: 'locations' },
+      { get label() { return tr('ui.equipment.text0040'); }, icon: 'Grid', page: 'base' },
     ],
   },
 ];
@@ -363,7 +368,7 @@ async function signIn(tenantId: string, account: string, password: string) {
     await initialize();
   } catch (error) {
     authState.value = 'login';
-    authMessage.value = error instanceof Error ? error.message : '登录失败';
+    authMessage.value = error instanceof Error ? error.message : tr('ui.equipment.text0041');
   }
 }
 
@@ -392,7 +397,7 @@ async function connectBackend() {
       try {
         await baseData.load(tab);
       } catch (error) {
-        notify(error instanceof Error ? error.message : '基础数据加载失败', 'error');
+        notify(error instanceof Error ? error.message : tr('ui.equipment.text0042'), 'error');
       }
     }),
   );
@@ -429,16 +434,16 @@ onUnmounted(() => {
       <div class="sidebar-tools">
         <ElButton
           class="collapse"
-          :aria-label="collapsed ? '展开导航' : '收起导航'"
-          :title="collapsed ? '展开导航' : '收起导航'"
+          :aria-label="collapsed ? tr('ui.equipment.text0043') : tr('ui.equipment.text0044')"
+          :title="collapsed ? tr('ui.equipment.text0043') : tr('ui.equipment.text0044')"
           @click="toggleSidebar"
           ><AppIcon name="HamburgerButton"
         /></ElButton>
       </div>
       <div v-if="!collapsed" class="navigation-search">
-        <ElInput v-model="menuSearch" placeholder="搜索菜单" aria-label="搜索菜单" /><ElButton
+        <ElInput v-model="menuSearch" :placeholder="tr('ui.equipment.text0045')" :aria-label="tr('ui.equipment.text0045')" /><ElButton
           v-if="menuSearch"
-          aria-label="清空菜单搜索"
+          :aria-label="tr('ui.equipment.text0046')"
           @click="menuSearch = ''"
           ><AppIcon name="Close"
         /></ElButton>
@@ -446,7 +451,7 @@ onUnmounted(() => {
       <ElMenu
         :key="`${collapsed}-${menuSearch.trim()}`"
         class="app-navigation"
-        aria-label="主导航"
+        :aria-label="tr('ui.equipment.text0047')"
         :collapse="collapsed"
         :collapse-transition="false"
         :unique-opened="true"
@@ -463,10 +468,10 @@ onUnmounted(() => {
             (collapsed || !menuSearch.trim() || '首页'.includes(menuSearch.trim()))
           "
           index="home"
-          aria-label="首页"
+          :aria-label="tr('ui.equipment.text0048')"
         >
           <ElIcon><AppIcon name="Grid" /></ElIcon>
-          <template #title>首页</template>
+          <template #title>{{ tr('ui.equipment.text0048') }}</template>
         </ElMenuItem>
         <ElMenuItem
           v-if="
@@ -474,10 +479,10 @@ onUnmounted(() => {
             (collapsed || !menuSearch.trim() || '工作台'.includes(menuSearch.trim()))
           "
           index="workspace"
-          aria-label="工作台"
+          :aria-label="tr('ui.equipment.text0049')"
         >
           <ElIcon><AppIcon name="Todo" /></ElIcon>
-          <template #title>工作台</template>
+          <template #title>{{ tr('ui.equipment.text0049') }}</template>
         </ElMenuItem>
         <ElSubMenu
           v-for="group in matchingNavGroups"
@@ -499,15 +504,15 @@ onUnmounted(() => {
         </ElSubMenu>
       </ElMenu>
       <ElButton
-        title="操作指南"
-        aria-label="查看产品使用指南"
+        :title="tr('ui.equipment.text0050')"
+        :aria-label="tr('ui.equipment.text0051')"
         @click="helpSection = 'guide'"
         class="sidebar-bottom"
         native-type="button"
         ><div class="help-icon">
           <AppIcon name="Help" />
         </div>
-        <div class="help-copy"><b>需要帮助？</b><small>操作指南</small></div>
+        <div class="help-copy"><b>{{ tr('ui.equipment.text0052') }}</b><small>{{ tr('ui.equipment.text0050') }}</small></div>
         <span class="chevron" aria-hidden="true"> <AppIcon name="Right" /> </span
       ></ElButton>
     </aside>
@@ -516,7 +521,7 @@ onUnmounted(() => {
         <div class="top-left">
           <ElButton
             class="mobile-menu"
-            :aria-label="collapsed ? '打开导航' : '收起导航'"
+            :aria-label="collapsed ? tr('ui.equipment.text0053') : tr('ui.equipment.text0044')"
             @click="toggleSidebar"
             ><AppIcon name="Menu"
           /></ElButton>

@@ -1,3 +1,5 @@
+import { currentLocale } from '../i18n';
+import { tr } from '../i18n';
 import { ApiError, request } from '../api';
 export type PrintColumn = { key: string; label: string; width: number };
 export type DocumentPrintConfig = {
@@ -80,12 +82,12 @@ export async function printPdf(path: string, init?: RequestInit) {
   const response = await fetch('/api/v1/printing/' + path, {
     ...init,
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { 'Accept-Language': currentLocale.value, 'Content-Type': 'application/json', ...init?.headers },
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     if (response.status === 401) window.dispatchEvent(new Event('eam-session-expired'));
-    throw new ApiError(body.message || '打印文件读取失败', response.status);
+    throw new ApiError(body.message || tr('ui.validation.message38'), response.status);
   }
   return response.blob();
 }

@@ -1,33 +1,14 @@
-<script setup lang="ts">
+<script setup lang="ts">import { enumLabel } from '../../i18n';
+
 import { computed } from 'vue';
+import { taskStatusStyle } from '../../utils/taskStatus';
 
 const props = defineProps<{ status: string }>();
-const colors: Record<string, [string, string]> = {
-  待派工: ['#ae7100', '#fff5de'],
-  待接单: ['#7953b3', '#f1eaff'],
-  处理中: ['#205cf5', '#eaf1ff'],
-  已撤销: ['#bb5663', '#fff0f1'],
-  未开始: ['#a83999', '#fceafa'],
-  待审核: ['#087b91', '#e9f8fb'],
-  已审核: ['#16845b', '#eaf7f1'],
-  审核不通过: ['#c74444', '#fff0f0'],
-  已过期: ['#955200', '#fff0de'],
-  待执行: ['#ae7100', '#fff5de'],
-  执行中: ['#205cf5', '#eaf1ff'],
-  待验收: ['#087b91', '#e9f8fb'],
-  已完成: ['#16845b', '#eaf7f1'],
-  挂起: ['#7953b3', '#f1eaff'],
-  已作废: ['#727e90', '#f1f2f4'],
-  过期作废: ['#bb5663', '#fff0f1'],
-};
-const style = computed(() => {
-  const [color, background] = colors[props.status] || ['#727e90', '#f1f2f4'];
-  return { color, background };
-});
+const style = computed(() => taskStatusStyle(props.status));
 </script>
 
 <template>
-  <span class="maintenance-task-status" :style="style">{{ status }}</span>
+  <span v-if="status" class="maintenance-task-status" :style="style">{{ enumLabel('status',status) }}</span>
 </template>
 
 <style scoped>

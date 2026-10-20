@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { computed, ref, watch } from 'vue';
 import {
   ElPopover,
@@ -102,7 +103,7 @@ function apply() {
   >
     <div v-click-outside="outside">
       <template v-if="!field">
-        <ElInput v-model="search" placeholder="搜索筛选字段" aria-label="搜索筛选字段" clearable />
+        <ElInput v-model="search" :placeholder="tr('ui.equipment.text1403')" :aria-label="tr('ui.equipment.text1403')" clearable />
         <div class="condition-fields">
           <ElButton
             v-for="item in visibleFields"
@@ -112,9 +113,9 @@ function apply() {
             @click="choose(item.key)"
           >
             <span>{{ item.label }}</span
-            ><ElTag v-if="conditions.some((c) => c.field === item.key)" size="small">已添加</ElTag>
+            ><ElTag v-if="conditions.some((c) => c.field === item.key)" size="small">{{ tr('ui.equipment.text1404') }}</ElTag>
           </ElButton>
-          <p v-if="!visibleFields.length">没有匹配的字段</p>
+          <p v-if="!visibleFields.length">{{ tr('ui.equipment.text1405') }}</p>
         </div>
       </template>
       <template v-else-if="draft">
@@ -124,10 +125,10 @@ function apply() {
           </AppFormField>
         </ElForm>
         <div class="condition-actions">
-          <ElButton text @click="choose()">返回</ElButton>
+          <ElButton text @click="choose()">{{ tr('ui.equipment.text0208') }}</ElButton>
           <div>
-            <ElButton @click="close">取消</ElButton
-            ><ElButton type="primary" @click="apply">应用</ElButton>
+            <ElButton @click="close">{{ tr('ui.equipment.text0157') }}</ElButton
+            ><ElButton type="primary" @click="apply">{{ tr('ui.equipment.text0609') }}</ElButton>
           </div>
         </div>
       </template>

@@ -20,4 +20,34 @@ public record EquipmentListQuery(
     LocalDate acquiredTo,
     LocalDate warrantyBefore,
     String sortBy,
-    String direction) {}
+    String direction,
+    String advanced,
+    String scopeType,
+    String scopeIds,
+    String scopeCompanyId) {
+  public EquipmentListQuery at(long page, long size) {
+    return new EquipmentListQuery(
+        page,
+        size,
+        keyword,
+        category,
+        state,
+        department,
+        company,
+        model,
+        serial,
+        owner,
+        brand,
+        useState,
+        source,
+        acquiredFrom,
+        acquiredTo,
+        warrantyBefore,
+        sortBy,
+        direction,
+        advanced,
+        scopeType,
+        scopeIds,
+        scopeCompanyId);
+  }
+}

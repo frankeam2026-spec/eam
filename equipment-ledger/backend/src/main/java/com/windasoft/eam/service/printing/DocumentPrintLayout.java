@@ -20,7 +20,8 @@ public class DocumentPrintLayout {
     HEADERS.put("warehouseName", "仓库");
     HEADERS.put("sourceKind", "出库类型");
     HEADERS.put("confirmedAt", "出库时间");
-    HEADERS.put("recipientName", "领用人");
+    HEADERS.put(
+        "recipientName", com.windasoft.eam.common.MessageContext.text("ui.equipment.text0564"));
     HEADERS.put("departmentName", "领用部门");
     HEADERS.put("taskCode", "关联任务");
     HEADERS.put("purpose", "用途");
@@ -32,7 +33,7 @@ public class DocumentPrintLayout {
     COLUMNS.put("model", "规格型号");
     COLUMNS.put("unit", "单位");
     COLUMNS.put("quantity", "本次数量");
-    COLUMNS.put("recipient", "领用人");
+    COLUMNS.put("recipient", com.windasoft.eam.common.MessageContext.text("ui.equipment.text0564"));
     COLUMNS.put("department", "领用部门");
     COLUMNS.put("task", "任务编号");
     COLUMNS.put("requisition", "申请编号");
@@ -54,9 +55,31 @@ public class DocumentPrintLayout {
     this.fontPath = path;
   }
 
+  public Map<String, String> headerLabels() {
+    var labels = new LinkedHashMap<String, String>();
+    HEADERS
+        .keySet()
+        .forEach(
+            k ->
+                labels.put(
+                    k, com.windasoft.eam.common.MessageContext.text("output.print.headers." + k)));
+    return labels;
+  }
+
+  public Map<String, String> columnLabels() {
+    var labels = new LinkedHashMap<String, String>();
+    COLUMNS
+        .keySet()
+        .forEach(
+            k ->
+                labels.put(
+                    k, com.windasoft.eam.common.MessageContext.text("output.print.columns." + k)));
+    return labels;
+  }
+
   public JsonNode defaults() {
     var c = json.createObjectNode();
-    c.put("title", "物料出库单");
+    c.put("title", com.windasoft.eam.common.MessageContext.text("output.print.text0001"));
     c.put("paper", "A4");
     c.put("landscape", false);
     c.put("widthMm", 210);
@@ -72,13 +95,16 @@ public class DocumentPrintLayout {
         List.of("sequence", "code", "name", "model", "unit", "quantity", "recipient", "task")) {
       var col = cols.addObject();
       col.put("key", key);
-      col.put("label", COLUMNS.get(key));
+      col.put("label", com.windasoft.eam.common.MessageContext.text("output.print.columns." + key));
       col.put(
-          "width", key.equals("sequence") || key.equals("unit") ? 6 : key.equals("name") ? 20 : 14);
+          "width",
+          key.equals("sequence") || key.equals("unit")
+              ? 6
+              : key.equals("name") ? 20 : key.equals("task") ? 18 : 14);
     }
     var signatures = c.putArray("signatures");
-    signatures.add("发料人");
-    signatures.add("领用人");
+    signatures.add(com.windasoft.eam.common.MessageContext.text("output.print.text0002"));
+    signatures.add(com.windasoft.eam.common.MessageContext.text("ui.equipment.text0564"));
     return c;
   }
 
@@ -92,64 +118,93 @@ public class DocumentPrintLayout {
   }
 
   public void validate(JsonNode c) {
-    require(c.isObject() && c.toString().length() < 800000, "模板配置过大或格式无效");
+    require(
+        c.isObject() && c.toString().length() < 800000,
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0029"));
     require(
         !c.path("title").asText().isBlank() && c.path("title").asText().length() <= 80,
-        "请填写打印标题（最多80字）");
-    require(Set.of("A4", "A5", "CUSTOM").contains(c.path("paper").asText()), "纸张类型无效");
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0030"));
+    require(
+        Set.of("A4", "A5", "CUSTOM").contains(c.path("paper").asText()),
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0031"));
     require(
         c.path("fontSize").isNumber()
             && c.path("fontSize").asDouble() >= 8
             && c.path("fontSize").asDouble() <= 14,
-        "字号应为8至14磅");
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0032"));
     double w = width(c), h = height(c);
     require(
         Double.isFinite(w) && Double.isFinite(h) && w >= 80 && w <= 600 && h >= 100 && h <= 600,
-        "纸张宽80至600mm，高100至600mm");
-    require(c.path("headers").isArray() && c.path("headers").size() <= HEADERS.size(), "基本信息字段无效");
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0033"));
+    require(
+        c.path("headers").isArray() && c.path("headers").size() <= HEADERS.size(),
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0034"));
     var seen = new HashSet<String>();
     for (var k : c.path("headers"))
-      require(HEADERS.containsKey(k.asText()) && seen.add(k.asText()), "基本信息字段无效或重复");
+      require(
+          HEADERS.containsKey(k.asText()) && seen.add(k.asText()),
+          com.windasoft.eam.common.MessageContext.text("server.printing.message0035"));
     var cols = c.path("columns");
-    require(cols.isArray() && cols.size() >= 3 && cols.size() <= COLUMNS.size(), "请选择3至15个明细字段");
+    require(
+        cols.isArray() && cols.size() >= 3 && cols.size() <= COLUMNS.size(),
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0036"));
     seen.clear();
     for (var col : cols) {
       String k = col.path("key").asText();
-      require(COLUMNS.containsKey(k) && seen.add(k), "明细字段无效或重复");
+      require(
+          COLUMNS.containsKey(k) && seen.add(k),
+          com.windasoft.eam.common.MessageContext.text("server.printing.message0037"));
       require(
           !col.path("label").asText().isBlank() && col.path("label").asText().length() <= 24,
-          "明细标题应为1至24字");
+          com.windasoft.eam.common.MessageContext.text("server.printing.message0038"));
       double n = col.path("width").asDouble(Double.NaN);
-      require(Double.isFinite(n) && n >= 3 && n <= 100, "列宽比例应为3至100");
+      require(
+          Double.isFinite(n) && n >= 3 && n <= 100,
+          com.windasoft.eam.common.MessageContext.text("server.printing.message0039"));
     }
-    require(seen.containsAll(Set.of("code", "name", "quantity")), "料号、物料名称和本次数量必须保留");
-    require(c.path("signatures").isArray() && c.path("signatures").size() <= 4, "签字栏最多4项");
+    require(
+        seen.containsAll(Set.of("code", "name", "quantity")),
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0040"));
+    require(
+        c.path("signatures").isArray() && c.path("signatures").size() <= 4,
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0041"));
     for (var item : c.path("signatures"))
-      require(!item.asText().isBlank() && item.asText().length() <= 20, "签字栏名称应为1至20字");
-    require(c.path("footer").asText().length() <= 500, "页尾说明最多500字");
+      require(
+          !item.asText().isBlank() && item.asText().length() <= 20,
+          com.windasoft.eam.common.MessageContext.text("server.printing.message0042"));
+    require(
+        c.path("footer").asText().length() <= 500,
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0043"));
     String logo = c.path("logo").asText();
     require(
         logo.isEmpty() || logo.matches("data:image/(png|jpeg);base64,[A-Za-z0-9+/=]+"),
-        "Logo仅支持PNG或JPEG图片");
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0044"));
     if (!logo.isEmpty()) {
       byte[] bytes = Base64.getDecoder().decode(logo.substring(logo.indexOf(',') + 1));
-      require(bytes.length <= 512000, "Logo不能超过500KB");
+      require(
+          bytes.length <= 512000,
+          com.windasoft.eam.common.MessageContext.text("server.printing.message0045"));
       try (var input =
           javax.imageio.ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
         var readers = javax.imageio.ImageIO.getImageReaders(input);
-        require(readers.hasNext(), "Logo图片无效");
+        require(
+            readers.hasNext(),
+            com.windasoft.eam.common.MessageContext.text("server.printing.message0046"));
         var reader = readers.next();
         try {
           reader.setInput(input);
-          require((long) reader.getWidth(0) * reader.getHeight(0) <= 4000000, "Logo图片分辨率过大");
+          require(
+              (long) reader.getWidth(0) * reader.getHeight(0) <= 4000000,
+              com.windasoft.eam.common.MessageContext.text("server.printing.message0047"));
           require(
               Set.of("png", "jpeg", "jpg").contains(reader.getFormatName().toLowerCase()),
-              "Logo图片格式无效");
+              com.windasoft.eam.common.MessageContext.text("server.printing.message0048"));
         } finally {
           reader.dispose();
         }
       } catch (IOException e) {
-        throw new IllegalArgumentException("Logo图片无法读取");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.printing.message0008");
       }
     }
   }
@@ -180,7 +235,7 @@ public class DocumentPrintLayout {
       throws IOException {
     validate(c);
     if (fontPath.isBlank() || !new File(fontPath).isFile())
-      throw new IllegalArgumentException("打印中文字体未配置，请联系管理员");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.printing.message0009");
     try (var metricsDocument = new PDDocument();
         var input = new FileInputStream(fontPath)) {
       var font = PDType0Font.load(metricsDocument, input, true);
@@ -190,16 +245,24 @@ public class DocumentPrintLayout {
       b.full(String.valueOf(document.getOrDefault("companyName", "")), 12, true, false);
       b.full(c.path("title").asText(), 18, true, false);
       b.full(
-          "单号：" + document.get("code") + "    " + (status.equals("草稿") ? "草稿，非出库凭证" : status),
+          com.windasoft.eam.common.MessageContext.text("output.print.text0004")
+              + document.get("code")
+              + "    "
+              + (status.equals("草稿")
+                  ? com.windasoft.eam.common.MessageContext.text("output.print.text0003")
+                  : com.windasoft.eam.common.SystemEnumLabels.display("status", status)),
           10,
           true,
           false);
       var entries = new ArrayList<String>();
       for (var field : c.path("headers"))
         entries.add(
-            HEADERS.get(field.asText())
+            com.windasoft.eam.common.MessageContext.text("output.print.headers." + field.asText())
                 + "："
-                + String.valueOf(document.getOrDefault(field.asText(), "")));
+                + (field.asText().equals("sourceKind")
+                    ? com.windasoft.eam.common.SystemEnumLabels.display(
+                        "outboundType", document.get(field.asText()))
+                    : String.valueOf(document.getOrDefault(field.asText(), ""))));
       for (int i = 0; i < entries.size(); i += 2)
         b.full(
             entries.get(i) + (i + 1 < entries.size() ? "     " + entries.get(i + 1) : ""),
@@ -226,13 +289,13 @@ public class DocumentPrintLayout {
       for (var line : lines) {
         if (multipleSources) {
           String source =
-              "申请："
+              com.windasoft.eam.common.MessageContext.text("output.print.requisition")
                   + line.getOrDefault("requisition", "")
-                  + "  领用人："
+                  + com.windasoft.eam.common.MessageContext.text("output.print.recipient")
                   + line.getOrDefault("recipient", "")
-                  + "  部门："
+                  + com.windasoft.eam.common.MessageContext.text("output.print.department")
                   + line.getOrDefault("department", "")
-                  + "  任务："
+                  + com.windasoft.eam.common.MessageContext.text("output.print.task")
                   + line.getOrDefault("task", "");
           if (!source.equals(previousSource)) {
             b.full(source, 9, false, true);
@@ -245,14 +308,16 @@ public class DocumentPrintLayout {
         var totals = new TreeMap<String, java.math.BigDecimal>();
         for (var line : lines)
           totals.merge(
-              line.getOrDefault("currency", "未标注币种"),
+              line.getOrDefault(
+                  "currency",
+                  com.windasoft.eam.common.MessageContext.text("output.print.unknownCurrency")),
               new java.math.BigDecimal(line.getOrDefault("amount", "0")),
               java.math.BigDecimal::add);
         for (var entry : totals.entrySet())
           b.full(
-              "金额合计（"
+              com.windasoft.eam.common.MessageContext.text("output.print.total")
                   + entry.getKey()
-                  + "）："
+                  + com.windasoft.eam.common.MessageContext.text("output.print.totalEnd")
                   + entry.getValue().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString(),
               11,
               true,
@@ -291,7 +356,8 @@ public class DocumentPrintLayout {
       for (var col : config.path("columns")) {
         double w = usable * col.path("width").asDouble() / total;
         require(
-            w * 72 / 25.4 - 6 >= config.path("fontSize").asDouble(), "列宽过窄，请减少字段、调整宽度比例或使用横向纸张");
+            w * 72 / 25.4 - 6 >= config.path("fontSize").asDouble(),
+            com.windasoft.eam.common.MessageContext.text("server.printing.message0049"));
         widths.add(w);
         columns.add(w);
       }

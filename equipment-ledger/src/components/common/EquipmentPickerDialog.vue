@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElButton } from 'element-plus';
 import { ref, watch } from 'vue';
 import AppDialog from './AppDialog.vue';
@@ -47,7 +48,7 @@ async function load() {
       error.value = '';
     }
   } catch (e) {
-    if (seq === revision) error.value = e instanceof Error ? e.message : '设备加载失败';
+    if (seq === revision) error.value = e instanceof Error ? e.message : tr('ui.equipment.text1050');
   } finally {
     if (seq === revision) loading.value = false;
   }
@@ -72,22 +73,22 @@ function search() {
   load();
 }
 const columns = [
-  { prop: 'code' as const, label: '设备编号', minWidth: 160, overflowTooltip: true },
-  { prop: 'name' as const, label: '设备名称', minWidth: 160, overflowTooltip: true },
-  { prop: 'model' as const, label: '规格型号', minWidth: 160, overflowTooltip: true },
-  { prop: 'department' as const, label: '所属部门', minWidth: 150, overflowTooltip: true },
+  { prop: 'code' as const, get label() { return tr('ui.equipment.text0078'); }, minWidth: 160, overflowTooltip: true },
+  { prop: 'name' as const, get label() { return tr('ui.equipment.text0081'); }, minWidth: 160, overflowTooltip: true },
+  { prop: 'model' as const, get label() { return tr('ui.equipment.text0091'); }, minWidth: 160, overflowTooltip: true },
+  { prop: 'department' as const, get label() { return tr('ui.equipment.text0098'); }, minWidth: 150, overflowTooltip: true },
 ];
 </script>
 <template>
   <AppDialog
     :model-value="modelValue"
-    title="选择设备"
+    :title="tr('ui.equipment.text0220')"
     width="920px"
     @update:model-value="emit('update:modelValue', $event)"
     ><form @submit.prevent="search">
-      <ListSearchInput v-model="q" placeholder="搜索设备编号、名称、型号" />
+      <ListSearchInput v-model="q" :placeholder="tr('ui.equipment.text0389')" />
     </form>
-    <p v-if="multiple">已选 {{ selected.length }} 项</p>
+    <p v-if="multiple">{{ tr('ui.equipment.text0295') }} {{ selected.length }} {{ tr('ui.equipment.text0394') }}</p>
     <div class="equipment-picker-body">
       <AppBusinessTable
         v-model:page="page"
@@ -114,13 +115,13 @@ const columns = [
               emit('update:modelValue', false);
             "
           >
-            选择
+            {{ tr('ui.equipment.text0848') }}
           </ElButton></template
         ></AppBusinessTable
       >
     </div>
     <template #footer
-      ><ElButton @click="emit('update:modelValue', false)">取消</ElButton
+      ><ElButton @click="emit('update:modelValue', false)">{{ tr('ui.equipment.text0157') }}</ElButton
       ><ElButton
         type="primary"
         v-if="multiple"
@@ -130,7 +131,7 @@ const columns = [
           emit('update:modelValue', false);
         "
       >
-        确定
+        {{ tr('ui.equipment.text0402') }}
       </ElButton></template
     ></AppDialog
   >

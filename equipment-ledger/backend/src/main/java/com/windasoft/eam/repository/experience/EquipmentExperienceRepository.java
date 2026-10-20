@@ -41,7 +41,7 @@ public class EquipmentExperienceRepository {
 
   public List<Map<String, Object>> listMaintenanceIds(long tenantId, Object eid) {
     return db.queryForList(
-        "SELECT CAST(id AS CHAR) id FROM eam_maintenance_task WHERE tenant_id=? AND"
+        "SELECT CAST(id AS CHAR) id FROM v_maintenance_task WHERE tenant_id=? AND"
             + " equipment_id=?",
         tenantId,
         eid);
@@ -95,7 +95,9 @@ public class EquipmentExperienceRepository {
             "eam_inspection_event",
             "task_id")
         .getOrDefault(table, "")
-        .equals(key)) throw new IllegalArgumentException("未知任务事件类型");
+        .equals(key))
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.experience.message0002");
     return db.queryForList(
         "SELECT CAST(id AS CHAR) id,action,actor_name actor,created_at time FROM "
             + table

@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElButton, ElInput, ElSelect, ElOption } from 'element-plus';
 import { computed } from 'vue';
 import {
@@ -74,32 +75,32 @@ function change(key: string, value: unknown) {
     >
       <div class="section-title">
         <AppIcon :name="editing ? 'HamburgerButton' : icons[block.type] || 'Document'" />
-        <h2>{{ block.title || '未命名区块' }}</h2>
-        <span v-if="block.scope === 'team'" class="scope-label">团队</span
+        <h2>{{ block.title || tr('ui.equipment.text1534') }}</h2>
+        <span v-if="block.scope === 'team'" class="scope-label">{{ tr('ui.equipment.text1535') }}</span
         ><span
           v-if="analytic && block.period?.preset && block.period.preset !== 'follow'"
           class="scope-label"
           >{{
-            widgetPeriodOptions.find((p) => p.value === block.period?.preset)?.label || '独立周期'
+            widgetPeriodOptions.find((p) => p.value === block.period?.preset)?.label || tr('ui.equipment.text1536')
           }}</span
         >
       </div>
       <div v-if="editing" class="section-actions">
         <ElButton
-          aria-label="上移区块"
-          title="上移"
+          :aria-label="tr('ui.equipment.text1537')"
+          :title="tr('ui.equipment.text0382')"
           :disabled="first || busy"
           @click="emit('move', block.id, -1)"
           ><AppIcon name="Up" /></ElButton
         ><ElButton
-          aria-label="下移区块"
-          title="下移"
+          :aria-label="tr('ui.equipment.text1538')"
+          :title="tr('ui.equipment.text0383')"
           :disabled="last || busy"
           @click="emit('move', block.id, 1)"
           ><AppIcon name="Down" /></ElButton
         ><ElButton
-          aria-label="移除区块"
-          title="移除"
+          :aria-label="tr('ui.equipment.text1539')"
+          :title="tr('ui.equipment.text0151')"
           :disabled="!removable || busy"
           @click="emit('remove', block.id)"
           ><AppIcon name="Close"
@@ -108,30 +109,30 @@ function change(key: string, value: unknown) {
       <slot v-else name="action" />
     </header>
     <div v-if="editing" class="section-settings">
-      <AppFormField label="标题" :prop="`blocks.${index}.title`"
+      <AppFormField :label="tr('ui.equipment.text1540')" :prop="`blocks.${index}.title`"
         ><ElInput
           :model-value="block.title"
           :disabled="busy"
           maxlength="80"
           @update:model-value="change('title', $event)"
       /></AppFormField>
-      <AppFormField label="位置"
+      <AppFormField :label="tr('ui.equipment.text0108')"
         ><ElSelect
           :model-value="block.column"
           :disabled="busy || block.type === 'work'"
           @update:model-value="change('column', $event)"
-          ><ElOption value="main" label="主栏" /><ElOption value="side" label="侧栏" /></ElSelect
+          ><ElOption value="main" :label="tr('ui.equipment.text1541')" /><ElOption value="side" :label="tr('ui.equipment.text1542')" /></ElSelect
       ></AppFormField>
       <AppFormField
         v-if="!analytic || metric?.chart === 'bar'"
-        :label="analytic ? '排名条数' : '显示条数'"
+        :label="analytic ? tr('ui.equipment.text1543') : tr('ui.equipment.text1544')"
         ><ElSelect
           :model-value="analytic ? block.topN || 10 : block.limit"
           :disabled="busy"
           @update:model-value="change(analytic ? 'topN' : 'limit', $event)"
           ><ElOption v-for="n in [5, 10, 20]" :key="n" :value="n" :label="`${n}条`" /></ElSelect
       ></AppFormField>
-      <AppFormField v-if="analytic" label="统计周期"
+      <AppFormField v-if="analytic" :label="tr('ui.equipment.text1298')"
         ><AnalyticsPeriodSelect
           :model-value="block.period || { preset: 'follow' }"
           independent
@@ -140,35 +141,35 @@ function change(key: string, value: unknown) {
       /></AppFormField>
       <AppFormField
         v-if="['work', 'stats', 'load', 'created'].includes(block.type)"
-        label="业务范围"
+        :label="tr('ui.equipment.text1545')"
         ><ElSelect
           :model-value="block.module || '__all__'"
           :disabled="busy"
           @update:model-value="change('module', $event === '__all__' ? '' : $event)"
-          ><ElOption value="__all__" label="全部业务" /><ElOption
+          ><ElOption value="__all__" :label="tr('ui.equipment.text1546')" /><ElOption
             value="repair"
-            label="维修" /><ElOption value="maintenance" label="保养" /><ElOption
+            :label="tr('ui.equipment.text1547')" /><ElOption value="maintenance" :label="tr('ui.equipment.text1486')" /><ElOption
             value="inspection"
-            label="点巡检" /><ElOption
+            :label="tr('ui.equipment.text1548')" /><ElOption
             v-if="block.type === 'work'"
             value="inventory"
-            label="库存" /></ElSelect
+            :label="tr('ui.equipment.text1549')" /></ElSelect
       ></AppFormField>
       <AppFormField
         v-if="!['work', 'shortcuts', 'recent', 'inventory'].includes(block.type)"
-        label="数据范围"
+        :label="tr('ui.equipment.text1550')"
         ><ElSelect
           :model-value="block.scope"
           :disabled="busy || block.type === 'load'"
           @update:model-value="change('scope', $event)"
-          ><ElOption v-if="block.type !== 'load'" value="personal" label="个人" /><ElOption
+          ><ElOption v-if="block.type !== 'load'" value="personal" :label="tr('ui.equipment.text1551')" /><ElOption
             v-if="teamAllowed"
             value="team"
-            label="授权团队" /></ElSelect
+            :label="tr('ui.equipment.text1552')" /></ElSelect
       ></AppFormField>
       <AppFormField
         v-if="analytic && teamAllowed && block.scope === 'team'"
-        label="公司（与页面范围取交集）"
+        :label="tr('ui.equipment.text1553')"
         ><ElSelect
           :model-value="block.companyIds || []"
           multiple
@@ -184,7 +185,7 @@ function change(key: string, value: unknown) {
             :value="o.id"
             :label="o.name" /></ElSelect
       ></AppFormField>
-      <AppFormField v-if="analytic && teamAllowed && block.scope === 'team'" label="部门（含下级）"
+      <AppFormField v-if="analytic && teamAllowed && block.scope === 'team'" :label="tr('ui.equipment.text1554')"
         ><ElSelect
           :model-value="block.departmentIds || []"
           multiple

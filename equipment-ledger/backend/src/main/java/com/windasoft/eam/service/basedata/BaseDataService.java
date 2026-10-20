@@ -59,10 +59,12 @@ public class BaseDataService {
     requireDataAccess(resource, "新增");
     String type = type(resource);
     f = withCode(type, f);
-    if (type.equals("PROCESS_RESULT") && f.name().trim().equals("已解决"))
-      throw new IllegalArgumentException("已解决是固定处理结果，不能自定义");
+    if (type.equals("PROCESS_RESULT")
+        && (f.name().trim().equals("已解决")
+            || BaseDataReferenceService.RESOLVED_CODE.equalsIgnoreCase(f.code())))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0032");
     if (repository.codeCount(auth.tenantId(), type, f.code(), null) > 0)
-      throw new IllegalArgumentException("编码已存在");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0033");
     validateCompany(type, f.companyId());
     validateParent(type, f.parentId(), null, f.companyId());
     var item = fromForm(type, f);
@@ -75,21 +77,24 @@ public class BaseDataService {
   public Map<String, Object> update(String resource, Long id, BaseItemForm f) {
     requireDataAccess(resource, "编辑");
     String type = type(resource);
-    var old = require(type, id);
+    var old = requireLocked(type, id);
+    protectFixed(old);
     f = withCode(type, f);
-    if (type.equals("PROCESS_RESULT") && f.name().trim().equals("已解决"))
-      throw new IllegalArgumentException("已解决是固定处理结果，不能自定义");
+    if (type.equals("PROCESS_RESULT")
+        && (f.name().trim().equals("已解决")
+            || BaseDataReferenceService.RESOLVED_CODE.equalsIgnoreCase(f.code())))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0032");
     if (repository.codeCount(auth.tenantId(), type, f.code(), id) > 0)
-      throw new IllegalArgumentException("编码已存在");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0033");
     validateCompany(type, f.companyId());
     if ("LOCATION".equals(type) && !java.util.Objects.equals(old.getCompanyOrgId(), f.companyId()))
-      throw new IllegalArgumentException("位置所属公司不能修改，请在对应公司下新增位置");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0034");
     validateParent(type, f.parentId(), id, f.companyId());
     old.setCode(f.code().trim());
     if (!old.getName().equals(f.name().trim())
         && (type.equals("MATERIAL_CATEGORY") || type.equals("UNIT"))) {
       String field = type.equals("UNIT") ? "unit" : "category";
-      repository.renameMaterialField(field, f.name().trim(), auth.tenantId(), old.getName());
+      repository.renameMaterialField(field, old.getId(), f.name().trim(), auth.tenantId());
     }
     old.setName(f.name().trim());
     old.setParentId(f.parentId());
@@ -100,29 +105,31 @@ public class BaseDataService {
     return Map.of("data", view(old));
   }
 
+  @org.springframework.transaction.annotation.Transactional
   public Map<String, Object> status(String resource, Long id, Map<String, Integer> body) {
     requireDataAccess(resource, "编辑");
-    var item = require(type(resource), id);
+    var item = requireLocked(type(resource), id);
+    protectFixed(item);
     item.setStatus(body.getOrDefault("status", 0));
     repository.update(item);
     return Map.of("data", view(item));
   }
 
+  @org.springframework.transaction.annotation.Transactional(
+      isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
   public Map<String, Object> delete(String resource, Long id) {
     requireDataAccess(resource, "删除");
     String type = type(resource);
-    var item = require(type, id);
-    if (type.equals("MATERIAL_CATEGORY") || type.equals("UNIT")) {
-      String field = type.equals("UNIT") ? "unit" : "category";
-      if (repository.materialReferenceCount(auth.tenantId(), field, item.getName()) > 0)
-        throw new IllegalArgumentException("该基础数据已被物料使用，不能删除");
-    }
+    var item = requireLocked(type, id);
+    protectFixed(item);
+    if (repository.dictionaryReferenceCount(auth.tenantId(), type, id, item.getName()) > 0)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0035");
     if (type.equals("CATEGORY")
         || type.equals("MATERIAL_CATEGORY")
         || type.equals("LOCATION")
         || type.equals("FAULT_TYPE")) {
       if (repository.childCount(auth.tenantId(), type, id) > 0)
-        throw new IllegalArgumentException("该节点下还有子节点，不能删除");
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0036");
     }
     var equipmentReference =
         Map.of(
@@ -139,18 +146,12 @@ public class BaseDataService {
             .get(type);
     if (equipmentReference != null
         && repository.equipmentReferenceCount(auth.tenantId(), equipmentReference, id) > 0)
-      throw new IllegalArgumentException("该基础数据已被设备关联，不能删除");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0037");
     if (type.equals("CATEGORY")
         && repository.categoryEquipmentCount(auth.tenantId(), item.getName()) > 0)
-      throw new IllegalArgumentException("该分类已有设备使用，不能删除");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0038");
     if (type.equals("LOCATION") && repository.locationEquipmentCount(auth.tenantId(), item) > 0)
-      throw new IllegalArgumentException("该位置已有设备使用，不能删除");
-    if (type.equals("FAULT_TYPE")
-        && repository.repairReferenceCount(auth.tenantId(), item.getName(), false) > 0)
-      throw new IllegalArgumentException("该故障类型已有维修工单使用，不能删除");
-    if (type.equals("FAULT_CAUSE")
-        && repository.repairReferenceCount(auth.tenantId(), item.getName(), true) > 0)
-      throw new IllegalArgumentException("该故障原因已有维修工单使用，不能删除");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0039");
     repository.delete(id);
     return Map.of("data", Map.of("deleted", true));
   }
@@ -184,15 +185,17 @@ public class BaseDataService {
 
   private void validateCompany(String type, Long companyId) {
     if (!"LOCATION".equals(type)) return;
-    if (companyId == null) throw new IllegalArgumentException("请先选择所属公司");
+    if (companyId == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0040");
     var company = repository.company(auth.tenantId(), companyId);
     if (company == null || company.getStatus() != 1)
-      throw new IllegalArgumentException("所属公司不存在或已停用");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0041");
   }
 
   private String type(String resource) {
     var type = TYPES.get(resource);
-    if (type == null) throw new IllegalArgumentException("不支持的基础数据类型");
+    if (type == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0042");
     return type;
   }
 
@@ -208,26 +211,40 @@ public class BaseDataService {
         : "categories".equals(resource) ? "category" : "base";
   }
 
+  private BaseItem requireLocked(String type, Long id) {
+    var item = repository.locked(auth.tenantId(), type, id);
+    if (item == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0043");
+    return item;
+  }
+
+  private void protectFixed(BaseItem item) {
+    if (BaseDataReferenceService.fixed(item))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0044");
+  }
+
   private BaseItem require(String type, Long id) {
     var item = repository.find(auth.tenantId(), type, id);
-    if (item == null) throw new IllegalArgumentException("基础数据不存在");
+    if (item == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0043");
     return item;
   }
 
   private void validateParent(String type, Long parentId, Long currentId, Long companyId) {
     if (parentId == null) return;
     var p = repository.find(auth.tenantId(), type, parentId);
-    if (p == null) throw new IllegalArgumentException("上级节点不存在");
+    if (p == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0045");
     if ("LOCATION".equals(type) && !java.util.Objects.equals(p.getCompanyOrgId(), companyId))
-      throw new IllegalArgumentException("上级位置必须属于同一公司");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0046");
     java.util.Set<Long> seen = new java.util.HashSet<>();
     while (p != null) {
       if (!seen.add(p.getId()) || java.util.Objects.equals(currentId, p.getId()))
-        throw new IllegalArgumentException("不能选择自身或下级节点作为上级");
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0047");
       p = p.getParentId() == null ? null : require(type, p.getParentId());
     }
     if (currentId != null && parentId.equals(currentId))
-      throw new IllegalArgumentException("不能将节点设置为自己的上级");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0048");
   }
 
   private static BaseItemForm withCode(String type, BaseItemForm form) {
@@ -274,6 +291,8 @@ public class BaseDataService {
 
   private static Map<String, Object> view(BaseItem x) {
     return Map.of(
+        "builtin",
+        BaseDataReferenceService.fixed(x),
         "companyId",
         x.getCompanyOrgId() == null ? "" : String.valueOf(x.getCompanyOrgId()),
         "id",

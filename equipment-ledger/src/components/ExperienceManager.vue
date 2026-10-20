@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { currentLocale } from '../i18n';import { tr, enumLabel } from '../i18n';
+
+import DialogChoiceInput from './common/DialogChoiceInput.vue';
 import AppAttachmentList from './common/AppAttachmentList.vue';
 import AppListToolbar from './common/AppListToolbar.vue';
 import { ElButton, ElCheckbox } from 'element-plus';
@@ -65,7 +68,7 @@ const rows = ref<Row[]>([]),
   dialog = ref(''),
   reason = ref(''),
   returnQuantity = ref(''),
-  faultType = ref(''),
+  faultTypeId = ref(''),
   severity = ref(''),
   linkId = ref(''),
   personal = ref(true);
@@ -76,10 +79,11 @@ async function uploadEvidence(file: File): Promise<RepairAttachment> {
   const res = await fetch('/api/v1/anomalies/files', {
     method: 'POST',
     credentials: 'same-origin',
+    headers: { 'Accept-Language': currentLocale.value },
     body,
   });
   const payload = await res.json();
-  if (!res.ok) throw new Error(payload.message || '上传失败');
+  if (!res.ok) throw new Error(payload.message || tr('ui.equipment.text0926'));
   return payload.data;
 }
 const ownerChoices = () => request<{ data: DispatchUser[] }>('/repair-plans/owner-choices');
@@ -137,10 +141,11 @@ async function exportRows() {
     });
     const r = await fetch('/api/v1/' + resource.value + '/export?' + params, {
       credentials: 'same-origin',
+      headers: { 'Accept-Language': currentLocale.value },
     });
     if (!r.ok) {
       const e = await r.json();
-      throw new Error(e.message || '导出失败');
+      throw new Error(e.message || tr('ui.equipment.text0185'));
     }
     const url = URL.createObjectURL(await r.blob());
     const a = document.createElement('a');
@@ -149,7 +154,7 @@ async function exportRows() {
     a.click();
     URL.revokeObjectURL(url);
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '导出失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0185'));
   } finally {
     exportBusy.value = false;
   }
@@ -162,19 +167,19 @@ const { markSaved, permitLeave } = useUnsavedChanges(
 const columns = computed(() =>
   resource.value === 'material-custody'
     ? [
-        { prop: 'materialCode', label: '料号', minWidth: 150 },
-        { prop: 'materialName', label: '物料名称', minWidth: 160 },
-        { prop: 'specification', label: '规格型号', minWidth: 160 },
+        { prop: 'materialCode', get label() { return tr('ui.equipment.text0154'); }, minWidth: 150 },
+        { prop: 'materialName', get label() { return tr('ui.equipment.text0155'); }, minWidth: 160 },
+        { prop: 'specification', get label() { return tr('ui.equipment.text0091'); }, minWidth: 160 },
         {
           prop: 'remaining',
-          label: '剩余未用',
+          get label() { return tr('ui.equipment.text0186'); },
           minWidth: 115,
           formatter: (v: unknown) => formatNumber(v),
         },
-        { prop: 'holderName', label: '保管人', minWidth: 110 },
-        { prop: 'warehouse', label: '来源仓库', minWidth: 140 },
-        { prop: 'taskCode', label: '来源任务', minWidth: 160 },
-        { prop: 'remark', label: '暂存说明', minWidth: 180 },
+        { prop: 'holderName', get label() { return tr('ui.equipment.text0187'); }, minWidth: 110 },
+        { prop: 'warehouse', get label() { return tr('ui.equipment.text0188'); }, minWidth: 140 },
+        { prop: 'taskCode', get label() { return tr('ui.equipment.text0189'); }, minWidth: 160 },
+        { prop: 'remark', get label() { return tr('ui.equipment.text0190'); }, minWidth: 180 },
       ]
     : [
         {
@@ -182,9 +187,9 @@ const columns = computed(() =>
           label: resource.value === 'anomalies' ? '异常编号' : '计划编号',
           minWidth: 170,
         },
-        { prop: 'equipmentName', label: '设备名称', minWidth: 150 },
-        { prop: 'description', label: '问题／工作说明', minWidth: 260 },
-        { prop: 'status', label: '状态', minWidth: 110 },
+        { prop: 'equipmentName', get label() { return tr('ui.equipment.text0081'); }, minWidth: 150 },
+        { prop: 'description', get label() { return tr('ui.equipment.text0191'); }, minWidth: 260 },
+        { prop: 'status', get label() { return tr('ui.equipment.text0170'); }, minWidth: 110 },
         {
           prop: resource.value === 'anomalies' ? 'discovered_at' : 'planned_at',
           label: resource.value === 'anomalies' ? '发现时间' : '计划开始',
@@ -255,7 +260,7 @@ async function load() {
         equipmentId: r.data.equipment_id,
         ownerId: r.data.owner_id,
         plannedAt: formatDateTime(r.data.planned_at).replace(' ', 'T'),
-        faultType: r.data.fault_type,
+        faultTypeId: r.data.fault_type_id || r.data.faultTypeId || '',
         severity: r.data.severity,
         anomalyIds: r.data.anomalyIds || [],
         rowVersion: r.data.rowVersion,
@@ -267,7 +272,7 @@ async function load() {
         equipmentCode: '',
         equipmentName: '',
         description: '',
-        faultType: '',
+        faultTypeId: '',
         severity: '',
         attachments: [],
         plannedAt: '',
@@ -307,7 +312,7 @@ async function load() {
     }
     markSaved();
   } catch (e) {
-    if (seq === revision) error.value = e instanceof Error ? e.message : '加载失败';
+    if (seq === revision) error.value = e instanceof Error ? e.message : tr('ui.equipment.text0160');
   } finally {
     if (seq === revision) loading.value = false;
   }
@@ -325,7 +330,7 @@ function chooseEquipment(e: EquipmentRecord) {
 }
 function chooseUser(ids: string[]) {
   if (ids.length !== 1) {
-    ElMessage.warning('请选择一名计划负责人');
+    ElMessage.warning(tr('ui.equipment.text0192'));
     return;
   }
   form.value.ownerId = ids[0];
@@ -333,7 +338,7 @@ function chooseUser(ids: string[]) {
 }
 async function save() {
   if (!form.value.equipmentId || !form.value.description?.trim()) {
-    ElMessage.warning('请选择设备并填写说明');
+    ElMessage.warning(tr('ui.equipment.text0193'));
     return;
   }
   busy.value = true;
@@ -344,9 +349,9 @@ async function save() {
     );
     markSaved();
     await router.replace('/' + resource.value + '/' + r.data.id);
-    ElMessage.success('已保存');
+    ElMessage.success(tr('ui.equipment.text0194'));
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '保存失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0195'));
   } finally {
     busy.value = false;
   }
@@ -355,7 +360,7 @@ async function action(name: string) {
   dialog.value = name;
   reason.value = '';
   evidence.value = [];
-  faultType.value = '';
+  faultTypeId.value = '';
   severity.value = '';
   linkId.value = '';
   if (name === 'report') await base.load('故障类型');
@@ -387,7 +392,7 @@ async function submitAction() {
             action: dialog.value,
             rowVersion: detail.value.rowVersion,
             reason: reason.value,
-            faultType: faultType.value,
+            faultTypeId: faultTypeId.value,
             severity: severity.value,
             repairId: linkId.value,
             attachments: evidence.value,
@@ -397,10 +402,10 @@ async function submitAction() {
       detail.value = r.data;
     }
     dialog.value = '';
-    ElMessage.success('操作成功');
+    ElMessage.success(tr('ui.equipment.text0196'));
     await load();
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '操作失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0197'));
   } finally {
     busy.value = false;
   }
@@ -410,9 +415,9 @@ async function backfill() {
   try {
     await request('/anomalies/backfill', { method: 'POST', body: '{}' });
     await load();
-    ElMessage.success('已同步可确认的历史异常');
+    ElMessage.success(tr('ui.equipment.text0198'));
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '同步失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0199'));
   } finally {
     busy.value = false;
   }
@@ -459,24 +464,24 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             class=""
             @click="router.push('/' + resource + '/new')"
             type="primary"
-            ><AppIcon name="Plus" />新增</ElButton
+            ><AppIcon name="Plus" />{{ tr('ui.equipment.text0149') }}</ElButton
           >
 
           <ElSelect
             v-if="resource === 'material-custody' && auth.can(menu, '查看')"
             v-model="personal"
-            ><ElOption :value="true" label="我的余料" /><ElOption
+            ><ElOption :value="true" :label="tr('ui.equipment.text0200')" /><ElOption
               :value="false"
-              label="全部授权余料"
+              :label="tr('ui.equipment.text0201')"
           /></ElSelect>
         </div>
         <form @submit.prevent="searchList">
-          <ListSearchInput v-model="search" placeholder="搜索编号、名称、说明" /><ElButton
+          <ListSearchInput v-model="search" :placeholder="tr('ui.equipment.text0202')" /><ElButton
             class=""
             @click="showFilter($event.currentTarget as HTMLElement)"
             native-type="button"
           >
-            添加筛选</ElButton
+            {{ tr('ui.equipment.text0203') }}</ElButton
           ><ElButton
             class=""
             @click="
@@ -488,7 +493,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             "
             native-type="button"
           >
-            重置
+            {{ tr('ui.equipment.text0204') }}
           </ElButton>
         </form>
       </AppListToolbar>
@@ -543,12 +548,12 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           ></template
         ><template #status="{ row }"
           ><span class="experience-status" :class="statusClass(row.status)">{{
-            row.status
+            enumLabel('status',row.status)
           }}</span></template
         ><template #actions="{ row }"
           ><template v-if="resource === 'material-custody'"
             ><ElButton class="text-action" @click="openCustody(row)" type="primary" link
-              >暂存说明</ElButton
+              >{{ tr('ui.equipment.text0190') }}</ElButton
             ><ElButton
               v-if="String(row.holderId) === String(auth.user?.id)"
               class="text-action"
@@ -561,7 +566,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               type="primary"
               link
             >
-              申请退料
+              {{ tr('ui.equipment.text0205') }}
             </ElButton></template
           ><template v-else
             ><ElButton
@@ -570,7 +575,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               type="primary"
               link
             >
-              查看</ElButton
+              {{ tr('ui.equipment.text0206') }}</ElButton
             ><ElButton
               v-if="
                 resource === 'repair-plans' &&
@@ -582,7 +587,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               type="primary"
               link
             >
-              编辑
+              {{ tr('ui.equipment.text0207') }}
             </ElButton></template
           ></template
         ></AppBusinessTable
@@ -591,14 +596,14 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
     <template v-else
       ><header class="experience-heading">
         <AppBackButton
-          :label="'返回' + (resource === 'anomalies' ? '异常库' : '维修计划')"
+          :label="tr('ui.equipment.text0208') + (resource === 'anomalies' ? tr('ui.equipment.text0005') : tr('ui.equipment.text0209'))"
           @click="back"
         />
         <div>
           <h1>
             {{
               editing
-                ? (detail ? '编辑' : '新增') + (resource === 'anomalies' ? '异常' : '维修计划')
+                ? (detail ? tr('ui.equipment.text0207') : tr('ui.equipment.text0149')) + (resource === 'anomalies' ? tr('ui.equipment.text0210') : tr('ui.equipment.text0209'))
                 : detail?.code
             }}
           </h1>
@@ -620,32 +625,32 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               class=""
               @click="action('resolve')"
             >
-              直接消除</ElButton
+              {{ tr('ui.equipment.text0211') }}</ElButton
             ><ElButton
               v-if="canAction('报修') && !detail.repair_id && !detail.plan_id"
               class=""
               @click="action('report')"
               type="primary"
             >
-              报修</ElButton
+              {{ tr('ui.equipment.text0212') }}</ElButton
             ><ElButton
               v-if="canAction('报修') && !detail.repair_id && !detail.plan_id"
               class=""
               @click="repairOpen = true"
             >
-              关联工单</ElButton
+              {{ tr('ui.equipment.text0213') }}</ElButton
             ><ElButton
               v-if="canAction('安排维修') && !detail.repair_id && !detail.plan_id"
               class=""
               @click="router.push('/repair-plans/new?anomalyId=' + detail.id)"
             >
-              安排维修</ElButton
+              {{ tr('ui.equipment.text0214') }}</ElButton
             ><ElButton
               v-if="canAction('作废') && !detail.repair_id && !detail.plan_id"
               class=""
               @click="action('void')"
             >
-              作废
+              {{ tr('ui.equipment.text0215') }}
             </ElButton></template
           ><template
             v-if="resource === 'repair-plans' && ['草稿', '待生成'].includes(detail.status)"
@@ -655,11 +660,11 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               @click="action('enable')"
               type="primary"
             >
-              启用</ElButton
+              {{ tr('ui.equipment.text0216') }}</ElButton
             ><ElButton v-if="canAction('生成工单')" class="" @click="action('generate')">
-              生成工单</ElButton
+              {{ tr('ui.equipment.text0217') }}</ElButton
             ><ElButton v-if="canAction('取消')" class="" @click="action('cancel')">
-              取消计划
+              {{ tr('ui.equipment.text0218') }}
             </ElButton></template
           >
         </div>
@@ -668,28 +673,31 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       <div v-else class="experience-detail-layout">
         <main>
           <form v-if="editing" class="experience-form" @submit.prevent="save">
-            <h3>基本信息</h3>
+            <h3>{{ tr('ui.equipment.text0077') }}</h3>
             <label
-              ><span>设备 *</span
-              ><ElButton class="object-input" @click="equipmentOpen = true" native-type="button"
-                >{{
-                  form.equipmentCode ? form.equipmentCode + ' · ' + form.equipmentName : '选择设备'
-                }}<AppIcon name="Search" /></ElButton></label
+              ><span>{{ tr('ui.equipment.text0219') }}</span
+              ><DialogChoiceInput
+                :model-value="
+                  form.equipmentCode ? form.equipmentCode + ' · ' + form.equipmentName : ''
+                "
+                :placeholder="tr('ui.equipment.text0220')"
+                :title="tr('ui.equipment.text0220')"
+                @open="equipmentOpen = true" /></label
             ><label v-if="resource === 'anomalies'"
-              ><span>故障等级</span
+              ><span>{{ tr('ui.equipment.text0221') }}</span
               ><ElSelect v-model="form.severity" clearable
                 ><ElOption
                   v-for="s in ['一般', '紧急', '重大']"
                   :key="s"
                   :value="s"
-                  :label="s" /></ElSelect></label
+                  :label="enumLabel('systemOption', s)" /></ElSelect></label
             ><label v-if="resource === 'anomalies'" class="full"
-              ><span>附件</span
+              ><span>{{ tr('ui.equipment.text0222') }}</span
               ><MaintenanceAttachments
                 v-model="form.attachments"
                 :upload-file="uploadEvidence" /></label
             ><label class="full"
-              ><span>说明 *</span
+              ><span>{{ tr('ui.equipment.text0223') }}</span
               ><ElInput
                 v-model="form.description"
                 type="textarea"
@@ -697,58 +705,60 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 maxlength="4000" /></label
             ><template v-if="resource === 'repair-plans'"
               ><label
-                ><span>计划开始 *</span
+                ><span>{{ tr('ui.equipment.text0224') }}</span
                 ><ElDatePicker
                   v-model="form.plannedAt"
                   type="datetime"
                   value-format="YYYY-MM-DDTHH:mm:ss"
-                  placeholder="选择时间" /></label
+                  :placeholder="tr('ui.equipment.text0225')" /></label
               ><label
-                ><span>计划负责人 *</span
-                ><ElButton class="object-input" @click="userOpen = true" native-type="button"
-                  >{{ form.ownerId ? '已选负责人：' + form.ownerId : '选择负责人'
-                  }}<AppIcon name="Search" /></ElButton></label
+                ><span>{{ tr('ui.equipment.text0226') }}</span
+                ><DialogChoiceInput
+                  :model-value="form.ownerId ? '已选负责人：' + form.ownerId : ''"
+                  :placeholder="tr('ui.equipment.text0227')"
+                  :title="tr('ui.equipment.text0227')"
+                  @open="userOpen = true" /></label
               ><label
-                ><span>故障类型 *</span
+                ><span>{{ tr('ui.equipment.text0228') }}</span
                 ><TreeSelect
-                  v-model="form.faultType"
-                  :nodes="base.faultTypeData.map((x) => ({ ...x, value: x.name }))" /></label
+                  v-model="form.faultTypeId"
+                  :nodes="base.faultTypeData.map((x) => ({ ...x, value: x.id }))" /></label
               ><label
-                ><span>故障等级 *</span
+                ><span>{{ tr('ui.equipment.text0229') }}</span
                 ><ElSelect v-model="form.severity"
                   ><ElOption
                     v-for="s in ['一般', '紧急', '重大']"
                     :key="s"
                     :value="s"
-                    :label="s" /></ElSelect
+                    :label="enumLabel('systemOption', s)" /></ElSelect
               ></label>
               <p v-if="form.anomalyIds?.length" class="full">
-                关联 {{ form.anomalyIds.length }} 项异常；启用后到期自动生成维修工单。
+                {{ tr('ui.equipment.text0230') }} {{ form.anomalyIds.length }} {{ tr('ui.equipment.text0231') }}
               </p></template
             >
           </form>
           <section v-else-if="detail" class="experience-summary">
-            <h3>问题与处理</h3>
+            <h3>{{ tr('ui.equipment.text0232') }}</h3>
             <p class="description">{{ detail.description }}</p>
             <dl>
               <div v-if="detail.source_kind">
-                <dt>发现来源</dt>
+                <dt>{{ tr('ui.equipment.text0233') }}</dt>
                 <dd>{{ detail.source_kind }}</dd>
               </div>
               <div v-if="detail.discovered_name">
-                <dt>发现人</dt>
+                <dt>{{ tr('ui.equipment.text0234') }}</dt>
                 <dd>{{ detail.discovered_name }}</dd>
               </div>
               <div v-if="detail.planned_at">
-                <dt>计划开始</dt>
+                <dt>{{ tr('ui.equipment.text0235') }}</dt>
                 <dd>{{ formatDateTime(detail.planned_at) }}</dd>
               </div>
               <div>
-                <dt>故障等级</dt>
+                <dt>{{ tr('ui.equipment.text0221') }}</dt>
                 <dd>{{ detail.severity }}</dd>
               </div>
               <div v-if="detail.resolution">
-                <dt>消除措施</dt>
+                <dt>{{ tr('ui.equipment.text0236') }}</dt>
                 <dd>{{ detail.resolution }}</dd>
               </div>
             </dl>
@@ -758,26 +768,26 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 class=""
                 @click="router.push('/repairs/' + detail.repair_id)"
               >
-                查看关联维修工单</ElButton
+                {{ tr('ui.equipment.text0237') }}</ElButton
               ><ElButton
                 v-if="detail.plan_id"
                 class=""
                 @click="router.push('/repair-plans/' + detail.plan_id)"
               >
-                查看维修计划
+                {{ tr('ui.equipment.text0238') }}
               </ElButton>
             </div>
             <p v-if="detail.generation_error" class="experience-error">
               {{ detail.generation_error }}
             </p>
             <div v-if="detail.attachments?.length" class="anomaly-file-list">
-              <h3>来源附件</h3>
+              <h3>{{ tr('ui.equipment.text0239') }}</h3>
               <AppAttachmentList :files="detail.attachments || []" />
             </div>
           </section>
         </main>
         <aside v-if="detail && !editing" class="experience-timeline">
-          <h3>处理时间轴</h3>
+          <h3>{{ tr('ui.equipment.text0240') }}</h3>
           <ol>
             <li v-for="(event, index) in detail.events" :key="index">
               <strong>{{ event.action }}</strong>
@@ -788,9 +798,9 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         </aside>
       </div>
       <AppFormFooter v-if="editing"
-        ><ElButton class="" :disabled="busy" @click="back">取消</ElButton
+        ><ElButton class="" :disabled="busy" @click="back">{{ tr('ui.equipment.text0157') }}</ElButton
         ><ElButton class="" :disabled="busy" @click="save" type="primary"
-          >保存</ElButton
+          >{{ tr('ui.equipment.text0159') }}</ElButton
         ></AppFormFooter
       >
     </template>
@@ -808,7 +818,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       @select="linkRepair"
     /><EquipmentPickerDialog v-model="equipmentOpen" @select="chooseEquipment" /><RepairUserPicker
       v-model="userOpen"
-      title="选择计划负责人（单人）"
+      :title="tr('ui.equipment.text0241')"
       :load-users="ownerChoices"
       :selected="form.ownerId ? [form.ownerId] : []"
       @confirm="chooseUser"
@@ -818,16 +828,16 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       :title="
         (
           {
-            resolve: '直接消除异常',
-            report: '异常报修',
-            void: '作废异常',
-            enable: '启用维修计划',
-            generate: '提前生成维修工单',
-            cancel: '取消维修计划',
-            custody: '余料暂存说明',
-            'return-request': '申请退料',
+            resolve: tr('ui.equipment.text0242'),
+            report: tr('ui.equipment.text0243'),
+            void: tr('ui.equipment.text0244'),
+            enable: tr('ui.equipment.text0245'),
+            generate: tr('ui.equipment.text0246'),
+            cancel: tr('ui.equipment.text0247'),
+            custody: tr('ui.equipment.text0248'),
+            'return-request': tr('ui.equipment.text0205'),
           } as Record<string, string>
-        )[dialog] || '确认操作'
+        )[dialog] || tr('ui.equipment.text0249')
       "
       :busy="busy"
       @update:model-value="
@@ -837,22 +847,22 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       "
       ><div class="experience-action-form">
         <label v-if="dialog === 'return-request'"
-          >退料数量 *<ElInput v-model="returnQuantity" inputmode="decimal"
+          >{{ tr('ui.equipment.text0250') }}<ElInput v-model="returnQuantity" inputmode="decimal"
         /></label>
         <template v-if="dialog === 'report'"
           ><label
-            >故障类型 *<TreeSelect
-              v-model="faultType"
-              :nodes="base.faultTypeData.map((x) => ({ ...x, value: x.name }))" /></label
+            >{{ tr('ui.equipment.text0228') }}<TreeSelect
+              v-model="faultTypeId"
+              :nodes="base.faultTypeData.map((x) => ({ ...x, value: x.id }))" /></label
           ><label
-            >故障等级 *<ElSelect v-model="severity" placeholder="请选择"
+            >{{ tr('ui.equipment.text0229') }}<ElSelect v-model="severity" :placeholder="tr('ui.equipment.text0096')"
               ><ElOption
                 v-for="s in ['一般', '紧急', '重大']"
                 :key="s"
                 :value="s"
-                :label="s" /></ElSelect></label></template
+                :label="enumLabel('systemOption', s)" /></ElSelect></label></template
         ><label v-else-if="!['enable', 'generate'].includes(dialog)"
-          >{{ dialog === 'resolve' ? '消除措施' : '说明' }} *<ElInput
+          >{{ dialog === 'resolve' ? tr('ui.equipment.text0236') : tr('ui.equipment.text0177') }} *<ElInput
             v-model="reason"
             type="textarea"
             :rows="4"
@@ -865,15 +875,15 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         <p v-if="['enable', 'generate'].includes(dialog)">
           {{
             dialog === 'generate'
-              ? '本次立即生成一张维修工单，继续按派工、接单、验收流程处理。'
-              : '启用后到达计划时间自动生成维修工单。'
+              ? tr('ui.equipment.text0251')
+              : tr('ui.equipment.text0252')
           }}
         </p>
       </div>
       <template #footer
-        ><ElButton class="" :disabled="busy" @click="dialog = ''">取消</ElButton
+        ><ElButton class="" :disabled="busy" @click="dialog = ''">{{ tr('ui.equipment.text0157') }}</ElButton
         ><ElButton class="" :disabled="busy" @click="submitAction" type="primary"
-          >提交</ElButton
+          >{{ tr('ui.equipment.text0253') }}</ElButton
         ></template
       ></AppDialog
     >
@@ -965,18 +975,6 @@ h3 {
 .experience-form label {
   display: grid;
   gap: 8px;
-}
-.object-input {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--surface);
-  min-height: 34px;
-  padding: 6px 10px;
-  text-align: left;
-  cursor: pointer;
 }
 .experience-form :deep(.el-date-editor) {
   width: 100%;

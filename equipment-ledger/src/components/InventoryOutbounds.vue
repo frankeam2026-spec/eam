@@ -1,4 +1,18 @@
-<script setup lang="ts">
+<script setup lang="ts">import { enumLabel } from '../i18n';
+import { tr } from '../i18n';
+
+import DialogChoiceInput from './common/DialogChoiceInput.vue';
+import PagedChoiceField from './common/PagedChoiceField.vue';
+import { mergeOptions, type SelectorRow, type SelectorPage } from '../selectors';
+
+import { onUnmounted } from 'vue';
+import { useOutboundList } from '../composables/inventory/useInventoryLists';
+import BusinessFields from './business/BusinessFields.vue';
+import { useBusinessExtension } from '../composables/useBusinessExtension';
+const { extension, extensionErrors, prepareExtension, extensionError } = useBusinessExtension();
+const extensionInitializationClean = ref(true);
+import { useBusinessColumns } from '../composables/useBusinessColumns';
+import { customCell } from '../businessConfig';
 import AppListToolbar from './common/AppListToolbar.vue';
 import { ElTableColumn } from 'element-plus';
 import { ElCheckbox } from 'element-plus';
@@ -97,7 +111,7 @@ type Allocation = {
   recipientName?: string;
   issueId?: string;
 };
-type Outbound = {
+type Outbound = import('../businessConfig').CustomRecord & {
   id: string;
   code: string;
   status: string;
@@ -162,8 +176,13 @@ const empty = (): Outbound => ({
   taskId: '',
   lines: [],
 });
+const {
+  rows,
+  total,
+  refresh: refreshList,
+  invalidate: invalidateList,
+} = useOutboundList<Outbound | Pending>();
 const form = ref(empty()),
-  rows = ref<(Outbound | Pending)[]>([]),
   choices = ref<{
     warehouses: Choice[];
     materials: Choice[];
@@ -202,7 +221,6 @@ const q = ref(String(route.query.q || '')),
   conditions = ref<FilterCondition[]>([]),
   page = ref(1),
   size = ref(10),
-  total = ref(0),
   columnsOpen = ref(false),
   drawerOpen = ref(false);
 const warehouse = computed(() =>
@@ -218,9 +236,35 @@ const departments = computed(() =>
 const users = computed(() =>
   choices.value.users.filter((u) => u.companyId === warehouse.value?.companyId),
 );
-const tasks = computed(() =>
-  choices.value.tasks.filter((t) => t.companyId === warehouse.value?.companyId),
+const taskPickerOptions = computed(() =>
+  choices.value.tasks
+    .filter((t) => t.companyId === warehouse.value?.companyId)
+    .map((t) => ({ ...t, recordId: t.id, id: t.kind + ':' + t.id })),
 );
+async function loadTaskRows(q: string, page: number, size: number) {
+  const result = await request<SelectorPage<SelectorRow>>(
+    `/inventory/selectors/tasks?${new URLSearchParams({ mode: 'outbound', warehouseId: form.value.warehouseId, q, page: String(page), size: String(size) })}`,
+  );
+  return {
+    ...result,
+    data: result.data.map((t) => ({ ...t, recordId: t.id, id: t.kind + ':' + t.id })),
+  };
+}
+function rememberTasks(rows: SelectorRow[]) {
+  choices.value.tasks = mergeOptions(
+    choices.value.tasks.map((t) => ({ ...t, id: t.kind + ':' + t.id })),
+    rows,
+  ).map((t) => ({ ...t, id: t.id.split(':')[1]! }));
+}
+function rememberUsers(rows: SelectorRow[]) {
+  choices.value.users = mergeOptions(choices.value.users, rows);
+}
+function loadUserRows(q: string, page: number, size: number) {
+  return request<SelectorPage<SelectorRow>>(
+    `/inventory/selectors/users?${new URLSearchParams({ warehouseId: form.value.warehouseId, q, page: String(page), size: String(size) })}`,
+  );
+}
+
 const taskValue = computed({
   get: () => (form.value.taskId ? form.value.taskKind + ':' + form.value.taskId : ''),
   set: (v: string) => {
@@ -250,11 +294,16 @@ const documentFields: Record<string, string> = {
   confirmedAt: '出库时间',
   createdAt: '创建时间',
 };
+const { extensionColumns, extensionFilters, extensionExportColumns, configurationError } =
+  useBusinessColumns(() => (pending.value ? undefined : 'inventory_outbound'));
 const fields = computed(() =>
   pending.value
     ? pendingFields
     : Object.fromEntries(
-        Object.entries(documentFields).filter(([k]) => k !== 'totalAmount' || can('查看金额')),
+        Object.entries({
+          ...documentFields,
+          ...Object.fromEntries(extensionColumns.value.map((c) => [c.key, c.label])),
+        }).filter(([k]) => k !== 'totalAmount' || can('查看金额')),
       ),
 );
 const columns = ref<string[]>([]);
@@ -278,27 +327,31 @@ function dropColumn(target: string) {
 }
 
 const filterFields = computed<FilterField[]>(() =>
-  Object.entries(fields.value).map(([key, label]) => ({
-    key,
-    label,
-    type: key.endsWith('At')
-      ? 'date'
-      : ['totalAmount', 'remainingQuantity', 'totalQuantity'].includes(key)
-        ? 'number'
-        : key === 'status'
-          ? 'choice'
-          : 'text',
-    options:
-      key === 'status'
-        ? pending.value
-          ? ['待出库', '部分出库']
-          : ['草稿', '已出库', '已冲销']
-        : undefined,
-  })),
+  Object.entries(fields.value)
+    .filter(([key]) => !key.startsWith('custom:'))
+    .map<FilterField>(([key, label]) => ({
+      key,
+      label,
+      type: key.endsWith('At')
+        ? 'date'
+        : ['totalAmount', 'remainingQuantity', 'totalQuantity'].includes(key)
+          ? 'number'
+          : key === 'status'
+            ? 'choice'
+            : 'text',
+      options:
+        key === 'status'
+          ? pending.value
+            ? ['待出库', '部分出库']
+            : ['草稿', '已出库', '已冲销']
+          : undefined,
+    }))
+    .concat(extensionFilters.value),
 );
-const message = (e: unknown) => (e instanceof Error ? e.message : '操作失败，请重试');
+const message = (e: unknown) => (e instanceof Error ? e.message : tr('ui.equipment.text0491'));
 const number = formatNumber;
 function display(r: Outbound | Pending, key: string) {
+  if (key.startsWith('custom:')) return customCell(r as Outbound, key);
   return key.endsWith('At')
     ? formatDateTime(String(r[key] || ''))
     : ['totalQuantity', 'totalAmount', 'remainingQuantity'].includes(key)
@@ -348,16 +401,24 @@ function resetColumns() {
   localStorage.removeItem(columnKey());
 }
 let revision = 0;
+onUnmounted(() => {
+  revision++;
+  invalidateList();
+});
 async function load() {
   const version = ++revision;
   loading.value = true;
   error.value = '';
   try {
     if (editing.value) {
-      if (can('查看'))
-        choices.value = (
-          await request<{ data: typeof choices.value }>('/inventory/outbounds/choices')
-        ).data;
+      invalidateList();
+      if (can('查看')) {
+        const options = await request<{ data: typeof choices.value }>(
+          '/inventory/outbounds/choices?paged=true',
+        );
+        if (version !== revision) return;
+        choices.value = options.data;
+      }
       const loaded =
         route.params.id === 'new'
           ? route.query.requests
@@ -369,25 +430,38 @@ async function load() {
               ).data
             : empty()
           : (await request<{ data: Outbound }>(`/inventory/outbounds/${route.params.id}`)).data;
+      if (loaded.warehouseId && can('查看')) {
+        const [people, tasks] = await Promise.all([
+          loaded.recipientId
+            ? request<SelectorPage<SelectorRow>>(
+                `/inventory/selectors/users/resolve?warehouseId=${loaded.warehouseId}`,
+                { method: 'POST', body: JSON.stringify({ ids: [loaded.recipientId] }) },
+              )
+            : Promise.resolve({ data: [] }),
+          loaded.taskId
+            ? request<SelectorPage<SelectorRow>>(
+                `/inventory/selectors/tasks?${new URLSearchParams({ mode: 'outbound', warehouseId: loaded.warehouseId, kind: loaded.taskKind, id: loaded.taskId, size: '1' })}`,
+              )
+            : Promise.resolve({ data: [] }),
+        ]);
+        if (version !== revision) return;
+        choices.value.users = people.data;
+        choices.value.tasks = tasks.data;
+      }
       if (version !== revision) return;
       form.value = { ...empty(), ...loaded };
       form.value.lines.forEach((l) => (l.selections ||= []));
       guard.markSaved();
       preview.value = undefined;
     } else {
-      const endpoint = pending.value ? '/inventory/outbounds/pending' : '/inventory/outbounds';
-      const params = new URLSearchParams({
-        q: q.value,
-        conditions: JSON.stringify(conditions.value),
-        page: String(page.value),
-        size: String(size.value),
-      });
-      const result = await request<{ data: (Outbound | Pending)[]; page: { total: number } }>(
-        `${endpoint}?${params}`,
+      const accepted = await refreshList(
+        pending.value,
+        q.value,
+        JSON.stringify(conditions.value),
+        page.value,
+        size.value,
       );
-      if (version !== revision) return;
-      rows.value = result.data;
-      total.value = result.page.total;
+      if (version !== revision || !accepted) return;
       selected.value = [];
     }
   } catch (e) {
@@ -447,10 +521,10 @@ function select(id: string, checked: boolean) {
 }
 function pendingActions(r: Pending) {
   return [
-    ...(can('预留') ? [{ label: '预留', run: () => requestAction(r, 'reserve') }] : []),
-    ...(can('释放预留') ? [{ label: '释放预留', run: () => requestAction(r, 'release') }] : []),
+    ...(can('预留') ? [{ get label() { return tr('ui.equipment.text0537'); }, run: () => requestAction(r, 'reserve') }] : []),
+    ...(can('释放预留') ? [{ get label() { return tr('ui.equipment.text0538'); }, run: () => requestAction(r, 'release') }] : []),
     ...(can('关闭剩余需求')
-      ? [{ label: '关闭剩余需求', danger: true, run: () => requestAction(r, 'close-remaining') }]
+      ? [{ get label() { return tr('ui.equipment.text0539'); }, danger: true, run: () => requestAction(r, 'close-remaining') }]
       : []),
   ];
 }
@@ -488,7 +562,7 @@ async function loadMaterialRows(q: string, page: number, size: number) {
 }
 function chooseMaterial(line: Line) {
   if (!form.value.warehouseId) {
-    formValidation.value = '请先选择出库仓库，再查看物料数量';
+    formValidation.value = tr('ui.validation.message14');
     document.getElementById('outbound-warehouse')?.focus();
     return;
   }
@@ -534,11 +608,11 @@ async function save() {
   formValidation.value = '';
   if (direct.value) {
     const missing = !form.value.warehouseId
-      ? ['请选择出库仓库', 'outbound-warehouse']
+      ? [tr('ui.validation.message15'), 'outbound-warehouse']
       : !form.value.departmentId
-        ? ['请选择领用部门', 'outbound-department']
+        ? [tr('ui.validation.message16'), 'outbound-department']
         : !form.value.recipientId
-          ? ['请选择领用人', 'outbound-recipient']
+          ? [tr('ui.validation.message17'), 'outbound-recipient']
           : null;
     if (missing) {
       formValidation.value = missing[0]!;
@@ -550,6 +624,7 @@ async function save() {
       return false;
     }
   }
+  if (!prepareExtension(form.value)) return;
   busy.value = true;
   try {
     const result = await request<{ data: Outbound }>(
@@ -565,9 +640,10 @@ async function save() {
         params: { id: form.value.id },
         query: route.query,
       });
-    ElMessage.success('草稿已保存');
+    ElMessage.success(tr('ui.equipment.text0540'));
     return true;
   } catch (e) {
+    if (extensionError(e)) return;
     ElMessage.error(message(e));
     return false;
   } finally {
@@ -575,6 +651,7 @@ async function save() {
   }
 }
 async function showPreview() {
+  if (busy.value || loading.value) return;
   if (guard.dirty.value || !form.value.id) {
     if (!(await save())) return;
   }
@@ -610,8 +687,9 @@ async function confirm() {
     ).data;
     guard.markSaved();
     previewOpen.value = false;
-    ElMessage.success('出库完成');
+    ElMessage.success(tr('ui.equipment.text0541'));
   } catch (e) {
+    if (extensionError(e)) return;
     ElMessage.error(message(e));
   } finally {
     busy.value = false;
@@ -621,8 +699,8 @@ async function removeDraft() {
   try {
     await ElMessageBox.confirm('删除后草稿不可恢复，是否继续？', '删除草稿', {
       type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
+      get confirmButtonText() { return tr('ui.equipment.text0146'); },
+      get cancelButtonText() { return tr('ui.equipment.text0157'); },
       closeOnClickModal: false,
     });
     busy.value = true;
@@ -648,9 +726,9 @@ async function requestAction(r: Pending, action: 'reserve' | 'release' | 'close-
         '关闭剩余需求',
         {
           inputPlaceholder: '填写关闭原因',
-          inputValidator: (v) => !!v?.trim() || '请填写原因',
-          confirmButtonText: '关闭剩余',
-          cancelButtonText: '取消',
+          inputValidator: (v) => !!v?.trim() || tr('ui.equipment.text0461'),
+          get confirmButtonText() { return tr('ui.equipment.text0542'); },
+          get cancelButtonText() { return tr('ui.equipment.text0157'); },
           closeOnClickModal: false,
         },
       );
@@ -688,7 +766,7 @@ const stockOpen = ref(false),
   stockQuantities = ref<Record<string, number>>({});
 async function chooseStock(line: Line) {
   if (!form.value.warehouseId || !line.materialId) {
-    ElMessage.warning('请先选择仓库和物料');
+    ElMessage.warning(tr('ui.equipment.text0543'));
     return;
   }
   try {
@@ -717,7 +795,7 @@ function applyStock() {
         Number(stockLine.value?.quantity),
     ) > 0.0000001
   ) {
-    ElMessage.warning('分配数量必须等于本次出库数量');
+    ElMessage.warning(tr('ui.equipment.text0544'));
     return;
   }
   if (stockLine.value) stockLine.value.selections = selections;
@@ -732,11 +810,20 @@ async function exportRows() {
     const result = await request<{ data: (Outbound | Pending)[] }>(
       `/inventory/outbounds/${pending.value ? 'pending-export' : 'export'}?${params}`,
     );
+    const exportFields = {
+      ...Object.fromEntries(
+        columns.value.filter((k) => !k.startsWith('custom:')).map((k) => [k, fields.value[k]]),
+      ),
+      ...Object.fromEntries(
+        pending.value ? [] : extensionExportColumns.value.map((c) => [c.key, c.label]),
+      ),
+    };
+    const exportKeys = Object.keys(exportFields);
     const quote = (v: string) =>
       '"' + (/^[=+@\-]/.test(v) ? "'" : '') + v.replaceAll('"', '""') + '"';
     const csv = [
-      columns.value.map((k) => quote(fields.value[k]!)).join(','),
-      ...result.data.map((r) => columns.value.map((k) => quote(display(r, k))).join(',')),
+      exportKeys.map((k) => quote(exportFields[k]!)).join(','),
+      ...result.data.map((r) => exportKeys.map((k) => quote(display(r, k))).join(',')),
     ].join('\r\n');
     const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a');
@@ -771,8 +858,11 @@ function correction(kind: 'returns' | 'reversals') {
   });
 }
 watch(
-  () => route.fullPath,
-  () => {
+  () => [route.fullPath, route.params.id] as const,
+  ([, recordId], previous) => {
+    // Saving a new draft already returned its complete detail. Loading it again races
+    // with the preview request and clears the newly returned allocations.
+    if (previous?.[1] === 'new' && recordId !== 'new' && String(recordId) === form.value.id) return;
     if (!editing.value) {
       try {
         q.value = String(route.query.q || '');
@@ -837,8 +927,9 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
 <template>
   <section class="outbound-page" v-loading="loading">
     <div v-if="error" class="outbound-error">
-      {{ error }} <ElButton @click="load">重试</ElButton>
+      {{ error }} <ElButton @click="load">{{ tr('ui.equipment.text0299') }}</ElButton>
     </div>
+    <p v-if="configurationError" class="outbound-error" role="alert">{{ configurationError }}</p>
     <template v-if="!editing">
       <AppListTabs
         :active="pending ? 'pending' : 'documents'"
@@ -850,24 +941,24 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       />
       <AppListToolbar class="outbound-toolbar">
         <div class="outbound-actions">
-          <ElButton type="primary" v-if="can('新增直接出库')" title="新增出库单" @click="newDirect"
-            ><AppIcon name="Plus" /> 新增</ElButton
+          <ElButton type="primary" v-if="can('新增直接出库')" :title="tr('ui.equipment.text0545')" @click="newDirect"
+            ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}</ElButton
           ><ElButton
             v-if="pending && can('确认出库')"
             :disabled="!selected.length"
             @click="issue()"
-            >{{ selected.length > 1 ? '合并出库' : '出库' }}</ElButton
+            >{{ selected.length > 1 ? tr('ui.equipment.text0546') : tr('ui.equipment.text0504') }}</ElButton
           >
         </div>
         <form class="outbound-query" @submit.prevent="search">
           <ListSearchInput
             v-model="q"
             :placeholder="
-              pending ? '搜索申请、任务、申请人、仓库' : '搜索出库单、领用人、任务、仓库'
+              pending ? tr('ui.equipment.text0547') : tr('ui.equipment.text0548')
             "
           /><ElButton @click="showFilter($event.currentTarget as HTMLElement)"
-            >添加筛选<span v-if="conditions.length">（{{ conditions.length }}）</span></ElButton
-          ><ElButton text @click="reset">重置</ElButton>
+            >{{ tr('ui.equipment.text0203') }}<span v-if="conditions.length">（{{ conditions.length }}）</span></ElButton
+          ><ElButton text @click="reset">{{ tr('ui.equipment.text0204') }}</ElButton>
         </form>
       </AppListToolbar>
       <AppliedFilterChips
@@ -910,7 +1001,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     pending ? router.push(`/inventory/requisitions/${r.id}`) : openDocument(r.id)
                   "
                   >{{ r.code }}</ElButton
-                ><ElTag v-else-if="key === 'status'" :type="tone(r.status)">{{ r.status }}</ElTag
+                ><ElTag v-else-if="key === 'status'" :type="tone(r.status)">{{ enumLabel('status', r.status) }}</ElTag
                 ><span v-else>{{ display(r, key) }}</span>
               </template></ElTableColumn
             ><!-- @vue-generic {TableColumnRow1} -->
@@ -920,32 +1011,32 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               :width="170"
               :min-width="156"
               :resizable="false"
-              ><template #header><div class="table-header-label">操作</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
               ><template #default="{ row: r, $index: tableRowIndex }">
                 <template v-if="pending"
                   ><ElButton v-if="can('确认出库')" link type="primary" @click="issue([r.id])"
-                    >出库</ElButton
+                    >{{ tr('ui.equipment.text0504') }}</ElButton
                   ><ElButton
                     link
                     type="primary"
                     @click="router.push(`/inventory/requisitions/${r.id}`)"
-                    >查看</ElButton
+                    >{{ tr('ui.equipment.text0206') }}</ElButton
                   ><RowMoreActions :actions="pendingActions(r as Pending)" /></template
                 ><template v-else
-                  ><ElButton link type="primary" @click="openDocument(r.id)">查看</ElButton
+                  ><ElButton link type="primary" @click="openDocument(r.id)">{{ tr('ui.equipment.text0206') }}</ElButton
                   ><ElButton
                     v-if="r.status === '草稿' && can('编辑草稿')"
                     link
                     type="primary"
                     @click="openDocument(r.id)"
-                    >编辑</ElButton
+                    >{{ tr('ui.equipment.text0207') }}</ElButton
                   >
                   <ElButton
                     v-if="can('打印') && (r.status !== '草稿' || !can('编辑草稿'))"
                     link
                     type="primary"
                     @click="openPrint(r)"
-                    >打印</ElButton
+                    >{{ tr('ui.equipment.text0549') }}</ElButton
                   >
                   <RowMoreActions
                     v-if="can('打印') && r.status === '草稿' && can('编辑草稿')"
@@ -954,13 +1045,13 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 </template> </template></ElTableColumn
             ><template #empty
               ><div v-if="!rows.length">
-                {{ q || conditions.length ? '当前筛选无结果' : '暂无数据' }}
+                {{ q || conditions.length ? tr('ui.equipment.text0550') : tr('ui.equipment.text0308') }}
               </div></template
             ></AppBusinessTable
           >
         </div>
         <footer class="outbound-list-footer">
-          <span>共 {{ total }} 条</span
+          <span>{{ tr('ui.equipment.text0309') }} {{ total }} {{ tr('ui.equipment.text0296') }}</span
           ><AppPagination
             v-model:page="page"
             v-model:page-size="size"
@@ -986,16 +1077,16 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 }}<ElButton
                   v-if="columns.includes(String(key))"
                   text
-                  aria-label="上移列"
+                  :aria-label="tr('ui.equipment.text0551')"
                   @click.prevent="moveColumn(String(key), -1)"
                   ><AppIcon name="ArrowUp" /></ElButton
                 ><ElButton
                   v-if="columns.includes(String(key))"
                   text
-                  aria-label="下移列"
+                  :aria-label="tr('ui.equipment.text0552')"
                   @click.prevent="moveColumn(String(key), 1)"
                   ><AppIcon name="ArrowDown" /></ElButton></ElCheckbox
-              ><ElButton text @click="resetColumns">恢复默认</ElButton></template
+              ><ElButton text @click="resetColumns">{{ tr('ui.equipment.text0553') }}</ElButton></template
             ></ListToolbarIcons
           >
         </footer>
@@ -1013,18 +1104,18 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
     <template v-else>
       <header class="outbound-detail-header">
         <div>
-          <AppBackButton label="返回出库管理" :disabled="busy" @click="back" />
-          <h2>{{ form.code || (direct ? '新增出库' : '领料出库') }}</h2>
-          <ElTag :type="tone(form.status)">{{ form.status }}</ElTag
+          <AppBackButton :label="tr('ui.equipment.text0554')" :disabled="busy" @click="back" />
+          <h2>{{ form.code || (direct ? tr('ui.equipment.text0555') : tr('ui.equipment.text0556')) }}</h2>
+          <ElTag :type="tone(form.status)">{{ enumLabel('status',form.status) }}</ElTag
           ><span>{{ form.sourceKind }}</span>
         </div>
         <div class="outbound-actions">
           <ElButton
             v-if="form.id && can('打印')"
             :disabled="busy || guard.dirty.value"
-            :title="guard.dirty.value ? '请先保存后打印' : '打印出库单'"
+            :title="guard.dirty.value ? tr('ui.equipment.text0557') : tr('ui.equipment.text0558')"
             @click="openPrint(form)"
-            >打印</ElButton
+            >{{ tr('ui.equipment.text0549') }}</ElButton
           >
 
           <ElButton
@@ -1032,11 +1123,11 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             type="danger"
             text
             @click="removeDraft"
-            >删除</ElButton
+            >{{ tr('ui.equipment.text0146') }}</ElButton
           ><ElButton
             v-if="form.status === '已出库' && auth.can('inventoryReturn', '新增')"
             @click="correction('returns')"
-            >退料</ElButton
+            >{{ tr('ui.equipment.text0505') }}</ElButton
           ><ElButton
             v-if="
               form.status === '已出库' &&
@@ -1044,20 +1135,20 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               auth.can('inventoryReversal', '新增')
             "
             @click="correction('reversals')"
-            >冲销</ElButton
+            >{{ tr('ui.equipment.text0559') }}</ElButton
           >
         </div>
       </header>
       <div class="outbound-detail-body">
         <main class="outbound-main">
           <section class="outbound-panel">
-            <h3>领用信息</h3>
+            <h3>{{ tr('ui.equipment.text0560') }}</h3>
             <p v-if="formValidation" class="outbound-validation" role="alert">
               {{ formValidation }}
             </p>
             <div class="outbound-form-grid">
               <label
-                >仓库<ElSelect
+                >{{ tr('ui.equipment.text0499') }}<ElSelect
                   v-if="writable && direct"
                   id="outbound-warehouse"
                   v-model="form.warehouseId"
@@ -1070,10 +1161,10 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     :value="w.id" /></ElSelect
                 ><span v-else>{{ form.warehouseName || warehouse?.name }}</span></label
               ><label
-                >公司<span>{{ form.companyName || warehouse?.companyName }}</span></label
+                >{{ tr('ui.equipment.text0561') }}<span>{{ form.companyName || warehouse?.companyName }}</span></label
               ><template v-if="direct"
                 ><label
-                  ><span>领用部门 <i v-if="writable" class="outbound-required">*</i></span
+                  ><span>{{ tr('ui.equipment.text0562') }} <i v-if="writable" class="outbound-required">*</i></span
                   ><TreeSelect
                     id="outbound-department"
                     v-if="writable"
@@ -1087,42 +1178,46 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                         value: d.id,
                       }))
                     "
-                    placeholder="选择领用部门"
+                    :placeholder="tr('ui.equipment.text0563')"
                   /><span v-else>{{
                     form.departmentName ||
                     choices.departments.find((d) => d.id === form.departmentId)?.name
                   }}</span></label
                 ><label
-                  ><span>领用人 <i v-if="writable" class="outbound-required">*</i></span
-                  ><ElSelect
+                  ><span>{{ tr('ui.equipment.text0564') }} <i v-if="writable" class="outbound-required">*</i></span>
+                  <PagedChoiceField
                     id="outbound-recipient"
                     v-if="writable"
                     v-model="form.recipientId"
-                    filterable
-                    clearable
-                    placeholder="选择领用人"
+                    :options="users"
+                    :load-rows="loadUserRows"
+                    :context="form.warehouseId"
                     :disabled="busy || !form.warehouseId"
-                    ><ElOption
-                      v-for="u in users"
-                      :key="u.id"
-                      :label="u.name"
-                      :value="u.id" /></ElSelect
-                  ><span v-else>{{
+                    clearable
+                    :title="tr('ui.equipment.text0565')"
+                    :placeholder="tr('ui.equipment.text0565')"
+                    @select="rememberUsers"
+                  /><span v-else>{{
                     form.recipientName || choices.users.find((u) => u.id === form.recipientId)?.name
                   }}</span></label
                 ><label
-                  >关联任务<ElSelect
+                  >{{ tr('ui.equipment.text0566') }}<PagedChoiceField
                     v-if="writable"
                     v-model="taskValue"
-                    filterable
+                    :options="taskPickerOptions"
+                    :load-rows="loadTaskRows"
+                    :columns="[
+                      { key: 'kind', label: '类型', minWidth: 90 },
+                      { key: 'code', label: '任务编号', minWidth: 190 },
+                      { key: 'name', label: '设备／任务名称', minWidth: 220 },
+                    ]"
+                    :context="form.warehouseId"
+                    :disabled="busy || !form.warehouseId"
                     clearable
-                    placeholder="可选"
-                    ><ElOption
-                      v-for="t in tasks"
-                      :key="t.kind + ':' + t.id"
-                      :label="`${t.kind} · ${t.code}`"
-                      :value="t.kind + ':' + t.id" /></ElSelect
-                  ><ElButton
+                    :title="tr('ui.equipment.text0567')"
+                    :placeholder="tr('ui.equipment.text0568')"
+                    @select="rememberTasks"
+                  /><ElButton
                     v-else
                     link
                     type="primary"
@@ -1132,15 +1227,15 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     }}</ElButton
                   ></label
                 ><label class="wide"
-                  >用途<ElInput
+                  >{{ tr('ui.equipment.text0478') }}<ElInput
                     v-if="writable"
                     v-model="form.purpose"
                     maxlength="1000"
-                    placeholder="填写领用用途"
+                    :placeholder="tr('ui.equipment.text0569')"
                   /><span v-else>{{ form.purpose }}</span></label
                 ></template
               ><label class="wide"
-                >备注<ElInput
+                >{{ tr('ui.equipment.text0130') }}<ElInput
                   v-if="writable"
                   v-model="form.remark"
                   type="textarea"
@@ -1152,9 +1247,9 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           </section>
           <section v-if="form.lines.length || writable" class="outbound-panel">
             <div class="outbound-section-heading">
-              <h3>{{ writable ? '本次出库' : '出库明细' }}</h3>
+              <h3>{{ writable ? tr('ui.equipment.text0570') : tr('ui.equipment.text0571') }}</h3>
               <ElButton v-if="writable && direct" @click="addLine"
-                ><AppIcon name="Plus" /> 新增行</ElButton
+                ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0572') }}</ElButton
               >
             </div>
             <div class="outbound-line-scroll">
@@ -1166,7 +1261,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 class="business-table outbound-line-table"
                 ><!-- @vue-generic {TableColumnRow2} -->
                 <ElTableColumn v-if="!direct" :min-width="150"
-                  ><template #header><div class="table-header-label">申请 / 任务</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0573') }}</div></template
                   ><template #default="{ row: line, $index: i }">
                     <ElButton
                       link
@@ -1182,42 +1277,39 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow2} -->
                 <ElTableColumn :min-width="150" class-name="outbound-material-code"
-                  ><template #header><div class="table-header-label">料号</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0154') }}</div></template
                   ><template #default="{ row: line, $index: i }">
-                    <ElButton
+                    <DialogChoiceInput
                       v-if="writable && direct"
-                      text
-                      class="outbound-material-trigger"
+                      :model-value="line.materialCode"
+                      :placeholder="tr('ui.equipment.text0574')"
                       :disabled="!form.warehouseId"
-                      :title="form.warehouseId ? '选择物料' : '请先选择出库仓库'"
-                      :aria-label="`第 ${i + 1} 行料号选择`"
-                      @click="chooseMaterial(line)"
-                    >
-                      {{ line.materialCode || '选择料号' }}<AppIcon name="Search" />
-                    </ElButton>
+                      :title="form.warehouseId ? tr('ui.equipment.text0575') : tr('ui.equipment.text0576')"
+                      @open="chooseMaterial(line)"
+                    />
                     <span v-else>{{ line.materialCode }}</span>
                   </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow2} -->
                 <ElTableColumn :min-width="210"
-                  ><template #header><div class="table-header-label">物料名称</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0155') }}</div></template
                   ><template #default="{ row: line, $index: i }">{{
                     line.materialName
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow2} -->
                 <ElTableColumn :min-width="150"
-                  ><template #header><div class="table-header-label">单位</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0095') }}</div></template
                   ><template #default="{ row: line, $index: i }">{{
                     line.unit
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow2} -->
                 <ElTableColumn v-if="!direct" :min-width="150" class-name="numeric"
-                  ><template #header><div class="table-header-label">申请 / 已发</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0577') }}</div></template
                   ><template #default="{ row: line, $index: i }">
                     {{ number(line.requestedQuantity) }} / {{ number(line.issuedQuantity) }}
                   </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow2} -->
                 <ElTableColumn v-if="!direct" :min-width="150" class-name="numeric"
-                  ><template #header><div class="table-header-label">剩余 / 预留</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0578') }}</div></template
                   ><template #default="{ row: line, $index: i }">
                     {{
                       number(
@@ -1229,7 +1321,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow2} -->
                 <ElTableColumn :min-width="150" class-name="numeric"
-                  ><template #header><div class="table-header-label">本次数量</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0579') }}</div></template
                   ><template #default="{ row: line, $index: i }">
                     <AppDecimalInput
                       v-if="writable"
@@ -1243,7 +1335,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow2} -->
                 <ElTableColumn v-if="!direct" :min-width="150"
-                  ><template #header><div class="table-header-label">领用人</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0564') }}</div></template
                   ><template #default="{ row: line, $index: i }">{{
                     line.recipientName
                   }}</template></ElTableColumn
@@ -1255,25 +1347,25 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   :width="170"
                   :min-width="156"
                   :resizable="false"
-                  ><template #header><div class="table-header-label">操作</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
                   ><template #default="{ row: line, $index: i }">
                     <ElButton link type="primary" @click="chooseStock(line)">{{
-                      line.selections.length ? '手动分配' : '自动分配'
+                      line.selections.length ? tr('ui.equipment.text0580') : tr('ui.equipment.text0581')
                     }}</ElButton
                     ><ElButton v-if="direct" link type="danger" @click="form.lines.splice(i, 1)"
-                      >移除</ElButton
+                      >{{ tr('ui.equipment.text0151') }}</ElButton
                     >
                   </template></ElTableColumn
                 ><template #empty
                   ><div v-if="!form.lines.length">
-                    {{ writable && direct ? '点击新增行，在料号列选择物料' : '暂无出库明细' }}
+                    {{ writable && direct ? tr('ui.equipment.text0582') : tr('ui.equipment.text0583') }}
                   </div></template
                 ></AppBusinessTable
               >
             </div>
           </section>
           <section v-if="form.allocations?.length" class="outbound-panel">
-            <h3>批次与成本分配</h3>
+            <h3>{{ tr('ui.equipment.text0584') }}</h3>
             <div class="outbound-line-scroll">
               <AppBusinessTable
                 :rows="form.allocations"
@@ -1283,32 +1375,32 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 class="business-table outbound-allocation-table"
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn :min-width="150"
-                  ><template #header><div class="table-header-label">物料</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0515') }}</div></template
                   ><template #default="{ row: a, $index: i }">{{
                     a.materialName
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn :min-width="150"
-                  ><template #header><div class="table-header-label">库位</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0467') }}</div></template
                   ><template #default="{ row: a, $index: i }">{{
                     a.binName
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn :min-width="150"
-                  ><template #header><div class="table-header-label">批次 / 有效期</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0585') }}</div></template
                   ><template #default="{ row: a, $index: i }">
                     {{ a.batchCode }}
                     <div>{{ a.expiryDate }}</div>
                   </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn :min-width="150"
-                  ><template #header><div class="table-header-label">来源 / 领用人</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0586') }}</div></template
                   ><template #default="{ row: a, $index: i }">
                     {{ a.requisitionCode }}
                     <div v-if="form.id.startsWith('g')">
                       <ElButton link type="primary" @click="openDocument(a.issueId || '')"
-                        >原出库单</ElButton
-                      ><ElTag v-if="childReversed(a.issueId)" type="danger">已冲销</ElTag>
+                        >{{ tr('ui.equipment.text0587') }}</ElButton
+                      ><ElTag v-if="childReversed(a.issueId)" type="danger">{{ tr('ui.equipment.text0588') }}</ElTag>
                     </div>
                     <div>
                       {{ a.recipientName }}
@@ -1319,78 +1411,77 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn :min-width="150" class-name="numeric"
-                  ><template #header><div class="table-header-label">数量</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0144') }}</div></template
                   ><template #default="{ row: a, $index: i }">{{
                     number(a.quantity)
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn :min-width="150" class-name="numeric"
-                  ><template #header><div class="table-header-label">已用 / 已退</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0589') }}</div></template
                   ><template #default="{ row: a, $index: i }">
                     {{ number(a.usedQuantity) }} / {{ number(a.returnedQuantity) }}
                   </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn v-if="can('查看金额')" :min-width="150" class-name="numeric"
-                  ><template #header><div class="table-header-label">成本单价</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0590') }}</div></template
                   ><template #default="{ row: a, $index: i }">{{
                     number(a.unitCost)
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn v-if="can('查看金额')" :min-width="150" class-name="numeric"
-                  ><template #header><div class="table-header-label">金额</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0591') }}</div></template
                   ><template #default="{ row: a, $index: i }">{{
                     number(a.amount)
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn :min-width="150"
-                  ><template #header><div class="table-header-label">成本来源</div></template
+                  ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0592') }}</div></template
                   ><template #default="{ row: a, $index: i }">
                     <ElButton
                       v-if="a.receiptId"
                       link
                       type="primary"
                       @click="router.push(`/inventory/receipts/${a.receiptId}`)"
-                      >入库来源</ElButton
-                    ><span v-else>成本层 {{ a.costLayerId }}</span>
+                      >{{ tr('ui.equipment.text0593') }}</ElButton
+                    ><span v-else>{{ tr('ui.equipment.text0594') }} {{ a.costLayerId }}</span>
                   </template></ElTableColumn
                 ></AppBusinessTable
               >
             </div>
             <div v-if="can('查看金额')" class="outbound-total">
-              合计：{{ number(form.totalAmount) }}
+              {{ tr('ui.equipment.text0595') }}{{ number(form.totalAmount) }}
             </div>
           </section>
+          <BusinessFields
+            ref="extension"
+            v-model="form"
+            @initialize="extensionInitializationClean = !guard.dirty.value"
+            @ready="extensionInitializationClean && guard.markSaved()"
+            object="inventory_outbound"
+            :readonly="!writable"
+            :is-new="!form.id"
+            :errors="extensionErrors"
+          />
         </main>
-        <aside class="outbound-timeline">
-          <h3>操作时间轴</h3>
-          <ol>
-            <li v-for="(event, i) in form.events" :key="i">
-              <strong>{{ event.action }}</strong>
-              <div>{{ event.actorName }}</div>
-              <time>{{ formatDateTime(event.createdAt) }}</time>
-            </li>
-          </ol>
-          <p v-if="!form.events?.length">保存后生成操作记录</p>
-        </aside>
       </div>
       <AppFormFooter
-        ><ElButton :disabled="busy" @click="back">{{ writable ? '取消' : '返回' }}</ElButton
-        ><ElButton v-if="writable" :loading="busy" @click="save">保存</ElButton
+        ><ElButton :disabled="busy" @click="back">{{ writable ? tr('ui.equipment.text0157') : tr('ui.equipment.text0208') }}</ElButton
+        ><ElButton v-if="writable" :loading="busy" @click="save">{{ tr('ui.equipment.text0159') }}</ElButton
         ><ElButton
           v-if="writable && can('确认出库')"
           type="primary"
           :loading="busy"
           @click="showPreview"
-          >预览出库</ElButton
+          >{{ tr('ui.equipment.text0596') }}</ElButton
         ></AppFormFooter
       >
     </template>
-    <AppDialog v-model="previewOpen" title="确认出库" width="960px" :busy="busy"
-      ><p>确认后扣减仓库库存并记录成本，领料申请的剩余需求继续保留。</p>
+    <AppDialog v-model="previewOpen" :title="tr('ui.equipment.text0597')" width="960px" :busy="busy"
+      ><p>{{ tr('ui.equipment.text0598') }}</p>
       <div class="outbound-actions">
-        <ElButton :type="picking ? 'primary' : 'default'" @click="picking = true">拣货汇总</ElButton
+        <ElButton :type="picking ? 'primary' : 'default'" @click="picking = true">{{ tr('ui.equipment.text0599') }}</ElButton
         ><ElButton :type="!picking ? 'primary' : 'default'" @click="picking = false"
-          >分配明细</ElButton
+          >{{ tr('ui.equipment.text0600') }}</ElButton
         >
       </div>
       <div class="outbound-line-scroll">
@@ -1402,44 +1493,44 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           class="business-table"
           ><!-- @vue-generic {TableColumnRow4} -->
           <ElTableColumn v-if="!picking" :min-width="150"
-            ><template #header><div class="table-header-label">来源 / 领用人</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0586') }}</div></template
             ><template #default="{ row: a, $index: i }">
               {{ a.requisitionCode }}
               <div>{{ a.recipientName }} · {{ a.taskCode }}</div>
             </template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow4} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">物料</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0515') }}</div></template
             ><template #default="{ row: a, $index: i }">{{
               a.materialName
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow4} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">库位</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0467') }}</div></template
             ><template #default="{ row: a, $index: i }">{{ a.binName }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow4} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">批次</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0601') }}</div></template
             ><template #default="{ row: a, $index: i }">{{ a.batchCode }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow4} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">有效期</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0602') }}</div></template
             ><template #default="{ row: a, $index: i }">{{ a.expiryDate }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow4} -->
           <ElTableColumn :min-width="150" class-name="numeric"
-            ><template #header><div class="table-header-label">数量</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0144') }}</div></template
             ><template #default="{ row: a, $index: i }">{{
               number(a.quantity)
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow4} -->
           <ElTableColumn v-if="can('查看金额')" :min-width="150" class-name="numeric"
-            ><template #header><div class="table-header-label">成本单价</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0590') }}</div></template
             ><template #default="{ row: a, $index: i }">{{
               number(a.unitCost)
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow4} -->
           <ElTableColumn v-if="can('查看金额')" :min-width="150" class-name="numeric"
-            ><template #header><div class="table-header-label">金额</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0591') }}</div></template
             ><template #default="{ row: a, $index: i }">{{
               number(a.amount)
             }}</template></ElTableColumn
@@ -1447,15 +1538,15 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         >
       </div>
       <div v-if="can('查看金额')" class="outbound-total">
-        合计：{{ number(preview?.totalAmount) }}
+        {{ tr('ui.equipment.text0595') }}{{ number(preview?.totalAmount) }}
       </div>
       <template #footer
-        ><ElButton :disabled="busy" @click="previewOpen = false">取消</ElButton
-        ><ElButton type="primary" :loading="busy" @click="confirm">确认出库</ElButton></template
+        ><ElButton :disabled="busy" @click="previewOpen = false">{{ tr('ui.equipment.text0157') }}</ElButton
+        ><ElButton type="primary" :loading="busy" @click="confirm">{{ tr('ui.equipment.text0597') }}</ElButton></template
       ></AppDialog
     >
-    <AppDialog v-model="stockOpen" title="选择批次与库位" width="780px"
-      ><p>本次数量 {{ number(stockLine?.quantity) }}；清空选择后使用自动分配。</p>
+    <AppDialog v-model="stockOpen" :title="tr('ui.equipment.text0603')" width="780px"
+      ><p>{{ tr('ui.equipment.text0579') }} {{ number(stockLine?.quantity) }}{{ tr('ui.equipment.text0604') }}</p>
       <div class="outbound-line-scroll">
         <AppBusinessTable
           :rows="stockRows"
@@ -1465,37 +1556,37 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           class="business-table"
           ><!-- @vue-generic {TableColumnRow5} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">库位</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0467') }}</div></template
             ><template #default="{ row: s, $index: tableRowIndex }">{{
               s.binName
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow5} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">批次</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0601') }}</div></template
             ><template #default="{ row: s, $index: tableRowIndex }">{{
               s.batchCode
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow5} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">有效期</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0602') }}</div></template
             ><template #default="{ row: s, $index: tableRowIndex }">{{
               s.expiryDate
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow5} -->
           <ElTableColumn :min-width="150" class-name="numeric"
-            ><template #header><div class="table-header-label">可用</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0605') }}</div></template
             ><template #default="{ row: s, $index: tableRowIndex }">{{
               number(s.availableQuantity)
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow5} -->
           <ElTableColumn :min-width="150" class-name="numeric"
-            ><template #header><div class="table-header-label">本申请预留</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0606') }}</div></template
             ><template #default="{ row: s, $index: tableRowIndex }">{{
               number(s.ownReservedQuantity)
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow5} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">分配数量</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0607') }}</div></template
             ><template #default="{ row: s, $index: tableRowIndex }">
               <AppDecimalInput
                 :model-value="stockQuantities[s.id]"
@@ -1503,13 +1594,13 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 :min="0"
               /> </template></ElTableColumn
           ><template #empty
-            ><div v-if="!stockRows.length">暂无库存</div></template
+            ><div v-if="!stockRows.length">{{ tr('ui.equipment.text0608') }}</div></template
           ></AppBusinessTable
         >
       </div>
       <template #footer
-        ><ElButton @click="stockOpen = false">取消</ElButton
-        ><ElButton type="primary" @click="applyStock">应用</ElButton></template
+        ><ElButton @click="stockOpen = false">{{ tr('ui.equipment.text0157') }}</ElButton
+        ><ElButton type="primary" @click="applyStock">{{ tr('ui.equipment.text0609') }}</ElButton></template
       ></AppDialog
     >
     <MaterialPicker
@@ -1631,7 +1722,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   min-height: 0;
   overflow: auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 270px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   padding-bottom: 16px;
 }
@@ -1641,46 +1732,15 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   flex-direction: column;
   gap: 12px;
 }
-.outbound-panel,
-.outbound-timeline {
+.outbound-panel {
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
   padding: 16px;
 }
-.outbound-panel h3,
-.outbound-timeline h3 {
+.outbound-panel h3 {
   font-size: 13px;
   margin: 0 0 14px;
-}
-.outbound-timeline {
-  align-self: start;
-  position: sticky;
-  top: 0;
-}
-.outbound-timeline ol {
-  list-style: none;
-  padding: 0 0 0 9px;
-  margin: 0;
-}
-.outbound-timeline li {
-  position: relative;
-  padding: 0 0 22px 18px;
-  border-left: 1px solid var(--el-border-color);
-  line-height: 1.6;
-}
-.outbound-timeline li:before {
-  content: '';
-  position: absolute;
-  width: 7px;
-  height: 7px;
-  background: var(--el-color-primary);
-  border-radius: 50%;
-  left: -4px;
-  top: 6px;
-}
-.outbound-timeline time {
-  font-size: 13px;
 }
 .outbound-form-grid {
   display: grid;
@@ -1708,20 +1768,6 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
 .outbound-material-code {
   min-width: 220px;
 }
-.outbound-material-trigger {
-  width: 100%;
-  min-height: 32px;
-  justify-content: space-between;
-  border: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
-  padding: 0 10px;
-}
-.outbound-material-trigger :deep(> span) {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
 .outbound-required,
 .outbound-validation {
   color: var(--el-color-danger);
@@ -1743,20 +1789,11 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   color: var(--el-color-danger);
 }
 @media (max-width: 1280px) {
-  .outbound-detail-body {
-    grid-template-columns: minmax(0, 1fr) 230px;
-  }
   .outbound-query {
     flex-wrap: wrap;
   }
 }
 @media (max-width: 1024px) {
-  .outbound-detail-body {
-    grid-template-columns: 1fr;
-  }
-  .outbound-timeline {
-    position: static;
-  }
   .outbound-form-grid {
     grid-template-columns: 1fr;
   }

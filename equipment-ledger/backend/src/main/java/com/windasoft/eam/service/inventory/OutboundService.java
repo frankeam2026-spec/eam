@@ -3,7 +3,6 @@ package com.windasoft.eam.service.inventory;
 import static com.windasoft.eam.service.inventory.InventoryService.*;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.common.inventory.InventoryMoney;
@@ -20,7 +19,12 @@ import org.springframework.transaction.annotation.Transactional;
 /** One issue header for direct, single-request and consolidated issues. Preview is read-only. */
 @Service
 public class OutboundService {
+  @org.springframework.beans.factory.annotation.Autowired private InventoryListService listQueries;
   static final String MENU = "inventoryOutbound";
+
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.business.BusinessValueService custom;
+
   private final OutboundRepository repository;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -54,7 +58,9 @@ public class OutboundService {
   @org.springframework.beans.factory.annotation.Value("${eam.inventory.preview-secret:}")
   void configurePreviewSecret(String secret) {
     if (secret.isBlank()) return;
-    require(secret.length() >= 32, "库存预览密钥至少32个字符");
+    require(
+        secret.length() >= 32,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0029"));
     try {
       System.arraycopy(
           java.security.MessageDigest.getInstance("SHA-256")
@@ -72,26 +78,50 @@ public class OutboundService {
     try {
       return json.writeValueAsString(value);
     } catch (Exception e) {
-      throw new IllegalArgumentException("单据内容无效", e);
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          com.windasoft.eam.common.MessageRef.of("server.inventory.message0016"), e);
     }
   }
 
-  private Map<String, Object> payload(Map<String, Object> raw) {
-    try {
-      return raw.get("payload") == null
-          ? new LinkedHashMap<>()
-          : json.readValue(
-              raw.get("payload").toString(), new TypeReference<LinkedHashMap<String, Object>>() {});
-    } catch (Exception e) {
-      throw new IllegalStateException("单据内容无法读取", e);
+  private Map<String, Object> headerData(Map<String, Object> raw) {
+    var data = new LinkedHashMap<String, Object>();
+    for (var pair :
+        Map.of(
+                "purpose",
+                "purpose",
+                "remark",
+                "remark",
+                "departmentId",
+                "department_id",
+                "recipientId",
+                "recipient_id",
+                "recipientName",
+                "recipient_name",
+                "taskKind",
+                "task_kind",
+                "taskId",
+                "task_id",
+                "legacyFingerprint",
+                "legacy_fingerprint")
+            .entrySet()) {
+      var value = raw.get(pair.getValue());
+      if (value != null
+          && !(pair.getKey().equals("legacyFingerprint") && value.toString().isBlank()))
+        data.put(pair.getKey(), pair.getKey().endsWith("Id") ? value.toString() : value);
     }
+    data.put("lineSelections", raw.getOrDefault("line_selections", List.of()));
+    return data;
   }
 
   @SuppressWarnings("unchecked")
   private List<Map<String, Object>> inputLines(Map<String, Object> body) {
-    require(body.get("lines") instanceof List<?>, "请添加出库物料");
+    require(
+        body.get("lines") instanceof List<?>,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0030"));
     var list = (List<?>) body.get("lines");
-    require(!list.isEmpty() && list.size() <= 500, "请选择1至500行物料");
+    require(
+        !list.isEmpty() && list.size() <= 500,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0031"));
     var result = new ArrayList<Map<String, Object>>();
     for (Object value : list) {
       require(value instanceof Map<?, ?>, "出库明细无效");
@@ -102,7 +132,9 @@ public class OutboundService {
 
   private Map<String, Object> row(long id, boolean lock, String action) {
     var rows = repository.loadIssue(auth.tenantId(), id, lock);
-    require(rows.size() == 1, "出库单不存在");
+    require(
+        rows.size() == 1,
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0003"));
     var r = rows.getFirst();
     boolean ownRead =
         action.equals("查看")
@@ -136,7 +168,9 @@ public class OutboundService {
 
   public Object materials(String q, int page, int size, long warehouseId) {
     permissions.require(MENU, "查看");
-    require(q.length() <= 200 && page >= 1 && size >= 1 && size <= 100, "查询参数无效");
+    require(
+        q.length() <= 200 && page >= 1 && size >= 1 && size <= 100,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0032"));
     permissions.checkInventoryWarehouse(MENU, warehouseId, "查看");
     String match = "%" + q.trim() + "%";
     Long total = repository.countMaterials(auth.tenantId(), match);
@@ -167,6 +201,10 @@ public class OutboundService {
   }
 
   public Object choices() {
+    return choices(false);
+  }
+
+  public Object choices(boolean paged) {
     permissions.require(MENU, "查看");
     var warehouses =
         repository.listWarehouses(auth.tenantId()).stream()
@@ -188,19 +226,22 @@ public class OutboundService {
                 })
             .toList();
     var users =
-        repository.listUsers(auth.tenantId()).stream()
-            .filter(u -> companies.contains(permissions.companyOfOrganization(id(u.get("org_id")))))
-            .map(
-                u -> {
-                  var v = masters.view(u);
-                  v.put(
-                      "companyId",
-                      Objects.toString(permissions.companyOfOrganization(id(u.get("org_id"))), ""));
-                  return v;
-                })
-            .toList();
+        (paged ? List.<Map<String, Object>>of() : repository.listUsers(auth.tenantId()))
+            .stream()
+                .filter(
+                    u -> companies.contains(permissions.companyOfOrganization(id(u.get("org_id")))))
+                .map(
+                    u -> {
+                      var v = masters.view(u);
+                      v.put(
+                          "companyId",
+                          Objects.toString(
+                              permissions.companyOfOrganization(id(u.get("org_id"))), ""));
+                      return v;
+                    })
+                .toList();
     var materials = List.of();
-    var taskChoices = requests.outboundTaskChoices();
+    var taskChoices = paged ? List.of() : requests.outboundTaskChoices();
     return Map.of(
         "warehouses",
         warehouses,
@@ -217,20 +258,30 @@ public class OutboundService {
   @Transactional
   public Object save(Long issueId, Map<String, Object> body) {
     mutex.enter();
-    require(Set.of("直接出库", "领料出库").contains(text(body, "sourceKind")), "出库来源无效");
-    require(text(body, "remark").length() <= 1000, "备注最多1000字");
+    require(
+        Set.of("直接出库", "领料出库").contains(text(body, "sourceKind")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0033"));
+    require(
+        text(body, "remark").length() <= 1000,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0034"));
     boolean direct = !"领料出库".equals(text(body, "sourceKind"));
     long warehouse = id(body.get("warehouseId"));
     var w = masters.row("warehouses", warehouse, true);
     permissions.checkInventoryWarehouse(
         MENU, warehouse, direct ? (issueId == null ? "新增直接出库" : "编辑草稿") : "确认出库");
-    require(flag(w.get("enabled")), "仓库已停用");
+    require(
+        flag(w.get("enabled")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0035"));
     Map<String, Object> previous =
         issueId == null ? null : row(issueId, true, direct ? "编辑草稿" : "确认出库");
     if (previous != null) {
-      require(text(previous, "status").equals("草稿"), "已出库单不能修改");
+      require(
+          text(previous, "status").equals("草稿"),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0036"));
       VersionGuard.checkPayload((Number) previous.get("row_version"), body);
-      require(text(previous, "source_kind").equals(direct ? "直接出库" : "领料出库"), "不能切换出库来源");
+      require(
+          text(previous, "source_kind").equals(direct ? "直接出库" : "领料出库"),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0037"));
     }
     long company = id(w.get("company_id"));
     long department = id(body.get("departmentId")), recipient = id(body.get("recipientId"));
@@ -241,18 +292,18 @@ public class OutboundService {
           departments.size() == 1
               && Set.of("部门", "department").contains(text(departments.getFirst(), "org_type"))
               && Objects.equals(permissions.companyOfOrganization(department), company),
-          "请选择本公司领用部门");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0038"));
       var recipients = repository.findRecipient(auth.tenantId(), recipient);
       require(
           recipients.size() == 1
               && Objects.equals(
                   permissions.companyOfOrganization(id(recipients.getFirst().get("org_id"))),
                   company),
-          "请选择本公司领用人");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0039"));
       recipientName = text(recipients.getFirst(), "display_name");
       require(
           !text(body, "purpose").isBlank() && text(body, "purpose").length() <= 1000,
-          "请填写用途（最多1000字）");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0040"));
       if (id(body.get("taskId")) != 0)
         requests.validateOutboundTask(
             text(body, "taskKind"), id(body.get("taskId")), company, true);
@@ -269,21 +320,27 @@ public class OutboundService {
       item.put("quantity", qty);
       if (!direct) {
         long reqLine = id(line.get("requisitionLineId"));
-        require(seen.add(reqLine), "申请明细不能重复");
+        require(
+            seen.add(reqLine),
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0041"));
         var source = repository.findRequestLine(auth.tenantId(), reqLine);
-        require(source.size() == 1, "申请明细不存在");
+        require(
+            source.size() == 1,
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0042"));
         var r = source.getFirst();
         requests.outboundRequest(id(r.get("request_id")), true, "确认出库");
         require(
             id(r.get("company_id")) == company && id(r.get("warehouse_id")) == warehouse,
-            "只能合并同公司、同仓库申请");
-        require(id(r.get("material_id")) == material, "申请物料不可修改");
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0043"));
+        require(
+            id(r.get("material_id")) == material,
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0044"));
         require(
             qty.compareTo(
                     ((BigDecimal) r.get("quantity"))
                         .subtract((BigDecimal) r.get("issued_quantity")))
                 <= 0,
-            "本次出库数量超过剩余待发数量");
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0045"));
         item.put("requisitionId", r.get("request_id"));
         item.put("requisitionLineId", reqLine);
         item.put("taskKind", r.get("task_kind"));
@@ -308,13 +365,19 @@ public class OutboundService {
       }
       var manual = new ArrayList<Map<String, Object>>();
       Object rawSelections = line.get("selections");
-      require(rawSelections == null || rawSelections instanceof List<?>, "批次分配格式无效");
+      require(
+          rawSelections == null || rawSelections instanceof List<?>,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0046"));
       if (rawSelections instanceof List<?> chosen) {
-        require(chosen.size() <= 500, "批次分配数量过多");
+        require(
+            chosen.size() <= 500,
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0047"));
         for (Object value : chosen) {
           require(value instanceof Map<?, ?>, "批次分配明细无效");
           var selection = (Map<?, ?>) value;
-          require(id(selection.get("balanceId")) > 0, "请选择有效库位批次");
+          require(
+              id(selection.get("balanceId")) > 0,
+              com.windasoft.eam.common.MessageContext.text("server.inventory.message0048"));
           manual.add(
               Map.of(
                   "balanceId",
@@ -326,12 +389,15 @@ public class OutboundService {
       item.put("selections", manual);
       normalized.add(item);
     }
-    require(!normalized.isEmpty(), "本次出库数量必须大于零");
+    require(
+        !normalized.isEmpty(),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0049"));
     var stored = new LinkedHashMap<String, Object>();
     stored.put("purpose", text(body, "purpose"));
     stored.put("remark", text(body, "remark"));
     stored.put("departmentId", Long.toString(department));
     stored.put("recipientId", Long.toString(recipient));
+    stored.put("recipientName", recipientName);
     stored.put("taskKind", text(body, "taskKind"));
     stored.put("taskId", text(body, "taskId"));
     stored.put("lineSelections", normalized.stream().map(l -> l.get("selections")).toList());
@@ -369,24 +435,33 @@ public class OutboundService {
           l.get("departmentId"),
           l.get("recipientId"),
           l.get("recipientName"));
+    custom.saveDraft("inventory_outbound", target, body, issueId == null);
     event(target, previous == null ? "创建出库草稿" : "修改出库草稿");
     return detail(Long.toString(target));
   }
 
   public Object fromRequests(Map<String, Object> body) {
-    require(body.get("ids") instanceof List<?>, "请选择待出库申请");
+    require(
+        body.get("ids") instanceof List<?>,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0050"));
     var ids = (List<?>) body.get("ids");
-    require(!ids.isEmpty() && ids.size() <= 50, "请选择1至50张申请");
+    require(
+        !ids.isEmpty() && ids.size() <= 50,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0051"));
     var result = new LinkedHashMap<String, Object>();
     var output = new ArrayList<Map<String, Object>>();
     long warehouse = 0;
     var seen = new HashSet<Long>();
     for (Object value : ids) {
       long reqId = id(value);
-      require(seen.add(reqId), "申请不能重复");
+      require(
+          seen.add(reqId),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0052"));
       var r = requests.outboundRequest(reqId, false, "确认出库");
       if (warehouse == 0) warehouse = id(r.get("warehouse_id"));
-      require(warehouse == id(r.get("warehouse_id")), "只能合并同一仓库申请");
+      require(
+          warehouse == id(r.get("warehouse_id")),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0053"));
       for (var l : repository.listRequestLines(auth.tenantId(), reqId)) {
         var v = masters.view(l);
         v.put("requisitionLineId", v.get("id"));
@@ -416,9 +491,13 @@ public class OutboundService {
     permissions.checkInventoryWarehouse(MENU, warehouse, "确认出库");
     if (reqLine != 0) {
       var owner = repository.findLineRequest(auth.tenantId(), reqLine);
-      require(owner.size() == 1, "申请明细不存在");
+      require(
+          owner.size() == 1,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0042"));
       var req = requests.outboundRequest(id(owner.getFirst().get("requisition_id")), false, "确认出库");
-      require(id(req.get("warehouse_id")) == warehouse, "申请不属于该仓库");
+      require(
+          id(req.get("warehouse_id")) == warehouse,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0054"));
     }
     return repository.listStock(auth.tenantId(), warehouse, material, reqLine).stream()
         .map(masters::view)
@@ -450,11 +529,15 @@ public class OutboundService {
   @SuppressWarnings("unchecked")
   private Map<String, Object> plan(long issueId, Map<String, Object> body, boolean lock) {
     var r = row(issueId, lock, "确认出库");
-    require(text(r, "status").equals("草稿"), "出库单已经生效");
+    require(
+        text(r, "status").equals("草稿"),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0055"));
     VersionGuard.checkPayload((Number) r.get("row_version"), body);
     long warehouse = id(r.get("warehouse_id"));
     var w = masters.row("warehouses", warehouse, lock);
-    require(flag(w.get("enabled")), "仓库已停用");
+    require(
+        flag(w.get("enabled")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0035"));
     return planPrepared(r, lines(issueId), lock);
   }
 
@@ -463,8 +546,10 @@ public class OutboundService {
       Map<String, Object> r, List<Map<String, Object>> draftLines, boolean lock) {
     long warehouse = id(r.get("warehouse_id"));
     var w = masters.row("warehouses", warehouse, lock);
-    require(flag(w.get("enabled")), "仓库已停用");
-    var draft = payload(r);
+    require(
+        flag(w.get("enabled")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0035"));
+    var draft = headerData(r);
     var selections = (List<?>) draft.getOrDefault("lineSelections", List.of());
     var pool = new HashMap<Long, Map<String, Object>>();
     var layers = new HashMap<Long, List<Map<String, Object>>>();
@@ -487,12 +572,14 @@ public class OutboundService {
                         decimal(original, "quantity")
                             .subtract(decimal(original, "issued_quantity")))
                 <= 0,
-            "申请待发数量已变化");
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0056"));
       } else if (id(l.get("task_id")) != 0)
         requests.validateOutboundTask(
             text(l, "task_kind"), id(l.get("task_id")), id(r.get("company_id")), true);
       var m = masters.row("materials", material, lock);
-      require(flag(m.get("enabled")), "物料已停用");
+      require(
+          flag(m.get("enabled")),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0057"));
       var candidates = repository.listMaterialStock(auth.tenantId(), warehouse, material, lock);
       String rule =
           text(m, "allocation_rule").isEmpty()
@@ -518,7 +605,9 @@ public class OutboundService {
       var chosen = new LinkedHashMap<Long, BigDecimal>();
       for (var selection : manual) {
         long bid = id(selection.get("balanceId"));
-        require(!chosen.containsKey(bid), "批次库位不能重复");
+        require(
+            !chosen.containsKey(bid),
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0058"));
         chosen.put(bid, InventoryFlowService.decimal(selection.get("quantity"), false));
       }
       require(
@@ -527,7 +616,7 @@ public class OutboundService {
                       .reduce(BigDecimal.ZERO, BigDecimal::add)
                       .compareTo(decimal(l, "quantity"))
                   == 0,
-          "手动分配总数量必须等于本次出库数量");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0059"));
       BigDecimal need = decimal(l, "quantity");
       var valid = new HashSet<Long>();
       for (var candidate : candidates) {
@@ -552,7 +641,10 @@ public class OutboundService {
         var available = free.add(own);
         if (!chosen.isEmpty() && !chosen.containsKey(bid)) continue;
         BigDecimal take = chosen.isEmpty() ? need.min(available) : chosen.get(bid);
-        require(take.compareTo(available) <= 0, "所选批次可用库存不足：" + text(m, "name"));
+        require(
+            take.compareTo(available) <= 0,
+            com.windasoft.eam.common.MessageContext.text(
+                "server.inventory.message0060", text(m, "name")));
         if (take.signum() == 0) continue;
         var portions = new ArrayList<Map<String, Object>>();
         var remaining = take;
@@ -578,7 +670,7 @@ public class OutboundService {
                 layer.get("unit_cost") != null
                     && layer.get("remaining_cost") != null
                     && text(layer, "cost_status").equals("已确定"),
-                "库存成本未确定，不能出库");
+                com.windasoft.eam.common.MessageContext.text("server.inventory.message0061"));
             var qty = part.min(layerQty);
             var amount =
                 qty.compareTo(layerQty) == 0
@@ -612,7 +704,9 @@ public class OutboundService {
             layer.put("remaining_cost", decimal(layer, "remaining_cost").subtract(amount));
             total = total.add(amount);
           }
-          require(part.signum() == 0, "成本层数量不足，请核对库存");
+          require(
+              part.signum() == 0,
+              com.windasoft.eam.common.MessageContext.text("server.inventory.message0062"));
         }
         balance.put("quantity", decimal(balance, "quantity").subtract(take));
         balance.put(
@@ -620,17 +714,20 @@ public class OutboundService {
         need = need.subtract(take);
         if (need.signum() == 0) break;
       }
-      require(valid.containsAll(chosen.keySet()), "所选批次或库位不可用");
+      require(
+          valid.containsAll(chosen.keySet()),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0063"));
       require(
           need.signum() == 0,
-          "可用库存不足："
-              + text(m, "name")
-              + "，缺少 "
-              + need.stripTrailingZeros().toPlainString()
-              + " "
-              + text(m, "unit"));
+          com.windasoft.eam.common.MessageContext.text(
+              "server.inventory.message0064",
+              text(m, "name"),
+              need.stripTrailingZeros().toPlainString(),
+              text(m, "unit")));
     }
-    require(!allocations.isEmpty(), "没有可出库明细");
+    require(
+        !allocations.isEmpty(),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0065"));
     var picking = new LinkedHashMap<String, Map<String, Object>>();
     for (var a : allocations) {
       String key = text(a, "materialName") + ":" + text(a, "balanceId");
@@ -687,17 +784,24 @@ public class OutboundService {
     mutex.enter();
     var r = row(issueId, true, "确认出库");
     String key = text(body, "confirmationKey");
-    require(key.matches("[a-zA-Z0-9-]{16,64}"), "确认标识无效");
+    require(
+        key.matches("[a-zA-Z0-9-]{16,64}"),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0066"));
     if (!text(r, "status").equals("草稿")) {
       require(
           key.equals(text(r, "confirmation_key"))
               && text(body, "fingerprint").equals(text(r, "preview_fingerprint")),
-          "单据已经出库，请刷新");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0067"));
       return detail(Long.toString(issueId));
     }
-    require(repository.countConfirmationKey(auth.tenantId(), key, issueId) == 0, "确认标识已经用于其他单据");
+    custom.validateStored("inventory_outbound", issueId);
+    require(
+        repository.countConfirmationKey(auth.tenantId(), key, issueId) == 0,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0068"));
     var p = plan(issueId, body, true);
-    require(text(p, "fingerprint").equals(text(body, "fingerprint")), "库存、成本或申请已变化，请重新预览");
+    require(
+        text(p, "fingerprint").equals(text(body, "fingerprint")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0069"));
     var reqs = new TreeSet<Long>();
     for (var a : (List<Map<String, Object>>) p.get("allocations")) {
       var qty = (BigDecimal) a.get("quantity");
@@ -712,23 +816,25 @@ public class OutboundService {
               id(a.get("balanceId")),
               qty,
               held ? qty : BigDecimal.ZERO);
-      require(changed == 1, "库存已变化");
+      require(
+          changed == 1,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0070"));
       if (held)
         require(
             repository.consumeReservation(qty, auth.tenantId(), id(a.get("reservationId")), qty)
                 == 1,
-            "预留已变化");
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0071"));
       require(
           repository.consumeCostLayer(
                   qty, amount, auth.tenantId(), id(a.get("costLayerId")), qty, amount)
               == 1,
-          "成本层已变化");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0072"));
       if (id(a.get("requisitionId")) != 0) {
         reqs.add(id(a.get("requisitionId")));
         require(
             repository.addIssuedQuantity(qty, auth.tenantId(), id(a.get("requisitionLineId")), qty)
                 == 1,
-            "待发数量已变化");
+            com.windasoft.eam.common.MessageContext.text("server.inventory.message0073"));
       }
       repository.insertAllocation(
           allocation,
@@ -787,10 +893,13 @@ public class OutboundService {
   public void delete(long id, Map<String, Object> body) {
     mutex.enter();
     var r = row(id, true, "删除草稿");
-    require(text(r, "status").equals("草稿"), "已出库单不能删除");
+    require(
+        text(r, "status").equals("草稿"),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0074"));
     VersionGuard.checkPayload((Number) r.get("row_version"), body);
     repository.deleteIssue(auth.tenantId(), id);
     event(id, "删除草稿");
+    custom.remove("inventory_outbound", id);
   }
 
   private List<Map<String, Object>> allocations(long issueId) {
@@ -802,7 +911,9 @@ public class OutboundService {
   public Object detail(String reference) {
     if (reference.startsWith("g")) {
       var groups = repository.findLegacyGroup(auth.tenantId(), id(reference.substring(1)));
-      require(groups.size() == 1, "历史合并单不存在");
+      require(
+          groups.size() == 1,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0075"));
       var g = groups.getFirst();
       permissions.checkInventoryWarehouse(MENU, id(g.get("warehouse_id")), "查看");
       var result = masters.view(g);
@@ -847,11 +958,11 @@ public class OutboundService {
     v.remove("payload");
     v.remove("confirmationKey");
     v.remove("previewFingerprint");
-    v.putAll(payload(r));
+    v.putAll(headerData(r));
     v.put("warehouseName", masters.row("warehouses", id(r.get("warehouse_id")), false).get("name"));
     v.put("companyName", repository.findCompany(auth.tenantId(), r.get("company_id")));
     var ls = lines(issueId).stream().map(masters::view).toList();
-    var selections = (List<?>) payload(r).getOrDefault("lineSelections", List.of());
+    var selections = (List<?>) headerData(r).getOrDefault("lineSelections", List.of());
     for (int i = 0; i < ls.size(); i++)
       ls.get(i).put("selections", i < selections.size() ? selections.get(i) : List.of());
     if (!ls.isEmpty()) {
@@ -866,164 +977,23 @@ public class OutboundService {
         repository.listEvents(auth.tenantId(), issueId).stream().map(masters::view).toList());
     if (!permissions.inventoryWarehouseAllowed(MENU, id(r.get("warehouse_id")), "查看金额"))
       InventoryMoney.hide(v);
+    custom.attach("inventory_outbound", v);
     return v;
   }
 
-  private List<Map<String, Object>> matching(
-      String q, String filters, String conditions, String action) {
-    require(
-        q.length() <= 200 && filters.length() <= 8000 && conditions.length() <= 16000, "查询条件过长");
-    Map<String, String> f;
-    List<Map<String, Object>> cs;
-    try {
-      f = json.readValue(filters, new TypeReference<Map<String, String>>() {});
-      cs = json.readValue(conditions, new TypeReference<List<Map<String, Object>>>() {});
-    } catch (Exception e) {
-      throw new IllegalArgumentException("筛选条件无效");
-    }
-    var allowed =
-        Set.of(
-            "code",
-            "sourceKind",
-            "warehouseName",
-            "status",
-            "actorName",
-            "createdAt",
-            "confirmedAt",
-            "recipientName",
-            "taskCode",
-            "totalAmount",
-            "totalQuantity");
-    require(allowed.containsAll(f.keySet()), "筛选字段无效");
-    var rows = new ArrayList<Map<String, Object>>();
-    for (var r : repository.searchIssues(auth.tenantId())) {
-      if (!permissions.inventoryWarehouseAllowed(MENU, id(r.get("warehouse_id")), action)) continue;
-      var v = masters.view(r);
-      v.remove("payload");
-      v.remove("confirmationKey");
-      v.remove("previewFingerprint");
-      if (!permissions.inventoryWarehouseAllowed(MENU, id(r.get("warehouse_id")), "查看金额"))
-        InventoryMoney.hide(v);
-      rows.add(v);
-    }
-    for (var g : repository.searchLegacyGroups(auth.tenantId())) {
-      if (!permissions.inventoryWarehouseAllowed(MENU, id(g.get("warehouse_id")), action)) continue;
-      var v = masters.view(g);
-      v.put("id", "g" + v.get("id"));
-      v.put("sourceKind", "历史合并");
-      v.put(
-          "status",
-          repository.countUnreversedLegacyIssues(auth.tenantId(), g.get("id")) == 0
-              ? "已冲销"
-              : "已出库");
-      v.remove("confirmationKey");
-      v.remove("requestIds");
-      if (!permissions.inventoryWarehouseAllowed(MENU, id(g.get("warehouse_id")), "查看金额"))
-        InventoryMoney.hide(v);
-      rows.add(v);
-    }
-    rows.removeIf(
-        v ->
-            !(text(v, "code")
-                        + " "
-                        + text(v, "recipientName")
-                        + " "
-                        + text(v, "warehouseName")
-                        + " "
-                        + text(v, "taskCode"))
-                    .toLowerCase(Locale.ROOT)
-                    .contains(q.trim().toLowerCase(Locale.ROOT))
-                || f.entrySet().stream()
-                    .anyMatch(
-                        e -> !text(v, e.getKey()).replace('T', ' ').contains(e.getValue().trim()))
-                || !matches(cs, v, allowed));
-    rows.sort(
-        Comparator.<Map<String, Object>, String>comparing(v -> text(v, "createdAt")).reversed());
-    return rows;
-  }
-
-  private boolean matches(
-      List<Map<String, Object>> conditions, Map<String, Object> row, Set<String> allowed) {
-    for (var c : conditions) {
-      String field = text(c, "field"), op = text(c, "operator");
-      require(allowed.contains(field), "筛选字段无效");
-      require(!field.equals("totalAmount") || permissions.allowed(MENU, "查看金额"), "无金额筛选权限");
-      require(c.get("values") instanceof List<?>, "筛选值无效");
-      var values = (List<?>) c.get("values");
-      String value = text(row, field).replace('T', ' '),
-          first = values.isEmpty() ? "" : Objects.toString(values.getFirst(), "").replace('T', ' ');
-      boolean ok =
-          switch (op) {
-            case "contains" -> value.toLowerCase(Locale.ROOT).contains(first.toLowerCase(Locale.ROOT));
-            case "eq" -> value.equals(first);
-            case "in" -> values.contains(value);
-            case "empty" -> value.isEmpty();
-            case "notEmpty" -> !value.isEmpty();
-            case "range" -> {
-              String upper =
-                  values.size() > 1 ? Objects.toString(values.get(1), "").replace('T', ' ') : "";
-              yield com.windasoft.eam.common.AdvancedFilters.matchesRange(value, first, upper,
-                  Set.of("totalAmount", "remainingQuantity", "totalQuantity").contains(field));
-            }
-            default -> throw new IllegalArgumentException("筛选方式无效");
-          };
-      if (!ok) return false;
-    }
-    return true;
-  }
-
   public Object list(String q, String filters, String conditions, int page, int size) {
-    require(page >= 1 && size >= 1 && size <= 100, "分页参数无效");
-    permissions.require(MENU, "查看");
-    var rows = matching(q, filters, conditions, "查看");
-    int start = (int) Math.min((long) (page - 1) * size, rows.size());
-    return Map.of(
-        "data",
-        rows.subList(start, Math.min(start + size, rows.size())),
-        "page",
-        Map.of("total", rows.size()));
+    return listQueries.outbounds(q, filters, conditions, page, size, false);
   }
 
   public Object export(String q, String filters, String conditions) {
-    permissions.require(MENU, "导出");
-    return matching(q, filters, conditions, "导出");
+    return listQueries.exportOutbounds(q, filters, conditions);
   }
 
   public Object pending(
       String q, String filters, String conditions, int page, int size, boolean export) {
-    require(page >= 1 && size >= 1 && size <= 100, "分页参数无效");
-    permissions.require(MENU, export ? "导出" : "查看");
-    List<Map<String, Object>> cs;
-    try {
-      cs = json.readValue(conditions, new TypeReference<List<Map<String, Object>>>() {});
-    } catch (Exception e) {
-      throw new IllegalArgumentException("筛选条件无效");
-    }
-    var rows =
-        requests.pendingRows(q, filters, export ? "导出" : "查看").stream()
-            .filter(
-                r ->
-                    matches(
-                        cs,
-                        r,
-                        Set.of(
-                            "code",
-                            "taskCode",
-                            "taskKind",
-                            "applicantName",
-                            "warehouseName",
-                            "remainingQuantity",
-                            "status",
-                            "reservationStatus",
-                            "createdAt")))
-            .toList();
-    if (export) return rows;
-    int start = (int) Math.min((long) (page - 1) * size, rows.size());
-    return Map.of(
-        "data",
-        rows.subList(start, Math.min(start + size, rows.size())),
-        "page",
-        Map.of("total", rows.size()));
+    return export
+        ? listQueries.exportRequisitions(q, filters, conditions, true)
+        : listQueries.requisitions(q, filters, conditions, page, size, false, true);
   }
 
   @SuppressWarnings("unchecked")
@@ -1033,17 +1003,25 @@ public class OutboundService {
     var f = (Map<String, Object>) fromRequests(Map.of("ids", List.of(Long.toString(requestId))));
     var sums = new TreeMap<Long, BigDecimal>();
     var bins = new HashMap<Long, List<Map<String, Object>>>();
-    require(body.get("selections") instanceof List<?>, "请选择本次出库数量");
+    require(
+        body.get("selections") instanceof List<?>,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0076"));
     var seen = new HashSet<Long>();
     for (Object input : (List<?>) body.get("selections")) {
       var v = (Map<String, Object>) input;
       long res = id(v.get("reservationId"));
-      require(seen.add(res), "预留明细不能重复");
+      require(
+          seen.add(res),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0077"));
       var found = repository.findReservation(auth.tenantId(), res, requestId);
-      require(found.size() == 1, "预留明细不存在");
+      require(
+          found.size() == 1,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0078"));
       var held = found.getFirst();
       var qty = InventoryFlowService.decimal(v.get("quantity"), true);
-      require(qty.compareTo((BigDecimal) held.get("remaining_quantity")) <= 0, "数量超过预留");
+      require(
+          qty.compareTo((BigDecimal) held.get("remaining_quantity")) <= 0,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0079"));
       if (qty.signum() == 0) continue;
       long rl = id(held.get("requisition_line_id"));
       sums.merge(rl, qty, BigDecimal::add);
@@ -1067,7 +1045,9 @@ public class OutboundService {
               .map(e -> Map.of("balanceId", e.getKey(), "quantity", e.getValue()))
               .toList());
     }
-    require(!ls.isEmpty(), "本次出库数量必须大于零");
+    require(
+        !ls.isEmpty(),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0049"));
     return f;
   }
 
@@ -1098,7 +1078,7 @@ public class OutboundService {
       ls.add(row);
       selections.add(l.getOrDefault("selections", List.of()));
     }
-    raw.put("payload", encode(Map.of("lineSelections", selections)));
+    raw.put("line_selections", selections);
     return planPrepared(raw, ls, false);
   }
 
@@ -1124,25 +1104,27 @@ public class OutboundService {
               || repository.countIssueRequest(
                       auth.tenantId(), found.getFirst().get("id"), requestId)
                   > 0,
-          "确认标识不属于当前申请");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0080"));
 
       require(
           Objects.toString(
-                  payload(found.getFirst())
+                  headerData(found.getFirst())
                       .getOrDefault(
                           "legacyFingerprint", found.getFirst().get("preview_fingerprint")),
                   "")
               .equals(text(body, "fingerprint")),
-          "确认标识不能重复用于不同出库内容");
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0081"));
       return requests.detail(requestId);
     }
     var f = legacyForm(requestId, body);
     var p = transientPlan(f);
-    require(text(p, "fingerprint").equals(text(body, "fingerprint")), "库存或申请已变化，请重新预览");
+    require(
+        text(p, "fingerprint").equals(text(body, "fingerprint")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0082"));
     var created = (Map<String, Object>) save(null, f);
     long issue = id(created.get("id"));
     var raw = row(issue, true, "确认出库");
-    var data = payload(raw);
+    var data = headerData(raw);
     data.put("legacyFingerprint", p.get("fingerprint"));
     repository.updatePayload(encode(data), auth.tenantId(), issue);
     var current = plan(issue, Map.of("rowVersion", created.get("rowVersion")), true);
@@ -1178,17 +1160,21 @@ public class OutboundService {
       var old = prior.getFirst();
       row(id(old.get("id")), false, "确认出库");
       require(
-          text(payload(old), "legacyFingerprint").equals(text(body, "fingerprint")),
-          "确认标识不能重复用于不同内容");
+          text(headerData(old), "legacyFingerprint").equals(text(body, "fingerprint")),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0083"));
       return Map.of("groupCode", old.get("code"), "outboundId", Objects.toString(old.get("id")));
     }
-    require(body.get("ids") instanceof List<?>, "请在出库管理中重新预览合并出库");
+    require(
+        body.get("ids") instanceof List<?>,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0084"));
     var f = (Map<String, Object>) fromRequests(body);
     var p = transientPlan(f);
-    require(text(p, "fingerprint").equals(text(body, "fingerprint")), "库存已变化，请重新预览");
+    require(
+        text(p, "fingerprint").equals(text(body, "fingerprint")),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0085"));
     var created = (Map<String, Object>) save(null, f);
     long issue = id(created.get("id"));
-    var stored = payload(row(issue, true, "确认出库"));
+    var stored = headerData(row(issue, true, "确认出库"));
     stored.put("legacyFingerprint", p.get("fingerprint"));
     repository.storePreviewPayload(encode(stored), auth.tenantId(), issue);
     var current = plan(issue, Map.of("rowVersion", created.get("rowVersion")), true);

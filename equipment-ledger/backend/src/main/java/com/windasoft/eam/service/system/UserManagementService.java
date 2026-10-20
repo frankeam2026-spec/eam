@@ -31,11 +31,6 @@ public class UserManagementService {
     this.json = json;
   }
 
-  public Map<String, Object> users() {
-    var rows = repository.users(auth.tenantId());
-    return Map.of("data", permissions.visibleUsers(rows).stream().map(this::userView).toList());
-  }
-
   @Transactional
   public Map<String, Object> createUser(UserForm f) {
     permissions.require("user", "新增");
@@ -85,8 +80,10 @@ public class UserManagementService {
     var x = requireUser(id);
     permissions.checkUser("user", "停用", x);
     int status = body.getOrDefault("status", 0);
-    if (status != 0 && status != 1) throw new IllegalArgumentException("状态无效");
-    if (id.equals(auth.userId()) && status == 0) throw new IllegalArgumentException("不能停用当前登录账号");
+    if (status != 0 && status != 1)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0037");
+    if (id.equals(auth.userId()) && status == 0)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0038");
     x.setStatus(status);
     repository.updateUser(x);
     if (status == 0) revokeSessions(id);
@@ -96,15 +93,17 @@ public class UserManagementService {
   @Transactional
   public Map<String, Object> batchUsers(UserBatchForm f) {
     if (f.ids().isEmpty() || f.ids().size() > 200 || f.ids().contains(null))
-      throw new IllegalArgumentException("请选择 1 至 200 个用户");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text1182");
     if (!Set.of("department", "password").contains(f.operation()))
-      throw new IllegalArgumentException("批量操作无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0039");
     if ("department".equals(f.operation())) {
-      if (f.orgId() == null) throw new IllegalArgumentException("请选择部门");
+      if (f.orgId() == null)
+        throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0315");
       requireUserOrganization(f.orgId());
-      if (requireOrg(f.orgId()).getStatus() != 1) throw new IllegalArgumentException("不能选择停用部门");
+      if (requireOrg(f.orgId()).getStatus() != 1)
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0040");
     } else if (f.password() == null || f.password().length() < 12 || f.password().length() > 72)
-      throw new IllegalArgumentException("密码长度需为 12 至 72 位");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text1179");
     var users = new LinkedHashSet<>(f.ids()).stream().map(this::requireUser).toList();
     for (var user : users) {
       permissions.checkUser("user", "编辑", user);
@@ -142,11 +141,12 @@ public class UserManagementService {
 
   private void setPassword(SystemUser user, String password, boolean required) {
     if (password == null || password.isBlank()) {
-      if (required) throw new IllegalArgumentException("请设置初始密码");
+      if (required)
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0041");
       return;
     }
     if (password.length() < 12 || password.length() > 72)
-      throw new IllegalArgumentException("密码长度需为 12 至 72 位");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text1179");
     user.setPasswordHash(passwords.encode(password));
   }
 
@@ -168,28 +168,32 @@ public class UserManagementService {
   private void validateRoleIds(List<Long> ids) {
     if (ids == null || ids.isEmpty()) return;
     long count = repository.roleCount(auth.tenantId(), ids);
-    if (count != new HashSet<>(ids).size()) throw new IllegalArgumentException("包含无效角色");
+    if (count != new HashSet<>(ids).size())
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0042");
   }
 
   private void requireUserOrganization(Long id) {
     var org = requireOrg(id);
-    if (org.getStatus() != 1) throw new IllegalArgumentException("所属组织已停用");
+    if (org.getStatus() != 1)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0043");
   }
 
   private void checkAccount(String account, Long id) {
     if (repository.accountCount(auth.tenantId(), account, id) > 0)
-      throw new IllegalArgumentException("登录账号已存在");
+      throw new com.windasoft.eam.common.FieldValidationException("account", "登录账号已存在");
   }
 
   private SystemUser requireUser(Long id) {
     var x = repository.user(auth.tenantId(), id);
-    if (x == null) throw new IllegalArgumentException("用户不存在");
+    if (x == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0044");
     return x;
   }
 
   private OrgUnit requireOrg(Long id) {
     var x = repository.organization(auth.tenantId(), id);
-    if (x == null) throw new IllegalArgumentException("组织不存在");
+    if (x == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0031");
     return x;
   }
 

@@ -26,7 +26,8 @@ public class DocumentPrintRepository {
             "SELECT * FROM eam_print_template WHERE tenant_id=? AND id=? AND deleted=0",
             tenant,
             id);
-    if (rows.isEmpty()) throw new IllegalArgumentException("打印模板不存在");
+    if (rows.isEmpty())
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.printing.message0001");
     return rows.getFirst();
   }
 
@@ -40,7 +41,8 @@ public class DocumentPrintRepository {
   public Map<String, Object> source(long tenant, String reference) {
     boolean legacy = reference.startsWith("g");
     String value = legacy ? reference.substring(1) : reference;
-    if (!value.matches("[1-9][0-9]{0,18}")) throw new IllegalArgumentException("出库单编号无效");
+    if (!value.matches("[1-9][0-9]{0,18}"))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.printing.message0002");
     var rows =
         db.queryForList(
             "SELECT i.id,i.warehouse_id,w.company_id,o.name company_name FROM "
@@ -51,7 +53,8 @@ public class DocumentPrintRepository {
                 + (legacy ? "" : " AND i.deleted=0"),
             tenant,
             Long.parseLong(value));
-    if (rows.isEmpty()) throw new IllegalArgumentException("出库单不存在");
+    if (rows.isEmpty())
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.printing.message0003");
     return rows.getFirst();
   }
 
@@ -154,7 +157,8 @@ WHERE a.tenant_id=? AND
                 + " FROM eam_print_job WHERE tenant_id=? AND id=?",
             tenant,
             id);
-    if (rows.isEmpty()) throw new IllegalArgumentException("打印记录不存在");
+    if (rows.isEmpty())
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.printing.message0004");
     return rows.getFirst();
   }
 

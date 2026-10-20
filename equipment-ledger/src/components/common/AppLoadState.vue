@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import AppIcon from './AppIcon.vue';
 import { ElButton } from 'element-plus';
 defineProps<{ loading: boolean; error?: string }>();
@@ -9,9 +10,9 @@ defineEmits<{ retry: [] }>();
   <div class="app-load-state" :aria-busy="loading" role="status" aria-live="polite">
     <AppIcon name="Loading" v-if="loading" class="loading-icon" />
     <AppIcon name="Warning" v-else />
-    <strong>{{ loading ? '正在加载' : '暂时无法加载' }}</strong>
-    <p>{{ loading ? '正在获取最新数据…' : error || '请重试或返回列表。' }}</p>
-    <ElButton v-if="!loading" type="primary" plain @click="$emit('retry')">重新加载</ElButton>
+    <strong>{{ loading ? tr('ui.equipment.text1341') : tr('ui.equipment.text1342') }}</strong>
+    <p>{{ loading ? tr('ui.equipment.text1343') : error || tr('ui.equipment.text1344') }}</p>
+    <ElButton v-if="!loading" type="primary" plain @click="$emit('retry')">{{ tr('ui.equipment.text0910') }}</ElButton>
   </div>
 </template>
 

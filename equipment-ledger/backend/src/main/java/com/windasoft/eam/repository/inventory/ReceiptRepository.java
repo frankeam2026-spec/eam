@@ -36,7 +36,7 @@ public class ReceiptRepository {
 
   public int countCode(long tenantId, Object code, String table) {
     if (!Set.of("inv_receipt", "inv_batch").contains(table))
-      throw new IllegalArgumentException("未知入库编号类型");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0014");
     return db.queryForObject(
         "SELECT COUNT(*) FROM " + table + " WHERE tenant_id=? AND code=?",
         Integer.class,
@@ -76,22 +76,6 @@ public class ReceiptRepository {
             + " document_kind='入库' AND document_id=? ORDER BY created_at,id",
         tenantId,
         recordId);
-  }
-
-  public List<Map<String, Object>> searchReceipts(
-      long tenantId, Object value, Object value3, Object value4) {
-    return db.queryForList(
-        "SELECT r.*,DATE_FORMAT(r.created_at,'%Y-%m-%d %H:%i:%s')"
-            + " fmt_created_at,DATE_FORMAT(r.confirmed_at,'%Y-%m-%d %H:%i:%s')"
-            + " fmt_confirmed_at,w.name warehouse_name,COALESCE((SELECT e.actor_name FROM"
-            + " inv_document_event e WHERE e.tenant_id=r.tenant_id AND e.document_kind='入库'"
-            + " AND e.document_id=r.id ORDER BY e.created_at DESC,e.id DESC LIMIT 1),"
-            + " (SELECT u.display_name FROM eam_sys_user u WHERE u.tenant_id=r.tenant_id"
-            + " AND u.id=r.created_by),'') actor_name FROM inv_receipt r JOIN inv_warehouse w"
-            + " ON w.tenant_id=r.tenant_id AND w.id=r.warehouse_id WHERE r.tenant_id=? AND"
-            + " r.deleted=0 AND (r.code LIKE ? OR r.supplier LIKE ? OR w.name LIKE ?) ORDER BY"
-            + " r.created_at DESC,r.id DESC",
-        tenantId, value, value3, value4);
   }
 
   public long countMaterials(long tenant, String match) {

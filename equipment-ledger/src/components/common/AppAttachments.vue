@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElButton, ElMessage } from 'element-plus';
 import AppFilePicker from './AppFilePicker.vue';
 import AppIcon from './AppIcon.vue';
@@ -35,7 +36,7 @@ const emit = defineEmits<{
 function select(files: File[]) {
   if (props.readonly || props.disabled || props.uploading) return;
   if (files.some((file) => file.size > props.maxSizeMb * 1024 * 1024)) {
-    ElMessage.error(`单个文件不能超过${props.maxSizeMb}MB`);
+    ElMessage.error(tr('ui.common.dynamic54',{p0:props.maxSizeMb}));
     return;
   }
   if (
@@ -45,7 +46,7 @@ function select(files: File[]) {
         !file.type.startsWith('image/') && !/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name),
     )
   ) {
-    ElMessage.error('请选择图片');
+    ElMessage.error(tr('ui.equipment.text1337'));
     return;
   }
   if (files.length) emit('select', files);
@@ -66,16 +67,16 @@ function select(files: File[]) {
       >
         <ElButton native-type="button" :loading="uploading" :disabled="disabled || uploading"
           ><AppIcon v-if="!uploading" name="Upload" />{{
-            uploading ? '上传中…' : imagesOnly ? '上传图片' : '上传附件'
+            uploading ? tr('ui.equipment.text0134') : imagesOnly ? tr('ui.equipment.text0995') : tr('ui.equipment.text1338')
           }}</ElButton
         >
       </AppFilePicker>
     </div>
-    <p v-if="!readonly" class="attachment-hint">
+    <!-- <p v-if="!readonly" class="attachment-hint">
       支持多选，单个文件不超过{{ maxSizeMb }}MB{{
         imagesOnly ? '；点击缩略图可放大查看。' : '；图片可点击放大，文档可下载查看。'
       }}
-    </p>
+    </p> -->
     <AppAttachmentList
       :files="files"
       :removable="!readonly"

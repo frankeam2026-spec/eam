@@ -11,7 +11,6 @@ import java.util.*;
 import javax.imageio.ImageIO;
 import org.springframework.http.*;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @org.springframework.stereotype.Service
 public class PersonalizationService {
@@ -83,7 +82,8 @@ public class PersonalizationService {
   }
 
   public Object publicConfig(long tenantId) {
-    if (tenantId <= 0) throw new IllegalArgumentException("租户编号无效");
+    if (tenantId <= 0)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0007");
     return Map.of("data", publicView(tenantId, row(tenantId)));
   }
 
@@ -100,7 +100,8 @@ public class PersonalizationService {
     var currentId = current.get(kind.equals("logo") ? "logo_file_id" : "background_file_id");
     if (((Number) rows.getFirst().get("created_by")).longValue() != auth.userId()
         && !id.equals(currentId))
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无法使用其他人的未保存图片");
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          HttpStatus.FORBIDDEN, "server.system.message0008");
     return id;
   }
 
@@ -108,9 +109,10 @@ public class PersonalizationService {
   public Object save(PersonalizationForm f) throws Exception {
     access();
     String name = f.systemName().trim();
-    if (name.isEmpty()) throw new IllegalArgumentException("请输入系统名称");
+    if (name.isEmpty())
+      throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0927");
     if (!List.of("center", "top", "bottom", "left", "right").contains(f.backgroundPosition()))
-      throw new IllegalArgumentException("背景位置无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0009");
     long tenant = auth.tenantId();
     var before = row(tenant);
     var logo = selectedAsset(f.logoFileId(), "logo", before);
@@ -118,7 +120,9 @@ public class PersonalizationService {
     repository.ensureConfiguration(tenant);
     if (repository.update(
             name, logo, bg, f.backgroundPosition(), auth.userId(), tenant, f.rowVersion())
-        != 1) throw new ResponseStatusException(HttpStatus.CONFLICT, "配置已被他人修改，请刷新后重新保存");
+        != 1)
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          HttpStatus.CONFLICT, "server.system.message0010");
     var after = row(tenant);
     repository.event(
         tenant,
@@ -130,30 +134,36 @@ public class PersonalizationService {
 
   public Object upload(String kind, BrandingUpload file) throws Exception {
     access();
-    if (!List.of("logo", "background").contains(kind)) throw new IllegalArgumentException("图片用途无效");
+    if (!List.of("logo", "background").contains(kind))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0011");
     int limit = kind.equals("logo") ? 2 : 10;
     if (file.empty() || file.size() > limit * 1024L * 1024)
-      throw new IllegalArgumentException("图片不能超过" + limit + "MB");
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.system.message0012", limit);
     byte[] bytes = file.bytes();
     String type;
     try (var stream = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
       var readers = ImageIO.getImageReaders(stream);
-      if (!readers.hasNext()) throw new IllegalArgumentException("请选择PNG或JPG图片");
+      if (!readers.hasNext())
+        throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0925");
       var reader = readers.next();
       try {
         reader.setInput(stream);
         String format = reader.getFormatName().toLowerCase(Locale.ROOT);
         if (!Set.of("png", "jpeg", "jpg").contains(format))
-          throw new IllegalArgumentException("请选择PNG或JPG图片");
+          throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0925");
         if ((long) reader.getWidth(0) * reader.getHeight(0) > 20_000_000)
-          throw new IllegalArgumentException("图片分辨率过大，请压缩后上传");
-        if (reader.read(0) == null) throw new IllegalArgumentException("图片无法读取");
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.system.message0013");
+        if (reader.read(0) == null)
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.printing.message0015");
         type = format.equals("png") ? "image/png" : "image/jpeg";
       } finally {
         reader.dispose();
       }
     } catch (java.io.IOException e) {
-      throw new IllegalArgumentException("图片损坏，请重新选择");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0014");
     }
     String id = UUID.randomUUID().toString();
     repository.insertAsset(id, auth.tenantId(), kind, type, bytes, auth.userId());
@@ -168,19 +178,24 @@ public class PersonalizationService {
 
   private BrandingImage image(long tenant, String id, boolean published) {
     if (!id.matches("[0-9a-f-]{36}"))
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "图片不存在");
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          HttpStatus.NOT_FOUND, "server.system.message0015");
     if (published) {
       var config = row(tenant);
       if (!id.equals(config.get("logo_file_id")) && !id.equals(config.get("background_file_id")))
-        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "图片不存在");
+        throw new com.windasoft.eam.common.LocalizedStatusException(
+            HttpStatus.NOT_FOUND, "server.system.message0015");
     }
     var rows = repository.asset(tenant, id);
-    if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "图片不存在");
+    if (rows.isEmpty())
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          HttpStatus.NOT_FOUND, "server.system.message0015");
     var r = rows.getFirst();
     if (!published && ((Number) r.get("created_by")).longValue() != auth.userId()) {
       var config = row(tenant);
       if (!id.equals(config.get("logo_file_id")) && !id.equals(config.get("background_file_id")))
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无法查看其他人的未保存图片");
+        throw new com.windasoft.eam.common.LocalizedStatusException(
+            HttpStatus.FORBIDDEN, "server.system.message0016");
     }
     return new BrandingImage((byte[]) r.get("image_data"), text(r.get("content_type")));
   }

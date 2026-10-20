@@ -1,27 +1,22 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { computed, ref, watch, onBeforeUnmount, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
-import {
-  ElSelect,
-  ElOption,
-  ElButton,
-  ElImage,
-  ElTag,
-  ElTableColumn,
-  ElSkeleton,
-} from 'element-plus';
+import { ElSelect, ElOption, ElButton, ElImage, ElTableColumn, ElSkeleton } from 'element-plus';
 import 'element-plus/es/components/image/style/css';
 import 'element-plus/es/components/skeleton/style/css';
 import type { EquipmentRecord } from '../../api';
+import { formatOrganizationPath } from '../../utils/organizationPath';
+import { normalizeLocationPath } from '../../utils/locationPath';
 import {
   equipmentOverviewApi,
-  statusType,
   type EquipmentOverviewData,
   type AttentionItem,
   type AttentionKind,
   type AttentionState,
   type ArchiveTab,
 } from '../../equipmentOverview';
+import MaintenanceStatus from './MaintenanceStatus.vue';
 import EquipmentEvents from './EquipmentEvents.vue';
 import EquipmentImage from './EquipmentImage.vue';
 import AppBusinessTable from './AppBusinessTable.vue';
@@ -48,10 +43,10 @@ onBeforeUnmount(() => {
   attentionRevision++;
 });
 const kinds: { key: Exclude<AttentionKind, 'all'>; label: string; icon: string }[] = [
-  { key: 'repair', label: '未完成维修', icon: 'Tool' },
-  { key: 'maintenance', label: '未完成保养', icon: 'Clock' },
-  { key: 'inspection', label: '未完成点巡检', icon: 'Check' },
-  { key: 'anomaly', label: '未消除异常', icon: 'Warning' },
+  { key: 'repair', get label() { return tr('ui.equipment.text1374'); }, icon: 'Tool' },
+  { key: 'maintenance', get label() { return tr('ui.equipment.text1375'); }, icon: 'Clock' },
+  { key: 'inspection', get label() { return tr('ui.equipment.text1376'); }, icon: 'Check' },
+  { key: 'anomaly', get label() { return tr('ui.equipment.text1377'); }, icon: 'Warning' },
 ];
 const coverUrl = computed(() => {
   const id = props.equipment.images?.[0]?.id || props.equipment.imageFileId;
@@ -68,21 +63,23 @@ const metadata = computed(() => [
   ['品牌', props.equipment.brand],
   [
     '所属部门',
-    props.equipment.departmentPath ||
-      [props.equipment.company, props.equipment.department].filter(Boolean).join(' / '),
+    formatOrganizationPath(
+      props.equipment.departmentPath ||
+        [props.equipment.company, props.equipment.department].filter(Boolean).join(' > '),
+    ),
   ],
-  ['位置', props.equipment.functionLocation],
+  ['位置', normalizeLocationPath(props.equipment.functionLocation)],
   ['负责人', owners.value],
 ]);
 const related = computed(() => [
-  { key: 'children', label: '子设备', icon: 'Organization', rows: props.equipment.children || [] },
+  { key: 'children', get label() { return tr('ui.equipment.text0148'); }, icon: 'Organization', rows: props.equipment.children || [] },
   {
     key: 'relatedSpares',
-    label: '设备BOM',
+    get label() { return tr('ui.equipment.text0153'); },
     icon: 'Warehouse',
     rows: props.equipment.relatedSpares || [],
   },
-  { key: 'documents', label: '设备文件', icon: 'Document', rows: props.equipment.documents || [] },
+  { key: 'documents', get label() { return tr('ui.equipment.text1378'); }, icon: 'Document', rows: props.equipment.documents || [] },
 ]);
 const eventsReady = ref(false);
 watch(
@@ -103,7 +100,7 @@ async function loadOverview() {
     const result = await equipmentOverviewApi.overview(props.equipment.id);
     if (seq === revision) overview.value = result;
   } catch (e) {
-    if (seq === revision) error.value = e instanceof Error ? e.message : '设备概览加载失败';
+    if (seq === revision) error.value = e instanceof Error ? e.message : tr('ui.equipment.text1379');
   } finally {
     if (seq === revision) loading.value = false;
   }
@@ -132,7 +129,7 @@ async function loadAttention() {
     accessible.value = result.accessible;
   } catch (e) {
     if (seq === attentionRevision)
-      attentionError.value = e instanceof Error ? e.message : '当前事项加载失败';
+      attentionError.value = e instanceof Error ? e.message : tr('ui.equipment.text1380');
   } finally {
     if (seq === attentionRevision) attentionLoading.value = false;
   }
@@ -161,7 +158,7 @@ watch(
 </script>
 <template>
   <div class="asset-overview">
-    <section class="equipment-identity-panel" aria-label="设备身份信息">
+    <section class="equipment-identity-panel" :aria-label="tr('ui.equipment.text1381')">
       <figure class="equipment-cover">
         <ElImage
           v-if="coverUrl"
@@ -178,10 +175,10 @@ watch(
       <dl class="equipment-key-facts">
         <div v-for="[label, value] in metadata" :key="label">
           <dt>{{ label }}</dt>
-          <dd :title="value || ''">{{ value || '未填写' }}</dd>
+          <dd :title="value || ''">{{ value || tr('ui.equipment.text1382') }}</dd>
         </div>
       </dl>
-      <figure class="equipment-qr-content" aria-label="设备二维码">
+      <figure class="equipment-qr-content" :aria-label="tr('ui.equipment.text1383')">
         <img
           :src="`/api/v1/equipment/${equipment.id}/qrcode`"
           :alt="`设备二维码：${equipment.code}`"
@@ -189,10 +186,10 @@ watch(
         <!-- <figcaption>{{ equipment.code }}</figcaption> -->
       </figure>
     </section>
-    <section class="equipment-attention-strip" aria-label="当前事项摘要" :aria-busy="loading">
+    <section class="equipment-attention-strip" :aria-label="tr('ui.equipment.text1384')" :aria-busy="loading">
       <template v-if="loading"><ElSkeleton :rows="1" animated /></template>
       <div v-else-if="error" class="equipment-inline-error" role="alert">
-        {{ error }}<ElButton link type="primary" @click="loadOverview">重试</ElButton>
+        {{ error }}<ElButton link type="primary" @click="loadOverview">{{ tr('ui.equipment.text0299') }}</ElButton>
       </div>
       <template v-for="item in overview ? kinds : []" :key="item.key">
         <ElButton
@@ -209,7 +206,7 @@ watch(
         <div v-else class="attention-counter unavailable" :class="item.key">
           <span class="counter-icon"><AppIcon :name="item.icon" /></span
           ><span class="counter-label">{{ item.label }}</span
-          ><strong>无权限</strong>
+          ><strong>{{ tr('ui.equipment.text1385') }}</strong>
         </div>
       </template>
     </section>
@@ -218,7 +215,7 @@ watch(
         <section class="equipment-panel current-attention" :aria-busy="attentionLoading">
           <header class="equipment-panel-heading">
             <h3>
-              <AppIcon name="Todo" />当前事项<span
+              <AppIcon name="Todo" />{{ tr('ui.equipment.text1386') }}<span
                 v-if="!attentionLoading && accessible"
                 class="panel-count"
                 >{{ total }}</span
@@ -227,9 +224,9 @@ watch(
             <div class="equipment-panel-actions">
               <ElSelect
                 :model-value="state.kind"
-                aria-label="当前事项类型"
+                :aria-label="tr('ui.equipment.text1387')"
                 @update:model-value="selectKind($event)"
-                ><ElOption value="all" label="全部任务" /><ElOption
+                ><ElOption value="all" :label="tr('ui.equipment.text1388')" /><ElOption
                   v-for="item in kinds.filter((k) => overview?.access[k.key])"
                   :key="item.key"
                   :value="item.key"
@@ -239,16 +236,16 @@ watch(
                 link
                 type="primary"
                 @click="state = { ...state, expanded: !state.expanded, page: 1 }"
-                >{{ state.expanded ? '收起' : '查看全部'
+                >{{ state.expanded ? tr('ui.equipment.text0725') : tr('ui.equipment.text0892')
                 }}<AppIcon :name="state.expanded ? 'Up' : 'Right'"
               /></ElButton>
             </div>
           </header>
           <div v-if="attentionError" class="equipment-inline-error" role="alert">
-            {{ attentionError }}<ElButton link type="primary" @click="loadAttention">重试</ElButton>
+            {{ attentionError }}<ElButton link type="primary" @click="loadAttention">{{ tr('ui.equipment.text0299') }}</ElButton>
           </div>
           <ElSkeleton v-else-if="attentionLoading" :rows="2" animated />
-          <p v-else-if="!accessible" class="equipment-panel-empty">暂无该类事项的查看权限</p>
+          <p v-else-if="!accessible" class="equipment-panel-empty">{{ tr('ui.equipment.text1389') }}</p>
           <template v-else>
             <AppBusinessTable
               v-if="items.length"
@@ -258,11 +255,11 @@ watch(
               :framed="false"
               class="attention-table"
             >
-              <ElTableColumn label="事项" :min-width="210" show-overflow-tooltip
+              <ElTableColumn :label="tr('ui.equipment.text1390')" :min-width="210" show-overflow-tooltip
                 ><template #default="{ row }"
                   ><div class="attention-identity">
                     <span class="attention-type" :class="row.kind">{{
-                      row.kind === 'anomaly' ? '异常' : row.source
+                      row.kind === 'anomaly' ? tr('ui.equipment.text0210') : row.source
                     }}</span
                     ><ElButton link type="primary" @click="router.push(row.url)">{{
                       row.code
@@ -273,36 +270,32 @@ watch(
                   </div></template
                 ></ElTableColumn
               >
-              <ElTableColumn label="状态" :width="90" align="center"
-                ><template #default="{ row }"
-                  ><ElTag size="small" :type="statusType(row.status)" effect="light">{{
-                    row.status
-                  }}</ElTag></template
-                ></ElTableColumn
-              >
+              <ElTableColumn :label="tr('ui.equipment.text0170')" :width="90" align="center"
+                ><template #default="{ row }"><MaintenanceStatus :status="row.status" /></template
+              ></ElTableColumn>
               <ElTableColumn
                 v-if="!anomaly"
-                label="负责人"
+                :label="tr('ui.equipment.text0102')"
                 :width="96"
                 show-overflow-tooltip
                 prop="owner"
               />
-              <ElTableColumn v-if="!anomaly" label="截止时间" :width="144"
+              <ElTableColumn v-if="!anomaly" :label="tr('ui.equipment.text1391')" :width="144"
                 ><template #default="{ row }"
                   ><span :class="{ 'overdue-time': row.overdue }">{{
                     row.deadline ? formatDateTime(row.deadline) : ''
                   }}</span
-                  ><span v-if="row.overdue" class="overdue-label">已超期</span></template
+                  ><span v-if="row.overdue" class="overdue-label">{{ tr('ui.equipment.text1392') }}</span></template
                 ></ElTableColumn
               >
               <ElTableColumn
                 v-if="anomaly"
-                label="来源"
+                :label="tr('ui.equipment.text1393')"
                 :width="85"
                 prop="source"
                 show-overflow-tooltip
               />
-              <ElTableColumn v-if="anomaly" label="登记信息" :width="160"
+              <ElTableColumn v-if="anomaly" :label="tr('ui.equipment.text1394')" :width="160"
                 ><template #default="{ row }"
                   ><div>{{ formatDateTime(row.createdAt) }}</div>
                   <div class="attention-summary">{{ row.owner }}</div></template
@@ -312,14 +305,14 @@ watch(
             <p v-else class="equipment-panel-empty">
               {{
                 anomaly
-                  ? '当前没有未消除的异常'
+                  ? tr('ui.equipment.text1395')
                   : state.kind === 'all'
-                    ? '当前没有未完成任务'
-                    : '当前没有该类型的未完成任务'
+                    ? tr('ui.equipment.text1396')
+                    : tr('ui.equipment.text1397')
               }}
             </p>
             <footer v-if="state.expanded && total" class="equipment-attention-footer">
-              <span>共 {{ total }} 条</span
+              <span>{{ tr('ui.equipment.text0309') }} {{ total }} {{ tr('ui.equipment.text0296') }}</span
               ><AppPagination
                 v-model:page="state.page"
                 v-model:page-size="state.size"
@@ -338,16 +331,16 @@ watch(
         <section class="equipment-panel installed-panel">
           <header class="equipment-panel-heading">
             <h3>
-              <AppIcon name="Warehouse" />在用备件<span v-if="overview" class="panel-count">{{
+              <AppIcon name="Warehouse" />{{ tr('ui.equipment.text0166') }}<span v-if="overview" class="panel-count">{{
                 overview.installedTotal
               }}</span>
             </h3>
             <ElButton link type="primary" @click="emit('navigate', '备件')"
-              >查看全部<AppIcon name="Right"
+              >{{ tr('ui.equipment.text0892') }}<AppIcon name="Right"
             /></ElButton>
           </header>
           <ElSkeleton v-if="loading" :rows="2" animated />
-          <p v-else-if="error" class="equipment-panel-empty">在用备件暂未加载成功</p>
+          <p v-else-if="error" class="equipment-panel-empty">{{ tr('ui.equipment.text1398') }}</p>
           <AppBusinessTable
             v-else-if="overview?.installed.length"
             :rows="overview.installed"
@@ -355,23 +348,23 @@ watch(
             :fill="false"
             :framed="false"
           >
-            <ElTableColumn label="物料" :min-width="160" show-overflow-tooltip
+            <ElTableColumn :label="tr('ui.equipment.text0515')" :min-width="160" show-overflow-tooltip
               ><template #default="{ row }"
                 ><div class="installed-name" :title="row.name">{{ row.name }}</div>
                 <div class="attention-summary">{{ row.code }}</div></template
               ></ElTableColumn
             >
-            <ElTableColumn label="数量" :width="82" align="right"
+            <ElTableColumn :label="tr('ui.equipment.text0144')" :width="82" align="right"
               ><template #default="{ row }">{{
                 formatNumber(row.quantity)
               }}</template></ElTableColumn
             >
           </AppBusinessTable>
-          <p v-else class="equipment-panel-empty">暂无在用备件</p>
+          <p v-else class="equipment-panel-empty">{{ tr('ui.equipment.text0171') }}</p>
         </section>
         <section class="equipment-panel related-panel">
           <header class="equipment-panel-heading">
-            <h3><AppIcon name="Document" />关联资料</h3>
+            <h3><AppIcon name="Document" />{{ tr('ui.equipment.text1399') }}</h3>
           </header>
           <ElButton
             v-for="item in related"

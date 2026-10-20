@@ -39,6 +39,9 @@ public interface RepairWorkflowMapper {
       "UPDATE eam_repair_order SET assignee_user_id=NULL WHERE tenant_id=#{tenant} AND id=#{id}")
   void clearOwner(long tenant, long id);
 
+  @Update("UPDATE eam_repair_inbox SET message_key=#{key},message_args=#{args} WHERE tenant_id=#{tenant} AND id=#{id}")
+  void inboxMetadata(long tenant,long id,String key,String args);
+
   @Update(
       "UPDATE eam_repair_inbox SET done=1 WHERE tenant_id=#{tenant} AND order_id=#{orderId} AND"
           + " is_todo=1 AND kind='待出库' AND done=0")
@@ -94,7 +97,7 @@ public interface RepairWorkflowMapper {
   void closeTodos(long tenant, long orderId);
 
   @Select(
-      "SELECT CAST(i.id AS CHAR) id,CAST(i.order_id AS CHAR) orderId,i.kind,i.title,i.is_todo"
+      "SELECT CAST(i.id AS CHAR) id,CAST(i.order_id AS CHAR) orderId,i.kind,i.title,i.message_key messageKey,i.message_args messageArgs,i.is_todo"
           + " todo,i.done,i.read_at IS NOT NULL isRead,DATE_FORMAT(i.created_at,'%Y-%m-%d"
           + " %H:%i:%s') time,r.order_no orderNo,r.equipment_name equipmentName,r.status FROM"
           + " eam_repair_inbox i JOIN eam_repair_order r ON r.id=i.order_id AND"

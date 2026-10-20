@@ -9,6 +9,9 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class RepairViewAssembler {
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.business.BusinessValueService custom;
+
   private final ObjectMapper objectMapper;
 
   public RepairViewAssembler(ObjectMapper objectMapper) {
@@ -18,13 +21,32 @@ public class RepairViewAssembler {
   private static final DateTimeFormatter MINUTE = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
 
   public Map<String, Object> view(RepairOrder r) {
+    if (r.getCustomFields() == null) {
+      var v = custom.read("repair_report", r.getId());
+      r.setCustomFields(v.customFields());
+      r.setCustomFieldLabels(v.customFieldLabels());
+      r.setCustomSchemaVersion(v.customSchemaVersion());
+    }
+    if (r.getEquipmentCategoryId() == null)
+      r.setEquipmentCategoryId(
+          custom.repairCategories(java.util.List.of(r.getId())).get(r.getId()));
     return Map.ofEntries(
         Map.entry("id", String.valueOf(r.getId())),
+        Map.entry("equipmentCategoryId", safe(r.getEquipmentCategoryId())),
+        Map.entry("customFields", r.getCustomFields()),
+        Map.entry("customFieldLabels", r.getCustomFieldLabels()),
+        Map.entry("customSchemaVersion", r.getCustomSchemaVersion()),
         Map.entry("orderNo", safe(r.getOrderNo())),
         Map.entry("equipmentCode", safe(r.getEquipmentCode())),
         Map.entry("equipmentName", safe(r.getEquipmentName())),
         Map.entry("department", safe(r.getDepartment())),
         Map.entry("faultType", safe(r.getFaultType())),
+        Map.entry("faultTypeId", r.getFaultTypeId() == null ? "" : r.getFaultTypeId().toString()),
+        Map.entry(
+            "faultCauseId", r.getFaultCauseId() == null ? "" : r.getFaultCauseId().toString()),
+        Map.entry(
+            "processingResultId",
+            r.getProcessingResultId() == null ? "" : r.getProcessingResultId().toString()),
         Map.entry("severity", safe(r.getSeverity())),
         Map.entry("description", safe(r.getDescription())),
         Map.entry("reporter", safe(r.getReporter())),

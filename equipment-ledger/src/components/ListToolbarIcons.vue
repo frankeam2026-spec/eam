@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import AppIcon from './common/AppIcon.vue';
 import { ElPopover, ElButton } from 'element-plus';
 const props = withDefaults(
@@ -21,8 +22,8 @@ defineEmits<{ toggleFilter: []; toggleColumns: []; export: [] }>();
       class="list-icon-btn"
       :class="{ active: filterOpen }"
       native-type="button"
-      title="列筛选"
-      aria-label="列筛选"
+      :title="tr('ui.equipment.text0709')"
+      :aria-label="tr('ui.equipment.text0709')"
       :aria-pressed="filterOpen"
       @click="$emit('toggleFilter')"
     >
@@ -47,8 +48,8 @@ defineEmits<{ toggleFilter: []; toggleColumns: []; export: [] }>();
           class="list-icon-btn"
           :class="{ active: columnsOpen }"
           native-type="button"
-          title="设置列"
-          aria-label="设置列"
+          :title="tr('ui.equipment.text0710')"
+          :aria-label="tr('ui.equipment.text0710')"
           :aria-expanded="columnsOpen"
         >
           <AppIcon name="Columns" /></ElButton
@@ -59,8 +60,8 @@ defineEmits<{ toggleFilter: []; toggleColumns: []; export: [] }>();
       v-if="canExport && mode !== 'filter'"
       class="list-icon-btn"
       native-type="button"
-      title="导出"
-      aria-label="导出"
+      :title="tr('ui.equipment.text0711')"
+      :aria-label="tr('ui.equipment.text0711')"
       :disabled="exportBusy"
       :aria-busy="exportBusy"
       @click="$emit('export')"

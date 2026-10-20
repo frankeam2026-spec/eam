@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import { computed } from 'vue';
 import type { LabelTemplate } from '../api';
 import { resolve } from '../printing/grid';
@@ -88,7 +89,7 @@ const cells = computed(() => {
           :font-size="Math.min(3, c.h / 3)"
           fill="#687b96"
         >
-          {{ c.kind === 'qrcode' ? '二维码' : '条形码' }}
+          {{ c.kind === 'qrcode' ? tr('ui.equipment.text0972') : tr('ui.equipment.text0973') }}
         </text>
       </template>
       <text

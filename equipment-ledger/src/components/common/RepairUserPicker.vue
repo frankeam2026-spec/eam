@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { tr } from '../../i18n';
+
 import { ElTableColumn } from 'element-plus';
 import { ElButton } from 'element-plus';
 
@@ -15,7 +17,7 @@ const props = withDefaults(
     busy?: boolean;
     loadUsers?: () => Promise<{ data: DispatchUser[] }>;
   }>(),
-  { selected: () => [], title: '选择人员', busy: false },
+  { selected: () => [], title: '', busy: false },
 );
 const emit = defineEmits<{ 'update:modelValue': [boolean]; confirm: [string[]] }>();
 const rows = ref<DispatchUser[]>([]),
@@ -39,7 +41,7 @@ watch(
     try {
       rows.value = (await (props.loadUsers || repairUserChoices)()).data;
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '人员加载失败';
+      error.value = e instanceof Error ? e.message : tr('ui.equipment.text1579');
     } finally {
       loading.value = false;
     }
@@ -52,14 +54,16 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 <template>
   <AppDialog
     :model-value="modelValue"
-    :title="title"
+    :title="title || tr('ui.equipment.text0335')"
     width="680px"
     :busy="busy"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <div class="picker-tools">
-      <span>已选 {{ picked.length }} 人</span
-      ><ListSearchInput v-model="search" placeholder="搜索姓名、账号、部门" />
+      <span
+        >{{ tr('ui.equipment.text0295') }} {{ picked.length }}
+        {{ tr('ui.equipment.text1580') }}</span
+      ><ListSearchInput v-model="search" :placeholder="tr('ui.equipment.text1581')" />
     </div>
     <p v-if="error" class="picker-error">{{ error }}</p>
     <div class="picker-table">
@@ -84,44 +88,51 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         "
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">姓名</div></template
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text1168') }}</div></template
           ><template #default="{ row: user, $index: tableRowIndex }">
             <strong>{{ user.name }}</strong>
           </template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">部门</div></template
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text1320') }}</div></template
           ><template #default="{ row: user, $index: tableRowIndex }">{{
             user.department
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">账号</div></template
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text1570') }}</div></template
           ><template #default="{ row: user, $index: tableRowIndex }">{{
             user.account
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">未完成工单</div></template
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text1582') }}</div></template
           ><template #default="{ row: user, $index: tableRowIndex }">
             <span class="load-count" :class="{ occupied: user.unfinished > 0 }">{{
               user.unfinished
             }}</span>
           </template></ElTableColumn
         ><template #empty
-          ><div v-if="!filtered.length">{{ loading ? '加载中…' : '没有匹配的人员' }}</div></template
+          ><div v-if="!filtered.length">
+            {{ loading ? tr('ui.equipment.text0396') : tr('ui.equipment.text1583') }}
+          </div></template
         ></AppBusinessTable
       >
     </div>
     <template #footer
-      ><ElButton class="" :disabled="busy" @click="emit('update:modelValue', false)"> 取消</ElButton
+      ><ElButton class="" :disabled="busy" @click="emit('update:modelValue', false)">
+        {{ tr('ui.equipment.text0157') }}</ElButton
       ><ElButton
         class=""
         :disabled="busy || !picked.length"
         @click="emit('confirm', picked)"
         type="primary"
       >
-        确定
+        {{ tr('ui.equipment.text0402') }}
       </ElButton></template
     >
   </AppDialog>

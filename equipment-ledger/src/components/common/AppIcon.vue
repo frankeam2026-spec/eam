@@ -44,7 +44,9 @@ import Barcode from '@icon-park/vue-next/es/icons/Barcode';
 import More from '@icon-park/vue-next/es/icons/More';
 import Return from '@icon-park/vue-next/es/icons/Undo';
 import HamburgerButton from '@icon-park/vue-next/es/icons/HamburgerButton';
+import Printer from '@icon-park/vue-next/es/icons/Printer';
 import Remind from '@icon-park/vue-next/es/icons/Remind';
+import Proportion from '@icon-park/vue-next/es/icons/ChartPie';
 
 const props = defineProps<{ name: string }>();
 const icons: Record<string, Component> = {
@@ -80,6 +82,7 @@ const icons: Record<string, Component> = {
   Brand,
   Bell,
   Todo,
+  Proportion,
   Theme,
   Loading,
   Warning,
@@ -92,7 +95,8 @@ const icons: Record<string, Component> = {
   More,
   Return,
   HamburgerButton,
-  Remind
+  Remind,
+  Printer,
 };
 const icon = computed(() => icons[props.name]);
 </script>

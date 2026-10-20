@@ -13,7 +13,19 @@ public final class AnalyticsCatalog {
       String period,
       String unit,
       String definition,
-      boolean money) {}
+      boolean money) {
+    public String name() {
+      return com.windasoft.eam.common.MessageContext.text("analytics.metric." + id + ".name");
+    }
+
+    public String unit() {
+      return com.windasoft.eam.common.MessageContext.text("analytics.metric." + id + ".unit");
+    }
+
+    public String definition() {
+      return com.windasoft.eam.common.MessageContext.text("analytics.metric." + id + ".definition");
+    }
+  }
 
   public static final List<Metric> ALL =
       List.of(
@@ -130,7 +142,10 @@ public final class AnalyticsCatalog {
     return ALL.stream()
         .filter(m -> m.id().equals(id))
         .findFirst()
-        .orElseThrow(() -> new IllegalArgumentException("未知统计指标"));
+        .orElseThrow(
+            () ->
+                new com.windasoft.eam.common.LocalizedArgumentException(
+                    "server.experience.message0023"));
   }
 
   public static boolean contains(String id) {

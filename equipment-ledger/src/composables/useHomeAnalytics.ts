@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 import { ref, computed, watch, onBeforeUnmount, type Ref } from 'vue';
 import { useRouter } from 'vue-router';
 import {
@@ -33,7 +34,7 @@ export function useHomeAnalytics(
       presets.value = (await analyticsApi.presets()).data;
       error.value = '';
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '指标目录加载失败';
+      error.value = e instanceof Error ? e.message : tr('ui.equipment.text1612');
     }
   }
   async function refresh() {
@@ -58,7 +59,7 @@ export function useHomeAnalytics(
       results.value = Object.fromEntries(r.data.map((x) => [x.id, x]));
       asOf.value = r.asOf;
     } catch (e) {
-      if (v === version) error.value = e instanceof Error ? e.message : '分析加载失败';
+      if (v === version) error.value = e instanceof Error ? e.message : tr('ui.equipment.text1613');
     } finally {
       if (v === version) loading.value = false;
     }

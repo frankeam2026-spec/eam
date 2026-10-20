@@ -29,11 +29,12 @@ public class OutboundRepository {
   }
 
   public List<Map<String, Object>> loadIssue(long tenantId, Object id, boolean lock) {
-    return db.queryForList(
-        "SELECT * FROM inv_issue WHERE tenant_id=? AND id=? AND deleted=0"
-            + (lock ? " FOR UPDATE" : ""),
-        tenantId,
-        id);
+    return withSelections(
+        db.queryForList(
+            "SELECT * FROM inv_issue WHERE tenant_id=? AND id=? AND deleted=0"
+                + (lock ? " FOR UPDATE" : ""),
+            tenantId,
+            id));
   }
 
   public int countOtherRecipients(long tenantId, Object id, long userId) {
@@ -198,6 +199,89 @@ public class OutboundRepository {
         reqLine);
   }
 
+  private com.windasoft.eam.dto.inventory.OutboundHeaderData header(String data) {
+    try {
+      return new com.fasterxml.jackson.databind.ObjectMapper()
+          .readValue(data, com.windasoft.eam.dto.inventory.OutboundHeaderData.class);
+    } catch (Exception e) {
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          com.windasoft.eam.common.MessageRef.of("server.inventory.message0002"), e);
+    }
+  }
+
+  private static Long nullableId(Long id) {
+    return id == null || id == 0 ? null : id;
+  }
+
+  private static String text(String value) {
+    return value == null ? "" : value;
+  }
+
+  private int storeHeader(String data, long tenant, Object issue) {
+    var h = header(data);
+    int changed =
+        db.update(
+            "UPDATE inv_issue SET"
+                + " purpose=?,remark=?,department_id=?,recipient_id=?,recipient_name=?,task_kind=?,task_id=?,legacy_fingerprint=?"
+                + " WHERE tenant_id=? AND id=?",
+            text(h.purpose()),
+            text(h.remark()),
+            nullableId(h.departmentId()),
+            nullableId(h.recipientId()),
+            text(h.recipientName()),
+            text(h.taskKind()),
+            nullableId(h.taskId()),
+            text(h.legacyFingerprint()),
+            tenant,
+            issue);
+    db.update("DELETE FROM inv_outbound_selection WHERE tenant_id=? AND issue_id=?", tenant, issue);
+    if (h.lineSelections() != null)
+      for (int line = 0; line < h.lineSelections().size(); line++) {
+        var choices = h.lineSelections().get(line);
+        if (choices == null) continue;
+        for (int at = 0; at < choices.size(); at++) {
+          var choice = choices.get(at);
+          db.update(
+              "INSERT INTO"
+                  + " inv_outbound_selection(tenant_id,issue_id,line_no,sort_no,balance_id,quantity)"
+                  + " VALUES(?,?,?,?,?,?)",
+              tenant,
+              issue,
+              line + 1,
+              at,
+              choice.balanceId(),
+              choice.quantity());
+        }
+      }
+    return changed;
+  }
+
+  private List<Map<String, Object>> withSelections(List<Map<String, Object>> rows) {
+    for (var row : rows) {
+      var selected =
+          db.queryForList(
+              "SELECT line_no,balance_id,quantity FROM inv_outbound_selection WHERE tenant_id=? AND"
+                  + " issue_id=? ORDER BY line_no,sort_no",
+              row.get("tenant_id"),
+              row.get("id"));
+      var values = new ArrayList<List<Map<String, Object>>>();
+      for (var value : selected) {
+        int line = ((Number) value.get("line_no")).intValue();
+        while (values.size() < line) values.add(new ArrayList<>());
+        values
+            .get(line - 1)
+            .add(
+                Map.of(
+                    "balanceId",
+                    Objects.toString(value.get("balance_id")),
+                    "quantity",
+                    value.get("quantity")));
+      }
+      row.put("line_selections", values);
+    }
+    return rows;
+  }
+
   public int insertIssue(
       Object target,
       long tenantId,
@@ -209,32 +293,36 @@ public class OutboundRepository {
       Object value8,
       Object value9,
       String payload) {
-    return db.update(
-        "INSERT INTO"
-            + " inv_issue(id,tenant_id,code,requisition_id,company_id,warehouse_id,confirmation_key,preview_fingerprint,total_amount,actor_id,actor_name,status,source_kind,payload)"
-            + " VALUES(?,?,?,NULL,?,?,?,'',0,?,?,'草稿',?,CAST(? AS JSON))",
-        target,
-        tenantId,
-        value,
-        company,
-        warehouse,
-        value6,
-        userId,
-        value8,
-        value9,
-        payload);
+    int added =
+        db.update(
+            "INSERT INTO"
+                + " inv_issue(id,tenant_id,code,requisition_id,company_id,warehouse_id,confirmation_key,preview_fingerprint,total_amount,actor_id,actor_name,status,source_kind)"
+                + " VALUES(?,?,?,NULL,?,?,?,'',0,?,?,'草稿',?)",
+            target,
+            tenantId,
+            value,
+            company,
+            warehouse,
+            value6,
+            userId,
+            value8,
+            value9);
+    storeHeader(payload, tenantId, target);
+    return added;
   }
 
   public int updateIssue(
       Object company, Object warehouse, String payload, long tenantId, Object target) {
-    return db.update(
-        "UPDATE inv_issue SET company_id=?,warehouse_id=?,payload=CAST(? AS"
-            + " JSON),row_version=row_version+1 WHERE tenant_id=? AND id=?",
-        company,
-        warehouse,
-        payload,
-        tenantId,
-        target);
+    int changed =
+        db.update(
+            "UPDATE inv_issue SET company_id=?,warehouse_id=?,row_version=row_version+1 WHERE"
+                + " tenant_id=? AND id=?",
+            company,
+            warehouse,
+            tenantId,
+            target);
+    if (changed > 0) storeHeader(payload, tenantId, target);
+    return changed;
   }
 
   public int deleteLines(long tenantId, Object target) {
@@ -496,15 +584,23 @@ public class OutboundRepository {
 
   public int insertRecipientNotice(
       long recordId, long tenantId, Object recipientId, Object issueId, Object value) {
-    return db.update(
-        "INSERT INTO"
-            + " inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
-            + " VALUES(?,?,?,?,'outbounds','出库完成',?,0)",
-        recordId,
+    int count =
+        db.update(
+            "INSERT INTO"
+                + " inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
+                + " VALUES(?,?,?,?,'outbounds','出库完成',?,0)",
+            recordId,
+            tenantId,
+            recipientId,
+            issueId,
+            value);
+    db.update(
+        "UPDATE inv_inbox SET message_key=?,message_args=? WHERE tenant_id=? AND id=?",
+        com.windasoft.eam.common.NotificationMessages.key("出库完成"),
+        com.windasoft.eam.common.NotificationMessages.arguments("出库完成", value),
         tenantId,
-        recipientId,
-        issueId,
-        value);
+        recordId);
+    return count;
   }
 
   public int deleteIssue(long tenantId, Object id) {
@@ -582,46 +678,6 @@ public class OutboundRepository {
         issueId);
   }
 
-  public List<Map<String, Object>> searchIssues(long tenantId) {
-    return db.queryForList(
-        "SELECT i.*,DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s')"
-            + " fmt_created_at,DATE_FORMAT(i.confirmed_at,'%Y-%m-%d %H:%i:%s')"
-            + " fmt_confirmed_at,w.name warehouse_name,COALESCE((SELECT GROUP_CONCAT(DISTINCT"
-            + " recipient_name SEPARATOR '、') FROM inv_outbound_line l WHERE"
-            + " l.tenant_id=i.tenant_id AND l.issue_id=i.id),(SELECT applicant_name FROM"
-            + " inv_requisition r WHERE r.tenant_id=i.tenant_id AND r.id=i.requisition_id))"
-            + " recipient_name,COALESCE((SELECT GROUP_CONCAT(DISTINCT task_code SEPARATOR '、')"
-            + " FROM inv_outbound_line l WHERE l.tenant_id=i.tenant_id AND l.issue_id=i.id),'')"
-            + " task_code,COALESCE((SELECT SUM(a.quantity) FROM inv_issue_allocation a WHERE"
-            + " a.tenant_id=i.tenant_id AND a.issue_id=i.id),(SELECT SUM(l.quantity) FROM"
-            + " inv_outbound_line l WHERE l.tenant_id=i.tenant_id AND l.issue_id=i.id))"
-            + " total_quantity FROM inv_issue i JOIN inv_warehouse w ON w.tenant_id=i.tenant_id"
-            + " AND w.id=i.warehouse_id WHERE i.tenant_id=? AND i.deleted=0 AND i.group_id IS"
-            + " NULL ORDER BY i.created_at DESC,i.id DESC",
-        tenantId);
-  }
-
-  public List<Map<String, Object>> searchLegacyGroups(long tenantId) {
-    return db.queryForList(
-        "SELECT g.*,DATE_FORMAT(g.created_at,'%Y-%m-%d %H:%i:%s') fmt_created_at,w.name"
-            + " warehouse_name,(SELECT SUM(total_amount) FROM inv_issue i WHERE"
-            + " i.tenant_id=g.tenant_id AND i.group_id=g.id) total_amount,(SELECT"
-            + " SUM(a.quantity) FROM inv_issue_allocation a JOIN inv_issue i ON"
-            + " i.tenant_id=a.tenant_id AND i.id=a.issue_id WHERE i.tenant_id=g.tenant_id AND"
-            + " i.group_id=g.id) total_quantity FROM inv_issue_group g JOIN inv_warehouse w ON"
-            + " w.tenant_id=g.tenant_id AND w.id=g.warehouse_id WHERE g.tenant_id=? ORDER BY"
-            + " g.created_at DESC",
-        tenantId);
-  }
-
-  public int countUnreversedLegacyIssues(long tenantId, Object id) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM inv_issue WHERE tenant_id=? AND group_id=? AND" + " reversed=0",
-        Integer.class,
-        tenantId,
-        id);
-  }
-
   public List<Map<String, Object>> findReservation(long tenantId, Object res, Object requestId) {
     return db.queryForList(
         "SELECT * FROM inv_reservation WHERE tenant_id=? AND id=? AND requisition_id=?",
@@ -648,11 +704,7 @@ public class OutboundRepository {
   }
 
   public int updatePayload(String payload, long tenantId, Object issue) {
-    return db.update(
-        "UPDATE inv_issue SET payload=CAST(? AS JSON) WHERE tenant_id=? AND id=?",
-        payload,
-        tenantId,
-        issue);
+    return storeHeader(payload, tenantId, issue);
   }
 
   public List<Map<String, Object>> findIssueByKey(long tenantId, Object key) {
@@ -663,10 +715,6 @@ public class OutboundRepository {
   }
 
   public int storePreviewPayload(String payload, long tenantId, Object issue) {
-    return db.update(
-        "UPDATE inv_issue SET payload=CAST(? AS JSON) WHERE tenant_id=? AND id=?",
-        payload,
-        tenantId,
-        issue);
+    return storeHeader(payload, tenantId, issue);
   }
 }

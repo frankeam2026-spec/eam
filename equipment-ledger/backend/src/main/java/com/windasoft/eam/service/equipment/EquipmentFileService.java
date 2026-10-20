@@ -13,7 +13,6 @@ import java.util.*;
 import javax.imageio.ImageIO;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class EquipmentFileService {
@@ -38,9 +37,13 @@ public class EquipmentFileService {
   }
 
   private Map<String, Object> file(String id) {
-    require(id.matches("[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}"), "附件编号无效");
+    require(
+        id.matches("[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}"),
+        com.windasoft.eam.common.MessageContext.text("server.equipment.message0057"));
     var list = repository.file(auth.tenantId(), id);
-    if (list.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "附件不存在");
+    if (list.isEmpty())
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          HttpStatus.NOT_FOUND, "server.repair.message0011");
     return list.getFirst();
   }
 
@@ -55,7 +58,9 @@ public class EquipmentFileService {
   }
 
   private boolean references(Equipment e, String id) {
-    return id.equals(e.getImageFileId()) || references(e.getImagesJson(), id) || references(e.getDocumentsJson(), id);
+    return id.equals(e.getImageFileId())
+        || references(e.getImagesJson(), id)
+        || references(e.getDocumentsJson(), id);
   }
 
   private boolean references(String value, String id) {
@@ -67,7 +72,9 @@ public class EquipmentFileService {
   }
 
   private void checkRead(Map<String, Object> file) {
-    if (!mayRead(file)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "没有此设备附件的访问权限");
+    if (!mayRead(file))
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          HttpStatus.FORBIDDEN, "server.equipment.message0034");
   }
 
   private String url(String id) {
@@ -76,15 +83,21 @@ public class EquipmentFileService {
 
   public Map<String, Object> upload(EquipmentUpload upload) throws Exception {
     if (!permissions.allowed("equipment", "新增") && !permissions.allowed("equipment", "编辑"))
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "没有上传设备附件的权限");
-    require(!upload.empty() && upload.size() <= 20L * 1024 * 1024, "请选择不超过20MB的附件");
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          HttpStatus.FORBIDDEN, "server.equipment.message0035");
+    require(
+        !upload.empty() && upload.size() <= 20L * 1024 * 1024,
+        com.windasoft.eam.common.MessageContext.text("server.equipment.message0058"));
     String name = Objects.toString(upload.originalName(), "附件").replace('\\', '/');
     name = name.substring(name.lastIndexOf('/') + 1);
-    require(!name.isBlank() && name.length() <= 255, "附件名称需为1至255字");
+    require(
+        !name.isBlank() && name.length() <= 255,
+        com.windasoft.eam.common.MessageContext.text("server.equipment.message0059"));
     int dot = name.lastIndexOf('.');
     String ext = dot < 0 ? "" : name.substring(dot).toLowerCase(Locale.ROOT);
     require(
-        ext.matches("\\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv)"), "不支持该附件格式");
+        ext.matches("\\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv)"),
+        com.windasoft.eam.common.MessageContext.text("server.equipment.message0060"));
     String id = UUID.randomUUID().toString();
     Path path = repository.store(upload.content(), id, ext);
     String contentType = "application/octet-stream";
@@ -92,14 +105,22 @@ public class EquipmentFileService {
       if (Set.of(".png", ".jpg", ".jpeg", ".gif").contains(ext)) {
         try (var stream = ImageIO.createImageInputStream(path.toFile())) {
           var readers = ImageIO.getImageReaders(stream);
-          require(readers.hasNext(), "图片内容无效");
+          require(
+              readers.hasNext(),
+              com.windasoft.eam.common.MessageContext.text("server.equipment.message0061"));
           var reader = readers.next();
           try {
             reader.setInput(stream);
-            require((long) reader.getWidth(0) * reader.getHeight(0) <= 40000000, "图片像素过大");
+            require(
+                (long) reader.getWidth(0) * reader.getHeight(0) <= 40000000,
+                com.windasoft.eam.common.MessageContext.text("server.equipment.message0062"));
             String format = reader.getFormatName().toLowerCase(Locale.ROOT);
-            require(Set.of("png", "jpeg", "gif").contains(format), "不支持该图片格式");
-            require(reader.read(0) != null, "图片内容无效");
+            require(
+                Set.of("png", "jpeg", "gif").contains(format),
+                com.windasoft.eam.common.MessageContext.text("server.equipment.message0063"));
+            require(
+                reader.read(0) != null,
+                com.windasoft.eam.common.MessageContext.text("server.equipment.message0061"));
             contentType = "image/" + format;
           } finally {
             reader.dispose();
@@ -117,10 +138,14 @@ public class EquipmentFileService {
 
   public JsonNode validate(JsonNode documents) {
     if (documents == null || documents.isNull()) return json.createArrayNode();
-    require(documents.isArray() && documents.size() <= 100, "设备附件最多100个");
+    require(
+        documents.isArray() && documents.size() <= 100,
+        com.windasoft.eam.common.MessageContext.text("server.equipment.message0064"));
     JsonNode copy = documents.deepCopy();
     for (JsonNode doc : copy) {
-      require(doc.isObject(), "附件格式无效");
+      require(
+          doc.isObject(),
+          com.windasoft.eam.common.MessageContext.text("server.equipment.message0065"));
       String id = doc.path("id").asText();
       if (id.isBlank()) {
         ((com.fasterxml.jackson.databind.node.ObjectNode) doc).remove("url");
@@ -140,14 +165,21 @@ public class EquipmentFileService {
     var result = json.createArrayNode();
     if (images == null || images.isNull()) {
       if (legacyId != null && !legacyId.isBlank())
-        result.addObject().put("id", validateImage(legacyId)).put("name", Objects.toString(legacyName, ""));
+        result
+            .addObject()
+            .put("id", validateImage(legacyId))
+            .put("name", Objects.toString(legacyName, ""));
       return result;
     }
-    require(images.isArray(), "设备图片格式无效");
+    require(
+        images.isArray(),
+        com.windasoft.eam.common.MessageContext.text("server.equipment.message0066"));
     var seen = new HashSet<String>();
     for (var image : images) {
       var id = image.path("id").asText("");
-      require(!id.isBlank(), "设备图片编号不能为空");
+      require(
+          !id.isBlank(),
+          com.windasoft.eam.common.MessageContext.text("server.equipment.message0067"));
       if (!seen.add(id)) continue;
       validateImage(id);
       result.addObject().put("id", id).put("name", file(id).get("name").toString());
@@ -159,17 +191,22 @@ public class EquipmentFileService {
     if (id == null || id.isBlank()) return "";
     var stored = file(id);
     checkRead(stored);
-    require(stored.get("content_type").toString().startsWith("image/"), "请选择有效图片");
+    require(
+        stored.get("content_type").toString().startsWith("image/"),
+        com.windasoft.eam.common.MessageContext.text("server.equipment.message0068"));
     return id;
   }
 
   public EquipmentDownload preview(String id) {
     var stored = file(id);
     checkRead(stored);
-    require(stored.get("content_type").toString().startsWith("image/"), "附件不是可预览图片");
+    require(
+        stored.get("content_type").toString().startsWith("image/"),
+        com.windasoft.eam.common.MessageContext.text("server.equipment.message0069"));
     Path path = repository.contentPath(id, stored.get("extension").toString());
     if (!Files.isRegularFile(path))
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "图片内容不存在");
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          HttpStatus.NOT_FOUND, "server.equipment.message0036");
     return new EquipmentDownload(
         path, stored.get("content_type").toString(), stored.get("name").toString());
   }
@@ -179,7 +216,8 @@ public class EquipmentFileService {
     checkRead(stored);
     Path path = repository.contentPath(id, stored.get("extension").toString());
     if (!Files.isRegularFile(path))
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "附件内容不存在");
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          HttpStatus.NOT_FOUND, "server.equipment.message0037");
     return new EquipmentDownload(
         path, stored.get("content_type").toString(), stored.get("name").toString());
   }

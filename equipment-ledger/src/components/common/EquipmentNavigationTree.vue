@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import 'element-plus/es/components/tabs/style/css';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { ElTree, ElButton, ElTabs, ElTabPane } from 'element-plus';
@@ -102,7 +103,7 @@ onMounted(async () => {
   try {
     organizations.value = (await request<{ data: Node[] }>('/equipment/navigation-tree')).data;
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '组织加载失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text1191');
   }
 });
 </script>
@@ -110,7 +111,7 @@ onMounted(async () => {
   <aside class="equipment-navigation" :class="{ collapsed: hidden }">
     <ElButton
       class="tree-collapse"
-      :title="hidden ? '展开筛选树' : '收起筛选树'"
+      :title="hidden ? tr('ui.equipment.text1372') : tr('ui.equipment.text1373')"
       @click="hidden = !hidden"
     >
       <AppIcon :name="hidden ? 'Right' : 'Left'" />
@@ -131,8 +132,8 @@ onMounted(async () => {
             tree?.setCurrentKey(undefined);
           "
         >
-          全部</ElButton
-        ><ElButton @click="expand">{{ expanded ? '全部收起' : '全部展开' }}</ElButton>
+          {{ tr('ui.equipment.text0300') }}</ElButton
+        ><ElButton @click="expand">{{ expanded ? tr('ui.equipment.text1145') : tr('ui.equipment.text1144') }}</ElButton>
       </div>
       <p v-if="error && mode === 'organization'" class="tree-error">{{ error }}</p>
       <ElTree

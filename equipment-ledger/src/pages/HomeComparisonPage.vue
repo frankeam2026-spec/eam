@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import {
@@ -103,17 +104,17 @@ const todayLabel = new Intl.DateTimeFormat('zh-CN', {
 const tabs = computed(() => [
   {
     key: 'pending',
-    label: '待我处理',
+    get label() { return tr('ui.equipment.text1700'); },
     count: failures['work-pending'] ? undefined : workRows.pending.total,
   },
   {
     key: 'active',
-    label: '正在执行',
+    get label() { return tr('ui.equipment.text1701'); },
     count: failures['work-active'] ? undefined : workRows.active.total,
   },
   {
     key: 'today',
-    label: '今日任务',
+    get label() { return tr('ui.equipment.text1702'); },
     count: failures['work-today'] ? undefined : workRows.today.total,
   },
 ]);
@@ -123,7 +124,7 @@ const metrics = computed(() => [
   {
     key: 'pending',
     emphasis: 'primary',
-    label: '待我处理',
+    get label() { return tr('ui.equipment.text1700'); },
     value: failures.pending ? undefined : loaded.value ? pending.total : undefined,
     icon: 'Todo',
     note: '需要我接单、处理或验收',
@@ -131,7 +132,7 @@ const metrics = computed(() => [
   {
     key: 'active',
     emphasis: 'standard',
-    label: '正在执行',
+    get label() { return tr('ui.equipment.text1701'); },
     value: blocks['metric-active']?.total,
     icon: 'Tool',
     note: '跟进当前进行中的工作',
@@ -139,7 +140,7 @@ const metrics = computed(() => [
   {
     key: 'today',
     emphasis: 'standard',
-    label: '今日任务',
+    get label() { return tr('ui.equipment.text1702'); },
     value: blocks['metric-today']?.total,
     icon: 'Clock',
     note: '查看今天计划到期的任务',
@@ -147,7 +148,7 @@ const metrics = computed(() => [
   {
     key: 'notification',
     emphasis: 'standard',
-    label: '未读提醒',
+    get label() { return tr('ui.equipment.text1029'); },
     value: inbox.error ? undefined : loaded.value ? inbox.summary.counts.unread : undefined,
     icon: 'Bell',
     note: '需要我知晓的工作消息',
@@ -196,7 +197,7 @@ async function loadBlock(type: string, section?: OverviewBlock) {
     blocks[key] = result;
   } catch (error) {
     delete blocks[key];
-    failures[key] = error instanceof Error ? error.message : '加载失败';
+    failures[key] = error instanceof Error ? error.message : tr('ui.equipment.text0160');
   }
 }
 async function loadWork() {
@@ -241,7 +242,7 @@ async function loadWork() {
         }
       } catch (error) {
         workRows[key] = { data: [], total: 0 };
-        failures[`work-${key}`] = error instanceof Error ? error.message : '工作事项加载失败';
+        failures[`work-${key}`] = error instanceof Error ? error.message : tr('ui.equipment.text1703');
       }
     }),
   );
@@ -399,7 +400,7 @@ onUnmounted(() => {
       <header class="overview-heading">
         <div>
           <div class="heading-eyebrow">{{ todayLabel }}</div>
-          <h1>{{ auth.currentUser }}，今天的工作从这里开始</h1>
+          <h1>{{ auth.currentUser }}{{ tr('ui.equipment.text1704') }}</h1>
           <p>{{ [auth.currentCompany, auth.currentDepartment].filter(Boolean).join(' · ') }}</p>
         </div>
         <div class="heading-actions">
@@ -408,7 +409,7 @@ onUnmounted(() => {
             class="template-select"
             :model-value="state.selected.id"
             :disabled="editing || busy || loading"
-            aria-label="选择角色首页模板"
+            :aria-label="tr('ui.equipment.text1705')"
             @update:model-value="loadTemplate(String($event))"
             ><ElOption
               v-for="item in state.templates"
@@ -417,19 +418,19 @@ onUnmounted(() => {
               :label="item.name"
           /></ElSelect>
           <ElButton v-if="!editing" :disabled="busy || loading" @click="refresh"
-            ><AppIcon name="Refresh" />刷新</ElButton
+            ><AppIcon name="Refresh" />{{ tr('ui.equipment.text0424') }}</ElButton
           >
           <ElButton
             v-if="!editing"
             :disabled="!state || busy || loading"
             @click="customization.begin"
-            ><AppIcon name="Settings" />定制首页</ElButton
+            ><AppIcon name="Settings" />{{ tr('ui.equipment.text1706') }}</ElButton
           >
           <ElButton v-if="editing" :disabled="busy" @click="previewing = !previewing">{{
-            previewing ? '继续编辑' : '预览布局'
+            previewing ? tr('ui.equipment.text1707') : tr('ui.equipment.text1708')
           }}</ElButton>
           <ElButton v-if="!editing" type="primary" @click="center('pending')"
-            >进入工作台<AppIcon name="Right"
+            >{{ tr('ui.equipment.text1709') }}<AppIcon name="Right"
           /></ElButton>
         </div>
       </header>
@@ -441,13 +442,13 @@ onUnmounted(() => {
         show-icon
       >
         <ElButton type="primary" link :disabled="busy" @click="loadTemplate(state?.selected.id)"
-          >重新加载配置</ElButton
+          >{{ tr('ui.equipment.text1710') }}</ElButton
         >
       </ElAlert>
       <ElAlert
         v-if="state?.updateAvailable"
         type="info"
-        title="角色模板已有新版本，你的个人布局已保留。定制时可恢复为最新模板。"
+        :title="tr('ui.equipment.text1711')"
         :closable="false"
         show-icon
       />
@@ -455,9 +456,9 @@ onUnmounted(() => {
         <div class="block-library">
           <ElSelect
             v-model="selectedType"
-            placeholder="选择内容区块"
+            :placeholder="tr('ui.equipment.text1712')"
             :disabled="busy"
-            aria-label="选择新增区块"
+            :aria-label="tr('ui.equipment.text1713')"
             ><ElOption
               v-for="type in available"
               :key="type"
@@ -468,24 +469,24 @@ onUnmounted(() => {
             @click="
               customization.add(analyticsCatalog?.data.find((m) => m.id === selectedType.slice(10)))
             "
-            ><AppIcon name="Plus" />添加区块</ElButton
-          ><span>拖动标题调整位置；“我的工作”保留在主栏。恢复模板后需保存才生效。</span>
+            ><AppIcon name="Plus" />{{ tr('ui.equipment.text1564') }}</ElButton
+          ><span>{{ tr('ui.equipment.text1714') }}</span>
         </div>
         <div class="metric-options">
-          <span>布局</span
+          <span>{{ tr('ui.equipment.text1715') }}</span
           ><ElSelect
             v-model="layout.layoutMode"
-            aria-label="布局类型"
+            :aria-label="tr('ui.equipment.text1716')"
             :disabled="busy"
             style="width: 150px"
-            ><ElOption value="work" label="工作布局 2∶1" /><ElOption
+            ><ElOption value="work" :label="tr('ui.equipment.text1559')" /><ElOption
               value="analysis"
-              label="分析布局 1∶1" /></ElSelect
-          ><span>预置方案</span
+              :label="tr('ui.equipment.text1560')" /></ElSelect
+          ><span>{{ tr('ui.equipment.text1717') }}</span
           ><ElSelect
             v-model="analytics.presetIndex.value"
-            placeholder="选择方案"
-            aria-label="预置分析方案"
+            :placeholder="tr('ui.equipment.text1718')"
+            :aria-label="tr('ui.equipment.text1719')"
             style="width: 190px"
             :disabled="busy"
             ><ElOption
@@ -496,11 +497,11 @@ onUnmounted(() => {
           ><ElButton
             :disabled="analytics.presetIndex.value === undefined || busy"
             @click="analytics.applyPreset"
-            >应用到草稿</ElButton
+            >{{ tr('ui.equipment.text1562') }}</ElButton
           >
         </div>
         <div class="metric-options">
-          <span>顶部指标</span
+          <span>{{ tr('ui.equipment.text1720') }}</span
           ><ElCheckboxGroup v-model="layout.metrics" :disabled="busy"
             ><ElCheckbox v-for="metric in metrics" :key="metric.key" :value="metric.key">{{
               metric.label
@@ -512,7 +513,7 @@ onUnmounted(() => {
         v-if="analyticsCatalog?.data.length && (editing || analytics.analytical.value.length)"
         class="analytics-toolbar"
       >
-        <span>统计周期</span><AnalyticsPeriodSelect v-model="globalPeriod" :disabled="busy" />
+        <span>{{ tr('ui.equipment.text1298') }}</span><AnalyticsPeriodSelect v-model="globalPeriod" :disabled="busy" />
         <template v-if="analyticsCatalog.teamAllowed"
           ><ElSelect
             v-model="layout.companyIds"
@@ -521,8 +522,8 @@ onUnmounted(() => {
             clearable
             collapse-tags
             collapse-tags-tooltip
-            placeholder="授权公司"
-            aria-label="统计公司"
+            :placeholder="tr('ui.equipment.text1721')"
+            :aria-label="tr('ui.equipment.text1722')"
             :disabled="busy"
             ><ElOption
               v-for="o in analyticsCatalog.organizations.filter((o) => o.org_type === '公司')"
@@ -536,8 +537,8 @@ onUnmounted(() => {
             clearable
             collapse-tags
             collapse-tags-tooltip
-            placeholder="授权部门（含下级）"
-            aria-label="统计部门"
+            :placeholder="tr('ui.equipment.text1723')"
+            :aria-label="tr('ui.equipment.text1724')"
             :disabled="busy"
             ><ElOption
               v-for="o in analyticsCatalog.organizations.filter((o) => o.org_type !== '公司')"
@@ -546,8 +547,7 @@ onUnmounted(() => {
               :label="o.name" /></ElSelect
         ></template>
         <span v-if="analytics.asOf.value" class="analytics-updated"
-          >更新于 {{ analytics.asOf.value.replace('T', ' ').slice(0, 19) }} ·
-          历史周期按当前结果回看</span
+          >{{ tr('ui.equipment.text1725') }} {{ analytics.asOf.value.replace('T', ' ').slice(0, 19) }} {{ tr('ui.equipment.text1726') }}</span
         >
       </div>
       <div
@@ -567,7 +567,7 @@ onUnmounted(() => {
               <span>{{ metric.label }}</span
               ><span class="summary-icon" aria-hidden="true"><AppIcon :name="metric.icon" /></span>
             </div>
-            <strong>{{ metric.value ?? (loading || initializing ? '…' : '暂不可用') }}</strong
+            <strong>{{ metric.value ?? (loading || initializing ? '…' : tr('ui.equipment.text1727')) }}</strong
             ><span class="summary-note">{{ metric.note }}</span>
           </div></ElButton
         >
@@ -609,14 +609,14 @@ onUnmounted(() => {
           >
             <template #action>
               <ElButton v-if="section.type === 'work'" type="primary" link @click="center()"
-                >查看全部 {{ taskTotal }} 项<AppIcon name="Right"
+                >{{ tr('ui.equipment.text0892') }} {{ taskTotal }} {{ tr('ui.equipment.text0394') }}<AppIcon name="Right"
               /></ElButton>
               <ElButton
                 v-else-if="section.type === 'anomalies' && auth.can('anomaly')"
                 type="primary"
                 link
                 @click="router.push('/anomalies')"
-                >查看全部<AppIcon name="Right"
+                >{{ tr('ui.equipment.text0892') }}<AppIcon name="Right"
               /></ElButton>
             </template>
             <AnalyticsWidget
@@ -651,7 +651,7 @@ onUnmounted(() => {
                 row-key="id"
               >
                 <!-- @vue-generic {Task} -->
-                <ElTableColumn label="编号" prop="code" :width="148" show-overflow-tooltip
+                <ElTableColumn :label="tr('ui.equipment.text0137')" prop="code" :width="148" show-overflow-tooltip
                   ><template #default="{ row }"
                     ><ElButton type="primary" link :disabled="editing" @click="openTask(row)">{{
                       row.code
@@ -659,47 +659,49 @@ onUnmounted(() => {
                   ></ElTableColumn
                 >
                 <!-- @vue-generic {Task} -->
-                <ElTableColumn label="设备 / 事项" :min-width="150" show-overflow-tooltip
+                <ElTableColumn :label="tr('ui.equipment.text1728')" :min-width="150" show-overflow-tooltip
                   ><template #default="{ row }">{{ taskName(row) }}</template></ElTableColumn
                 >
                 <!-- @vue-generic {Task} -->
                 <ElTableColumn
-                  :label="tab === 'pending' ? '待办事项' : '状态'"
+                  :label="tab === 'pending' ? tr('ui.equipment.text1729') : tr('ui.equipment.text0170')"
                   :width="100"
                   align="center"
                   ><template #default="{ row }"
-                    ><span v-if="tab === 'pending'" class="task-kind" :title="row.kind">{{
-                      taskKind(row)
-                    }}</span
-                    ><MaintenanceStatus v-else :status="row.status || ''" /></template
+                    ><MaintenanceStatus
+                      v-if="tab === 'pending'"
+                      :status="taskKind(row)"
+                      :title="row.kind" /><MaintenanceStatus
+                      v-else
+                      :status="row.status || ''" /></template
                 ></ElTableColumn>
                 <!-- @vue-generic {Task} -->
                 <ElTableColumn
-                  :label="tab === 'pending' ? '到达时间' : '计划 / 到达时间'"
+                  :label="tab === 'pending' ? tr('ui.equipment.text1730') : tr('ui.equipment.text1731')"
                   :width="138"
                   show-overflow-tooltip
                   ><template #default="{ row }">{{ taskTime(row) }}</template></ElTableColumn
                 >
                 <!-- @vue-generic {Task} -->
-                <ElTableColumn label="操作" :width="70" fixed="right"
+                <ElTableColumn :label="tr('ui.equipment.text0145')" :width="156" fixed="right"
                   ><template #default="{ row }"
                     ><ElButton
                       type="primary"
                       link
                       :disabled="editing"
                       @click="openTask(row, true)"
-                      >{{ row.source ? inbox.actionName(row.source) : '查看' }}</ElButton
+                      >{{ row.source ? inbox.actionName(row.source) : tr('ui.equipment.text0206') }}</ElButton
                     ></template
                   ></ElTableColumn
                 >
                 <template #empty
                   ><p class="compact-empty">
-                    {{ loading ? '正在加载工作事项…' : '当前没有相关工作事项' }}
+                    {{ loading ? tr('ui.equipment.text1732') : tr('ui.equipment.text1733') }}
                   </p></template
                 >
               </AppBusinessTable>
               <div v-if="tab === 'pending' && modules.length" class="work-distribution">
-                <span>待办分布</span
+                <span>{{ tr('ui.equipment.text1734') }}</span
                 ><span v-for="group in modules" :key="group.label"
                   >{{ group.label }} <b>{{ group.count }}</b></span
                 >
@@ -717,13 +719,13 @@ onUnmounted(() => {
                   ><AppIcon name="Right"
                 /></ElButton>
               </div>
-              <p v-else class="compact-empty">访问业务页面后，会在这里保留最近入口。</p>
+              <p v-else class="compact-empty">{{ tr('ui.equipment.text1735') }}</p>
             </template>
             <template v-else-if="section.type === 'anomalies'">
               <div class="attention-heading">
-                <span>待处理设备异常</span
+                <span>{{ tr('ui.equipment.text1736') }}</span
                 ><strong>{{
-                  failures.anomalies ? '暂不可用' : (blocks.anomalies?.total ?? '…')
+                  failures.anomalies ? tr('ui.equipment.text1727') : (blocks.anomalies?.total ?? '…')
                 }}</strong>
               </div>
               <p v-if="failures.anomalies" class="section-error">{{ failures.anomalies }}</p>
@@ -739,7 +741,7 @@ onUnmounted(() => {
                   ><AppIcon name="Right"
                 /></ElButton>
               </div>
-              <p v-else class="attention-empty"><AppIcon name="Check" />当前没有待处理的设备异常</p>
+              <p v-else class="attention-empty"><AppIcon name="Check" />{{ tr('ui.equipment.text1737') }}</p>
             </template>
             <template v-else-if="section.type === 'shortcuts'">
               <p v-if="failures.shortcuts" class="section-error">{{ failures.shortcuts }}</p>
@@ -754,7 +756,7 @@ onUnmounted(() => {
                   ><span>{{ row.name }}</span></ElButton
                 >
               </div>
-              <p v-else class="compact-empty">暂无可用的业务入口</p>
+              <p v-else class="compact-empty">{{ tr('ui.equipment.text1738') }}</p>
             </template>
             <HomeWidget v-else :block="section" :editing="editing" compact />
           </OverviewSection>
@@ -764,23 +766,23 @@ onUnmounted(() => {
             @dragover.prevent
             @drop.stop.prevent="customization.drop(dragId, column.key)"
           >
-            拖放区块到{{ column.label }}末尾
+            {{ tr('ui.equipment.text1739') }}{{ column.label }}{{ tr('ui.equipment.text1740') }}
           </div>
         </div>
       </div>
       <p v-if="!initializing && !layout.blocks.length" class="compact-empty">
-        暂无可展示的区块，可点击“定制首页”添加。
+        {{ tr('ui.equipment.text1741') }}
       </p>
     </ElForm>
     <AppFormFooter v-if="editing"
-      ><ElButton :disabled="busy" @click="cancelLayout">取消</ElButton
-      ><ElButton :disabled="busy" @click="customization.restore">恢复模板</ElButton
+      ><ElButton :disabled="busy" @click="cancelLayout">{{ tr('ui.equipment.text0157') }}</ElButton
+      ><ElButton :disabled="busy" @click="customization.restore">{{ tr('ui.equipment.text1742') }}</ElButton
       ><ElButton
         type="primary"
         :loading="saving"
         :disabled="initializing || loading"
         @click="saveLayout"
-        >保存</ElButton
+        >{{ tr('ui.equipment.text0159') }}</ElButton
       ></AppFormFooter
     >
   </section>
@@ -1018,19 +1020,6 @@ h1 {
 }
 .work-panel :deep(.business-table-shell) {
   border-radius: 0;
-}
-.task-kind {
-  white-space: nowrap;
-  line-height: 20px;
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: middle;
-  padding: 2px 6px;
-  color: var(--brand);
-  background: var(--brand-soft);
-  border-radius: 4px;
 }
 .compact-empty {
   margin: 0;

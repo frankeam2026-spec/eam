@@ -16,6 +16,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class SystemManagementRepository {
+  private final RoleRelationsRepository relations;
   private final OrgUnitMapper orgs;
   private final SystemUserMapper users;
   private final SystemRoleMapper roles;
@@ -33,7 +34,9 @@ public class SystemManagementRepository {
       RoleMenuPermissionMapper grants,
       AuthSessionMapper sessions,
       BaseItemMapper locations,
-      JdbcTemplate db) {
+      JdbcTemplate db,
+      RoleRelationsRepository relations) {
+    this.relations = relations;
     this.orgs = orgs;
     this.users = users;
     this.roles = roles;
@@ -59,10 +62,11 @@ public class SystemManagementRepository {
   }
 
   public List<SystemRole> roles(long tenant) {
-    return roles.selectList(
-        new LambdaQueryWrapper<SystemRole>()
-            .eq(SystemRole::getTenantId, tenant)
-            .orderByAsc(SystemRole::getId));
+    return relations.roles(
+        roles.selectList(
+            new LambdaQueryWrapper<SystemRole>()
+                .eq(SystemRole::getTenantId, tenant)
+                .orderByAsc(SystemRole::getId)));
   }
 
   public OrgUnit organization(long tenant, Long id) {
@@ -82,10 +86,11 @@ public class SystemManagementRepository {
   }
 
   public SystemRole role(long tenant, Long id) {
-    return roles.selectOne(
-        new LambdaQueryWrapper<SystemRole>()
-            .eq(SystemRole::getTenantId, tenant)
-            .eq(SystemRole::getId, id));
+    return relations.role(
+        roles.selectOne(
+            new LambdaQueryWrapper<SystemRole>()
+                .eq(SystemRole::getTenantId, tenant)
+                .eq(SystemRole::getId, id)));
   }
 
   public int insertOrganization(OrgUnit x) {
@@ -113,11 +118,15 @@ public class SystemManagementRepository {
   }
 
   public int insertRole(SystemRole x) {
-    return roles.insert(x);
+    int changed = roles.insert(x);
+    if (changed > 0) relations.saveRole(x);
+    return changed;
   }
 
   public int updateRole(SystemRole x) {
-    return roles.updateById(x);
+    int changed = roles.updateById(x);
+    if (changed > 0) relations.saveRole(x);
+    return changed;
   }
 
   public int deleteRole(Long id) {
@@ -212,11 +221,12 @@ public class SystemManagementRepository {
   }
 
   public List<RoleMenuPermission> menuPermissions(long tenant, Long id) {
-    return grants.selectList(
-        new LambdaQueryWrapper<RoleMenuPermission>()
-            .eq(RoleMenuPermission::getTenantId, tenant)
-            .eq(RoleMenuPermission::getRoleId, id)
-            .orderByAsc(RoleMenuPermission::getId));
+    return relations.grants(
+        grants.selectList(
+            new LambdaQueryWrapper<RoleMenuPermission>()
+                .eq(RoleMenuPermission::getTenantId, tenant)
+                .eq(RoleMenuPermission::getRoleId, id)
+                .orderByAsc(RoleMenuPermission::getId)));
   }
 
   public void deleteMenuPermissions(long tenant, Long id) {
@@ -225,6 +235,7 @@ public class SystemManagementRepository {
 
   public void insertMenuPermission(RoleMenuPermission row) {
     grants.insert(row);
+    relations.saveGrant(row);
   }
 
   public long organizationCount(long tenant, String type, List<Long> ids) {
@@ -278,15 +289,15 @@ public class SystemManagementRepository {
             "SELECT COUNT(*) FROM eam_equipment WHERE tenant_id=? AND (company_org_id=? OR"
                 + " department_org_id=?)",
             "SELECT COUNT(*) FROM eam_repair_order WHERE tenant_id=? AND department_org_id=?",
-            "SELECT COUNT(*) FROM eam_maintenance_task WHERE tenant_id=? AND (company_id=? OR"
+            "SELECT COUNT(*) FROM v_maintenance_task WHERE tenant_id=? AND (company_id=? OR"
                 + " department_id=?)",
-            "SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=? AND (company_id=? OR"
+            "SELECT COUNT(*) FROM v_inspection_task WHERE tenant_id=? AND (company_id=? OR"
                 + " department_id=?)",
-            "SELECT COUNT(*) FROM eam_maintenance_definition WHERE tenant_id=? AND department_id=?",
-            "SELECT COUNT(*) FROM eam_inspection_definition WHERE tenant_id=? AND department_id=?",
+            "SELECT COUNT(*) FROM v_maintenance_definition WHERE tenant_id=? AND department_id=?",
+            "SELECT COUNT(*) FROM v_inspection_definition WHERE tenant_id=? AND department_id=?",
             "SELECT COUNT(*) FROM inv_warehouse WHERE tenant_id=? AND company_id=?",
-            "SELECT COUNT(*) FROM eam_sys_role_menu_permission WHERE tenant_id=? AND"
-                + " JSON_CONTAINS(org_ids_json,CAST(? AS JSON))")) {
+            "SELECT COUNT(*) FROM eam_role_menu_target WHERE tenant_id=? AND target_kind IN"
+                + " ('company','department') AND target_id=?")) {
       int count =
           query.contains(" OR ")
               ? db.queryForObject(query, Integer.class, tenant, id, id)

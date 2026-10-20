@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import { computed, ref, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import {
   ElButton,
@@ -73,9 +74,9 @@ const displayed = computed(() => {
   );
 });
 const rules: FormRules = {
-  name: [{ required: true, whitespace: true, message: '请输入模板名称', trigger: 'blur' }],
+  name: [{ required: true, whitespace: true, get message() { return tr('ui.equipment.text0685'); }, trigger: 'blur' }],
   'config.title': [
-    { required: true, whitespace: true, message: '请输入单据标题', trigger: 'blur' },
+    { required: true, whitespace: true, get message() { return tr('ui.equipment.text1762'); }, trigger: 'blur' },
   ],
 };
 const columnKeys = computed({
@@ -102,7 +103,7 @@ async function load() {
     catalog.value = a.data;
     rows.value = b.data;
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '加载失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text0160');
   } finally {
     loading.value = false;
   }
@@ -156,7 +157,7 @@ async function preview() {
     clearPreview();
     previewUrl.value = URL.createObjectURL(pdf);
   } catch (e) {
-    previewError.value = e instanceof Error ? e.message : '预览失败';
+    previewError.value = e instanceof Error ? e.message : tr('ui.equipment.text1516');
   } finally {
     previewing.value = false;
   }
@@ -175,21 +176,21 @@ async function save() {
     editing.value = undefined;
     clearPreview();
     await load();
-    ElMessage.success('打印模板已保存');
+    ElMessage.success(tr('ui.equipment.text1763'));
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '保存失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text0195');
   } finally {
     saving.value = false;
   }
 }
 async function remove(item: DocumentPrintTemplate) {
-  if (!(await confirmAction(`删除打印模板“${item.name}”？已留底PDF将继续保留。`))) return;
+  if (!(await confirmAction(tr('ui.common.dynamic64',{p0:item.name})))) return;
   try {
     await printing.remove(item);
     await load();
-    ElMessage.success('已删除');
+    ElMessage.success(tr('ui.equipment.text0906'));
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '删除失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0278'));
   }
 }
 function move(index: number, offset: number) {
@@ -203,19 +204,19 @@ async function logo(files: File[]) {
   const file = files[0];
   if (!file || !editing.value) return;
   if (!['image/png', 'image/jpeg'].includes(file.type) || file.size > 512000) {
-    ElMessage.error('请选择500KB以内的PNG或JPG图片');
+    ElMessage.error(tr('ui.equipment.text1764'));
     return;
   }
   try {
     const result = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(new Error('图片读取失败'));
+      reader.onerror = () => reject(new Error(tr('ui.equipment.text1765')));
       reader.readAsDataURL(file);
     });
     if (editing.value) editing.value.config.logo = result;
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '图片读取失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text1765'));
   }
 }
 </script>
@@ -225,13 +226,13 @@ async function logo(files: File[]) {
     <template v-if="!editing">
       <AppListToolbar
         ><ElButton v-if="can('新增')" type="primary" :disabled="loading || !catalog" @click="open()"
-          ><AppIcon name="Plus" />新增</ElButton
+          ><AppIcon name="Plus" />{{ tr('ui.equipment.text0149') }}</ElButton
         >
         <form @submit.prevent>
-          <ListSearchInput v-model="search" placeholder="搜索模板名称、适用公司" /><ElButton
+          <ListSearchInput v-model="search" :placeholder="tr('ui.equipment.text1766')" /><ElButton
             text
             @click="search = ''"
-            >重置</ElButton
+            >{{ tr('ui.equipment.text0204') }}</ElButton
           >
         </form></AppListToolbar
       >
@@ -243,50 +244,50 @@ async function logo(files: File[]) {
         row-key="id"
         @retry="load"
       >
-        <ElTableColumn prop="name" label="模板名称" min-width="200" show-overflow-tooltip />
-        <ElTableColumn label="单据类型" width="110"
-          ><template #default>出库单</template></ElTableColumn
+        <ElTableColumn prop="name" :label="tr('ui.equipment.text0271')" min-width="200" show-overflow-tooltip />
+        <ElTableColumn :label="tr('ui.equipment.text1767')" width="110"
+          ><template #default>{{ tr('ui.equipment.text1768') }}</template></ElTableColumn
         >
-        <ElTableColumn label="适用公司" min-width="190" show-overflow-tooltip
+        <ElTableColumn :label="tr('ui.equipment.text1769')" min-width="190" show-overflow-tooltip
           ><template #default="{ row }">{{
             row.companyName ||
             (row.companyId
               ? catalog?.companies.find((c) => c.id === row.companyId)?.name
-              : '公共模板')
+              : tr('ui.equipment.text1770'))
           }}</template></ElTableColumn
         >
-        <ElTableColumn label="纸张" width="100"
+        <ElTableColumn :label="tr('ui.equipment.text0688')" width="100"
           ><template #default="{ row }"
-            >{{ row.config.paper === 'CUSTOM' ? '自定义' : row.config.paper }}
-            {{ row.config.landscape ? '横向' : '纵向' }}</template
+            >{{ row.config.paper === 'CUSTOM' ? tr('ui.equipment.text0060') : row.config.paper }}
+            {{ row.config.landscape ? tr('ui.equipment.text1771') : tr('ui.equipment.text1772') }}</template
           ></ElTableColumn
         >
-        <ElTableColumn label="状态" width="90" align="center"
+        <ElTableColumn :label="tr('ui.equipment.text0170')" width="90" align="center"
           ><template #default="{ row }"
             ><ElTag :type="row.enabled ? 'success' : 'info'">{{
-              row.enabled ? '启用' : '停用'
+              row.enabled ? tr('ui.equipment.text0216') : tr('ui.equipment.text0260')
             }}</ElTag></template
           ></ElTableColumn
         >
-        <ElTableColumn label="默认" width="110"
+        <ElTableColumn :label="tr('ui.equipment.text1773')" width="110"
           ><template #default="{ row }">{{
-            row.id === 'system' ? '系统兜底' : row.isDefault ? '默认模板' : ''
+            row.id === 'system' ? tr('ui.equipment.text1774') : row.isDefault ? tr('ui.equipment.text1775') : ''
           }}</template></ElTableColumn
         >
-        <ElTableColumn label="操作" fixed="right" width="200"
+        <ElTableColumn :label="tr('ui.equipment.text0145')" fixed="right" width="200"
           ><template #default="{ row }"
             ><ElButton
               v-if="row.id !== 'system' && row.canEdit"
               link
               type="primary"
               @click="open(row as DocumentPrintTemplate)"
-              >编辑</ElButton
+              >{{ tr('ui.equipment.text0207') }}</ElButton
             ><ElButton
               v-if="can('新增')"
               link
               type="primary"
               @click="open(row as DocumentPrintTemplate, true)"
-              >{{ row.id === 'system' ? '复制为新模板' : '复制' }}</ElButton
+              >{{ row.id === 'system' ? tr('ui.equipment.text1776') : tr('ui.equipment.text0270') }}</ElButton
             ><RowMoreActions
               v-if="row.id !== 'system' && row.canDelete"
               :actions="[
@@ -297,10 +298,10 @@ async function logo(files: File[]) {
     </template>
     <template v-else-if="catalog">
       <header class="print-edit-header">
-        <AppBackButton label="返回打印模板" :disabled="busy" @click="back" /><strong>{{
-          editing.id ? '编辑打印模板' : '新增打印模板'
+        <AppBackButton :label="tr('ui.equipment.text1777')" :disabled="busy" @click="back" /><strong>{{
+          editing.id ? tr('ui.equipment.text1778') : tr('ui.equipment.text1779')
         }}</strong
-        ><ElButton :loading="previewing" :disabled="saving" @click="preview">预览样板</ElButton>
+        ><ElButton :loading="previewing" :disabled="saving" @click="preview">{{ tr('ui.equipment.text1780') }}</ElButton>
       </header>
       <div class="print-editor-body">
         <section class="print-config-panel">
@@ -313,15 +314,15 @@ async function logo(files: File[]) {
             @submit.prevent="save"
           >
             <ElTabs v-model="tab"
-              ><ElTabPane label="基本样式" name="style" /><ElTabPane
-                label="明细配置"
-                name="columns" /><ElTabPane label="签字与说明" name="footer"
+              ><ElTabPane :label="tr('ui.equipment.text1781')" name="style" /><ElTabPane
+                :label="tr('ui.equipment.text1782')"
+                name="columns" /><ElTabPane :label="tr('ui.equipment.text1783')" name="footer"
             /></ElTabs>
             <div v-show="tab === 'style'">
-              <AppFormField label="模板名称" prop="name"
+              <AppFormField :label="tr('ui.equipment.text0271')" prop="name"
                 ><ElInput v-model="editing.name" maxlength="100"
               /></AppFormField>
-              <AppFormField label="适用公司" prop="companyId"
+              <AppFormField :label="tr('ui.equipment.text1769')" prop="companyId"
                 ><ElSelect
                   :model-value="editing.companyId || '__common__'"
                   @update:model-value="
@@ -330,14 +331,14 @@ async function logo(files: File[]) {
                   filterable
                   ><ElOption
                     v-if="catalog.canManageCommon"
-                    label="公共模板"
+                    :label="tr('ui.equipment.text1770')"
                     value="__common__" /><ElOption
                     v-for="c in catalog.companies"
                     :key="c.id"
                     :value="c.id"
                     :label="c.name" /></ElSelect
               ></AppFormField>
-              <AppFormField label="启用"
+              <AppFormField :label="tr('ui.equipment.text0216')"
                 ><ElSwitch
                   v-model="editing.enabled"
                   @change="
@@ -346,44 +347,44 @@ async function logo(files: File[]) {
                     }
                   "
               /></AppFormField>
-              <AppFormField label="设为默认"
+              <AppFormField :label="tr('ui.equipment.text1784')"
                 ><ElSwitch v-model="editing.isDefault" :disabled="!editing.enabled"
               /></AppFormField>
-              <AppFormField label="单据标题" prop="config.title"
+              <AppFormField :label="tr('ui.equipment.text1785')" prop="config.title"
                 ><ElInput v-model="editing.config.title" maxlength="80"
               /></AppFormField>
-              <AppFormField label="公司Logo"
+              <AppFormField :label="tr('ui.equipment.text1786')"
                 ><div class="print-logo-controls">
                   <img
                     v-if="editing.config.logo"
                     :src="editing.config.logo"
-                    alt="打印Logo"
+                    :alt="tr('ui.equipment.text1787')"
                   /><AppFilePicker accept="image/png,image/jpeg" :disabled="busy" @select="logo"
-                    ><ElButton>{{ editing.config.logo ? '替换' : '上传' }}</ElButton></AppFilePicker
+                    ><ElButton>{{ editing.config.logo ? tr('ui.equipment.text0934') : tr('ui.equipment.text0135') }}</ElButton></AppFilePicker
                   ><ElButton
                     v-if="editing.config.logo"
                     text
                     type="danger"
                     @click="editing.config.logo = ''"
-                    >移除</ElButton
+                    >{{ tr('ui.equipment.text0151') }}</ElButton
                   >
                 </div></AppFormField
               >
-              <AppFormField label="纸张"
+              <AppFormField :label="tr('ui.equipment.text0688')"
                 ><ElSelect v-model="editing.config.paper"
                   ><ElOption label="A4" value="A4" /><ElOption label="A5" value="A5" /><ElOption
-                    label="自定义／空白多联纸"
+                    :label="tr('ui.equipment.text1788')"
                     value="CUSTOM" /></ElSelect
               ></AppFormField>
               <template v-if="editing.config.paper === 'CUSTOM'"
-                ><AppFormField label="纸宽（mm）"
+                ><AppFormField :label="tr('ui.equipment.text1789')"
                   ><ElInputNumber
                     v-model="editing.config.widthMm"
                     :min="80"
                     :max="600"
                     :precision="2"
                     controls-position="right" /></AppFormField
-                ><AppFormField label="纸高（mm）"
+                ><AppFormField :label="tr('ui.equipment.text1790')"
                   ><ElInputNumber
                     v-model="editing.config.heightMm"
                     :min="100"
@@ -391,20 +392,20 @@ async function logo(files: File[]) {
                     :precision="2"
                     controls-position="right" /></AppFormField
               ></template>
-              <AppFormField label="方向"
+              <AppFormField :label="tr('ui.equipment.text1791')"
                 ><ElSelect v-model="editing.config.landscape"
-                  ><ElOption label="纵向" :value="false" /><ElOption
-                    label="横向"
+                  ><ElOption :label="tr('ui.equipment.text1772')" :value="false" /><ElOption
+                    :label="tr('ui.equipment.text1771')"
                     :value="true" /></ElSelect
               ></AppFormField>
-              <AppFormField label="正文字号"
+              <AppFormField :label="tr('ui.equipment.text1792')"
                 ><ElInputNumber
                   v-model="editing.config.fontSize"
                   :min="8"
                   :max="14"
                   controls-position="right"
               /></AppFormField>
-              <AppFormField label="基本信息"
+              <AppFormField :label="tr('ui.equipment.text0077')"
                 ><ElSelect
                   v-model="editing.config.headers"
                   multiple
@@ -420,7 +421,7 @@ async function logo(files: File[]) {
               ></AppFormField>
             </div>
             <div v-show="tab === 'columns'">
-              <AppFormField label="显示字段"
+              <AppFormField :label="tr('ui.equipment.text1793')"
                 ><ElSelect
                   v-model="columnKeys"
                   multiple
@@ -435,7 +436,7 @@ async function logo(files: File[]) {
                     :disabled="['code', 'name', 'quantity'].includes(String(key))" /></ElSelect
               ></AppFormField>
               <p class="print-note">
-                按比例分配纸张宽度；调整后点击预览。包含价格、金额或币种的模板仅供有金额权限的人员使用。
+                {{ tr('ui.equipment.text1794') }}
               </p>
               <AppBusinessTable
                 :rows="editing.config.columns"
@@ -443,16 +444,16 @@ async function logo(files: File[]) {
                 :pagination="false"
                 row-key="key"
               >
-                <ElTableColumn label="字段" min-width="90"
+                <ElTableColumn :label="tr('ui.equipment.text0943')" min-width="90"
                   ><template #default="{ row }">{{
                     catalog.columns[row.key]
                   }}</template></ElTableColumn
                 >
-                <ElTableColumn label="打印标题" min-width="125"
+                <ElTableColumn :label="tr('ui.equipment.text1795')" min-width="125"
                   ><template #default="{ row }"
                     ><ElInput v-model="row.label" maxlength="24" /></template
                 ></ElTableColumn>
-                <ElTableColumn label="宽度比例" min-width="125"
+                <ElTableColumn :label="tr('ui.equipment.text1796')" min-width="125"
                   ><template #default="{ row }"
                     ><ElInputNumber
                       v-model="row.width"
@@ -460,27 +461,27 @@ async function logo(files: File[]) {
                       :max="100"
                       controls-position="right" /></template
                 ></ElTableColumn>
-                <ElTableColumn label="顺序" fixed="right" width="156"
+                <ElTableColumn :label="tr('ui.equipment.text1797')" fixed="right" width="156"
                   ><template #default="{ $index }"
                     ><ElButton
                       link
                       type="primary"
                       :disabled="$index === 0"
                       @click="move($index, -1)"
-                      >上移</ElButton
+                      >{{ tr('ui.equipment.text0382') }}</ElButton
                     ><ElButton
                       link
                       type="primary"
                       :disabled="$index === editing!.config.columns.length - 1"
                       @click="move($index, 1)"
-                      >下移</ElButton
+                      >{{ tr('ui.equipment.text0383') }}</ElButton
                     ></template
                   ></ElTableColumn
                 >
               </AppBusinessTable>
             </div>
             <div v-show="tab === 'footer'">
-              <AppFormField label="签字栏"
+              <AppFormField :label="tr('ui.equipment.text1798')"
                 ><ElSelect
                   v-model="editing.config.signatures"
                   multiple
@@ -488,14 +489,14 @@ async function logo(files: File[]) {
                   allow-create
                   default-first-option
                   :multiple-limit="4"
-                  placeholder="输入名称并回车，最多4项"
+                  :placeholder="tr('ui.equipment.text1799')"
                   ><ElOption
                     v-for="label in ['发料人', '领用人', '仓管员', '经办人']"
                     :key="label"
                     :label="label"
                     :value="label" /></ElSelect
               ></AppFormField>
-              <AppFormField label="页尾说明"
+              <AppFormField :label="tr('ui.equipment.text1800')"
                 ><ElInput
                   v-model="editing.config.footer"
                   type="textarea"
@@ -504,14 +505,14 @@ async function logo(files: File[]) {
                   show-word-limit
               /></AppFormField>
               <p class="print-note">
-                签字栏预留手写位置，页码自动生成；单号、所属公司和单据状态始终展示。
+                {{ tr('ui.equipment.text1801') }}
               </p>
             </div>
           </ElForm>
         </section>
         <section class="print-preview-panel">
           <div class="print-preview-heading">
-            <strong>样板预览</strong><span>使用演示数据</span>
+            <strong>{{ tr('ui.equipment.text1802') }}</strong><span>{{ tr('ui.equipment.text1803') }}</span>
           </div>
           <ElAlert
             v-if="previewError"
@@ -519,13 +520,13 @@ async function logo(files: File[]) {
             type="error"
             :closable="false"
           /><AppPdfPreview v-if="previewUrl" :src="previewUrl" />
-          <p v-else>{{ previewing ? '正在生成预览…' : '点击预览样板查看排版效果' }}</p>
+          <p v-else>{{ previewing ? tr('ui.equipment.text1526') : tr('ui.equipment.text1804') }}</p>
         </section>
       </div>
       <AppFormFooter
-        ><ElButton :disabled="busy" @click="back">取消</ElButton
+        ><ElButton :disabled="busy" @click="back">{{ tr('ui.equipment.text0157') }}</ElButton
         ><ElButton type="primary" :loading="saving" :disabled="previewing" @click="save"
-          >保存</ElButton
+          >{{ tr('ui.equipment.text0159') }}</ElButton
         ></AppFormFooter
       >
     </template>

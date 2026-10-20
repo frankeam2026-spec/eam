@@ -1,3 +1,5 @@
+import { currentLocale } from './i18n';
+import { tr } from './i18n';
 import { request } from './api';
 import type { OverviewBlock, OverviewLayout } from './homeOverview';
 export type AnalyticsPeriod = { preset: string; from?: string; to?: string };
@@ -66,19 +68,19 @@ export type AnalysisDrill = {
   templateId?: string;
 };
 export const periodOptions = [
-  { value: 'yesterday', label: '昨日' },
-  { value: 'last7', label: '最近7天' },
-  { value: 'month', label: '本月' },
-  { value: 'lastMonth', label: '上月' },
-  { value: 'quarter', label: '本季度' },
-  { value: 'year', label: '本年' },
-  { value: 'custom', label: '自定义' },
+  { value: 'yesterday', get label() { return tr('ui.equipment.text0054'); } },
+  { value: 'last7', get label() { return tr('ui.equipment.text0055'); } },
+  { value: 'month', get label() { return tr('ui.equipment.text0056'); } },
+  { value: 'lastMonth', get label() { return tr('ui.equipment.text0057'); } },
+  { value: 'quarter', get label() { return tr('ui.equipment.text0058'); } },
+  { value: 'year', get label() { return tr('ui.equipment.text0059'); } },
+  { value: 'custom', get label() { return tr('ui.equipment.text0060'); } },
 ];
 export const widgetPeriodOptions = [
-  { value: 'follow', label: '跟随页面周期' },
+  { value: 'follow', get label() { return tr('ui.equipment.text0061'); } },
   ...periodOptions.slice(0, -1),
-  { value: 'last90', label: '最近90天' },
-  { value: 'last12months', label: '最近12个自然月' },
+  { value: 'last90', get label() { return tr('ui.equipment.text0062'); } },
+  { value: 'last12months', get label() { return tr('ui.equipment.text0063'); } },
   periodOptions.at(-1)!,
 ];
 export const isAnalytics = (block: { type: string }) => block.type.startsWith('analytics:');
@@ -125,12 +127,12 @@ export const analyticsApi = {
     const r = await fetch('/api/v1/home/analytics/export', {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Accept-Language': currentLocale.value, 'Content-Type': 'application/json' },
       body: JSON.stringify(drill),
     });
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
-      throw new Error(e.message || '导出失败');
+      throw new Error(e.message || tr('ui.equipment.text0185'));
     }
     const url = URL.createObjectURL(await r.blob());
     const a = document.createElement('a');
@@ -153,7 +155,7 @@ export const qualityLabels: Record<string, string> = {
 export function periodError(p?: AnalyticsPeriod) {
   return p?.preset === 'custom'
     ? !p.from || !p.to
-      ? '请选择完整日期区间'
+      ? tr('ui.equipment.text0064')
       : p.from > p.to
         ? '开始日期不能晚于结束日期'
         : ''

@@ -1,5 +1,6 @@
+<script setup lang="ts">import { tr } from '../../i18n';</script>
 <template>
-  <div class="access-denied">当前账号暂无可访问的菜单，请联系管理员配置角色权限。</div>
+  <div class="access-denied">{{ tr('ui.equipment.text1296') }}</div>
 </template>
 <style scoped>
 .access-denied {

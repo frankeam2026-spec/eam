@@ -30,6 +30,9 @@ class EquipmentQueryServiceTest {
     var auth = mock(AuthContext.class);
     when(auth.tenantId()).thenReturn(10001L);
     service = new EquipmentQueryService(repository, auth, permissions, new ObjectMapper());
+    var custom=mock(com.windasoft.eam.service.business.BusinessValueService.class);
+    when(custom.read(anyString(),anyLong())).thenReturn(new com.windasoft.eam.service.business.BusinessValueService.Values(Map.of(),Map.of(),0));
+    org.springframework.test.util.ReflectionTestUtils.setField(service,"custom",custom);
   }
 
   @Test

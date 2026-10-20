@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import AppAttachments from './AppAttachments.vue';
 import { ref } from 'vue';
 import { ElMessage } from 'element-plus';
@@ -20,7 +21,7 @@ async function upload(files: File[]) {
 
   if (!files.length) return;
   if (props.imagesOnly && files.some((file) => !file.type.startsWith('image/'))) {
-    ElMessage.error('请选择图片');
+    ElMessage.error(tr('ui.equipment.text1337'));
 
     return;
   }
@@ -33,7 +34,7 @@ async function upload(files: File[]) {
       emit('update:modelValue', [...next]);
     }
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '上传失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0926'));
   } finally {
     busy.value = false;
   }

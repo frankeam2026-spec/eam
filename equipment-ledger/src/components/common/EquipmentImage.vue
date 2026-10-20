@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import AppIcon from './AppIcon.vue';
 import { ref, watch } from 'vue';
 const props = defineProps<{ fileId?: string; name?: string }>();
@@ -12,7 +13,7 @@ watch(
 </script>
 
 <template>
-  <span class="equipment-image" :title="name || '设备图片'">
+  <span class="equipment-image" :title="name || tr('ui.equipment.text0132')">
     <img
       v-if="fileId && !failed"
       :src="`/api/v1/equipment/files/${fileId}/preview`"
@@ -20,7 +21,7 @@ watch(
       loading="lazy"
       @error="failed = true"
     />
-    <AppIcon name="Picture" v-else role="img" aria-label="暂无设备图片" />
+    <AppIcon name="Picture" v-else role="img" :aria-label="tr('ui.equipment.text1371')" />
   </span>
 </template>
 

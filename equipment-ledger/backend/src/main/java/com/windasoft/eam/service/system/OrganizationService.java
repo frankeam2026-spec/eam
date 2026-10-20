@@ -45,7 +45,7 @@ public class OrganizationService {
     applyOrg(x, f);
     if (f.parentId() != null) permissions.checkOrg("org", "新增", requireOrg(f.parentId()));
     else if (!permissions.scope("org", "新增").all())
-      throw new IllegalArgumentException("创建根公司需要全部组织范围");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0018");
     repository.insertOrganization(x);
     orgEvent(x.getId(), "新增", null, orgView(x));
     return Map.of("data", orgView(x));
@@ -58,18 +58,18 @@ public class OrganizationService {
     permissions.checkOrg("org", "编辑", x);
     checkOrgCode(f.code(), id);
     if ("部门".equals(f.type()) && hasLocations(id))
-      throw new IllegalArgumentException("该公司仍有存放地点，不能修改为其他组织类型");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0019");
     var before = orgView(x);
     if (!Objects.equals(x.getOrgType(), "部门".equals(f.type()) ? "部门" : "公司"))
-      throw new IllegalArgumentException("公司与部门不能直接互换类型，请建立新组织并按业务迁移");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0020");
     if ("部门".equals(x.getOrgType())
         && !Objects.equals(
             permissions.companyOfOrganization(id), permissions.companyOfOrganization(f.parentId())))
-      throw new IllegalArgumentException("部门不能直接跨公司移动，请先完成业务归属迁移");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0021");
     if (f.parentId() != null) permissions.checkOrg("org", "编辑", requireOrg(f.parentId()));
     validateOrg(f.type(), f.parentId(), id);
     if (f.parentId() != null && isDescendant(f.parentId(), id))
-      throw new IllegalArgumentException("不能将组织移动到自己的下级");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0022");
     applyOrg(x, f);
     permissions.checkOrg("org", "编辑", x);
     repository.updateOrganization(x);
@@ -83,11 +83,13 @@ public class OrganizationService {
     var x = requireOrg(id);
     permissions.checkOrg("org", "删除", x);
     if (repository.childOrganizationCount(auth.tenantId(), id) > 0)
-      throw new IllegalArgumentException("请先移除下级组织");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0904");
     if (repository.organizationUserCount(auth.tenantId(), id) > 0)
-      throw new IllegalArgumentException("该组织仍有用户，不能删除");
-    if (hasLocations(id)) throw new IllegalArgumentException("该公司仍有存放地点，不能删除");
-    if (businessReferences(id)) throw new IllegalArgumentException("该组织已有业务或权限引用，不能删除");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0905");
+    if (hasLocations(id))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0023");
+    if (businessReferences(id))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0024");
     orgEvent(id, "删除", orgView(x), null);
     repository.deleteOrganization(x.getId());
     return Map.of("data", Map.of("deleted", true));
@@ -126,20 +128,23 @@ public class OrganizationService {
   }
 
   private void validateOrg(String type, Long parentId, Long current) {
-    if (!Set.of("集团", "公司", "部门").contains(type)) throw new IllegalArgumentException("组织类型无效");
+    if (!Set.of("集团", "公司", "部门").contains(type))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0025");
     if (parentId == null) {
-      if ("部门".equals(type)) throw new IllegalArgumentException("部门必须选择上级组织");
+      if ("部门".equals(type))
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0026");
       if (repository.rootCount(auth.tenantId(), current) > 0)
-        throw new IllegalArgumentException("每个客户只能有一个根公司，请选择上级公司");
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0027");
     } else {
       var parent = requireOrg(parentId);
-      if (parent.getStatus() != 1) throw new IllegalArgumentException("上级组织已停用");
+      if (parent.getStatus() != 1)
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0028");
       if (!"部门".equals(type) && "部门".equals(parent.getOrgType()))
-        throw new IllegalArgumentException("公司不能建立在部门下面");
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0029");
     }
     if (current != null
         && (current.equals(parentId) || parentId != null && isDescendant(parentId, current)))
-      throw new IllegalArgumentException("不能将组织移动到自己或自己的下级");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0030");
   }
 
   private boolean isDescendant(Long candidate, Long parent) {
@@ -154,12 +159,13 @@ public class OrganizationService {
 
   private void checkOrgCode(String code, Long id) {
     if (repository.orgCodeCount(auth.tenantId(), code, id) > 0)
-      throw new IllegalArgumentException("组织编码已存在");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0900");
   }
 
   private OrgUnit requireOrg(Long id) {
     var x = repository.organization(auth.tenantId(), id);
-    if (x == null) throw new IllegalArgumentException("组织不存在");
+    if (x == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0031");
     return x;
   }
 

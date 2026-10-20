@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { enumLabel } from '../../i18n';
 import { ElTabs, ElTabPane } from 'element-plus';
 import 'element-plus/es/components/tabs/style/css';
 defineProps<{ active: string; items: { key: string; label: string; count?: number }[] }>();
@@ -13,7 +14,7 @@ const emit = defineEmits<{ select: [key: string]; reselect: [key: string] }>();
   >
     <ElTabPane v-for="item in items" :key="item.key" :name="item.key">
       <template #label
-        >{{ item.label
+        >{{ enumLabel('tab',item.label)
         }}<span v-if="item.count !== undefined" class="list-tab-count">{{
           item.count
         }}</span></template

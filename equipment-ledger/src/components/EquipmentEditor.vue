@@ -1,4 +1,9 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr, enumLabel } from '../i18n';
+
+import PagedChoiceField from './common/PagedChoiceField.vue';
+import type { SelectorRow } from '../selectors';
+import BusinessFields from './business/BusinessFields.vue';
+const customPanel = ref<InstanceType<typeof BusinessFields>>();
 import 'element-plus/es/components/upload/style/css';
 import EquipmentPickerDialog from './common/EquipmentPickerDialog.vue';
 import MaterialPicker from './common/MaterialPicker.vue';
@@ -30,6 +35,7 @@ import {
   equipmentBomMaterials,
   uploadEquipmentFile,
   equipmentBatchOptions,
+  equipmentOwnerCandidates,
   type EquipmentRecord,
   type OrganizationRecord,
 } from '../api';
@@ -37,11 +43,18 @@ import { useBaseDataStore } from '../stores/baseData';
 import { EQUIPMENT_STATES } from '../config/equipment';
 import TreeSelect from './TreeSelect.vue';
 import { locationPath } from '../utils/locationPath';
+import { organizationPath } from '../utils/organizationPath';
 import BooleanSwitch from './BooleanSwitch.vue';
 const editing = defineModel<EquipmentRecord | null>({ required: true });
 const drawer = defineModel<boolean>('open', { required: true });
 const props = defineProps<{ isNew: boolean; busy: boolean }>();
-const emit = defineEmits<{ save: []; close: []; uploading: [boolean] }>();
+const emit = defineEmits<{
+  save: [];
+  close: [];
+  uploading: [boolean];
+  'custom-initialize': [];
+  'custom-ready': [];
+}>();
 const { categoryData, locationData, unitData, useStateData, sourceData } =
   storeToRefs(useBaseDataStore());
 const categoryTreeOptions = computed(() =>
@@ -99,22 +112,39 @@ const ownerValue = computed({
     editing.value.owner = editing.value.owners.map((u) => u.name).join('、');
   },
 });
-const retainedOwners = computed(() =>
-  (editing.value?.owners || []).filter((u) => !employees.value.some((x) => x.id === u.id)),
-);
+const ownerOptions = computed(() => [
+  ...employees.value,
+  ...(editing.value?.owners || []).filter((u) => !employees.value.some((x) => x.id === u.id)),
+]);
+const loadOwnerCandidates = (q: string, page: number, size: number) =>
+  equipmentOwnerCandidates(q, page, size, props.isNew ? '新增' : '编辑');
+function rememberOwners(rows: SelectorRow[]) {
+  employees.value = [
+    ...new Map(
+      [
+        ...employees.value,
+        ...rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          account: row.account || '',
+        })),
+      ].map((row) => [row.id, row]),
+    ).values(),
+  ];
+}
 const fieldErrors = ref<Record<string, string>>({});
-const requiredFields: [keyof EquipmentRecord, string][] = [
-  ['name', '请输入设备名称'],
-  ['categoryId', '请选择设备类别'],
-  ['unitId', '请选择单位'],
-  ['departmentOrgId', '请选择所属部门'],
-  ['locationId', '请选择位置'],
-  ['state', '请选择设备状态'],
-  ['useStateId', '请选择使用状态'],
-];
+const requiredFields = computed<[keyof EquipmentRecord, string][]>(() => [
+  ['name', tr('ui.equipment.text0082')],
+  ['categoryId', tr('ui.equipment.text0084')],
+  ['unitId', tr('server.equipment.message0006')],
+  ['departmentOrgId', tr('ui.equipment.text0099')],
+  ['locationId', tr('ui.equipment.text0109')],
+  ['state', tr('ui.validation.message8')],
+  ['useStateId', tr('server.equipment.message0007')],
+]);
 const formRules = computed(() => ({
   ...Object.fromEntries(
-    requiredFields.map(([key, message]) => [
+    requiredFields.value.map(([key, message]) => [
       key,
       [{ required: true, message, trigger: ['blur', 'change'] }],
     ]),
@@ -146,17 +176,17 @@ async function showErrors(errors: Record<string, string>) {
   first?.querySelector<HTMLElement>('input,button')?.focus({ preventScroll: true });
 }
 function bomQuantityError(value: string) {
-  if (!String(value ?? '').trim()) return '请输入数量';
-  if (!/^\d+(\.\d+)?$/.test(String(value))) return '请输入有效数量';
+  if (!String(value ?? '').trim()) return tr('ui.validation.message9');
+  if (!/^\d+(\.\d+)?$/.test(String(value))) return tr('ui.validation.message10');
   if (Number(value) <= 0) return '数量须大于0';
-  if (!/^\d+(\.\d{1,2})?$/.test(String(value))) return '最多两位小数';
+  if (!/^\d+(\.\d{1,2})?$/.test(String(value))) return tr('ui.validation.message11');
   if (!Number.isFinite(Number(value)) || String(value).split('.')[0]!.length > 16)
     return '数量超出范围';
   return '';
 }
 function validate() {
   const errors = Object.fromEntries(
-    requiredFields
+    requiredFields.value
       .filter(([key]) => !String(editing.value?.[key] ?? '').trim())
       .map(([key, message]) => [key, message]),
   );
@@ -165,13 +195,14 @@ function validate() {
     const message = bomQuantityError(row.quantity);
     if (message) errors['relatedSpares.' + index + '.quantity'] = message;
   });
+  const customValid = customPanel.value?.validate() ?? false;
   void showErrors(errors);
-  return Object.values(errors);
+  return [...Object.values(errors), ...(!customValid ? [tr('ui.validation.message12')] : [])];
 }
 watch(
   () => editing.value,
   () => {
-    for (const [key] of requiredFields)
+    for (const [key] of requiredFields.value)
       if (String(editing.value?.[key] ?? '').trim()) delete fieldErrors.value[key];
     editing.value?.relatedSpares?.forEach((row, i) => {
       if (!bomQuantityError(row.quantity))
@@ -189,7 +220,12 @@ watch(
     delete fieldErrors.value.code;
   },
 );
-defineExpose({ validate, showErrors });
+defineExpose({
+  validate,
+  showErrors,
+  prepareCustomFields: () => customPanel.value?.prepare(),
+  reloadCustomFields: () => customPanel.value?.reload(),
+});
 const organizations = ref<OrganizationRecord[]>([]);
 const organizationError = ref('');
 async function loadOrganizations() {
@@ -207,7 +243,7 @@ async function loadOrganizations() {
     }
     organizationError.value = '';
   } catch (e) {
-    organizationError.value = e instanceof Error ? e.message : '部门加载失败';
+    organizationError.value = e instanceof Error ? e.message : tr('ui.equipment.text0069');
   }
 }
 watch(
@@ -264,6 +300,7 @@ const departmentId = computed({
     const department = organizations.value.find((x) => x.id === id);
     editing.value.departmentOrgId = id;
     editing.value.department = department?.name || '';
+    editing.value.departmentPath = organizationPath(id, organizations.value);
     editing.value.company = departmentCompany(id)?.name || '';
     editing.value.companyOrgId = departmentCompany(id)?.id;
     if (
@@ -281,7 +318,7 @@ const childPicker = ref(false),
   bomPicker = ref(false);
 function addChild() {
   if (!editing.value?.departmentOrgId) {
-    void showErrors({ departmentOrgId: '请先选择所属部门' });
+    void showErrors({ departmentOrgId: tr('ui.validation.message13') });
     return;
   }
   childPicker.value = true;
@@ -342,19 +379,19 @@ function endUpload() {
   emit('uploading', uploading.value);
 }
 function uploadError(error: Error) {
-  ElMessage.error(error.message || '上传失败');
+  ElMessage.error(error.message || tr('ui.equipment.text0926'));
 }
 function imageAllowed(file: File) {
   if (!editing.value || props.busy) return false;
   if (!/\.(png|jpe?g|gif)$/i.test(file.name) || file.size > 20 * 1024 * 1024) {
-    ElMessage.warning('请选择不超过 20MB 的 PNG、JPG 或 GIF 图片');
+    ElMessage.warning(tr('ui.equipment.text0070'));
     return false;
   }
   return true;
 }
 function uploadDocument({ file }: UploadRequestOptions) {
   const draft = editing.value;
-  if (!draft) return Promise.reject(new Error('请先打开设备编辑页面'));
+  if (!draft) return Promise.reject(new Error(tr('ui.equipment.text0071')));
   beginUpload();
   const request = documentUploads
     .then(async () => {
@@ -374,7 +411,7 @@ function uploadDocument({ file }: UploadRequestOptions) {
           remark: '',
         },
       ];
-      ElMessage.success('附件上传成功，保存设备后生效');
+      ElMessage.success(tr('ui.equipment.text0072'));
       return stored;
     })
     .finally(endUpload);
@@ -422,7 +459,7 @@ function makeFirstImage(id: string) {
 let imageUploads: Promise<unknown> = Promise.resolve();
 function uploadImage(file: File) {
   const draft = editing.value;
-  if (!draft) return Promise.reject(new Error('请先打开设备编辑页面'));
+  if (!draft) return Promise.reject(new Error(tr('ui.equipment.text0071')));
   beginUpload();
   const request = imageUploads
     .then(async () => {
@@ -445,21 +482,21 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
         class="drawer equipment-editor"
         role="dialog"
         aria-modal="true"
-        :aria-label="isNew ? '设备登记' : '编辑设备'"
+        :aria-label="isNew ? tr('ui.equipment.text0073') : tr('ui.equipment.text0074')"
       >
         <header class="drawer-head editor-head">
           <div class="editor-title">
-            <AppBackButton label="返回设备台账" :disabled="busy" @click="emit('close')" />
+            <AppBackButton :label="tr('ui.equipment.text0075')" :disabled="busy" @click="emit('close')" />
             <div class="editor-heading-line">
-              <span>设备台账</span><i>/</i>
-              <h2>{{ isNew ? '设备登记' : '编辑设备' }}</h2>
+              <span>{{ tr('ui.equipment.text0002') }}</span><i>/</i>
+              <h2>{{ isNew ? tr('ui.equipment.text0073') : tr('ui.equipment.text0074') }}</h2>
             </div>
             <span v-if="!isNew" class="drawer-code">{{ editing?.code }}</span>
           </div>
           <ElButton
             text
             class="close-btn"
-            aria-label="关闭"
+            :aria-label="tr('ui.equipment.text0076')"
             :disabled="busy"
             @click="emit('close')"
           >
@@ -481,61 +518,62 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
               <section class="form-section">
                 <div class="editor-form-groups">
                   <section class="editor-field-group">
-                    <h4>基本信息</h4>
+                    <h4>{{ tr('ui.equipment.text0077') }}</h4>
                     <div class="editor-grid">
                       <AppFormField
                         data-field="code"
                         prop="code"
-                        label="设备编号"
+                        :label="tr('ui.equipment.text0078')"
                         :error="fieldErrors.code"
                         ><ElInput
                           v-model="editing.code"
-                          :placeholder="isNew ? '不填写自动生成' : '请输入设备编号'"
+                          :placeholder="isNew ? tr('ui.equipment.text0080') : tr('ui.equipment.text0079')"
                           maxlength="32" /></AppFormField
                       ><AppFormField
                         data-field="name"
                         prop="name"
-                        label="设备名称"
+                        :label="tr('ui.equipment.text0081')"
                         :error="fieldErrors.name"
                         required
                         ><ElInput
                           v-model="editing.name"
-                          placeholder="请输入设备名称"
+                          :placeholder="tr('ui.equipment.text0082')"
                           maxlength="100" /></AppFormField
                       ><AppFormField
                         data-field="categoryId"
                         prop="categoryId"
-                        label="类别"
+                        :label="tr('ui.equipment.text0083')"
                         :error="fieldErrors.categoryId"
                         required
                         ><TreeSelect
                           v-model="categoryValue"
                           :nodes="categoryTreeOptions"
-                          placeholder="请选择设备类别"
+                          show-full-path
+                          :placeholder="tr('ui.equipment.text0084')"
                       /></AppFormField>
                       <label class="editor-field"
-                        ><span>资产编号</span
-                        ><ElInput v-model="editing.assetNo" placeholder="请输入资产编号" /></label
+                        ><span>{{ tr('ui.equipment.text0085') }}</span
+                        ><ElInput v-model="editing.assetNo" :placeholder="tr('ui.equipment.text0086')" /></label
                       ><label class="editor-field"
-                        ><span>序列号</span
-                        ><ElInput v-model="editing.serial" placeholder="请输入序列号" /></label
+                        ><span>{{ tr('ui.equipment.text0087') }}</span
+                        ><ElInput v-model="editing.serial" :placeholder="tr('ui.equipment.text0088')" /></label
                       ><label class="editor-field"
-                        ><span>电子标签码</span
-                        ><ElInput v-model="editing.tagCode" placeholder="请输入电子标签码"
+                        ><span>{{ tr('ui.equipment.text0089') }}</span
+                        ><ElInput v-model="editing.tagCode" :placeholder="tr('ui.equipment.text0090')"
                       /></label>
                       <label class="editor-field"
-                        ><span>规格型号</span
-                        ><ElInput v-model="editing.model" placeholder="请输入规格型号" /></label
+                        ><span>{{ tr('ui.equipment.text0091') }}</span
+                        ><ElInput v-model="editing.model" :placeholder="tr('ui.equipment.text0092')" /></label
                       ><label class="editor-field"
-                        ><span>品牌</span
-                        ><ElInput v-model="editing.brand" placeholder="请输入品牌" /></label
+                        ><span>{{ tr('ui.equipment.text0093') }}</span
+                        ><ElInput v-model="editing.brand" :placeholder="tr('ui.equipment.text0094')" /></label
                       ><AppFormField
                         data-field="unitId"
                         prop="unitId"
-                        label="单位"
+                        :label="tr('ui.equipment.text0095')"
                         :error="fieldErrors.unitId"
                         required
-                        ><ElSelect v-model="unitValue" placeholder="请选择" clearable
+                        ><ElSelect v-model="unitValue" :placeholder="tr('ui.equipment.text0096')" clearable
                           ><ElOption
                             v-for="item in unitData.filter((x) => x.status === '启用')"
                             :key="item.id"
@@ -545,25 +583,27 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                     </div>
                   </section>
                   <section class="editor-field-group">
-                    <h4>归属与位置</h4>
+                    <h4>{{ tr('ui.equipment.text0097') }}</h4>
                     <div class="editor-grid">
                       <AppFormField
                         data-field="departmentOrgId"
                         prop="departmentOrgId"
-                        label="所属部门"
+                        :label="tr('ui.equipment.text0098')"
                         :error="fieldErrors.departmentOrgId"
                         required
                         class="editor-span-2"
                         ><TreeSelect
                           v-model="departmentId"
                           :nodes="departmentNodes"
+                          show-full-path-in-dropdown
+                          show-full-path
                           path-value
-                          placeholder="请选择所属部门"
+                          :placeholder="tr('ui.equipment.text0099')"
                         />
                         <small
                           v-if="!resolvedDepartment && editing.department && organizations.length"
                         >
-                          原部门尚未维护，请选择有效部门
+                          {{ tr('ui.equipment.text0100') }}
                         </small></AppFormField
                       ><ElButton
                         type="primary"
@@ -572,143 +612,138 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                         native-type="button"
                         @click="loadOrganizations"
                       >
-                        部门加载失败，点击重试</ElButton
+                        {{ tr('ui.equipment.text0101') }}</ElButton
                       ><label class="editor-field owner-field"
-                        ><span>负责人</span
-                        ><ElSelect
+                        ><span>{{ tr('ui.equipment.text0102') }}</span
+                        ><PagedChoiceField
                           v-model="ownerValue"
                           multiple
-                          filterable
                           clearable
-                          collapse-tags
-                          collapse-tags-tooltip
-                          :max-collapse-tags="2"
-                          placeholder="未设置"
-                          ><ElOption
-                            v-for="u in retainedOwners"
-                            :key="u.id"
-                            :value="u.id"
-                            :label="u.name"
-                            disabled
-                          />
-                          <ElOption
-                            v-for="u in employees"
-                            :key="u.id"
-                            :value="u.id"
-                            :label="u.name + '（' + u.account + '）'"
-                          />
-                        </ElSelect>
+                          :disabled="busy"
+                          :options="ownerOptions"
+                          :load-rows="loadOwnerCandidates"
+                          :columns="[
+                            { key: 'name', label: '姓名' },
+                            { key: 'account', label: '账号' },
+                          ]"
+                          :context="editing.id || (isNew ? 'new' : '')"
+                          :placeholder="tr('ui.equipment.text0103')"
+                          :title="tr('ui.equipment.text0104')"
+                          @select="rememberOwners"
+                        />
                         <small v-if="!ownerValue.length && editing.owner"
-                          >原负责人：{{ editing.owner }}（历史记录）<ElButton
+                          >{{ tr('ui.equipment.text0105') }}{{ editing.owner }}{{ tr('ui.equipment.text0106') }}<ElButton
                             type="primary"
                             link
                             native-type="button"
                             @click="ownerValue = []"
                           >
-                            清除
+                            {{ tr('ui.equipment.text0107') }}
                           </ElButton></small
                         >
                       </label>
                       <AppFormField
                         data-field="locationId"
                         prop="locationId"
-                        label="位置"
+                        :label="tr('ui.equipment.text0108')"
                         :error="fieldErrors.locationId"
                         required
                         class="editor-span-2"
                         ><TreeSelect
                           v-model="locationValue"
                           :nodes="locationTreeOptions"
-                          placeholder="请选择位置"
+                          show-full-path-in-dropdown
+                          show-full-path
+                          :placeholder="tr('ui.equipment.text0109')"
                       /></AppFormField>
                     </div>
                   </section>
                   <section class="editor-field-group">
-                    <h4>使用与生命周期</h4>
+                    <h4>{{ tr('ui.equipment.text0110') }}</h4>
                     <div class="editor-grid">
                       <AppFormField
                         data-field="state"
                         prop="state"
-                        label="设备状态"
+                        :label="tr('ui.equipment.text0111')"
                         :error="fieldErrors.state"
                         required
-                        ><ElSelect v-model="editing.state" placeholder="请选择" clearable
+                        ><ElSelect v-model="editing.state" :placeholder="tr('ui.equipment.text0096')" clearable
                           ><ElOption
                             v-for="state in EQUIPMENT_STATES"
                             :key="state"
-                            :label="state"
+                            :label="enumLabel('equipmentStatus', state)"
                             :value="state" /></ElSelect></AppFormField
                       ><AppFormField
                         data-field="useStateId"
                         prop="useStateId"
-                        label="使用状态"
+                        :label="tr('ui.equipment.text0112')"
                         :error="fieldErrors.useStateId"
                         required
-                        ><ElSelect v-model="useStateValue" placeholder="请选择" clearable
+                        ><ElSelect v-model="useStateValue" :placeholder="tr('ui.equipment.text0096')" clearable
                           ><ElOption
                             v-for="item in useStateData.filter((x) => x.status === '启用')"
                             :key="item.id"
                             :label="item.name"
                             :value="item.id" /></ElSelect></AppFormField
                       ><label class="editor-field"
-                        ><span>设备等级</span
-                        ><ElSelect v-model="editing.level" placeholder="请选择" clearable
-                          ><ElOption label="关键设备" value="关键设备" /><ElOption
-                            label="主要设备"
+                        ><span>{{ tr('ui.equipment.text0113') }}</span
+                        ><ElSelect v-model="editing.level" :placeholder="tr('ui.equipment.text0096')" clearable
+                          ><ElOption :label="tr('ui.equipment.text0114')" value="关键设备" /><ElOption
+                            :label="tr('ui.equipment.text0115')"
                             value="主要设备" /><ElOption
-                            label="一般设备"
+                            :label="tr('ui.equipment.text0116')"
                             value="一般设备" /></ElSelect
                       ></label>
                       <label class="editor-field"
-                        ><span>设备来源</span
-                        ><ElSelect v-model="sourceValue" placeholder="请选择" clearable
+                        ><span>{{ tr('ui.equipment.text0117') }}</span
+                        ><ElSelect v-model="sourceValue" :placeholder="tr('ui.equipment.text0096')" clearable
                           ><ElOption
                             v-for="item in sourceData.filter((x) => x.status === '启用')"
                             :key="item.id"
                             :label="item.name"
                             :value="item.id" /></ElSelect></label
                       ><label class="editor-field"
-                        ><span>供应商</span
+                        ><span>{{ tr('ui.equipment.text0118') }}</span
                         ><ElInput
                           v-model="editing.supplier"
-                          placeholder="请输入供应商名称" /></label
+                          :placeholder="tr('ui.equipment.text0119')" /></label
                       ><label class="editor-field"
-                        ><span>采购金额</span
-                        ><AppDecimalInput v-model="editing.amount" placeholder="请输入金额"
+                        ><span>{{ tr('ui.equipment.text0120') }}</span
+                        ><AppDecimalInput v-model="editing.amount" :placeholder="tr('ui.equipment.text0121')"
                       /></label>
                       <label class="editor-field"
-                        ><span>购置日期</span
+                        ><span>{{ tr('ui.equipment.text0122') }}</span
                         ><ElDatePicker
                           v-model="editing.purchaseDate"
                           type="date"
                           value-format="YYYY-MM-DD"
                           format="YYYY-MM-DD"
-                          placeholder="请选择日期" /></label
+                          :placeholder="tr('ui.equipment.text0123')" /></label
                       ><label class="editor-field"
-                        ><span>启用日期</span
+                        ><span>{{ tr('ui.equipment.text0124') }}</span
                         ><ElDatePicker
                           v-model="editing.inServiceDate"
                           type="date"
                           value-format="YYYY-MM-DD"
                           format="YYYY-MM-DD"
-                          placeholder="请选择日期" /></label
+                          :placeholder="tr('ui.equipment.text0123')" /></label
                       ><label class="editor-field"
-                        ><span>保修期至</span
+                        ><span>{{ tr('ui.equipment.text0125') }}</span
                         ><ElDatePicker
                           v-model="editing.warranty"
                           type="date"
                           value-format="YYYY-MM-DD"
                           format="YYYY-MM-DD"
-                          placeholder="请选择日期"
+                          :placeholder="tr('ui.equipment.text0123')"
                       /></label>
                       <label class="editor-field"
-                        ><span>预计报废日期</span
+                        ><span>{{ tr('ui.equipment.text0126') }}</span
                         ><ElDatePicker
                           v-model="editing.retirementDate"
                           type="date"
                           value-format="YYYY-MM-DD"
                           format="YYYY-MM-DD"
-                          placeholder="请选择日期"
+                          :placeholder="tr('ui.equipment.text0123')"
                       /></label>
                       <!-- <div class="boolean-group">
                         <label class="editor-field"
@@ -725,28 +760,28 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                     </div>
                   </section>
                   <section class="editor-field-group">
-                    <h4>技术与补充信息</h4>
+                    <h4>{{ tr('ui.equipment.text0127') }}</h4>
                     <div class="editor-grid">
                       <label class="editor-field editor-span-3 editor-textarea"
-                        ><span>技术参数</span
+                        ><span>{{ tr('ui.equipment.text0128') }}</span
                         ><ElInput
                           v-model="editing.technicalParams"
                           :rows="3"
                           maxlength="2000"
-                          placeholder="填写设备技术参数"
+                          :placeholder="tr('ui.equipment.text0129')"
                           type="textarea" /></label
                       ><label class="editor-field editor-span-3 editor-textarea"
-                        ><span>备注</span
+                        ><span>{{ tr('ui.equipment.text0130') }}</span
                         ><ElInput
                           v-model="editing.remark"
                           :rows="3"
                           maxlength="255"
-                          placeholder="填写备注"
+                          :placeholder="tr('ui.equipment.text0131')"
                           type="textarea"
                       /></label>
                     </div>
                     <div class="image-upload-row">
-                      <span>设备图片</span>
+                      <span>{{ tr('ui.equipment.text0132') }}</span>
                       <AppAttachments
                         :files="equipmentImageFiles"
                         images-only
@@ -762,11 +797,22 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                   </section>
                 </div>
               </section>
+              <BusinessFields
+                ref="customPanel"
+                :model-value="editing"
+                object="equipment"
+                :category-id="editing.categoryId"
+                :is-new="isNew"
+                :errors="fieldErrors"
+                @initialize="emit('custom-initialize')"
+                @ready="emit('custom-ready')"
+                @update:model-value="Object.assign(editing, $event)"
+              />
             </div>
             <aside class="editor-side-column">
               <section class="form-section relation-section">
                 <div class="relation-title">
-                  <h3><i></i>设备相关文件</h3>
+                  <h3><i></i>{{ tr('ui.equipment.text0133') }}</h3>
                   <ElUpload
                     multiple
                     :show-file-list="false"
@@ -777,7 +823,7 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                   >
                     <ElButton class="relation-add" :disabled="busy">
                       <AppIcon v-if="!uploading" name="Upload" />{{
-                        uploading ? '上传中…' : '上传'
+                        uploading ? tr('ui.equipment.text0134') : tr('ui.equipment.text0135')
                       }}
                     </ElButton></ElUpload
                   >
@@ -791,29 +837,29 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                     class="business-table relation-table"
                     ><!-- @vue-generic {EquipmentDocument} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">资料编号</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0136') }}</div></template
                       ><template #default="{ row: doc, $index: index }"
-                        ><ElInput v-model="doc.code" placeholder="编号" /></template></ElTableColumn
+                        ><ElInput v-model="doc.code" :placeholder="tr('ui.equipment.text0137')" /></template></ElTableColumn
                     ><!-- @vue-generic {EquipmentDocument} -->
                     <ElTableColumn :min-width="210"
-                      ><template #header><div class="table-header-label">资料名称</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0138') }}</div></template
                       ><template #default="{ row: doc, $index: index }">
-                        <ElInput v-model="doc.name" placeholder="资料名称" /><a
+                        <ElInput v-model="doc.name" :placeholder="tr('ui.equipment.text0138')" /><a
                           v-if="doc.id"
                           :href="`/api/v1/equipment/files/${doc.id}`"
                           target="_blank"
                           rel="noopener"
-                          >下载</a
-                        ><span v-else>未上传文件</span>
+                          >{{ tr('ui.equipment.text0139') }}</a
+                        ><span v-else>{{ tr('ui.equipment.text0140') }}</span>
                       </template></ElTableColumn
                     ><!-- @vue-generic {EquipmentDocument} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">资料类型</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0141') }}</div></template
                       ><template #default="{ row: doc, $index: index }"
-                        ><ElInput v-model="doc.type" placeholder="类型" /></template></ElTableColumn
+                        ><ElInput v-model="doc.type" :placeholder="tr('ui.equipment.text0142')" /></template></ElTableColumn
                     ><!-- @vue-generic {EquipmentDocument} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">文档密级</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0143') }}</div></template
                       ><template #default="{ row: doc, $index: index }">
                         <ElSelect v-model="doc.security"
                           ><ElOption
@@ -824,7 +870,7 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                         /></ElSelect> </template></ElTableColumn
                     ><!-- @vue-generic {EquipmentDocument} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">数量</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0144') }}</div></template
                       ><template #default="{ row: doc, $index: index }"
                         ><ElInputNumber
                           v-model="doc.quantity"
@@ -833,7 +879,7 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                           controls-position="right" /></template></ElTableColumn
                     ><!-- @vue-generic {EquipmentDocument} -->
                     <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-                      ><template #header><div class="table-header-label">操作</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
                       ><template #default="{ row: doc, $index: index }">
                         <ElButton
                           type="danger"
@@ -841,20 +887,20 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                           class="relation-delete"
                           @click="editing?.documents?.splice(index, 1)"
                         >
-                          删除
+                          {{ tr('ui.equipment.text0146') }}
                         </ElButton>
                       </template></ElTableColumn
                     ><template #empty
-                      ><div v-if="!editing.documents?.length">暂无相关文件</div></template
+                      ><div v-if="!editing.documents?.length">{{ tr('ui.equipment.text0147') }}</div></template
                     ></AppBusinessTable
                   >
                 </div>
               </section>
               <section class="form-section relation-section">
                 <div class="relation-title">
-                  <h3><i></i>子设备</h3>
+                  <h3><i></i>{{ tr('ui.equipment.text0148') }}</h3>
                   <ElButton class="relation-add" @click="addChild">
-                    <AppIcon name="Plus" /> 新增
+                    <AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}
                   </ElButton>
                 </div>
                 <div class="relation-table-wrap">
@@ -866,34 +912,34 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                     class="business-table relation-table"
                     ><!-- @vue-generic {EquipmentChild} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">设备编号</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0078') }}</div></template
                       ><template #default="{ row: child, $index: index }">{{
                         child.code
                       }}</template></ElTableColumn
                     ><!-- @vue-generic {EquipmentChild} -->
                     <ElTableColumn :min-width="210"
-                      ><template #header><div class="table-header-label">设备名称</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0081') }}</div></template
                       ><template #default="{ row: child, $index: index }"
                         >{{ child.name
                         }}<small v-if="child.legacy" class="legacy-relation"
-                          >历史关联待确认</small
+                          >{{ tr('ui.equipment.text0150') }}</small
                         ></template
                       ></ElTableColumn
                     ><!-- @vue-generic {EquipmentChild} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">品牌</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0093') }}</div></template
                       ><template #default="{ row: child, $index: index }">{{
                         child.brand
                       }}</template></ElTableColumn
                     ><!-- @vue-generic {EquipmentChild} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">规格型号</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0091') }}</div></template
                       ><template #default="{ row: child, $index: index }">{{
                         child.model
                       }}</template></ElTableColumn
                     ><!-- @vue-generic {EquipmentChild} -->
                     <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-                      ><template #header><div class="table-header-label">操作</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
                       ><template #default="{ row: child, $index: index }">
                         <ElButton
                           type="danger"
@@ -901,20 +947,20 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                           class="relation-delete"
                           @click="editing?.children?.splice(index, 1)"
                         >
-                          移除
+                          {{ tr('ui.equipment.text0151') }}
                         </ElButton>
                       </template></ElTableColumn
                     ><template #empty
-                      ><div v-if="!editing.children?.length">暂无子设备</div></template
+                      ><div v-if="!editing.children?.length">{{ tr('ui.equipment.text0152') }}</div></template
                     ></AppBusinessTable
                   >
                 </div>
               </section>
               <section class="form-section relation-section">
                 <div class="relation-title">
-                  <h3><i></i>设备BOM</h3>
+                  <h3><i></i>{{ tr('ui.equipment.text0153') }}</h3>
                   <ElButton class="relation-add" @click="bomPicker = true">
-                    <AppIcon name="Plus" /> 新增
+                    <AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}
                   </ElButton>
                 </div>
                 <div class="relation-table-wrap">
@@ -926,32 +972,32 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                     class="business-table relation-table"
                     ><!-- @vue-generic {EquipmentBom} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">料号</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0154') }}</div></template
                       ><template #default="{ row: part, $index: index }">{{
                         part.code
                       }}</template></ElTableColumn
                     ><!-- @vue-generic {EquipmentBom} -->
                     <ElTableColumn :min-width="210"
-                      ><template #header><div class="table-header-label">物料名称</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0155') }}</div></template
                       ><template #default="{ row: part, $index: index }"
                         >{{ part.name
                         }}<small v-if="part.legacy" class="legacy-relation"
-                          >历史关联待确认</small
+                          >{{ tr('ui.equipment.text0150') }}</small
                         ></template
                       ></ElTableColumn
                     ><!-- @vue-generic {EquipmentBom} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">规格型号</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0091') }}</div></template
                       ><template #default="{ row: part, $index: index }">{{
                         part.specification
                       }}</template></ElTableColumn
                     ><!-- @vue-generic {EquipmentBom} -->
                     <ElTableColumn :min-width="100"
-                      ><template #header><div class="table-header-label">单位</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0095') }}</div></template
                       ><template #default="{ row: part }">{{ part.unit }}</template></ElTableColumn
                     ><!-- @vue-generic {EquipmentBom} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">数量</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0144') }}</div></template
                       ><template #default="{ row: part, $index: index }"
                         ><span v-if="part.legacy">{{ part.quantity }}</span
                         ><AppFormField
@@ -965,7 +1011,7 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                             v-model="part.quantity" /></AppFormField></template></ElTableColumn
                     ><!-- @vue-generic {EquipmentBom} -->
                     <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-                      ><template #header><div class="table-header-label">操作</div></template
+                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
                       ><template #default="{ row: part, $index: index }">
                         <ElButton
                           type="danger"
@@ -973,11 +1019,11 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                           class="relation-delete"
                           @click="editing?.relatedSpares?.splice(index, 1)"
                         >
-                          移除
+                          {{ tr('ui.equipment.text0151') }}
                         </ElButton>
                       </template></ElTableColumn
                     ><template #empty
-                      ><div v-if="!editing.relatedSpares?.length">暂无设备BOM</div></template
+                      ><div v-if="!editing.relatedSpares?.length">{{ tr('ui.equipment.text0156') }}</div></template
                     ></AppBusinessTable
                   >
                 </div>
@@ -986,9 +1032,9 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
           </div>
         </ElForm>
         <AppFormFooter>
-          <ElButton :disabled="busy" @click="emit('close')">取消</ElButton
+          <ElButton :disabled="busy" @click="emit('close')">{{ tr('ui.equipment.text0157') }}</ElButton
           ><ElButton type="primary" :loading="busy" @click="emit('save')">
-            {{ busy ? '保存中…' : '保存' }}
+            {{ busy ? tr('ui.equipment.text0158') : tr('ui.equipment.text0159') }}
           </ElButton>
         </AppFormFooter>
       </section>

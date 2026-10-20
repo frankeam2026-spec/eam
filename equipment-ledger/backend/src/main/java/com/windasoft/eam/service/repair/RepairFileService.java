@@ -32,15 +32,17 @@ public class RepairFileService {
     if (!permissions.allowed("repair", "报修")
         && !permissions.allowed("repair", "处理")
         && !permissions.allowed("repair", "验收")) permissions.require("repair", "查看");
-    if (file.empty()) throw new IllegalArgumentException("请选择文件");
-    if (file.size() > 20L * 1024 * 1024) throw new IllegalArgumentException("单个附件不能超过20MB");
+    if (file.empty())
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0047");
+    if (file.size() > 20L * 1024 * 1024)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0048");
     String original =
         file.originalName() == null ? "附件" : Path.of(file.originalName()).getFileName().toString();
     String extension = "";
     int dot = original.lastIndexOf('.');
     if (dot >= 0) extension = original.substring(dot).toLowerCase();
     if (!extension.matches("\\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv)?"))
-      throw new IllegalArgumentException("不支持该文件类型");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0049");
     String id = UUID.randomUUID().toString();
     repository.store(file.content(), id, extension);
     return Map.of(
@@ -69,8 +71,10 @@ public class RepairFileService {
               } catch (org.springframework.web.server.ResponseStatusException ignored) {
                 return false;
               }
-            })) throw new IllegalArgumentException("附件不存在");
-    if (!id.matches("[0-9a-fA-F-]{36}")) throw new IllegalArgumentException("附件不存在");
+            }))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
+    if (!id.matches("[0-9a-fA-F-]{36}"))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
     Path file = repository.attachmentPath(id);
     String ext = file.getFileName().toString().substring(id.length() + 1);
     String type =

@@ -21,7 +21,8 @@ public class RepairPlanGenerationService {
       try {
         var user = repository.findCreator(((Number) row.get("creator_id")).longValue());
         if (user == null || user.getTenantId() != tenant)
-          throw new IllegalArgumentException("计划创建人不可用");
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.experience.message0018");
         SystemExecution.run(
             user,
             () -> {

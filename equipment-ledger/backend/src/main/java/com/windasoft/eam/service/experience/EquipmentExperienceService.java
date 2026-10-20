@@ -127,7 +127,7 @@ public class EquipmentExperienceService {
                 "/repairs/" + r.getId()));
     for (var entry : Map.of("maintenance", pm, "inspection", inspections).entrySet())
       for (var t : entry.getValue()) {
-        if (Set.of("已完成", "已审核", "已作废", "过期作废", "已取消").contains(text(t, "status"))) continue;
+        if (Set.of("已完成", "已审核", "已作废", "已免检", "过期作废", "已取消").contains(text(t, "status"))) continue;
         String kind = entry.getKey();
         String deadline = text(t, kind.equals("maintenance") ? "expiresDate" : "expiresAt");
         String title = text(t, "planName");

@@ -74,7 +74,7 @@ public class RoleManagementService {
     permissions.require("role", "删除");
     requireRole(id);
     if (repository.roleUserCount(auth.tenantId(), id) > 0)
-      throw new IllegalArgumentException("该角色仍分配给用户，不能删除");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0052");
     repository.deleteMenuPermissions(auth.tenantId(), id);
     repository.deleteRole(id);
     return Map.of("data", Map.of("deleted", true));
@@ -91,50 +91,67 @@ public class RoleManagementService {
   }
 
   private void validateRoleForm(RoleForm f) {
-    if (f.menuPermissions().isEmpty()) throw new IllegalArgumentException("请至少配置一个菜单");
+    if (f.menuPermissions().isEmpty())
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0053");
     boolean granted = false;
     for (var entry : f.menuPermissions().entrySet()) {
       var menu = entry.getKey();
       var grant = entry.getValue();
       var allowedActions = allowedActions(menu);
-      if (allowedActions.isEmpty() || grant == null) throw new IllegalArgumentException("无效的菜单权限");
+      if (allowedActions.isEmpty() || grant == null)
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0054");
       var actions = grant.actions() == null ? List.<String>of() : grant.actions();
       if (actions.isEmpty()) continue;
       granted = true;
       if (!allowedActions.containsAll(actions) || actions.size() != new HashSet<>(actions).size())
-        throw new IllegalArgumentException(menu + " 包含无效操作");
-      if (!actions.contains("查看")) throw new IllegalArgumentException(menu + " 必须包含查看权限");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.system.message0055", menu);
+      if (!actions.contains("查看"))
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.system.message0056", menu);
       var scopes = grant.dataScopes() == null ? List.<String>of() : grant.dataScopes();
       if (scopes.isEmpty()
           || !allowedScopes(menu).containsAll(scopes)
           || scopes.size() != new HashSet<>(scopes).size()
           || (scopes.contains("all") && scopes.size() > 1))
-        throw new IllegalArgumentException(menu + " 数据范围无效");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.system.message0057", menu);
       var ids = grant.orgIds() == null ? List.<Long>of() : grant.orgIds();
       if (java.util.stream.Stream.of("warehouse", "companies", "selected")
               .filter(scopes::contains)
               .count()
-          > 1) throw new IllegalArgumentException("指定仓库与指定公司/部门请分角色配置");
+          > 1)
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0058");
       if (scopes.contains("warehouse")) {
         if (ids.isEmpty() || ids.size() != new HashSet<>(ids).size())
-          throw new IllegalArgumentException("请选择指定仓库");
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.system.message0059");
         long warehouses = repository.warehouseCount(auth.tenantId(), ids);
-        if (warehouses != ids.size()) throw new IllegalArgumentException("包含无效仓库");
+        if (warehouses != ids.size())
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.system.message0060");
       } else if (scopes.contains("selected") || scopes.contains("companies")) {
         if (ids.isEmpty() || ids.size() != new HashSet<>(ids).size())
-          throw new IllegalArgumentException(menu + " 请选择指定公司或部门");
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.system.message0061", menu);
         long count =
             repository.organizationCount(
                 auth.tenantId(), scopes.contains("companies") ? "公司" : "部门", ids);
-        if (count != ids.size()) throw new IllegalArgumentException(menu + " 包含无效组织");
-      } else if (!ids.isEmpty()) throw new IllegalArgumentException(menu + " 不应包含指定部门");
+        if (count != ids.size())
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.system.message0062", menu);
+      } else if (!ids.isEmpty())
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.system.message0063", menu);
     }
-    if (!granted) throw new IllegalArgumentException("请至少配置一个菜单");
+    if (!granted)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0053");
   }
 
   private Set<String> allowedActions(String menu) {
     return switch (menu) {
-      case "personalization" -> Set.of("查看");
+      case "businessConfig" -> Set.of("查看", "编辑", "发布");
+      case "personalization", "language" -> Set.of("查看");
       case "workspace" -> Set.of("查看", "团队工作查看");
       case "printTemplate" -> Set.of("查看", "新增", "编辑", "删除");
       case "homeTemplate" -> Set.of("查看", "新增", "编辑", "发布", "停用");
@@ -160,7 +177,8 @@ public class RoleManagementService {
       case "inventoryWarehouse" -> Set.of("查看", "新增", "编辑", "删除", "导出");
       case "inventoryReceipt" -> Set.of("查看", "新增", "编辑", "删除", "入库", "导出", "查看金额");
       case "inventoryOutbound" ->
-          Set.of("打印", "查看", "新增直接出库", "编辑草稿", "删除草稿", "预留", "释放预留", "确认出库", "关闭剩余需求", "导出", "查看金额");
+          Set.of(
+              "打印", "查看", "新增直接出库", "编辑草稿", "删除草稿", "预留", "释放预留", "确认出库", "关闭剩余需求", "导出", "查看金额");
       case "inventoryRequisition" -> Set.of("查看", "新增", "编辑", "删除", "出库", "导出", "查看金额");
       case "inventoryReturn" -> Set.of("查看", "新增", "编辑", "删除", "入库", "导出", "查看金额");
       case "inventoryTransfer" -> Set.of("查看", "新增", "编辑", "删除", "出库", "入库", "导出", "查看金额");
@@ -185,8 +203,10 @@ public class RoleManagementService {
       return Set.of("all", "company", "companyTree", "companies", "warehouse");
     if (Set.of(
             "workspace",
+            "businessConfig",
             "homeTemplate",
             "personalization",
+            "language",
             "category",
             "equipmentTag",
             "role",
@@ -242,12 +262,13 @@ public class RoleManagementService {
 
   private void checkRoleCode(String code, Long id) {
     if (repository.roleCodeCount(auth.tenantId(), code, id) > 0)
-      throw new IllegalArgumentException("角色编码已存在");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0064");
   }
 
   private SystemRole requireRole(Long id) {
     var x = repository.role(auth.tenantId(), id);
-    if (x == null) throw new IllegalArgumentException("角色不存在");
+    if (x == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0065");
     return x;
   }
 

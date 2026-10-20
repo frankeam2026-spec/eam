@@ -1,4 +1,6 @@
-<script setup lang="ts">
+<script setup lang="ts">import { enumLabel } from '../i18n';
+import { tr } from '../i18n';
+
 import AppListToolbar from '../components/common/AppListToolbar.vue';
 import { ElMenu, ElMenuItem, ElMenuItemGroup, ElTableColumn } from 'element-plus';
 import 'element-plus/es/components/menu/style/css';
@@ -22,9 +24,23 @@ import TreeSelect, { type TreeSelectNode } from '../components/TreeSelect.vue';
 import { confirmAction } from '../services/dialog';
 import ListToolbarIcons from '../components/ListToolbarIcons.vue';
 
-type BaseNode = { id: string; code: string; name: string; parentId: string; status: string };
+type BaseNode = {
+  builtin?: boolean;
+  id: string;
+  code: string;
+  name: string;
+  parentId: string;
+  status: string;
+};
 
-type BaseValue = { id: string; code: string; name: string; precision?: number; status: string };
+type BaseValue = {
+  builtin?: boolean;
+  id: string;
+  code: string;
+  name: string;
+  precision?: number;
+  status: string;
+};
 
 const apiMode = computed(() => auth.authState === 'ready');
 
@@ -256,7 +272,7 @@ async function refreshBase(tab = baseTab.value) {
   try {
     await baseData.load(tab);
   } catch (error) {
-    notify(error instanceof Error ? error.message : '基础数据加载失败', 'error');
+    notify(error instanceof Error ? error.message : tr('ui.equipment.text0042'), 'error');
   }
 }
 
@@ -282,7 +298,7 @@ function openBaseEdit(item: BaseNode | BaseValue) {
 async function saveBase() {
   if (baseSaving.value) return;
   if (!baseForm.name.trim()) {
-    notify('请填写名称', 'error');
+    notify(tr('ui.validation.message36'), 'error');
     return;
   }
   if (
@@ -304,7 +320,7 @@ async function saveBase() {
       baseForm.parentId &&
       isDescendant(baseForm.parentId, baseEditId.value, target)
     ) {
-      notify('不能将节点移动到自己的下级', 'error');
+      notify(tr('ui.validation.message37'), 'error');
       return;
     }
   } else if (
@@ -393,7 +409,7 @@ async function saveBase() {
     baseDialog.value = false;
     notify('基础数据已保存');
   } catch (error) {
-    notify(error instanceof Error ? error.message : '保存失败', 'error');
+    notify(error instanceof Error ? error.message : tr('ui.equipment.text0195'), 'error');
   } finally {
     baseSaving.value = false;
   }
@@ -411,19 +427,8 @@ async function deleteBase(item: BaseNode | BaseValue) {
       notify('该节点下还有子节点，不能删除', 'error');
       return;
     }
-    if (baseTab.value === '故障类型') {
-      try {
-        const repairs = JSON.parse(localStorage.getItem('eam-repair-orders-v1') || '[]') as Array<{
-          faultType?: string;
-        }>;
-        if (repairs.some((row) => row.faultType === item.name)) {
-          notify('该故障类型已有维修工单使用，不能删除', 'error');
-          return;
-        }
-      } catch {}
-    }
   }
-  if (!(await confirmAction(`确认删除“${item.name}”？`))) return;
+  if (!(await confirmAction(tr('ui.common.dynamic50',{p0:item.name})))) return;
   try {
     if (apiMode.value) await api.deleteBase(baseTab.value, item.id);
     if (baseTab.value === '设备分类')
@@ -445,7 +450,7 @@ async function deleteBase(item: BaseNode | BaseValue) {
     else sourceData.value = sourceData.value.filter((x) => x.id !== item.id);
     notify('已删除');
   } catch (error) {
-    notify(error instanceof Error ? error.message : '删除失败', 'error');
+    notify(error instanceof Error ? error.message : tr('ui.equipment.text0278'), 'error');
   }
 }
 
@@ -455,7 +460,7 @@ async function toggleBaseStatus(item: BaseValue) {
     if (apiMode.value) await api.changeBaseStatus(baseTab.value, item, status);
     item.status = status;
   } catch (error) {
-    notify(error instanceof Error ? error.message : '状态更新失败', 'error');
+    notify(error instanceof Error ? error.message : tr('ui.equipment.text1190'), 'error');
   }
 }
 
@@ -485,7 +490,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
 <template>
   <section class="content base-page">
     <aside class="base-data-navigation">
-      <ElMenu :default-active="baseTab" aria-label="基础数据分组" @select="baseTab = $event">
+      <ElMenu :default-active="baseTab" :aria-label="tr('ui.equipment.text1622')" @select="baseTab = $event">
         <ElMenuItemGroup v-for="group in baseGroups" :key="group.key" :title="group.label">
           <ElMenuItem v-for="tab in group.items" :key="tab" :index="tab">{{ tab }}</ElMenuItem>
         </ElMenuItemGroup>
@@ -495,17 +500,17 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
       <AppListToolbar class="base-toolbar">
         <div class="base-actions">
           <ElButton v-if="baseCan('新增')" class="" @click="openBaseCreate()" type="primary"
-            ><span class="plus"> <AppIcon name="Plus" /> </span>新增{{
+            ><span class="plus"> <AppIcon name="Plus" /> </span>{{ tr('ui.equipment.text0149') }}{{
               baseTab === '设备分类'
-                ? '分类'
+                ? tr('ui.equipment.text0476')
                 : baseTab === '存放地点'
-                  ? '地点'
+                  ? tr('ui.equipment.text1623')
                   : baseTab === '故障类型'
-                    ? '故障类型'
+                    ? tr('ui.equipment.text1040')
                     : baseTab === '单位'
-                      ? '单位'
+                      ? tr('ui.equipment.text0095')
                       : baseTab === '使用状态'
-                        ? '使用状态'
+                        ? tr('ui.equipment.text0112')
                         : baseTab
             }}</ElButton
           >
@@ -522,9 +527,9 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
           />
           <ListSearchInput
             v-model="baseSearch"
-            :placeholder="`搜索${baseTab}名称、编码${isBaseTree ? '、上级节点' : ''}`"
+            :placeholder="`搜索${baseTab}名称、编码${isBaseTree ? tr('ui.equipment.text1624') : ''}`"
           />
-          <ElButton class="base-reset" @click="resetBase" native-type="button" text>重置</ElButton>
+          <ElButton class="base-reset" @click="resetBase" native-type="button" text>{{ tr('ui.equipment.text0204') }}</ElButton>
         </form>
       </AppListToolbar>
       <div class="base-card">
@@ -549,30 +554,30 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                   {{
                     key === 'name'
                       ? baseTab === '设备分类'
-                        ? '分类名称'
+                        ? tr('ui.equipment.text1625')
                         : baseTab === '存放地点'
-                          ? '地点名称'
+                          ? tr('ui.equipment.text1626')
                           : baseTab === '故障类型'
-                            ? '故障类型'
-                            : '名称'
+                            ? tr('ui.equipment.text1040')
+                            : tr('ui.equipment.text0404')
                       : key === 'code'
-                        ? '编码'
+                        ? tr('ui.equipment.text0474')
                         : key === 'parent'
-                          ? '上级节点'
+                          ? tr('ui.equipment.text1627')
                           : key === 'precision'
-                            ? '小数精度'
-                            : '状态'
+                            ? tr('ui.equipment.text1628')
+                            : tr('ui.equipment.text0170')
                   }}
                 </div>
                 <div v-if="baseColumnFilterOpen" class="table-column-filter" @click.stop>
                   <ElSelect v-if="key === 'status'" v-model="baseColumnFilters[key]"
-                    ><ElOption value="" :label="'全部状态'" /><ElOption
+                    ><ElOption value="" :label="tr('ui.equipment.text1205')" /><ElOption
                       :value="'启用'"
-                      :label="'启用'" /><ElOption :value="'停用'" :label="'停用'" /></ElSelect
+                      :label="tr('ui.equipment.text0216')" /><ElOption :value="'停用'" :label="tr('ui.equipment.text0260')" /></ElSelect
                   ><ElInput
                     v-else
                     v-model="baseColumnFilters[key]"
-                    :placeholder="`筛选${key === 'name' ? '名称' : key === 'code' ? '编码' : key === 'parent' ? '上级节点' : '精度'}`"
+                    :placeholder="`筛选${key === 'name' ? tr('ui.equipment.text0404') : key === 'code' ? tr('ui.equipment.text0474') : key === 'parent' ? tr('ui.equipment.text1627') : tr('ui.equipment.text1629')}`"
                   />
                 </div> </template
               ><template #default="{ row: item, $index: tableRowIndex }">
@@ -584,7 +589,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                   <ElButton
                     v-if="treeData.some((node) => node.parentId === item.id)"
                     class="tree-toggle"
-                    :aria-label="expandedTreeIds[item.id] === false ? '展开' : '收起'"
+                    :aria-label="expandedTreeIds[item.id] === false ? tr('ui.equipment.text0724') : tr('ui.equipment.text0725')"
                     @click.stop="
                       expandedTreeIds[item.id] = expandedTreeIds[item.id] === false ? true : false
                     "
@@ -603,7 +608,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
               :width="170"
               :min-width="156"
               :resizable="false"
-              ><template #header> <div class="table-header-label">操作</div> </template
+              ><template #header> <div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div> </template
               ><template #default="{ row: item, $index: tableRowIndex }">
                 <ElButton
                   v-if="baseCan('新增')"
@@ -611,17 +616,17 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                   @click="openBaseCreate(item.id)"
                   type="primary"
                   link
-                  >新增下级</ElButton
+                  >{{ tr('ui.equipment.text0726') }}</ElButton
                 ><ElButton
-                  v-if="baseCan('编辑')"
+                  v-if="baseCan('编辑') && !item.builtin"
                   class="text-action"
                   @click="openBaseEdit(item)"
                   type="primary"
                   link
-                  >编辑</ElButton
+                  >{{ tr('ui.equipment.text0207') }}</ElButton
                 >
                 <RowMoreActions
-                  v-if="(isBaseTree || baseTab !== '单位') && baseCan('删除')"
+                  v-if="(isBaseTree || baseTab !== '单位') && baseCan('删除') && !item.builtin"
                   :actions="[{ label: '删除', danger: true, run: () => deleteBase(item) }]"
                 /><ElButton
                   v-else-if="!isBaseTree && baseTab === '单位' && baseCan('删除')"
@@ -630,7 +635,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                   type="danger"
                   link
                 >
-                  删除
+                  {{ tr('ui.equipment.text0146') }}
                 </ElButton>
               </template></ElTableColumn
             >
@@ -655,30 +660,30 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                   {{
                     key === 'name'
                       ? baseTab === '设备分类'
-                        ? '分类名称'
+                        ? tr('ui.equipment.text1625')
                         : baseTab === '存放地点'
-                          ? '地点名称'
+                          ? tr('ui.equipment.text1626')
                           : baseTab === '故障类型'
-                            ? '故障类型'
-                            : '名称'
+                            ? tr('ui.equipment.text1040')
+                            : tr('ui.equipment.text0404')
                       : key === 'code'
-                        ? '编码'
+                        ? tr('ui.equipment.text0474')
                         : key === 'parent'
-                          ? '上级节点'
+                          ? tr('ui.equipment.text1627')
                           : key === 'precision'
-                            ? '小数精度'
-                            : '状态'
+                            ? tr('ui.equipment.text1628')
+                            : tr('ui.equipment.text0170')
                   }}
                 </div>
                 <div v-if="baseColumnFilterOpen" class="table-column-filter" @click.stop>
                   <ElSelect v-if="key === 'status'" v-model="baseColumnFilters[key]"
-                    ><ElOption value="" :label="'全部状态'" /><ElOption
+                    ><ElOption value="" :label="tr('ui.equipment.text1205')" /><ElOption
                       :value="'启用'"
-                      :label="'启用'" /><ElOption :value="'停用'" :label="'停用'" /></ElSelect
+                      :label="tr('ui.equipment.text0216')" /><ElOption :value="'停用'" :label="tr('ui.equipment.text0260')" /></ElSelect
                   ><ElInput
                     v-else
                     v-model="baseColumnFilters[key]"
-                    :placeholder="`筛选${key === 'name' ? '名称' : key === 'code' ? '编码' : key === 'parent' ? '上级节点' : '精度'}`"
+                    :placeholder="`筛选${key === 'name' ? tr('ui.equipment.text0404') : key === 'code' ? tr('ui.equipment.text0474') : key === 'parent' ? tr('ui.equipment.text1627') : tr('ui.equipment.text1629')}`"
                   />
                 </div> </template
               ><template #default="{ row: item, $index: tableRowIndex }">
@@ -687,7 +692,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                   v-else-if="key === 'status'"
                   class="status"
                   :class="item.status === '启用' ? 'success' : 'muted'"
-                  ><i></i>{{ item.status }}</span
+                  ><i></i>{{ enumLabel('status',item.status) }}</span
                 ><template v-else>{{ baseCell(item, key) }}</template>
               </template></ElTableColumn
             >
@@ -698,25 +703,25 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
               :width="170"
               :min-width="156"
               :resizable="false"
-              ><template #header> <div class="table-header-label">操作</div> </template
+              ><template #header> <div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div> </template
               ><template #default="{ row: item, $index: tableRowIndex }">
                 <ElButton
-                  v-if="baseCan('编辑')"
+                  v-if="baseCan('编辑') && !item.builtin"
                   class="text-action"
                   @click="openBaseEdit(item)"
                   type="primary"
                   link
-                  >编辑</ElButton
+                  >{{ tr('ui.equipment.text0207') }}</ElButton
                 ><ElButton
-                  v-if="baseTab !== '单位' && baseCan('编辑')"
+                  v-if="baseTab !== '单位' && baseCan('编辑') && !item.builtin"
                   class="text-action"
                   @click="toggleBaseStatus(item)"
                   type="primary"
                   link
-                  >{{ item.status === '启用' ? '停用' : '启用' }}</ElButton
+                  >{{ item.status === '启用' ? tr('ui.equipment.text0260') : tr('ui.equipment.text0216') }}</ElButton
                 >
                 <RowMoreActions
-                  v-if="(isBaseTree || baseTab !== '单位') && baseCan('删除')"
+                  v-if="(isBaseTree || baseTab !== '单位') && baseCan('删除') && !item.builtin"
                   :actions="[{ label: '删除', danger: true, run: () => deleteBase(item) }]"
                 /><ElButton
                   v-else-if="!isBaseTree && baseTab === '单位' && baseCan('删除')"
@@ -725,14 +730,14 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                   type="danger"
                   link
                 >
-                  删除
+                  {{ tr('ui.equipment.text0146') }}
                 </ElButton>
               </template></ElTableColumn
             >
           </AppBusinessTable>
         </div>
         <footer class="base-footer">
-          <span>共 {{ isBaseTree ? filteredTreeRows.length : filteredBaseValues.length }} 项</span>
+          <span>{{ tr('ui.equipment.text0309') }} {{ isBaseTree ? filteredTreeRows.length : filteredBaseValues.length }} {{ tr('ui.equipment.text0394') }}</span>
           <ListToolbarIcons
             mode="footer"
             :can-export="baseCan('导出')"
@@ -749,14 +754,14 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                 @change="toggleBaseColumn(key)"
                 >{{
                   key === 'name'
-                    ? '名称'
+                    ? tr('ui.equipment.text0404')
                     : key === 'code'
-                      ? '编码'
+                      ? tr('ui.equipment.text0474')
                       : key === 'parent'
-                        ? '上级节点'
+                        ? tr('ui.equipment.text1627')
                         : key === 'precision'
-                          ? '小数精度'
-                          : '状态'
+                          ? tr('ui.equipment.text1628')
+                          : tr('ui.equipment.text0170')
                 }}</ElCheckbox
               ></template
             ></ListToolbarIcons
@@ -770,16 +775,16 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
     v-model="baseDialog"
     :busy="baseSaving"
     :before-close="baseFormGuard.permitLeave"
-    :title="`${baseEditId ? '编辑' : '新增'}${baseTab}`"
+    :title="`${baseEditId ? tr('ui.equipment.text0207') : tr('ui.equipment.text0149')}${baseTab}`"
     width="480px"
   >
     <div class="base-dialog-body" :inert="baseSaving || undefined">
       <label
-        ><span>编码</span
-        ><ElInput v-model="baseForm.code" placeholder="留空自动生成编码" maxlength="40" /></label
+        ><span>{{ tr('ui.equipment.text0474') }}</span
+        ><ElInput v-model="baseForm.code" :placeholder="tr('ui.equipment.text1630')" maxlength="40" /></label
       ><label
-        ><span>名称 <i>*</i></span
-        ><ElInput v-model="baseForm.name" placeholder="请输入名称" maxlength="60" /></label
+        ><span>{{ tr('ui.equipment.text0404') }} <i>*</i></span
+        ><ElInput v-model="baseForm.name" :placeholder="tr('ui.equipment.text0464')" maxlength="60" /></label
       ><label
         v-if="
           baseTab === '设备分类' ||
@@ -787,21 +792,21 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
           baseTab === '存放地点' ||
           baseTab === '故障类型'
         "
-        ><span>上级节点</span>
+        ><span>{{ tr('ui.equipment.text1627') }}</span>
         <TreeSelect
           v-model="baseForm.parentId"
           :nodes="parentOptions"
-          placeholder="不选则作为一级节点"
+          :placeholder="tr('ui.equipment.text1631')"
         /> </label
       ><label v-if="baseTab === '单位'"
-        ><span>小数精度</span
+        ><span>{{ tr('ui.equipment.text1628') }}</span
         ><ElInputNumber v-model="baseForm.precision" :min="0" :max="6" controls-position="right"
       /></label>
     </div>
     <template #footer
-      ><ElButton class="" :disabled="baseSaving" @click="closeBaseDialog">取消</ElButton
+      ><ElButton class="" :disabled="baseSaving" @click="closeBaseDialog">{{ tr('ui.equipment.text0157') }}</ElButton
       ><ElButton class="" :disabled="baseSaving" @click="saveBase" type="primary">{{
-        baseSaving ? '保存中…' : '保存'
+        baseSaving ? tr('ui.equipment.text0158') : tr('ui.equipment.text0159')
       }}</ElButton></template
     >
   </AppDialog>

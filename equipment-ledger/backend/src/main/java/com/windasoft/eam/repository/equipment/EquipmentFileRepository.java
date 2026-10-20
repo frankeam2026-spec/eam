@@ -14,14 +14,17 @@ import org.springframework.stereotype.Repository;
 public class EquipmentFileRepository {
   private final JdbcTemplate db;
   private final EquipmentMapper equipment;
+  private final EquipmentMediaRepository media;
   private final String directory;
 
   public EquipmentFileRepository(
       JdbcTemplate db,
       EquipmentMapper equipment,
+      EquipmentMediaRepository media,
       @Value("${eam.upload.directory:./data/uploads}") String directory) {
     this.db = db;
     this.equipment = equipment;
+    this.media = media;
     this.directory = directory;
   }
 
@@ -35,11 +38,14 @@ public class EquipmentFileRepository {
     var q =
         new LambdaQueryWrapper<Equipment>()
             .eq(Equipment::getTenantId, tenant)
-            .and(
-                w ->
-                    w.like(Equipment::getDocumentsJson, id).or().like(Equipment::getImagesJson, id).or().eq(Equipment::getImageFileId, id));
+            .apply(
+                "(image_file_id={0} OR EXISTS(SELECT 1 FROM eam_equipment_image f WHERE"
+                    + " f.tenant_id={1} AND f.equipment_id=eam_equipment.id AND f.file_id={0}) OR"
+                    + " EXISTS(SELECT 1 FROM eam_equipment_document f WHERE f.tenant_id={1} AND"
+                    + " f.equipment_id=eam_equipment.id AND f.file_id={0}))",
+                id, tenant);
     scope.accept(q);
-    return equipment.selectList(q);
+    return media.hydrate(equipment.selectList(q));
   }
 
   public void insert(

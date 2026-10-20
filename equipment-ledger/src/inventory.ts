@@ -1,3 +1,4 @@
+import type { CustomRecord } from './businessConfig';
 import { request } from './api';
 export type InventoryMasterKind = 'materials' | 'warehouses' | 'bins';
 export type InventoryMaster = {
@@ -9,7 +10,9 @@ export type InventoryMaster = {
   rowVersion?: number;
   model?: string;
   unit?: string;
+  unitId?: string;
   category?: string;
+  categoryId?: string;
   usageType?: string;
   referencePrice?: string;
   stockQuantity?: string;
@@ -73,7 +76,7 @@ export type ReceiptLine = {
   batchEnabled?: boolean;
   expiryEnabled?: boolean;
 };
-export type Receipt = {
+export type Receipt = CustomRecord & {
   id: string;
   code: string;
   warehouseId: string;
@@ -108,13 +111,19 @@ export const receiptApi = {
       body: JSON.stringify({ rowVersion: body.rowVersion, totalFee }),
     }),
   choices: () => request<{ data: ReceiptChoices }>('/inventory/receipts/choices'),
-  list: (q: string, page: number, size: number, filters: Record<string, string> = {}) =>
+  list: (
+    q: string,
+    page: number,
+    size: number,
+    filters: Record<string, string> = {},
+    conditions = '[]',
+  ) =>
     request<{ data: Receipt[]; page: { total: number } }>(
-      `/inventory/receipts?${new URLSearchParams({ q, page: String(page), size: String(size), filters: JSON.stringify(filters) })}`,
+      `/inventory/receipts?${new URLSearchParams({ q, page: String(page), size: String(size), filters: JSON.stringify(filters), conditions })}`,
     ),
-  export: (q: string, filters: Record<string, string>) =>
+  export: (q: string, filters: Record<string, string>, conditions = '[]') =>
     request<{ data: Receipt[] }>(
-      `/inventory/receipts/export?${new URLSearchParams({ q, filters: JSON.stringify(filters) })}`,
+      `/inventory/receipts/export?${new URLSearchParams({ q, filters: JSON.stringify(filters), conditions })}`,
     ),
   detail: (id: string) => request<{ data: Receipt }>(`/inventory/receipts/${id}`),
   save: (body: Receipt) =>
@@ -205,7 +214,10 @@ export const requisitionApi = {
       method: 'POST',
       body: JSON.stringify({ rowVersion: body.rowVersion, selections }),
     }),
-  choices: () => request<{ data: RequisitionChoices }>('/inventory/requisitions/choices'),
+  choices: (paged = false, taskKind = '', taskId = '') =>
+    request<{ data: RequisitionChoices }>(
+      `/inventory/requisitions/choices?${new URLSearchParams({ paged: String(paged), taskKind, ...(taskId ? { taskId } : {}) })}`,
+    ),
   list: (q: string, filters: Record<string, string>, page: number, size: number) =>
     request<{ data: Requisition[]; page: { total: number } }>(
       `/inventory/requisitions?${new URLSearchParams({ q, filters: JSON.stringify(filters), page: String(page), size: String(size) })}`,

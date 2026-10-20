@@ -31,14 +31,14 @@ public class InventoryReservationCleanupService {
               String table =
                   kind.equals("维修")
                       ? "eam_repair_order"
-                      : kind.equals("保养") ? "eam_maintenance_task" : "eam_inspection_task";
+                      : kind.equals("保养") ? "v_maintenance_task" : "v_inspection_task";
               var tasks = repository.loadTask(t, r.get("task_id"), kind, table);
               boolean ended =
                   tasks.isEmpty()
                       || !kind.equals("保养")
                           && ((Number) tasks.getFirst().get("deleted")).intValue() != 0
                       || !tasks.isEmpty()
-                          && Set.of("待验收", "待审核", "已完成", "已验收", "已审核", "已作废", "过期作废", "已取消", "已关闭")
+                          && Set.of("待验收", "待审核", "已完成", "已验收", "已审核", "已作废", "已免检", "过期作废", "已取消", "已关闭")
                               .contains(Objects.toString(tasks.getFirst().get("status")));
               if (!ended) continue;
               for (var reservation : repository.lockReservations(t, r.get("id"))) {

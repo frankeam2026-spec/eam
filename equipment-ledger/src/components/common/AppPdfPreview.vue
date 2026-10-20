@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { ElAlert, ElButton, ElSelect, ElOption } from 'element-plus';
 import {
@@ -58,7 +59,7 @@ async function paint() {
     await render.promise;
   } catch (e) {
     if (revision === version && (e as Error).name !== 'RenderingCancelledException')
-      error.value = 'PDF页面显示失败，请重新预览';
+      error.value = tr('ui.equipment.text1345');
   } finally {
     if (revision === version) busy.value = false;
   }
@@ -85,7 +86,7 @@ async function load() {
     await nextTick();
     await paint();
   } catch (e) {
-    if (revision === version) error.value = 'PDF加载失败，请重新预览或下载原文件';
+    if (revision === version) error.value = tr('ui.equipment.text1346');
   } finally {
     if (revision === version) busy.value = false;
   }
@@ -109,7 +110,7 @@ onBeforeUnmount(() => {
 async function print() {
   await ready;
   const doc = document;
-  if (!doc) throw new Error('PDF尚未加载，请稍后再试');
+  if (!doc) throw new Error(tr('ui.equipment.text1347'));
   const pages: string[] = [];
   for (let n = 1; n <= doc.numPages; n++) {
     const p = await doc.getPage(n),
@@ -131,13 +132,13 @@ async function print() {
   frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><title>出库单</title><style>@page{size:${width}mm ${height}mm;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0}.sheet{display:block;width:${width}mm;height:${height}mm;break-after:page}.sheet:last-child{break-after:auto}img{width:100%;height:100%;display:block}</style></head><body>${pages.map((src) => `<div class="sheet"><img src="${src}"></div>`).join('')}</body></html>`;
   await new Promise<void>((resolve, reject) => {
     frame.onload = () => resolve();
-    frame.onerror = () => reject(new Error('打印窗口加载失败'));
+    frame.onerror = () => reject(new Error(tr('ui.equipment.text1348')));
     window.document.body.appendChild(frame);
   });
   const target = frame.contentWindow;
   if (!target) {
     frame.remove();
-    throw new Error('无法打开打印窗口，请下载PDF打印');
+    throw new Error(tr('ui.equipment.text1349'));
   }
   const cleanup = () => frame.remove();
   target.addEventListener('afterprint', cleanup, { once: true });
@@ -160,15 +161,15 @@ defineExpose({ print });
   <div class="app-pdf-preview">
     <ElAlert v-if="error" :title="error" type="error" :closable="false" />
     <div v-if="count" class="pdf-navigation">
-      <ElSelect v-model="mode" size="small" aria-label="预览缩放" style="width: 100px"
-        ><ElOption label="整页显示" value="page" /><ElOption label="适合页宽" value="width"
+      <ElSelect v-model="mode" size="small" :aria-label="tr('ui.equipment.text1350')" style="width: 100px"
+        ><ElOption :label="tr('ui.equipment.text1351')" value="page" /><ElOption :label="tr('ui.equipment.text1352')" value="width"
       /></ElSelect>
-      <ElButton :disabled="busy || page <= 1" size="small" @click="page--">上一页</ElButton
+      <ElButton :disabled="busy || page <= 1" size="small" @click="page--">{{ tr('ui.equipment.text0703') }}</ElButton
       ><span>{{ page }} / {{ count }}</span
-      ><ElButton :disabled="busy || page >= count" size="small" @click="page++">下一页</ElButton>
+      ><ElButton :disabled="busy || page >= count" size="small" @click="page++">{{ tr('ui.equipment.text1353') }}</ElButton>
     </div>
     <div ref="area" class="pdf-canvas-area">
-      <p v-if="busy && !count">正在加载PDF…</p>
+      <p v-if="busy && !count">{{ tr('ui.equipment.text1354') }}</p>
       <canvas
         v-show="count"
         ref="canvas"

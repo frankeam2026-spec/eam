@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { enumLabel } from '../i18n';import { tr } from '../i18n';
+
 import AppIcon from './common/AppIcon.vue';
 import { computed, ref, onMounted } from 'vue';
 import { ElCheckbox, ElInput, ElSelect, ElOption, ElTreeSelect, ElButton } from 'element-plus';
@@ -31,7 +33,7 @@ onMounted(async () => {
       await request<{ data: { id: string; name: string }[] }>('/system/roles/warehouse-choices')
     ).data;
   } catch (e) {
-    warehouseError.value = e instanceof Error ? e.message : '仓库加载失败';
+    warehouseError.value = e instanceof Error ? e.message : tr('ui.equipment.text0638');
   }
 });
 const visibleGroups = computed(() => {
@@ -160,11 +162,11 @@ function setDepartments(key: string, ids: string[]) {
 <template>
   <div class="role-permission-editor">
     <div class="permission-matrix-head">
-      <strong>菜单权限</strong>
+      <strong>{{ tr('ui.equipment.text1143') }}</strong>
       <div class="permission-tools">
-        <ElInput v-model="search" placeholder="搜索菜单" clearable aria-label="搜索菜单" />
-        <ElButton @click="allGroups(false)">全部展开</ElButton>
-        <ElButton @click="allGroups(true)">全部收起</ElButton>
+        <ElInput v-model="search" :placeholder="tr('ui.equipment.text0045')" clearable :aria-label="tr('ui.equipment.text0045')" />
+        <ElButton @click="allGroups(false)">{{ tr('ui.equipment.text1144') }}</ElButton>
+        <ElButton @click="allGroups(true)">{{ tr('ui.equipment.text1145') }}</ElButton>
       </div>
     </div>
     <div class="permission-workspace">
@@ -172,9 +174,9 @@ function setDepartments(key: string, ids: string[]) {
         <table class="business-table permission-matrix">
           <thead>
             <tr>
-              <th>菜单</th>
-              <th>功能权限</th>
-              <th>数据权限</th>
+              <th>{{ tr('ui.equipment.text1146') }}</th>
+              <th>{{ tr('ui.equipment.text1147') }}</th>
+              <th>{{ tr('ui.equipment.text1148') }}</th>
             </tr>
           </thead>
           <tbody v-for="group in visibleGroups" :key="group.name">
@@ -185,7 +187,7 @@ function setDepartments(key: string, ids: string[]) {
                   :aria-expanded="!isCollapsed(group.name)"
                   @click="toggleGroup(group.name)"
                   ><span><AppIcon :name="isCollapsed(group.name) ? 'Right' : 'Down'" /></span
-                  >{{ group.name }}<small>{{ group.menus.length }} 个菜单</small></ElButton
+                  >{{ group.name }}<small>{{ group.menus.length }} {{ tr('ui.equipment.text1149') }}</small></ElButton
                 >
               </td>
             </tr>
@@ -207,14 +209,14 @@ function setDepartments(key: string, ids: string[]) {
                       grant(menu.key).actions.length < menu.actions.length
                     "
                     @change="toggleAllActions(menu.key, menu.actions)"
-                    >全选功能</ElCheckbox
+                    >{{ tr('ui.equipment.text1150') }}</ElCheckbox
                   >
                   <ElCheckbox
                     v-for="action in menu.actions"
                     :key="action"
                     :model-value="grant(menu.key).actions.includes(action)"
                     @change="toggleAction(menu.key, action)"
-                    >{{ action }}</ElCheckbox
+                    >{{ enumLabel('action',action) }}</ElCheckbox
                   >
                 </div>
               </td>
@@ -226,7 +228,7 @@ function setDepartments(key: string, ids: string[]) {
                 >
                   {{
                     ['base', 'maintenanceType', 'inspectionType', 'location'].includes(menu.key)
-                      ? '统一维护'
+                      ? tr('ui.equipment.text1151')
                       : scopeLabel(menu.scopes[0]!, menu.key)
                   }}
                 </span>
@@ -235,7 +237,7 @@ function setDepartments(key: string, ids: string[]) {
                   :model-value="grant(menu.key).dataScopes"
                   multiple
                   :disabled="!grant(menu.key).actions.length"
-                  placeholder="请选择数据范围"
+                  :placeholder="tr('ui.equipment.text1152')"
                   :aria-label="`${menu.name}数据范围`"
                   @update:model-value="setScopes(menu.key, $event)"
                 >
@@ -251,7 +253,7 @@ function setDepartments(key: string, ids: string[]) {
                   :model-value="grant(menu.key).orgIds"
                   multiple
                   filterable
-                  placeholder="选择指定仓库"
+                  :placeholder="tr('ui.equipment.text1153')"
                   @update:model-value="setDepartments(menu.key, $event)"
                   ><ElOption v-for="w in warehouses" :key="w.id" :value="w.id" :label="w.name"
                 /></ElSelect>
@@ -271,7 +273,7 @@ function setDepartments(key: string, ids: string[]) {
                   default-expand-all
                   filterable
                   :render-after-expand="false"
-                  placeholder="选择指定公司（不含子公司）"
+                  :placeholder="tr('ui.equipment.text1154')"
                   :aria-label="`${menu.name}指定公司`"
                   @update:model-value="setDepartments(menu.key, $event)"
                 />
@@ -287,7 +289,7 @@ function setDepartments(key: string, ids: string[]) {
                   default-expand-all
                   filterable
                   :render-after-expand="false"
-                  placeholder="选择指定部门"
+                  :placeholder="tr('ui.equipment.text1155')"
                   :aria-label="`${menu.name}指定部门`"
                   @update:model-value="setDepartments(menu.key, $event)"
                 />
@@ -295,7 +297,7 @@ function setDepartments(key: string, ids: string[]) {
             </tr>
           </tbody>
         </table>
-        <div v-if="!visibleGroups.length" class="permission-empty">没有匹配的菜单</div>
+        <div v-if="!visibleGroups.length" class="permission-empty">{{ tr('ui.equipment.text1156') }}</div>
       </div>
     </div>
   </div>

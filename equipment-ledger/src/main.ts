@@ -8,6 +8,7 @@ import 'element-plus/es/components/upload/style/css';
 import 'element-plus/es/components/rate/style/css';
 import { createApp } from 'vue';
 import App from './App.vue';
+import { i18n, initializeLanguage } from './i18n';
 import { pinia } from './stores';
 import { router } from './router';
 import 'element-plus/es/components/tree-select/style/css';
@@ -33,4 +34,5 @@ import './style.css';
 import './styles/element-theme.css';
 import './styles/list-typography.css';
 
-createApp(App).use(pinia).use(router).mount('#app');
+createApp(App).use(i18n).use(pinia).use(router).mount('#app');
+void initializeLanguage();

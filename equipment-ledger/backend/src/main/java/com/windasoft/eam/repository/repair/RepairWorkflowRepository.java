@@ -15,6 +15,7 @@ import org.springframework.stereotype.Repository;
 /** Owns workflow persistence, including legacy allocations needed for historical compatibility. */
 @Repository
 public class RepairWorkflowRepository {
+  private final RepairRelationsRepository collaborators;
   private final RepairWorkflowMapper mapper;
   private final RepairOrderMapper orders;
   private final EquipmentMapper equipment;
@@ -26,7 +27,9 @@ public class RepairWorkflowRepository {
       RepairOrderMapper orders,
       EquipmentMapper equipment,
       SystemUserMapper users,
-      BaseItemMapper base) {
+      BaseItemMapper base,
+      RepairRelationsRepository collaborators) {
+    this.collaborators = collaborators;
     this.mapper = mapper;
     this.orders = orders;
     this.equipment = equipment;
@@ -43,14 +46,17 @@ public class RepairWorkflowRepository {
   }
 
   public RepairOrder findOrder(long tenant, long id) {
-    return orders.selectOne(
-        new LambdaQueryWrapper<RepairOrder>()
-            .eq(RepairOrder::getTenantId, tenant)
-            .eq(RepairOrder::getId, id));
+    return collaborators.hydrate(
+        orders.selectOne(
+            new LambdaQueryWrapper<RepairOrder>()
+                .eq(RepairOrder::getTenantId, tenant)
+                .eq(RepairOrder::getId, id)));
   }
 
   public int updateOrder(RepairOrder row) {
-    return orders.updateById(row);
+    int changed = orders.updateById(row);
+    if (changed > 0) collaborators.save(row);
+    return changed;
   }
 
   public Equipment equipment(long tenant, String code) {
@@ -84,31 +90,12 @@ public class RepairWorkflowRepository {
             .orderByAsc(BaseItem::getSortNo));
   }
 
-  public Long baseId(long tenant, String type, String name) {
-    var values =
-        base.selectList(
-            new LambdaQueryWrapper<BaseItem>()
-                .eq(BaseItem::getTenantId, tenant)
-                .eq(BaseItem::getItemType, type)
-                .eq(BaseItem::getName, name));
-    return values.size() == 1 ? values.getFirst().getId() : null;
-  }
-
-  public long baseCount(long tenant, String type, String name) {
-    return base.selectCount(
-        new LambdaQueryWrapper<BaseItem>()
-            .eq(BaseItem::getTenantId, tenant)
-            .eq(BaseItem::getItemType, type)
-            .eq(BaseItem::getName, name)
-            .eq(BaseItem::getStatus, 1));
-  }
-
   public boolean personalAccess(long tenant, long userId) {
     return mapper.personalAccess(tenant, userId);
   }
 
   public RepairOrder lock(long tenant, long id) {
-    return mapper.lock(tenant, id);
+    return collaborators.hydrate(mapper.lock(tenant, id));
   }
 
   public List<Map<String, Object>> users(long tenant) {
@@ -161,6 +148,11 @@ public class RepairWorkflowRepository {
   public void inbox(
       long id, long tenant, long userId, long orderId, String kind, String title, boolean todo) {
     mapper.inbox(id, tenant, userId, orderId, kind, title, todo);
+    mapper.inboxMetadata(
+        tenant,
+        id,
+        com.windasoft.eam.common.NotificationMessages.key(kind),
+        com.windasoft.eam.common.NotificationMessages.arguments(kind, title));
   }
 
   public void closeTodos(long tenant, long orderId) {

@@ -13,9 +13,16 @@ public class RoleMenuPermission {
   private Long tenantId;
   private Long roleId;
   private String menuKey;
+
+  @TableField(exist = false)
   private String actionsJson;
+
+  @TableField(exist = false)
   private String dataScopesJson;
+
+  @TableField(exist = false)
   private String orgIdsJson;
+
   private LocalDateTime createdAt;
   private LocalDateTime updatedAt;
 }

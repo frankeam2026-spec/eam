@@ -1,4 +1,6 @@
-<script setup lang="ts">
+<script setup lang="ts">import { enumLabel } from '../i18n';
+import { tr } from '../i18n';
+
 import { ref, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElButton, ElAlert, ElTableColumn, ElMessage } from 'element-plus';
@@ -31,7 +33,7 @@ async function load() {
     definition.value = r.definition;
     exportable.value = r.exportable;
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '加载失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text0160');
   } finally {
     if (v === version) loading.value = false;
   }
@@ -42,7 +44,7 @@ async function exportRows() {
   try {
     await analyticsApi.export(drill.value);
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '导出失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0185'));
   } finally {
     exporting.value = false;
   }
@@ -60,10 +62,10 @@ onMounted(() => {
     drill.value = JSON.parse(
       sessionStorage.getItem('eam-analysis:' + String(route.params.key)) || 'null',
     );
-    if (!drill.value) error.value = '分析上下文已失效，请返回首页重新打开明细。';
+    if (!drill.value) error.value = tr('ui.equipment.text1685');
     else void load();
   } catch {
-    error.value = '分析上下文无效，请返回首页重新打开。';
+    error.value = tr('ui.equipment.text1686');
   }
 });
 watch([page, size], load);
@@ -72,16 +74,16 @@ watch([page, size], load);
   <section class="analysis-detail">
     <header>
       <ElButton
-        aria-label="返回首页"
+        :aria-label="tr('ui.equipment.text1687')"
         text
         @click="router.push({ name: 'home2', query: { analysis: String(route.params.key) } })"
         ><AppIcon name="Left"
       /></ElButton>
       <div>
-        <h1>{{ drill?.title || '分析明细' }}</h1>
-        <span>{{ drill?.subtitle }} · 统计截至 {{ date(drill?.context.asOf) }}</span>
+        <h1>{{ drill?.title || tr('ui.equipment.text1688') }}</h1>
+        <span>{{ drill?.subtitle }} {{ tr('ui.equipment.text1689') }} {{ date(drill?.context.asOf) }}</span>
       </div>
-      <ElButton v-if="exportable" :loading="exporting" @click="exportRows">导出</ElButton>
+      <ElButton v-if="exportable" :loading="exporting" @click="exportRows">{{ tr('ui.equipment.text0711') }}</ElButton>
     </header>
     <ElAlert v-if="definition" :title="definition" type="info" :closable="false" /><AppBusinessTable
       v-model:page="page"
@@ -92,7 +94,7 @@ watch([page, size], load);
       :total="total"
       row-key="source_id"
       @retry="load"
-      ><ElTableColumn label="编号" prop="code" min-width="175" show-overflow-tooltip
+      ><ElTableColumn :label="tr('ui.equipment.text0137')" prop="code" min-width="175" show-overflow-tooltip
         ><template #default="{ row }"
           ><ElButton v-if="row.url" type="primary" link @click="router.push(row.url)">{{
             row.code
@@ -100,60 +102,60 @@ watch([page, size], load);
           ><span v-else>{{ row.code }}</span></template
         ></ElTableColumn
       ><ElTableColumn
-        label="设备名称"
+        :label="tr('ui.equipment.text0081')"
         prop="equipment_name"
         min-width="150"
         show-overflow-tooltip
       /><template v-if="drill?.widget.metric.includes('material')"
-        ><ElTableColumn label="料号" prop="material_code" min-width="120" /><ElTableColumn
-          label="物料名称"
+        ><ElTableColumn :label="tr('ui.equipment.text0154')" prop="material_code" min-width="120" /><ElTableColumn
+          :label="tr('ui.equipment.text0155')"
           prop="material_name"
           min-width="150"
           show-overflow-tooltip /><ElTableColumn
-          label="数量"
+          :label="tr('ui.equipment.text0144')"
           prop="quantity"
           width="100"
           align="right"
           ><template #default="{ row }">{{
             Number(row.quantity).toFixed(2)
           }}</template></ElTableColumn
-        ><ElTableColumn label="单位" prop="unit" width="75" /><ElTableColumn
-          label="实际成本"
+        ><ElTableColumn :label="tr('ui.equipment.text0095')" prop="unit" width="75" /><ElTableColumn
+          :label="tr('ui.equipment.text1690')"
           prop="amount"
           width="120"
           align="right"
           ><template #default="{ row }">{{
-            row.amount == null ? '成本缺失' : Number(row.amount).toFixed(2)
+            row.amount == null ? tr('ui.equipment.text1691') : Number(row.amount).toFixed(2)
           }}</template></ElTableColumn
-        ><ElTableColumn label="币种" prop="currency" width="80" /><ElTableColumn
-          label="归属"
+        ><ElTableColumn :label="tr('ui.equipment.text1692')" prop="currency" width="80" /><ElTableColumn
+          :label="tr('ui.equipment.text1693')"
           width="135"
           ><template #default="{ row }">{{
             labels[row.attribution] || row.attribution
           }}</template></ElTableColumn
-        ><ElTableColumn label="出库分配ID" prop="allocation_id" min-width="180" /><ElTableColumn
-          label="成本层ID"
+        ><ElTableColumn :label="tr('ui.equipment.text1694')" prop="allocation_id" min-width="180" /><ElTableColumn
+          :label="tr('ui.equipment.text1695')"
           prop="cost_layer_id"
           min-width="180" /><ElTableColumn
-          label="入库来源明细ID"
+          :label="tr('ui.equipment.text1696')"
           prop="receipt_line_id"
           min-width="180" /></template
       ><template v-else
         ><ElTableColumn
-          label="部门"
+          :label="tr('ui.equipment.text1320')"
           prop="department_name"
           min-width="130"
           show-overflow-tooltip
-        /><ElTableColumn label="负责人" prop="owner_name" min-width="100" /><ElTableColumn
-          label="状态"
+        /><ElTableColumn :label="tr('ui.equipment.text0102')" prop="owner_name" min-width="100" /><ElTableColumn :formatter="(_row:unknown,_column:unknown,value:unknown)=>enumLabel('status',value)"
+          :label="tr('ui.equipment.text0170')"
           prop="status"
           width="100"
-        /><ElTableColumn label="提交时间" width="165"
+        /><ElTableColumn :label="tr('ui.equipment.text1697')" width="165"
           ><template #default="{ row }">{{ date(row.submitted_at) }}</template></ElTableColumn
-        ><ElTableColumn label="验收时间" width="165"
+        ><ElTableColumn :label="tr('ui.equipment.text1698')" width="165"
           ><template #default="{ row }">{{ date(row.accepted_at) }}</template></ElTableColumn
         ></template
-      ><ElTableColumn label="计划 / 发生时间" width="165"
+      ><ElTableColumn :label="tr('ui.equipment.text1699')" width="165"
         ><template #default="{ row }">{{ date(row.occurred_at) }}</template></ElTableColumn
       ></AppBusinessTable
     >

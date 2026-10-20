@@ -1,7 +1,10 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr, enumLabel } from '../i18n';
+
+import BusinessFields from './business/BusinessFields.vue';
 import 'element-plus/es/components/tabs/style/css';
 import { ElTabs, ElTabPane, ElTableColumn, ElTag } from 'element-plus';
 import AppAttachmentList from './common/AppAttachmentList.vue';
+import MaintenanceStatus from './common/MaintenanceStatus.vue';
 import EquipmentOverview from './common/EquipmentOverview.vue';
 import EquipmentEvents from './common/EquipmentEvents.vue';
 import { archiveState, statusType, type ArchiveState, type ArchiveTab } from '../equipmentOverview';
@@ -9,6 +12,8 @@ import { useAuthStore } from '../stores/auth';
 import AppBusinessTable from './common/AppBusinessTable.vue';
 import AppIcon from './common/AppIcon.vue';
 import { formatNumber } from '../utils/number';
+import { formatOrganizationPath } from '../utils/organizationPath';
+import { normalizeLocationPath } from '../utils/locationPath';
 import AppBackButton from './common/AppBackButton.vue';
 import { computed, nextTick, ref, watch, onBeforeUnmount } from 'vue';
 import { equipmentHistory, type EquipmentHistory } from '../api';
@@ -127,7 +132,7 @@ watch(
       await nextTick();
       if (tab.value !== '概览' && tab.value !== '动态') await restoreScroll();
     } catch (e) {
-      if (seq === revision) error.value = e instanceof Error ? e.message : '加载失败';
+      if (seq === revision) error.value = e instanceof Error ? e.message : tr('ui.equipment.text0160');
     }
   },
   { immediate: true },
@@ -149,7 +154,7 @@ function time(value: string) {
 <template>
   <section class="equipment-history">
     <header class="equipment-history-heading">
-      <AppBackButton label="返回设备台账" @click="emit('close')" />
+      <AppBackButton :label="tr('ui.equipment.text0075')" @click="emit('close')" />
       <template v-if="record"
         ><h1 :title="record.data.name">{{ record.data.name }}</h1>
         <span class="equipment-history-code">{{ record.data.code }}</span>
@@ -159,7 +164,7 @@ function time(value: string) {
             :type="statusType(record.data.state)"
             :title="`设备状态：${record.data.state}`"
             :class="['equipment-state', statusType(record.data.state)]"
-            >{{ record.data.state }}</ElTag
+            >{{ enumLabel('status',record.data.state) }}</ElTag
           ><ElTag
             v-if="record.data.useState"
             :type="statusType(record.data.useState)"
@@ -169,14 +174,14 @@ function time(value: string) {
           >
         </div></template
       >
-      <strong v-else>设备档案</strong>
+      <strong v-else>{{ tr('ui.equipment.text0161') }}</strong>
     </header>
     <ElTabs class="history-tabs" v-model="tab"
-      ><ElTabPane v-for="item in tabs" :key="item" :label="item" :name="item"
+      ><ElTabPane v-for="item in tabs" :key="item" :label="enumLabel('tab', item)" :name="item"
     /></ElTabs>
     <div ref="body" class="history-body" @scroll="rememberScroll">
       <p v-if="error" class="history-error">{{ error }}</p>
-      <p v-else-if="!record">正在加载…</p>
+      <p v-else-if="!record">{{ tr('ui.equipment.text0162') }}</p>
       <template v-else>
         <EquipmentOverview
           v-if="tab === '概览'"
@@ -234,7 +239,11 @@ function time(value: string) {
                 {{
                   key === 'amount'
                     ? formatNumber(record.data.amount)
-                    : (record.data as any)[key] || ''
+                    : key === 'department'
+                      ? formatOrganizationPath(record.data.departmentPath || record.data.department)
+                      : key === 'functionLocation'
+                        ? normalizeLocationPath(record.data.functionLocation)
+                        : (record.data as any)[key] || ''
                 }}
               </dd>
             </div>
@@ -257,40 +266,40 @@ function time(value: string) {
               :rows="record.data.documents || []"
               class="business-table"
               ><ElTableColumn :min-width="150"
-                ><template #header><div class="table-header-label">资料编号</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0136') }}</div></template
                 ><template #default="{ row: item, $index: tableRowIndex }">{{
                   item.code || ''
                 }}</template></ElTableColumn
               ><ElTableColumn :min-width="210"
-                ><template #header><div class="table-header-label">资料名称</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0138') }}</div></template
                 ><template #default="{ row: item, $index: tableRowIndex }">{{
                   item.name
                 }}</template></ElTableColumn
               ><ElTableColumn :min-width="150"
-                ><template #header><div class="table-header-label">资料类型</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0141') }}</div></template
                 ><template #default="{ row: item, $index: tableRowIndex }">{{
                   item.type || ''
                 }}</template></ElTableColumn
               ><ElTableColumn :min-width="150"
-                ><template #header><div class="table-header-label">文档密级</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0143') }}</div></template
                 ><template #default="{ row: item, $index: tableRowIndex }">{{
-                  item.security || '普通'
+                  item.security || tr('ui.equipment.text0163')
                 }}</template></ElTableColumn
               ><ElTableColumn :min-width="150"
-                ><template #header><div class="table-header-label">数量</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0144') }}</div></template
                 ><template #default="{ row: item, $index: tableRowIndex }">{{
                   formatNumber(item.quantity || 1)
                 }}</template></ElTableColumn
               ><ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-                ><template #header><div class="table-header-label">操作</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
                 ><template #default="{ row: item, $index: tableRowIndex }">
                   <a
                     v-if="item.id"
                     :href="`/api/v1/equipment/files/${item.id}`"
                     target="_blank"
                     rel="noopener"
-                    >下载</a
-                  ><span v-else>未上传文件</span>
+                    >{{ tr('ui.equipment.text0139') }}</a
+                  ><span v-else>{{ tr('ui.equipment.text0140') }}</span>
                 </template></ElTableColumn
               ></AppBusinessTable
             ><AppBusinessTable
@@ -317,22 +326,28 @@ function time(value: string) {
               :framed="false"
             >
               <template #name="{ row }"
-                >{{ row.name }}<small v-if="row.legacy">（历史关联待确认）</small></template
+                >{{ row.name }}<small v-if="row.legacy">{{ tr('ui.equipment.text0164') }}</small></template
               >
             </AppBusinessTable>
             <p v-else>
               {{
                 key === 'relatedSpares'
-                  ? '暂无设备BOM'
+                  ? tr('ui.equipment.text0156')
                   : key === 'children'
-                    ? '暂无子设备'
-                    : '暂无记录'
+                    ? tr('ui.equipment.text0152')
+                    : tr('ui.equipment.text0165')
               }}
             </p>
-          </section></template
-        >
+          </section>
+          <BusinessFields
+            :model-value="record.data"
+            object="equipment"
+            :category-id="record.data.categoryId"
+            readonly
+          />
+        </template>
         <div v-else-if="tab === '备件'" class="history-table">
-          <h3>在用备件</h3>
+          <h3>{{ tr('ui.equipment.text0166') }}</h3>
           <AppBusinessTable
             :rows="record.installedSpares"
             :pagination="false"
@@ -340,40 +355,40 @@ function time(value: string) {
             :framed="false"
             class="business-table"
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">备件编号</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0167') }}</div></template
               ><template #default="{ row: item, $index: tableRowIndex }">{{
                 item.code
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="210"
-              ><template #header><div class="table-header-label">备件名称</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0168') }}</div></template
               ><template #default="{ row: item, $index: tableRowIndex }">{{
                 item.name
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">规格型号</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0091') }}</div></template
               ><template #default="{ row: item, $index: tableRowIndex }">{{
                 item.model
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">数量</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0144') }}</div></template
               ><template #default="{ row: item, $index: tableRowIndex }">{{
                 formatNumber(item.quantity)
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">安装时间</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0169') }}</div></template
               ><template #default="{ row: item, $index: tableRowIndex }">{{
                 item.installedAt
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">状态</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0170') }}</div></template
               ><template #default="{ row: item, $index: tableRowIndex }">{{
-                item.status
+                enumLabel('status',item.status)
               }}</template></ElTableColumn
             ><template #empty
-              ><div v-if="!record?.installedSpares?.length">暂无在用备件</div></template
+              ><div v-if="!record?.installedSpares?.length">{{ tr('ui.equipment.text0171') }}</div></template
             ></AppBusinessTable
           >
-          <h3 class="spare-history-heading">备件更换记录</h3>
+          <h3 class="spare-history-heading">{{ tr('ui.equipment.text0172') }}</h3>
           <AppBusinessTable
             :rows="record.spareChanges"
             :pagination="false"
@@ -381,37 +396,37 @@ function time(value: string) {
             :framed="false"
             class="business-table"
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">工单编号</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0173') }}</div></template
               ><template #default="{ row: item, $index: index }">{{
                 item.number || ''
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">时间</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0174') }}</div></template
               ><template #default="{ row: item, $index: index }">{{
                 time(item.time)
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="210"
-              ><template #header><div class="table-header-label">更换内容 / 数量</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0175') }}</div></template
               ><template #default="{ row: item, $index: index }">{{
                 item.description || ''
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">执行人</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0176') }}</div></template
               ><template #default="{ row: item, $index: index }">{{
                 item.person || ''
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">状态</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0170') }}</div></template
               ><template #default="{ row: item, $index: index }">{{
                 item.status || ''
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">说明</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0177') }}</div></template
               ><template #default="{ row: item, $index: index }">{{
                 item.result || ''
               }}</template></ElTableColumn
             ><template #empty
-              ><div v-if="!record.spareChanges.length">暂无备件更换记录</div></template
+              ><div v-if="!record.spareChanges.length">{{ tr('ui.equipment.text0178') }}</div></template
             ></AppBusinessTable
           >
         </div>
@@ -423,37 +438,36 @@ function time(value: string) {
             :framed="false"
             class="business-table"
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">记录编号</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0179') }}</div></template
               ><template #default="{ row: item, $index: index }">{{
                 item.number || ''
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">时间</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0174') }}</div></template
               ><template #default="{ row: item, $index: index }">{{
                 time(item.time)
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="210"
-              ><template #header><div class="table-header-label">内容</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0180') }}</div></template
               ><template #default="{ row: item, $index: index }">{{
                 item.description || ''
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">执行人</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0176') }}</div></template
               ><template #default="{ row: item, $index: index }">{{
                 item.person || ''
               }}</template></ElTableColumn
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">状态</div></template
-              ><template #default="{ row: item, $index: index }">{{
-                item.status || ''
-              }}</template></ElTableColumn
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0170') }}</div></template
+              ><template #default="{ row: item }"
+                ><MaintenanceStatus :status="item.status || ''" /></template></ElTableColumn
             ><ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">结果 / 措施</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0181') }}</div></template
               ><template #default="{ row: item, $index: index }">{{
                 item.result || ''
               }}</template></ElTableColumn
             ><template #empty
-              ><div v-if="!records().length">暂无{{ tab }}记录</div></template
+              ><div v-if="!records().length">{{ tr('ui.equipment.text0182') }}{{ tab }}{{ tr('ui.equipment.text0183') }}</div></template
             ></AppBusinessTable
           >
         </div>
@@ -519,19 +533,19 @@ function time(value: string) {
   flex: none;
 }
 .equipment-state.success {
-  color: #11934a;
-  background: #e8faf0;
-  border-color: #d1f2de;
+  color: var(--equipment-state-success-color);
+  background: var(--equipment-state-success-background);
+  border-color: var(--equipment-state-success-border);
 }
 .equipment-state.warning {
-  color: #c66a00;
-  background: #fff1d6;
-  border-color: #ffe4ae;
+  color: var(--equipment-state-warning-color);
+  background: var(--equipment-state-warning-background);
+  border-color: var(--equipment-state-warning-border);
 }
 .equipment-state.danger {
-  color: #e33535;
-  background: #ffe8e8;
-  border-color: #ffd1d1;
+  color: var(--equipment-state-danger-color);
+  background: var(--equipment-state-danger-background);
+  border-color: var(--equipment-state-danger-border);
 }
 .history-body {
   overflow: auto;

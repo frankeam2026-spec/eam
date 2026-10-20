@@ -57,18 +57,20 @@ public class OrganizationScopeService {
   public OrgUnit requireDepartment(Long id) {
     var org = repository.activeDepartment(auth.tenantId(), id);
     if (org == null || companyOfOrganization(id) == null)
-      throw new IllegalArgumentException("所属部门不存在、已停用或未归属公司");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0048");
     return org;
   }
 
   public OrgUnit requireDepartment(String companyName, String departmentName) {
     var company = repository.companyNamed(auth.tenantId(), companyName);
-    if (company == null) throw new IllegalArgumentException("所属公司不在当前租户内");
+    if (company == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0049");
     var matches =
         repository.departmentsNamed(auth.tenantId(), departmentName).stream()
             .filter(d -> Objects.equals(companyOfOrganization(d.getId()), company.getId()))
             .toList();
-    if (matches.size() != 1) throw new IllegalArgumentException("请通过所属部门选择框选择唯一的部门");
+    if (matches.size() != 1)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0050");
     var department = matches.getFirst();
     return department;
   }
@@ -76,7 +78,8 @@ public class OrganizationScopeService {
   public Long userIdByName(String name) {
     if (name == null || name.isBlank()) return null;
     var matches = repository.usersNamed(auth.tenantId(), name.trim());
-    if (matches.size() > 1) throw new IllegalArgumentException("该姓名对应多个员工，请选择唯一的负责人");
+    if (matches.size() > 1)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0051");
     return matches.isEmpty() ? null : matches.getFirst().getId();
   }
 
@@ -86,6 +89,21 @@ public class OrganizationScopeService {
 
   public Set<Long> departmentTree(Long root) {
     return descendants(root, false);
+  }
+
+  /** Query trees include all descendants; authorization is intersected separately by the caller. */
+  public Set<Long> queryTree(Long root) {
+    if (root == null) return Set.of();
+    var rows = repository.organizations(auth.tenantId());
+    if (rows.stream().noneMatch(row -> root.equals(row.getId()))) return Set.of();
+    var result = new HashSet<Long>(Set.of(root));
+    boolean changed;
+    do {
+      changed = false;
+      for (var row : rows)
+        if (result.contains(row.getParentId()) && result.add(row.getId())) changed = true;
+    } while (changed);
+    return result;
   }
 
   private Set<Long> descendants(Long root, boolean companies) {

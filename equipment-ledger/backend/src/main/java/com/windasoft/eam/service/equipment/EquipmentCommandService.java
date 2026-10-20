@@ -19,6 +19,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 @org.springframework.stereotype.Service
 public class EquipmentCommandService {
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.business.BusinessValueService custom;
+
+  @org.springframework.beans.factory.annotation.Autowired
+  private EquipmentInputValidation inputValidation;
+
   private final EquipmentRelationsService relations;
   private final EquipmentFileService files;
   private final EquipmentQueryService queries;
@@ -49,12 +55,14 @@ public class EquipmentCommandService {
 
   @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
   public EquipmentView create(EquipmentForm form) {
+    inputValidation.validate(form);
     validateState(form.state());
     relations.enter(
         java.util.Collections.singletonList(
             permissions.companyOfOrganization(form.departmentOrgId())));
     var e = fromForm(form);
     setAccessFields(e, form);
+    inputValidation.validateEntity(e);
     permissions.checkEquipment(e, "新增");
     String code = has(form.code()) ? form.code().trim() : nextCode();
     assertCodeAvailable(code, null);
@@ -66,7 +74,56 @@ public class EquipmentCommandService {
     repository.insert(e);
     saveOwners(e);
     relations.save(e, form.children(), form.relatedSpares());
+    custom.save(
+        "equipment",
+        e.getId(),
+        form.customFields(),
+        form.customSchemaVersion(),
+        String.valueOf(e.getCategoryId()),
+        true);
     return toView(require(e.getId()));
+  }
+
+  /**
+   * Called only inside the import transaction after batch-wide reference and permission validation.
+   */
+  public void insertImported(
+      java.util.List<com.windasoft.eam.dto.imports.PreparedEquipmentImport> rows) {
+    if (!org.springframework.transaction.support.TransactionSynchronizationManager
+        .isActualTransactionActive()) throw new IllegalStateException("导入必须在事务中执行");
+    var reserved =
+        new java.util.HashSet<>(
+            repository
+                .importCodeKeys(
+                    rows.stream()
+                        .map(r -> r.form().code())
+                        .filter(c -> c != null && !c.isBlank())
+                        .toList())
+                .values());
+    for (var row : rows) {
+      var e = row.entity();
+      String code = e.getEquipmentCode();
+      if (!has(code)) {
+        do {
+          code = nextCode();
+        } while (reserved.contains(repository.importCodeKeys(java.util.List.of(code)).get(code)));
+      }
+      // Explicit codes were checked in one batch after acquiring the original equipment mutex.
+      e.setEquipmentCode(code);
+      e.setId(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
+      repository.insertImported(e);
+      if (e.getOwnerIds() != null)
+        for (int i = 0; i < e.getOwnerIds().size(); i++) {
+          // Names were resolved and locked with the original system accounts during revalidation.
+          repository.addOwner(
+              auth.tenantId(),
+              e.getId(),
+              e.getOwnerIds().get(i),
+              row.ownerNames().get(e.getOwnerIds().get(i)),
+              i);
+        }
+      custom.savePreparedNew("equipment", e.getId(), row.custom());
+    }
   }
 
   @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
@@ -92,6 +149,13 @@ public class EquipmentCommandService {
     VersionGuard.updated(repository.update(e));
     saveOwners(e);
     relations.save(e, form.children(), form.relatedSpares());
+    custom.save(
+        "equipment",
+        e.getId(),
+        form.customFields(),
+        form.customSchemaVersion(),
+        String.valueOf(e.getCategoryId()),
+        false);
     return toView(require(id));
   }
 
@@ -103,7 +167,8 @@ public class EquipmentCommandService {
     permissions.checkEquipment(e, "删除");
     relations.checkDelete(id);
     relations.cleanup(id);
-    if (repository.delete(id) != 1) throw new IllegalArgumentException("设备不存在");
+    if (repository.delete(id) != 1)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
     repository.deleteOwners(auth.tenantId(), id);
     return true;
   }
@@ -111,30 +176,32 @@ public class EquipmentCommandService {
   @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
   public int batch(EquipmentBatchForm form) {
     var ids = form.ids().stream().distinct().toList();
-    if (ids.size() > 1000) throw new IllegalArgumentException("单次最多操作1000台设备");
+    if (ids.size() > 1000)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0038");
     String op = form.operation();
     if (!List.of("location", "category", "department", "owner", "state", "delete").contains(op))
-      throw new IllegalArgumentException("不支持的批量操作");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0039");
     var targets = ids.stream().map(this::require).toList();
     relations.enter(targets.stream().map(Equipment::getCompanyOrgId).toList());
     targets = ids.stream().map(this::require).toList();
     for (var e : targets) permissions.checkEquipment(e, op.equals("delete") ? "删除" : "编辑");
     String value = form.value() == null ? "" : form.value().trim();
     if (!op.equals("delete") && !op.equals("owner") && value.isEmpty())
-      throw new IllegalArgumentException("请选择修改后的值");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0040");
     var base =
         (op.equals("location") || op.equals("category"))
             ? repository.activeBase(
                 auth.tenantId(), value, op.equals("location") ? "LOCATION" : "CATEGORY")
             : null;
     if ((op.equals("location") || op.equals("category")) && base == null)
-      throw new IllegalArgumentException("基础数据不存在或已停用");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0041");
     for (var e : targets) {
       switch (op) {
         case "delete" -> {
           relations.checkDelete(e.getId());
           relations.cleanup(e.getId());
-          if (repository.delete(e.getId()) != 1) throw new IllegalArgumentException("删除失败");
+          if (repository.delete(e.getId()) != 1)
+            throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0278");
           repository.deleteOwners(auth.tenantId(), e.getId());
           continue;
         }
@@ -144,22 +211,13 @@ public class EquipmentCommandService {
         }
         case "location" -> {
           e.setFunctionLocationId(base.getId());
-          locationPath(base.getId(), e.getCompanyOrgId(), true);
-          var parts = new java.util.ArrayList<String>();
-          var node = base;
-          while (node != null) {
-            parts.addFirst(node.getName());
-            node =
-                node.getParentId() == null
-                    ? null
-                    : repository.baseItemInTenant(auth.tenantId(), node.getParentId());
-            if (parts.size() > 100) throw new IllegalArgumentException("位置树结构异常");
-          }
-          e.setFunctionLocation(String.join("·", parts));
+          e.setFunctionLocation(locationPath(base.getId(), e.getCompanyOrgId(), true));
         }
         case "department" -> {
           var dept = repository.activeDepartment(auth.tenantId(), value);
-          if (dept == null) throw new IllegalArgumentException("部门不存在或已停用");
+          if (dept == null)
+            throw new com.windasoft.eam.common.LocalizedArgumentException(
+                "server.equipment.message0042");
           permissions.checkEquipmentDepartment(dept.getId(), "编辑");
           var company = repository.organization(permissions.companyOfOrganization(dept.getId()));
           var original = require(e.getId());
@@ -169,7 +227,8 @@ public class EquipmentCommandService {
           e.setCompany(company.getName());
           if (e.getFunctionLocationId() != null
               && !java.util.Objects.equals(e.getCompanyOrgId(), company.getId()))
-            throw new IllegalArgumentException("跨公司变更请在设备编辑中同步选择位置");
+            throw new com.windasoft.eam.common.LocalizedArgumentException(
+                "server.equipment.message0043");
           e.setCompanyOrgId(company.getId());
           e.setDepartment(dept.getName());
           e.setDepartmentOrgId(dept.getId());
@@ -189,7 +248,9 @@ public class EquipmentCommandService {
       }
       permissions.checkEquipment(e, "编辑");
       e.setUpdatedBy(auth.userId());
-      if (repository.update(e) != 1) throw new IllegalArgumentException("设备已被他人修改，请刷新重试");
+      if (repository.update(e) != 1)
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0044");
       if (op.equals("owner")) saveOwners(e);
     }
     return ids.size();
@@ -197,13 +258,14 @@ public class EquipmentCommandService {
 
   private Equipment require(Long id) {
     var e = repository.find(auth.tenantId(), id);
-    if (e == null) throw new IllegalArgumentException("设备不存在");
+    if (e == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
     return e;
   }
 
   private void assertCodeAvailable(String code, Long currentId) {
     if (repository.countCode(auth.tenantId(), code, currentId) > 0)
-      throw new IllegalArgumentException("设备编号已存在");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0045");
   }
 
   private String nextCode() {
@@ -227,38 +289,48 @@ public class EquipmentCommandService {
     List<String> allowed =
         Arrays.stream(equipmentStateConfig.split(",")).map(String::trim).toList();
     if (!allowed.contains(state))
-      throw new IllegalArgumentException("设备状态无效，可选：" + String.join("、", allowed));
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.equipment.message0046", String.join("、", allowed));
   }
 
   private String locationPath(Long id, Long company, boolean required) {
     if (id == null) {
-      if (required) throw new IllegalArgumentException("请选择位置");
+      if (required)
+        throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0109");
       return null;
     }
     var parts = new java.util.ArrayList<String>();
     var visited = new java.util.HashSet<Long>();
     var node = repository.baseItem(id);
     if (node == null) {
-      if (required) throw new IllegalArgumentException("位置不存在");
+      if (required)
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0030");
       return null;
     }
     while (node != null) {
-      if (!visited.add(node.getId())) throw new IllegalArgumentException("位置树结构异常");
+      if (!visited.add(node.getId()))
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0031");
       if (!node.getTenantId().equals(auth.tenantId())
           || !"LOCATION".equals(node.getItemType())
           || !java.util.Objects.equals(node.getCompanyOrgId(), company))
-        throw new IllegalArgumentException("位置不属于设备所属公司");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0032");
       if (required && node.getId().equals(id) && !Integer.valueOf(1).equals(node.getStatus()))
-        throw new IllegalArgumentException("位置已停用");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0033");
       parts.addFirst(node.getName());
       node = node.getParentId() == null ? null : repository.baseItem(node.getParentId());
     }
-    return String.join(" · ", parts);
+    return String.join(" > ", parts);
   }
 
   private String baseName(Long id, String type, boolean required) {
     if (id == null) {
-      if (required) throw new IllegalArgumentException("请选择关联的基础数据");
+      if (required)
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0047");
       return "";
     }
     var item = repository.baseItem(id);
@@ -266,7 +338,7 @@ public class EquipmentCommandService {
         || !java.util.Objects.equals(auth.tenantId(), item.getTenantId())
         || !type.equals(item.getItemType())
         || !Integer.valueOf(1).equals(item.getStatus()))
-      throw new IllegalArgumentException("关联的基础数据不存在、类型不符或已停用");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0048");
     return item.getName();
   }
 
@@ -277,11 +349,12 @@ public class EquipmentCommandService {
     while (node != null) {
       if (!visited.add(node.getId())
           || !java.util.Objects.equals(auth.tenantId(), node.getTenantId()))
-        throw new IllegalArgumentException("组织结构无效");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0049");
       parts.addFirst(node.getName());
       node = node.getParentId() == null ? null : repository.organization(node.getParentId());
     }
-    return String.join(" · ", parts);
+    return String.join(" > ", parts);
   }
 
   private Equipment fromForm(EquipmentForm f) {
@@ -298,7 +371,8 @@ public class EquipmentCommandService {
     e.setEquipmentStatus(f.state());
     e.setUseStatusId(f.useStateId());
     e.setUseStatus(baseName(f.useStateId(), "USE_STATUS", true));
-    if (f.sourceId() == null && has(f.source())) throw new IllegalArgumentException("请重新选择设备来源");
+    if (f.sourceId() == null && has(f.source()))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0050");
     e.setSourceId(f.sourceId());
     e.setSource(baseName(f.sourceId(), "SOURCE", false));
     e.setAcquiredAt(f.acquiredAt());
@@ -327,8 +401,6 @@ public class EquipmentCommandService {
     e.setCalibrationValidUntil(f.calibrationValidUntil());
     e.setInspectorName(f.inspectorName());
     e.setDocumentsJson(jsonString(files.validate(f.documents())));
-    e.setChildrenJson(jsonString(f.children()));
-    e.setRelatedSparesJson(jsonString(f.relatedSpares()));
     return e;
   }
 
@@ -371,16 +443,18 @@ public class EquipmentCommandService {
 
   private void assignOwners(Equipment e, List<Long> selected, Equipment previous) {
     if (selected.stream().anyMatch(java.util.Objects::isNull))
-      throw new IllegalArgumentException("请选择有效的负责人");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0051");
     var ids = selected.stream().distinct().toList();
-    if (ids.size() > 50) throw new IllegalArgumentException("负责人最多选择50人");
+    if (ids.size() > 50)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0001");
     var old = previous == null ? List.<Map<String, Object>>of() : ownerRows(previous.getId());
     var names = new java.util.ArrayList<String>();
     for (Long id : ids) {
       var prior = old.stream().filter(x -> id.toString().equals(x.get("id"))).findFirst();
       var user = repository.user(auth.tenantId(), id);
       if (prior.isEmpty() && (user == null || !Integer.valueOf(1).equals(user.getStatus())))
-        throw new IllegalArgumentException("负责人不存在或已停用");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0052");
       names.add(user == null ? prior.orElseThrow().get("name").toString() : user.getDisplayName());
     }
     e.setOwnerIds(ids);

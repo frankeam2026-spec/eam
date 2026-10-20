@@ -13,7 +13,6 @@ import java.util.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AuthenticationService {
@@ -40,7 +39,8 @@ public class AuthenticationService {
     if (user == null
         || user.getPasswordHash() == null
         || !passwords.matches(form.password(), user.getPasswordHash()))
-      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "租户、账号或密码错误");
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          HttpStatus.UNAUTHORIZED, "server.system.message0035");
     byte[] bytes = new byte[32];
     random.nextBytes(bytes);
     String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
@@ -70,7 +70,7 @@ public class AuthenticationService {
   @org.springframework.transaction.annotation.Transactional
   public Map<String, Object> changePassword(ChangePasswordForm form, String token) {
     if (environment.acceptsProfiles(org.springframework.core.env.Profiles.of("local-dev")))
-      throw new IllegalArgumentException("开发免登录模式暂不支持修改密码");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0036");
     var user = repository.lockUser(auth.tenantId(), auth.userId());
     if (user == null
         || user.getPasswordHash() == null
@@ -78,13 +78,13 @@ public class AuthenticationService {
       throw new com.windasoft.eam.common.FieldValidationException("currentPassword", "当前密码不正确");
     if (form.newPassword().length() < 12
         || form.newPassword().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72)
-      throw new com.windasoft.eam.common.FieldValidationException("newPassword", "新密码至少12位，且不超过72字节");
+      throw new com.windasoft.eam.common.FieldValidationException(
+          "newPassword", "新密码至少12位，且不超过72字节");
     if (form.currentPassword().equals(form.newPassword()))
       throw new com.windasoft.eam.common.FieldValidationException("newPassword", "新密码不能与当前密码相同");
     user.setPasswordHash(passwords.encode(form.newPassword()));
     repository.updateUser(user);
-    repository.revokeOtherSessions(
-        auth.tenantId(), auth.userId(), null);
+    repository.revokeOtherSessions(auth.tenantId(), auth.userId(), null);
     return Map.of("success", true);
   }
 

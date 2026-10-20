@@ -7,13 +7,13 @@ Vue 3、TypeScript、Vite、Element Plus、Vue Router、Pinia。依赖采用明�
 ## 代码职责
 
 - `App.vue`：中文组件配置与路由入口。
-- `WorkspaceLayout.vue`：导航、页面容器，以及现有台账和基础数据列表。
+- `WorkspaceLayout.vue`：顶栏、导航和路由容器；台账、基础数据及其他业务页面由独立页面组件承接。
 - `router/index.ts`：Hash 路由、模块按需加载、菜单与操作权限入口检查。刷新保留当前页面，新建、编辑、履历使用独立路由。
 - `stores/auth.ts`：当前用户、菜单与操作授权、登录状态。
 - `stores/ui.ts`：主题与导航收起状态。
 - `stores/baseData.ts`：服务端基础数据的共享加载。
 - `components/EquipmentEditor.vue`：设备新增与编辑表单。
-- `components/common/`：公共业务表格、对话框、分页、返回按钮及无权限页面。普通业务表格使用 `AppBusinessTable`，复杂列使用 `BusinessTableColumn`；排序图标和交互采用 Element Plus 默认能力，页面通过事件处理业务数据。
+- `components/common/`：公共业务表格、对话框、分页、返回按钮及无权限页面。普通业务表格使用 `AppBusinessTable`，复杂列使用原生 `ElTableColumn`；排序图标和交互采用 Element Plus 默认能力，页面通过事件处理业务数据。
 - `components/TreeSelect.vue`、`BooleanSwitch.vue`、`ListToolbarIcons.vue`：统一树选择、是否开关和列表工具栏。
 - `services/dialog.ts`：统一确认对话框。
 - `styles/tokens.css`：产品颜色与主题变量。
@@ -27,7 +27,7 @@ Vue 3、TypeScript、Vite、Element Plus、Vue Router、Pinia。依赖采用明�
 
 默认蓝色，支持深蓝、粉色。列表与表单正文 13px，保持紧凑、清晰的企业系统布局。
 
-列表左侧为业务操作，右侧为列筛选、关键字输入框内搜索、按业务需要显示的筛选器和重置。分页在底栏左侧，设置列与导出图标在底栏右侧，底栏与表格一体。具体规则以根目录[UI规范](../UI交互与视觉规范-v1.2.md)中的已确认项为准，本文不另立布局标准。树形基础数据统一使用 TreeSelect。
+列表左侧为业务操作，右侧为关键字搜索、按需添加条件的筛选入口和重置；已有独立列筛选不在本轮强制重做。分页在底栏左侧，设置列与导出图标在底栏右侧，底栏与表格一体。具体规则以根目录[UI规范](../UI交互与视觉规范-v1.2.md)中的已确认项为准，本文不另立布局标准。树形基础数据统一使用 TreeSelect。
 
 详情和编辑页左上角返回入口统一使用 `AppBackButton`，以设备详情样式为基准：透明无描边、32px 点击区域、浅蓝悬停反馈。通过 `label` 指明返回目标，保存/提交期间禁用；不在单页重写返回图标样式。
 
@@ -53,3 +53,10 @@ zsh run-local.sh frontend
 ## 样式隔离
 
 业务表格统一声明 `business-table`，共享样式放在 `styles/list-typography.css`。不得使用裸 `table`、`thead th`、`tbody td` 选择器设置业务尺寸、字体、颜色或悬停样式，以免污染日期控件和打印画布。宽列表的最小宽度由具体表格类声明；弹窗中的小型表格默认适应容器。公共默认值使用低优先级选择器，组件负责自身的列宽和滚动布局。
+
+## 2026-10-17 工程改造中的公共契约
+
+- JSON与文件请求统一经过 `api.ts` 的 `request` / `requestFile`；`ApiError` 保留 status、code、fieldErrors。保养及点巡检的模块API保留业务路径适配，不再复制 fetch 和登录失效处理。
+- 保养分页列表使用 `useMaintenanceList` 管理查询结果和响应序号；编辑页继续独立维护草稿。服务端分页列表不得再次在前端截取一页后筛选或导出当前页冒充全量。
+- 测试运行 `npm run test`；完整前端检查 `npm run check`。组件测试使用 Vitest / Vue Test Utils / jsdom，报告写入 test-results；不得对开发业务数据提交操作。
+- 分阶段实施状态见 [第一、二批实施记录](docs/engineering/第一二批实施记录.md)，其他模块未完成前不得宣称全系统查询已统一。

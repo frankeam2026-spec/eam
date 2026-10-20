@@ -25,6 +25,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class EquipmentQueryRepository {
   private final EquipmentMapper equipment;
+  private final EquipmentMediaRepository media;
   private final BaseItemMapper baseItems;
   private final OrgUnitMapper organizations;
   private final SystemUserMapper users;
@@ -35,6 +36,7 @@ public class EquipmentQueryRepository {
 
   public EquipmentQueryRepository(
       EquipmentMapper equipment,
+      EquipmentMediaRepository media,
       BaseItemMapper baseItems,
       OrgUnitMapper organizations,
       SystemUserMapper users,
@@ -43,6 +45,7 @@ public class EquipmentQueryRepository {
       JdbcTemplate db,
       ObjectMapper json) {
     this.equipment = equipment;
+    this.media = media;
     this.baseItems = baseItems;
     this.organizations = organizations;
     this.users = users;
@@ -110,33 +113,158 @@ public class EquipmentQueryRepository {
             .ge(acquiredFrom != null, Equipment::getAcquiredAt, acquiredFrom)
             .le(acquiredTo != null, Equipment::getAcquiredAt, acquiredTo)
             .le(warrantyBefore != null, Equipment::getWarrantyUntil, warrantyBefore);
-    authorizedScope.accept(q);
-    switch (sortBy) {
-      case "equipmentCode" -> order(q, direction, Equipment::getEquipmentCode);
-      case "name" -> order(q, direction, Equipment::getName);
-      case "category" -> order(q, direction, Equipment::getCategory);
-      case "model" -> order(q, direction, Equipment::getModel);
-      case "serialNo" -> order(q, direction, Equipment::getSerialNo);
-      case "department" -> order(q, direction, Equipment::getDepartment);
-      case "ownerName" -> order(q, direction, Equipment::getOwnerName);
-      case "brand" -> order(q, direction, Equipment::getBrand);
-      case "equipmentStatus" -> order(q, direction, Equipment::getEquipmentStatus);
-      case "useStatus" -> order(q, direction, Equipment::getUseStatus);
-      case "source" -> order(q, direction, Equipment::getSource);
-      case "acquiredAt" -> order(q, direction, Equipment::getAcquiredAt);
-      case "acquiredAmount" -> order(q, direction, Equipment::getAcquiredAmount);
-      case "warrantyUntil" -> order(q, direction, Equipment::getWarrantyUntil);
-      default -> order(q, direction, Equipment::getCreatedAt);
+    var fields =
+        new java.util.HashMap<String, com.windasoft.eam.common.AdvancedFilters.Field<Equipment>>();
+    fields.put(
+        "code",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getEquipmentCode, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
+    fields.put(
+        "name",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getName, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
+    fields.put(
+        "state",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getEquipmentStatus, com.windasoft.eam.common.AdvancedFilters.Kind.CHOICE));
+    fields.put(
+        "useState",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getUseStatus, com.windasoft.eam.common.AdvancedFilters.Kind.CHOICE));
+    fields.put(
+        "assetNo",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getAssetNo, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
+    fields.put(
+        "category",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getCategory, com.windasoft.eam.common.AdvancedFilters.Kind.CHOICE));
+    fields.put(
+        "department",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getDepartment, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
+    fields.put(
+        "company",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getCompany, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
+    fields.put(
+        "functionLocation",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getFunctionLocation, com.windasoft.eam.common.AdvancedFilters.Kind.CHOICE));
+    fields.put(
+        "model",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getModel, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
+    fields.put(
+        "serial",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getSerialNo, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
+    fields.put(
+        "owner",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getOwnerName, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
+    fields.put(
+        "brand",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getBrand, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
+    fields.put(
+        "source",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getSource, com.windasoft.eam.common.AdvancedFilters.Kind.CHOICE));
+    fields.put(
+        "unit",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getUnitName, com.windasoft.eam.common.AdvancedFilters.Kind.CHOICE));
+    fields.put(
+        "supplier",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getSupplier, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
+    fields.put(
+        "tagCode",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getTagCode, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
+    fields.put(
+        "level",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getEquipmentLevel, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
+    fields.put(
+        "acquiredAt",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getAcquiredAt, com.windasoft.eam.common.AdvancedFilters.Kind.DATE));
+    fields.put(
+        "warranty",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getWarrantyUntil, com.windasoft.eam.common.AdvancedFilters.Kind.DATE));
+    fields.put(
+        "inServiceDate",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getInServiceDate, com.windasoft.eam.common.AdvancedFilters.Kind.DATE));
+    fields.put(
+        "retirementDate",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getExpectedRetirementDate,
+            com.windasoft.eam.common.AdvancedFilters.Kind.DATE));
+    fields.put(
+        "amount",
+        new com.windasoft.eam.common.AdvancedFilters.Field<>(
+            Equipment::getAcquiredAmount, com.windasoft.eam.common.AdvancedFilters.Kind.NUMBER));
+    com.windasoft.eam.common.AdvancedFilters.apply(q, request.advanced(), fields, json);
+    if (request.scopeType() != null && !request.scopeType().isBlank()) {
+      var ids =
+          Arrays.stream(Objects.toString(request.scopeIds(), "").split(","))
+              .filter(v -> !v.isBlank())
+              .map(Long::valueOf)
+              .toList();
+      if (ids.isEmpty() || ids.size() > 5000)
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0008");
+      switch (request.scopeType()) {
+        case "organization" ->
+            q.and(
+                w ->
+                    w.in(Equipment::getDepartmentOrgId, ids)
+                        .or()
+                        .in(Equipment::getCompanyOrgId, ids));
+        case "category" -> q.in(Equipment::getCategoryId, ids);
+        case "location" -> {
+          q.in(Equipment::getFunctionLocationId, ids);
+          if (request.scopeCompanyId() != null && !request.scopeCompanyId().isBlank())
+            q.eq(Equipment::getCompanyOrgId, Long.valueOf(request.scopeCompanyId()));
+        }
+        default ->
+            throw new com.windasoft.eam.common.LocalizedArgumentException(
+                "server.equipment.message0008");
+      }
     }
-    return equipment.selectPage(
-        new Page<>(Math.max(1, page), Math.min(10000, Math.max(1, size))), q);
+    authorizedScope.accept(q);
+    if (!sortBy.startsWith("custom:"))
+      switch (sortBy) {
+        case "equipmentCode" -> order(q, direction, Equipment::getEquipmentCode);
+        case "name" -> order(q, direction, Equipment::getName);
+        case "category" -> order(q, direction, Equipment::getCategory);
+        case "model" -> order(q, direction, Equipment::getModel);
+        case "serialNo" -> order(q, direction, Equipment::getSerialNo);
+        case "department" -> order(q, direction, Equipment::getDepartment);
+        case "ownerName" -> order(q, direction, Equipment::getOwnerName);
+        case "brand" -> order(q, direction, Equipment::getBrand);
+        case "equipmentStatus" -> order(q, direction, Equipment::getEquipmentStatus);
+        case "useStatus" -> order(q, direction, Equipment::getUseStatus);
+        case "source" -> order(q, direction, Equipment::getSource);
+        case "acquiredAt" -> order(q, direction, Equipment::getAcquiredAt);
+        case "acquiredAmount" -> order(q, direction, Equipment::getAcquiredAmount);
+        case "warrantyUntil" -> order(q, direction, Equipment::getWarrantyUntil);
+        default -> order(q, direction, Equipment::getCreatedAt);
+      }
+    return media.hydratePage(
+        equipment.selectPage(new Page<>(Math.max(1, page), Math.min(10000, Math.max(1, size))), q));
   }
 
   public Equipment find(long tenant, long id) {
-    return equipment.selectOne(
-        new LambdaQueryWrapper<Equipment>()
-            .eq(Equipment::getTenantId, tenant)
-            .eq(Equipment::getId, id));
+    return media.hydrate(
+        equipment.selectOne(
+            new LambdaQueryWrapper<Equipment>()
+                .eq(Equipment::getTenantId, tenant)
+                .eq(Equipment::getId, id)));
   }
 
   public List<Equipment> visibleOrganizations(
@@ -155,6 +283,22 @@ public class EquipmentQueryRepository {
         new LambdaQueryWrapper<OrgUnit>()
             .eq(OrgUnit::getTenantId, tenant)
             .eq(activeOnly, OrgUnit::getStatus, 1));
+  }
+
+  public Page<SystemUser> ownerCandidates(
+      long tenant, com.windasoft.eam.dto.common.ListQuery query) {
+    var where =
+        new LambdaQueryWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getStatus, 1);
+    if (!query.keyword().isBlank())
+      where.and(
+          w ->
+              w.like(SystemUser::getDisplayName, query.keyword())
+                  .or()
+                  .like(SystemUser::getAccount, query.keyword()));
+    where.orderByAsc(SystemUser::getDisplayName).orderByAsc(SystemUser::getId);
+    return users.selectPage(new Page<>(query.page(), query.size()), where);
   }
 
   public List<SystemUser> employees(long tenant) {
@@ -254,7 +398,8 @@ public class EquipmentQueryRepository {
         snapshot.put("legacyReason", r.get("reason"));
         result.add(snapshot);
       } catch (Exception e) {
-        throw new IllegalArgumentException("历史关联数据无法读取");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0009");
       }
   }
 

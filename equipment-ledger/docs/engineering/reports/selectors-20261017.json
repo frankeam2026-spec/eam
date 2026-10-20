@@ -1,0 +1,216 @@
+{
+  "recordedAt": "2026-10-17T18:25:46.270312+08:00",
+  "scope": "选择器分页，当前未提交工作区；仅本地部署",
+  "backend": {
+    "totals": {
+      "tests": 147,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "suites": [
+      {
+        "suite": "com.windasoft.eam.service.system.OrganizationScopeServiceTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "tests": 24,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.LayerPackageArchitectureTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.common.CsvCellsTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.system.PermissionServiceTest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.AnalyticsPeriodTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.repository.maintenance.MaintenanceRepositoryTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairWorkflowServiceTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.business.BusinessRulesTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.integration.SelectorMySqlIT",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.common.inventory.UsageCostTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.common.VersionGuardTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairConcurrencyTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.LayerDependencyArchitectureTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.maintenance.MaintenanceGenerationServiceTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.inventory.InventoryMaterialNumberTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "tests": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.equipment.EquipmentQueryServiceTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.common.ApiExceptionHandlerTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.common.AdvancedFiltersTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.repository.inventory.InventoryRepositoryTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.EquipmentExperienceServiceTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.inventory.RequisitionChoicesTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.service.equipment.EquipmentQueryArchitectureTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.windasoft.eam.repository.common.SqlListFiltersTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "isolatedDatabase": "eam_engineering_test",
+    "fixtures": "10005设备、10005保养任务及维修/点巡检任务；全部事务回滚",
+    "selectorIntegrationTests": 6
+  },
+  "frontend": {
+    "tests": 18,
+    "failures": 0,
+    "errors": 0,
+    "checks": [
+      "typecheck",
+      "Vitest",
+      "icons",
+      "tables",
+      "controls",
+      "production build"
+    ]
+  },
+  "http": "selector-api-smoke-20261017.json",
+  "unverified": [
+    "未穷尽全部角色和任务参与者组合",
+    "浏览器未在开发库提交设备计划、领料或出库单；保存和账务回归使用隔离库",
+    "GitHub Actions尚未远端运行"
+  ],
+  "knownLimitations": [
+    "旧未分页choices兼容调用仍保留，当前已识别的本轮前端调用均已改为paged=true",
+    "工作台等聚合消费者与编辑页职责拆分不属于本轮选择器收尾",
+    "首页分析包仍有既有大于500kB的构建提示"
+  ]
+}

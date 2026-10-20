@@ -12,7 +12,6 @@ import org.apache.pdfbox.Loader;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class DocumentPrintService {
@@ -59,7 +58,8 @@ public class DocumentPrintService {
           .with(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
           .writeValueAsString(value);
     } catch (Exception e) {
-      throw new IllegalArgumentException("打印内容无法序列化", e);
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          com.windasoft.eam.common.MessageRef.of("server.printing.message0005"), e);
     }
   }
 
@@ -74,7 +74,8 @@ public class DocumentPrintService {
   private void company(Long company, String action) {
     var scope = permissions.scope(MENU, action);
     if (!(scope.all() || company != null && scope.companyIds().contains(company)))
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权维护或查看该公司模板");
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          HttpStatus.FORBIDDEN, "server.printing.message0006");
   }
 
   private boolean permitted(Long company, String action) {
@@ -118,9 +119,9 @@ public class DocumentPrintService {
         "defaults",
         layout.defaults(),
         "headers",
-        DocumentPrintLayout.HEADERS,
+        layout.headerLabels(),
         "columns",
-        DocumentPrintLayout.COLUMNS,
+        layout.columnLabels(),
         "companies",
         companies,
         "canManageCommon",
@@ -144,14 +145,17 @@ public class DocumentPrintService {
     if (f.companyId() != null)
       require(
           repo.companies(auth.tenantId()).stream().anyMatch(c -> id(c.get("id")) == f.companyId()),
-          "请选择有效的公司");
-    require(!f.isDefault() || f.enabled(), "停用模板不能设置为默认");
+          com.windasoft.eam.common.MessageContext.text("server.printing.message0018"));
+    require(
+        !f.isDefault() || f.enabled(),
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0019"));
     long key = templateId == null ? IdWorker.getId() : templateId;
     if (templateId != null) {
       var old = repo.template(auth.tenantId(), key);
       company(owner(old), action);
       require(
-          f.rowVersion() != null && id(old.get("row_version")) == f.rowVersion(), "模板已被修改，请重新打开");
+          f.rowVersion() != null && id(old.get("row_version")) == f.rowVersion(),
+          com.windasoft.eam.common.MessageContext.text("server.common.message0067"));
     }
     if (f.isDefault()) repo.clearDefaults(auth.tenantId(), f.companyId(), key);
     if (templateId == null)
@@ -175,7 +179,7 @@ public class DocumentPrintService {
                   encode(f.config()),
                   f.rowVersion())
               == 1,
-          "模板已被修改，请重新打开");
+          com.windasoft.eam.common.MessageContext.text("server.common.message0067"));
     return templateView(repo.template(auth.tenantId(), key));
   }
 
@@ -184,12 +188,16 @@ public class DocumentPrintService {
     permissions.require(MENU, "删除");
     var t = repo.template(auth.tenantId(), key);
     company(owner(t), "删除");
-    require(repo.deleteTemplate(auth.tenantId(), key, version) == 1, "模板已被修改，请刷新后再删除");
+    require(
+        repo.deleteTemplate(auth.tenantId(), key, version) == 1,
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0020"));
   }
 
   public byte[] designerPreview(PrintForms.Template f) throws java.io.IOException {
     permissions.require(MENU, "查看");
-    require(visible(f.companyId()), "无权查看该公司模板");
+    require(
+        visible(f.companyId()),
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0021"));
     layout.validate(f.config());
     var d = new LinkedHashMap<String, Object>();
     d.put("code", "CK-202610-0001");
@@ -260,7 +268,7 @@ public class DocumentPrintService {
             "id",
             "system",
             "name",
-            "标准出库单（系统）",
+            com.windasoft.eam.common.MessageContext.text("output.print.builtinName"),
             "enabled",
             1,
             "is_default",
@@ -322,8 +330,13 @@ public class DocumentPrintService {
         available(id(s.get("company_id")), id(s.get("warehouse_id"))).stream()
             .filter(x -> text(x.get("id")).equals(f.templateId()))
             .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException("模板已停用、不适用或无金额权限"));
+            .orElseThrow(
+                () ->
+                    new com.windasoft.eam.common.LocalizedArgumentException(
+                        "server.printing.message0007"));
     var config = decode(t.get("config_json"));
+    ((com.fasterxml.jackson.databind.node.ObjectNode) config)
+        .put("generatedLocale", com.windasoft.eam.common.MessageContext.locale());
     layout.validate(config);
     boolean money = layout.money(config);
     checkWarehouse(id(s.get("warehouse_id")), money);
@@ -342,7 +355,9 @@ public class DocumentPrintService {
     var lines = new ArrayList<Map<String, String>>();
     if (!text(raw.get("status")).equals("草稿")) {
       var allocations = repo.allocations(auth.tenantId(), f.documentId());
-      require(allocations.size() <= 1000, "出库分配过多，请分批打印");
+      require(
+          allocations.size() <= 1000,
+          com.windasoft.eam.common.MessageContext.text("server.printing.message0022"));
       for (var a : allocations) {
         var row = new LinkedHashMap<String, String>();
         for (String key : DocumentPrintLayout.COLUMNS.keySet())
@@ -356,7 +371,7 @@ public class DocumentPrintService {
         lines.add(row);
       }
     } else {
-      require(!money, "草稿尚无实际出库成本，请选择无金额模板");
+      require(!money, com.windasoft.eam.common.MessageContext.text("server.printing.message0023"));
       for (var a : (List<Map<String, Object>>) raw.get("lines")) {
         var row = new LinkedHashMap<String, String>();
         row.put("sequence", String.valueOf(lines.size() + 1));
@@ -372,7 +387,9 @@ public class DocumentPrintService {
         lines.add(row);
       }
     }
-    require(!lines.isEmpty(), "出库单没有可打印的明细");
+    require(
+        !lines.isEmpty(),
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0024"));
     for (var pair :
         Map.of("recipientName", "recipient", "departmentName", "department", "taskCode", "task")
             .entrySet()) {
@@ -447,22 +464,28 @@ public class DocumentPrintService {
   @Transactional
   public Map<String, Object> generate(PrintForms.Output f) throws java.io.IOException {
     require(
-        f.requestKey() != null && f.requestKey().matches("[A-Za-z0-9_-]{16,64}"), "缺少有效的生成请求标识");
+        f.requestKey() != null && f.requestKey().matches("[A-Za-z0-9_-]{16,64}"),
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0025"));
     String requestHash =
         hash(encode(List.of(text(f.documentId()), text(f.templateId()), text(f.fingerprint()))));
     var retry = repo.retry(auth.tenantId(), auth.userId(), f.requestKey(), false);
     if (retry != null) {
-      require(requestHash.equals(retry.get("request_hash")), "相同请求标识不能用于不同内容");
+      require(
+          requestHash.equals(retry.get("request_hash")),
+          com.windasoft.eam.common.MessageContext.text("server.printing.message0026"));
       return job(id(retry.get("id")));
     }
     var p = prepare(f);
-    require(p.fingerprint.equals(f.fingerprint()), "单据或模板已变化，请重新预览");
+    require(
+        p.fingerprint.equals(f.fingerprint()),
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0027"));
     byte[] pdf = layout.render(p.config, p.document, p.lines);
     int pages;
     try (var doc = Loader.loadPDF(pdf)) {
       pages = doc.getNumberOfPages();
     }
-    require(pages <= 100, "单据超过100页，请调整纸张或明细列");
+    require(
+        pages <= 100, com.windasoft.eam.common.MessageContext.text("server.printing.message0028"));
     long key = IdWorker.getId();
     Long template = p.template.get("id").equals("system") ? null : id(p.template.get("id"));
     repo.insertJob(
@@ -487,7 +510,9 @@ public class DocumentPrintService {
         pages,
         pdf);
     var stored = repo.retry(auth.tenantId(), auth.userId(), f.requestKey(), true);
-    require(requestHash.equals(stored.get("request_hash")), "相同请求标识不能用于不同内容");
+    require(
+        requestHash.equals(stored.get("request_hash")),
+        com.windasoft.eam.common.MessageContext.text("server.printing.message0026"));
     var result = repo.lockedJob(auth.tenantId(), id(stored.get("id")));
     checkJob(result);
     return jobView(result);

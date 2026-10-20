@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElButton } from 'element-plus';
 
 import { ref, watch } from 'vue';
@@ -40,23 +41,23 @@ async function load() {
       error.value = '';
     }
   } catch (e) {
-    if (seq === revision) error.value = e instanceof Error ? e.message : '工单加载失败';
+    if (seq === revision) error.value = e instanceof Error ? e.message : tr('ui.equipment.text1052');
   } finally {
     if (seq === revision) loading.value = false;
   }
 }
 watch(() => [props.modelValue, props.equipmentCode, page.value, size.value], load);
 const columns = [
-  { prop: 'orderNo' as const, label: '工单编号', minWidth: 160 },
-  { prop: 'description' as const, label: '故障描述', minWidth: 230 },
-  { prop: 'status' as const, label: '状态', minWidth: 100 },
-  { prop: 'assignee' as const, label: '维修人', minWidth: 100 },
+  { prop: 'orderNo' as const, get label() { return tr('ui.equipment.text0173'); }, minWidth: 160 },
+  { prop: 'description' as const, get label() { return tr('ui.equipment.text1044'); }, minWidth: 230 },
+  { prop: 'status' as const, get label() { return tr('ui.equipment.text0170'); }, minWidth: 100 },
+  { prop: 'assignee' as const, get label() { return tr('ui.equipment.text1046'); }, minWidth: 100 },
 ];
 </script>
 <template>
   <AppDialog
     :model-value="modelValue"
-    title="关联同设备的有效工单"
+    :title="tr('ui.equipment.text1577')"
     width="900px"
     @update:model-value="emit('update:modelValue', $event)"
     ><form
@@ -65,7 +66,7 @@ const columns = [
         load();
       "
     >
-      <ListSearchInput v-model="q" placeholder="搜索工单或故障描述" />
+      <ListSearchInput v-model="q" :placeholder="tr('ui.equipment.text1578')" />
     </form>
     <div class="repair-picker-body">
       <AppBusinessTable
@@ -87,13 +88,13 @@ const columns = [
               emit('update:modelValue', false);
             "
           >
-            关联
+            {{ tr('ui.equipment.text0230') }}
           </ElButton></template
         ></AppBusinessTable
       >
     </div>
     <template #footer
-      ><ElButton class="" @click="emit('update:modelValue', false)"> 取消 </ElButton></template
+      ><ElButton class="" @click="emit('update:modelValue', false)"> {{ tr('ui.equipment.text0157') }} </ElButton></template
     ></AppDialog
   >
 </template>

@@ -36,7 +36,9 @@ public class InventoryQueryService {
 
   private InventoryQueryRepository.Query query(String kind, String q, String filterJson) {
     permissions.require("inventoryQuery", "查看");
-    require(q.length() <= 200 && filterJson.length() <= 6000, "查询条件过长");
+    require(
+        q.length() <= 200 && filterJson.length() <= 6000,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0187"));
     var warehouses = new ArrayList<Long>();
     for (var row : repository.warehouseIds(auth.tenantId())) {
       try {
@@ -50,13 +52,15 @@ public class InventoryQueryService {
     try {
       filters = json.readValue(filterJson, new TypeReference<Map<String, String>>() {});
     } catch (Exception e) {
-      throw new IllegalArgumentException("筛选条件无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0009");
     }
     return repository.query(auth.tenantId(), kind, q, filters, warehouses);
   }
 
   public Object list(String kind, String q, String filters, int page, int size) {
-    require(page >= 1 && size >= 1 && size <= 100, "分页参数无效");
+    require(
+        page >= 1 && size >= 1 && size <= 100,
+        com.windasoft.eam.common.MessageContext.text("server.common.message0004"));
     var query = query(kind, q, filters);
     long total = repository.count(query);
     var rows =

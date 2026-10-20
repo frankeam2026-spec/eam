@@ -13,6 +13,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class AuthorizationRepository {
+  private final RoleRelationsRepository relations;
   private final UserRoleLinkMapper links;
   private final SystemRoleMapper roles;
   private final RoleMenuPermissionMapper grants;
@@ -28,7 +29,9 @@ public class AuthorizationRepository {
       OrgUnitMapper orgs,
       SystemUserMapper users,
       RepairWorkflowMapper workflow,
-      JdbcTemplate db) {
+      JdbcTemplate db,
+      RoleRelationsRepository relations) {
+    this.relations = relations;
     this.links = links;
     this.roles = roles;
     this.grants = grants;
@@ -56,11 +59,12 @@ public class AuthorizationRepository {
   }
 
   public List<SystemRole> activeRoles(long tenant, List<Long> ids) {
-    return roles.selectList(
-        new LambdaQueryWrapper<SystemRole>()
-            .eq(SystemRole::getTenantId, tenant)
-            .eq(SystemRole::getStatus, 1)
-            .in(SystemRole::getId, ids));
+    return relations.roles(
+        roles.selectList(
+            new LambdaQueryWrapper<SystemRole>()
+                .eq(SystemRole::getTenantId, tenant)
+                .eq(SystemRole::getStatus, 1)
+                .in(SystemRole::getId, ids)));
   }
 
   public List<RoleMenuPermission> grants(long tenant, Long role, String menu) {
@@ -69,7 +73,7 @@ public class AuthorizationRepository {
             .eq(RoleMenuPermission::getTenantId, tenant)
             .eq(RoleMenuPermission::getRoleId, role);
     if (menu != null) q.eq(RoleMenuPermission::getMenuKey, menu);
-    return grants.selectList(q);
+    return relations.grants(grants.selectList(q));
   }
 
   public SystemUser activeUser(long tenant, long id) {
@@ -123,7 +127,7 @@ public class AuthorizationRepository {
 
   public int maintenanceParticipation(long tenant, long user) {
     return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_maintenance_task WHERE tenant_id=? AND"
+        "SELECT COUNT(*) FROM v_maintenance_task WHERE tenant_id=? AND"
             + " (JSON_CONTAINS(JSON_EXTRACT(snapshot,'$.owners'),JSON_ARRAY(CAST(? AS CHAR))) OR"
             + " JSON_CONTAINS(JSON_EXTRACT(snapshot,'$.reviewers'),JSON_ARRAY(CAST(? AS CHAR))))",
         Integer.class,
@@ -141,7 +145,7 @@ public class AuthorizationRepository {
     args.add(user);
     args.add(user);
     return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=? AND deleted=0"
+        "SELECT COUNT(*) FROM v_inspection_task WHERE tenant_id=? AND deleted=0"
             + filter
             + " AND (JSON_CONTAINS(JSON_EXTRACT(snapshot,'$.owners'),JSON_ARRAY(CAST(? AS CHAR)))"
             + " OR JSON_CONTAINS(JSON_EXTRACT(snapshot,'$.reviewers'),JSON_ARRAY(CAST(? AS CHAR)))"
@@ -152,7 +156,7 @@ public class AuthorizationRepository {
 
   public int repairPlanParticipation(long tenant, long user) {
     return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_single_repair_plan WHERE tenant_id=? AND (owner_id=? OR"
+        "SELECT COUNT(*) FROM v_single_repair_plan WHERE tenant_id=? AND (owner_id=? OR"
             + " creator_id=?)",
         Integer.class,
         tenant,

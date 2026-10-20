@@ -124,7 +124,7 @@ public class PermissionService {
           Map.entry("inspectionStandard", Set.of("查看", "新增", "编辑", "删除", "导出")),
           Map.entry("inspectionDailyPlan", Set.of("查看", "新增", "编辑", "删除", "导出")),
           Map.entry("inspectionPeriodicPlan", Set.of("查看", "新增", "编辑", "删除", "导出")),
-          Map.entry("inspectionDailyTask", Set.of("查看", "执行", "审核", "转派", "删除", "导出")),
+          Map.entry("inspectionDailyTask", Set.of("查看", "执行", "审核", "转派", "免检", "删除", "导出")),
           Map.entry("inspectionPeriodicTask", Set.of("查看", "执行", "审核", "转派", "删除", "导出")));
 
   public static Set<String> legacyTargets(String parent) {
@@ -178,7 +178,9 @@ public class PermissionService {
       case "standards" -> "maintenanceStandard";
       case "plans" -> "maintenancePlan";
       case "tasks" -> "maintenanceTask";
-      default -> throw new IllegalArgumentException("未知保养资源");
+      default ->
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.system.message0045");
     };
   }
 
@@ -190,7 +192,9 @@ public class PermissionService {
       case "periodic-plans" -> "inspectionPeriodicPlan";
       case "daily", "daily-tasks" -> "inspectionDailyTask";
       case "periodic", "periodic-tasks" -> "inspectionPeriodicTask";
-      default -> throw new IllegalArgumentException("未知点巡检资源");
+      default ->
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.system.message0046");
     };
   }
 
@@ -618,6 +622,7 @@ public class PermissionService {
   }
 
   private static void deny() {
-    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "没有该操作或数据访问权限");
+    throw new com.windasoft.eam.common.LocalizedStatusException(
+        HttpStatus.FORBIDDEN, "server.system.message0047");
   }
 }

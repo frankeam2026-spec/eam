@@ -7,12 +7,23 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class MaintenanceRepository {
+  private final MaintenanceDefinitionStorage definitions;
   private final JdbcTemplate db;
+  private final com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources;
+  private final MaintenanceExecutionStorage executions;
   private final NumberCounterMapper counter;
 
-  public MaintenanceRepository(JdbcTemplate db, NumberCounterMapper counter) {
+  public MaintenanceRepository(
+      JdbcTemplate db,
+      NumberCounterMapper counter,
+      MaintenanceDefinitionStorage definitions,
+      MaintenanceExecutionStorage executions,
+      com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources) {
     this.db = db;
+    this.taskSources = taskSources;
     this.counter = counter;
+    this.executions = executions;
+    this.definitions = definitions;
   }
 
   public void nextMonthlyNumber(String rule, String month) {
@@ -25,9 +36,9 @@ public class MaintenanceRepository {
 
   public List<Map<String, Object>> loadDefinition(
       long tenantId, Object kind, long id, boolean lock) {
+    if (lock) definitions.lock(tenantId, kind.toString(), id);
     return db.queryForList(
-        "SELECT * FROM eam_maintenance_definition WHERE tenant_id=? AND kind=? AND id=?"
-            + (lock ? " FOR UPDATE" : ""),
+        "SELECT * FROM v_maintenance_definition WHERE tenant_id=? AND kind=? AND id=?",
         tenantId,
         kind,
         id);
@@ -35,21 +46,15 @@ public class MaintenanceRepository {
 
   public List<Map<String, Object>> listDefinitions(long tenantId, Object kind) {
     return db.queryForList(
-        "SELECT * FROM eam_maintenance_definition WHERE tenant_id=? AND kind=? ORDER BY"
+        "SELECT * FROM v_maintenance_definition WHERE tenant_id=? AND kind=? ORDER BY"
             + " created_at DESC,id DESC",
         tenantId,
         kind);
   }
 
-  public List<Map<String, Object>> listAllTasks(long tenantId) {
-    return db.queryForList(
-        "SELECT * FROM eam_maintenance_task WHERE tenant_id=? ORDER BY due_date DESC,id DESC",
-        tenantId);
-  }
-
   public List<Map<String, Object>> listPlanSchedules(long tenantId, long id) {
     return db.queryForList(
-        "SELECT * FROM eam_maintenance_schedule WHERE tenant_id=? AND plan_id=? AND"
+        "SELECT * FROM v_maintenance_schedule WHERE tenant_id=? AND plan_id=? AND"
             + " enabled=1 ORDER BY id",
         tenantId,
         id);
@@ -115,37 +120,19 @@ public class MaintenanceRepository {
       Object value6,
       long userId,
       String payload) {
-    return db.update(
-        "INSERT INTO"
-            + " eam_maintenance_definition(id,tenant_id,kind,code,name,department_id,creator_id,payload)"
-            + " VALUES(?,?,?,?,?,?,?,?)",
-        definitionId,
-        tenantId,
-        kind,
-        code,
-        value,
-        value6,
-        userId,
-        payload);
+    return definitions.insert(
+        definitionId, tenantId, kind.toString(), code, value, value6, userId, payload);
   }
 
   public int updateDefinition(
       Object code, String value, Object value3, String payload, long definitionId, long tenantId) {
-    return db.update(
-        "UPDATE eam_maintenance_definition SET"
-            + " code=?,name=?,department_id=?,payload=?,row_version=row_version+1,updated_at=NOW()"
-            + " WHERE id=? AND tenant_id=?",
-        code,
-        value,
-        value3,
-        payload,
-        definitionId,
-        tenantId);
+    return definitions.update(tenantId, definitionId, code, value, value3, payload);
   }
 
   public List<Map<String, Object>> lockSchedule(long scheduleId, long tenantId, long definitionId) {
+    definitions.lockDevice(tenantId, definitionId, scheduleId);
     return db.queryForList(
-        "SELECT * FROM eam_maintenance_schedule WHERE id=? AND tenant_id=? AND plan_id=?"
+        "SELECT * FROM v_maintenance_schedule WHERE id=? AND tenant_id=? AND plan_id=?"
             + " FOR UPDATE",
         scheduleId,
         tenantId,
@@ -154,7 +141,7 @@ public class MaintenanceRepository {
 
   public List<Map<String, Object>> findLatestDueDate(long tenantId, long scheduleId) {
     return db.queryForList(
-        "SELECT due_date FROM eam_maintenance_task WHERE tenant_id=? AND schedule_id=?"
+        "SELECT due_date FROM v_maintenance_task WHERE tenant_id=? AND schedule_id=?"
             + " ORDER BY due_date DESC LIMIT 1",
         tenantId,
         scheduleId);
@@ -169,18 +156,8 @@ public class MaintenanceRepository {
       String payload,
       long tenantId,
       long scheduleId) {
-    return db.update(
-        "UPDATE eam_maintenance_schedule SET"
-            + " type_id=?,standard_id=?,next_date=?,anchor_date=?,cycle_index=?,payload=?,enabled=1"
-            + " WHERE tenant_id=? AND id=?",
-        typeId,
-        standardId,
-        date,
-        anchorDate,
-        cycleIndex,
-        payload,
-        tenantId,
-        scheduleId);
+    return definitions.device(
+        false, tenantId, scheduleId, 0, null, typeId, date, anchorDate, cycleIndex, payload);
   }
 
   public int insertSchedule(
@@ -193,43 +170,34 @@ public class MaintenanceRepository {
       Object date,
       Object date8,
       String payload) {
-    return db.update(
-        "INSERT INTO"
-            + " eam_maintenance_schedule(id,tenant_id,plan_id,equipment_id,type_id,standard_id,next_date,anchor_date,payload)"
-            + " VALUES(?,?,?,?,?,?,?,?,?)",
-        scheduleId,
-        tenantId,
-        definitionId,
-        equipmentId,
-        typeId,
-        standardId,
-        date,
-        date8,
-        payload);
+    return definitions.device(
+        true, tenantId, scheduleId, definitionId, equipmentId, typeId, date, date8, 0, payload);
   }
 
   public List<Map<String, Object>> listScheduleIds(long tenantId, long definitionId) {
     return db.queryForList(
-        "SELECT id FROM eam_maintenance_schedule WHERE tenant_id=? AND plan_id=?",
+        "SELECT id FROM v_maintenance_schedule WHERE tenant_id=? AND plan_id=?",
         tenantId,
         definitionId);
   }
 
   public int disableSchedule(long tenantId, Object id) {
     return db.update(
-        "UPDATE eam_maintenance_schedule SET enabled=0 WHERE tenant_id=? AND id=?", tenantId, id);
+        "UPDATE eam_maintenance_plan_device SET enabled=0 WHERE tenant_id=? AND id=?",
+        tenantId,
+        id);
   }
 
   public int disablePlanSchedules(long tenantId, long id) {
     return db.update(
-        "UPDATE eam_maintenance_schedule SET enabled=0 WHERE tenant_id=? AND plan_id=?",
+        "UPDATE eam_maintenance_plan_device SET enabled=0 WHERE tenant_id=? AND plan_id=?",
         tenantId,
         id);
   }
 
   public int countPlanTasks(long tenantId, long id) {
     return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_maintenance_task WHERE tenant_id=? AND plan_id=?",
+        "SELECT COUNT(*) FROM v_maintenance_task WHERE tenant_id=? AND plan_id=?",
         Integer.class,
         tenantId,
         id);
@@ -237,9 +205,10 @@ public class MaintenanceRepository {
 
   public int countScheduleReferences(long tenantId, long id, String column) {
     if (!Set.of("type_id", "standard_id").contains(column))
-      throw new IllegalArgumentException("未知保养关联类型");
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.maintenance.message0001");
     return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_maintenance_schedule WHERE tenant_id=? AND "
+        "SELECT COUNT(*) FROM v_maintenance_schedule WHERE tenant_id=? AND "
             + column
             + "=? AND enabled=1",
         Integer.class,
@@ -249,7 +218,7 @@ public class MaintenanceRepository {
 
   public int countProjectReferences(long tenantId, Object value) {
     return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_maintenance_schedule WHERE tenant_id=? AND enabled=1 AND"
+        "SELECT COUNT(*) FROM v_maintenance_schedule WHERE tenant_id=? AND enabled=1 AND"
             + " JSON_CONTAINS(JSON_EXTRACT(payload,'$.projectRefs'),JSON_OBJECT('standardId',CAST(?"
             + " AS CHAR)))",
         Integer.class,
@@ -259,14 +228,12 @@ public class MaintenanceRepository {
 
   public List<Map<String, Object>> listStandardPayloads(long tenantId) {
     return db.queryForList(
-        "SELECT payload FROM eam_maintenance_definition WHERE tenant_id=? AND"
-            + " kind='standards'",
+        "SELECT payload FROM v_maintenance_definition WHERE tenant_id=? AND" + " kind='standards'",
         tenantId);
   }
 
   public int deleteDefinition(long tenantId, long id) {
-    return db.update(
-        "DELETE FROM eam_maintenance_definition WHERE tenant_id=? AND id=?", tenantId, id);
+    return definitions.delete(tenantId, id);
   }
 
   public List<Map<String, Object>> listEquipment(long tenantId) {
@@ -308,10 +275,53 @@ public class MaintenanceRepository {
   }
 
   public List<Map<String, Object>> loadTask(long tenantId, long id, boolean lock) {
+    if (lock)
+      db.queryForList(
+          "SELECT id FROM eam_maintenance_task WHERE tenant_id=? AND id=? FOR UPDATE",
+          tenantId,
+          id);
     return db.queryForList(
-        "SELECT * FROM eam_maintenance_task WHERE tenant_id=? AND id=?"
-            + (lock ? " FOR UPDATE" : ""),
-        tenantId,
+        "SELECT * FROM v_maintenance_task WHERE tenant_id=? AND id=?", tenantId, id);
+  }
+
+  public boolean hasTaskExecutionOrMaterials(long tenant, long id) {
+    return db.queryForObject(
+        "SELECT (EXISTS(SELECT 1 FROM eam_maintenance_execution e WHERE e.tenant_id=? AND"
+            + " e.task_id=? AND (e.started_at IS NOT NULL OR e.work_start_at IS NOT NULL OR"
+            + " e.work_end_at IS NOT NULL OR COALESCE(e.description,'')<>'')) OR EXISTS(SELECT 1"
+            + " FROM inv_requisition r WHERE r.tenant_id=? AND r.task_kind='保养' AND r.task_id=?) OR"
+            + " EXISTS(SELECT 1 FROM inv_outbound_line l WHERE l.tenant_id=? AND l.task_kind='保养'"
+            + " AND l.task_id=?))",
+        Boolean.class,
+        tenant,
+        id,
+        tenant,
+        id,
+        tenant,
+        id);
+  }
+
+  public int softDeleteTask(long tenant, long id, long actor) {
+    db.update(
+        "UPDATE eam_maintenance_inbox SET done=1,read_at=COALESCE(read_at,NOW()) WHERE tenant_id=?"
+            + " AND task_id=?",
+        tenant,
+        id);
+    return db.update(
+        "UPDATE eam_maintenance_task SET"
+            + " deleted=1,deleted_at=NOW(6),deleted_by=?,row_version=row_version+1,updated_at=NOW()"
+            + " WHERE tenant_id=? AND id=? AND deleted=0",
+        actor,
+        tenant,
+        id);
+  }
+
+  public int postponeTask(long tenant, long id, java.time.LocalDate date) {
+    return db.update(
+        "UPDATE eam_maintenance_task SET expires_date=?,row_version=row_version+1,updated_at=NOW()"
+            + " WHERE tenant_id=? AND id=? AND deleted=0",
+        date,
+        tenant,
         id);
   }
 
@@ -351,16 +361,24 @@ public class MaintenanceRepository {
       Object kind,
       Object title,
       boolean todo) {
-    return db.update(
-        "INSERT INTO eam_maintenance_inbox(id,tenant_id,task_id,user_id,kind,title,is_todo)"
-            + " VALUES(?,?,?,?,?,?,?)",
-        recordId,
+    int count =
+        db.update(
+            "INSERT INTO eam_maintenance_inbox(id,tenant_id,task_id,user_id,kind,title,is_todo)"
+                + " VALUES(?,?,?,?,?,?,?)",
+            recordId,
+            tenantId,
+            taskId,
+            user,
+            kind,
+            title,
+            todo);
+    db.update(
+        "UPDATE eam_maintenance_inbox SET message_key=?,message_args=? WHERE tenant_id=? AND id=?",
+        com.windasoft.eam.common.NotificationMessages.key(kind),
+        com.windasoft.eam.common.NotificationMessages.arguments(kind, title),
         tenantId,
-        taskId,
-        user,
-        kind,
-        title,
-        todo);
+        recordId);
+    return count;
   }
 
   public int completeTodos(long tenantId, long taskId) {
@@ -395,7 +413,7 @@ public class MaintenanceRepository {
 
   public int resetScheduleDate(Object date, Object date2, long tenantId, Object scheduleId) {
     return db.update(
-        "UPDATE eam_maintenance_schedule SET next_date=?,anchor_date=?,cycle_index=0 WHERE"
+        "UPDATE eam_maintenance_plan_device SET next_date=?,anchor_date=?,cycle_index=0 WHERE"
             + " tenant_id=? AND id=?",
         date,
         date2,
@@ -405,14 +423,15 @@ public class MaintenanceRepository {
 
   public int updateTask(
       Object next, Object owner, String payload, String payload4, long tenantId, long id) {
+    executions.participants(tenantId, id, payload);
+    executions.save(tenantId, id, payload4);
     return db.update(
         "UPDATE eam_maintenance_task SET"
-            + " status=?,owner_id=?,snapshot=?,result=?,row_version=row_version+1,updated_at=NOW()"
-            + " WHERE tenant_id=? AND id=?",
+            + " status=?,owner_id=?,snapshot=?,row_version=row_version+1,updated_at=NOW() WHERE"
+            + " tenant_id=? AND id=?",
         next,
         owner,
-        payload,
-        payload4,
+        executions.historicalSnapshot(payload),
         tenantId,
         id);
   }
@@ -423,28 +442,48 @@ public class MaintenanceRepository {
   }
 
   public List<Map<String, Object>> lockPlans(long tenant, Long planId) {
+    definitions.lockPlans(tenant, planId);
     return db.queryForList(
-        "SELECT * FROM eam_maintenance_definition WHERE tenant_id=? AND kind='plans'"
+        "SELECT * FROM v_maintenance_definition WHERE tenant_id=? AND kind='plans'"
             + (planId == null ? "" : " AND id=?")
-            + " ORDER BY id FOR UPDATE",
+            + " ORDER BY id",
         planId == null ? new Object[] {tenant} : new Object[] {tenant, planId});
   }
 
   public List<Map<String, Object>> lockPlanSchedules(long tenantId, Object id) {
+    definitions.lockDevices(tenantId, id);
     return db.queryForList(
-        "SELECT * FROM eam_maintenance_schedule WHERE tenant_id=? AND plan_id=? AND enabled=1"
-            + " ORDER BY id FOR UPDATE",
+        "SELECT * FROM v_maintenance_schedule WHERE tenant_id=? AND plan_id=? AND enabled=1"
+            + " ORDER BY id",
         tenantId,
         id);
   }
 
   public int countOpenScheduleTasks(long tenantId, Object id) {
     return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_maintenance_task WHERE tenant_id=? AND schedule_id=?"
+        "SELECT COUNT(*) FROM v_maintenance_task WHERE tenant_id=? AND schedule_id=?"
             + " AND status NOT IN ('已完成','已作废','过期作废')",
         Integer.class,
         tenantId,
         id);
+  }
+
+  public long cyclePlanTypeReferences(long tenant, long typeId) {
+    return db.queryForObject(
+        "SELECT COUNT(*) FROM v_maintenance_schedule s JOIN v_maintenance_definition p ON"
+            + " p.tenant_id=s.tenant_id AND p.id=s.plan_id AND p.kind='plans' WHERE s.tenant_id=?"
+            + " AND s.type_id=?",
+        Long.class,
+        tenant,
+        typeId);
+  }
+
+  public long taskTypeReferences(long tenant, long typeId) {
+    return db.queryForObject(
+        "SELECT COUNT(*) FROM v_maintenance_task WHERE tenant_id=? AND type_id=?",
+        Long.class,
+        tenant,
+        typeId);
   }
 
   public int insertTask(
@@ -454,31 +493,39 @@ public class MaintenanceRepository {
       Object id,
       Object id5,
       Object id6,
+      Object typeId,
       Object companyOrgId,
       Object departmentOrgId,
       Object due,
       Object expires,
       String payload) {
-    return db.update(
-        "INSERT IGNORE INTO"
-            + " eam_maintenance_task(id,tenant_id,code,plan_id,schedule_id,equipment_id,company_id,department_id,due_date,expires_date,snapshot)"
-            + " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-        taskId,
-        tenantId,
-        code,
-        id,
-        id5,
-        id6,
-        companyOrgId,
-        departmentOrgId,
-        due,
-        expires,
-        payload);
+    int inserted =
+        db.update(
+            "INSERT IGNORE INTO"
+                + " eam_maintenance_task(id,tenant_id,code,plan_id,schedule_id,equipment_id,type_id,company_id,department_id,due_date,expires_date,snapshot)"
+                + " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            taskId,
+            tenantId,
+            code,
+            id,
+            id5,
+            id6,
+            typeId,
+            companyOrgId,
+            departmentOrgId,
+            due,
+            expires,
+            executions.historicalSnapshot(payload));
+    if (inserted > 0) {
+      executions.participants(tenantId, taskId, payload);
+      taskSources.maintenance(tenantId, taskId, id6, payload);
+    }
+    return inserted;
   }
 
   public List<Map<String, Object>> findLastCompletedResult(long tenantId, Object id, Object id3) {
     return db.queryForList(
-        "SELECT result FROM eam_maintenance_task WHERE tenant_id=? AND equipment_id=?"
+        "SELECT result FROM v_maintenance_task WHERE tenant_id=? AND equipment_id=?"
             + " AND schedule_id=? AND status='已完成' ORDER BY updated_at DESC LIMIT 1",
         tenantId,
         id,
@@ -486,16 +533,13 @@ public class MaintenanceRepository {
   }
 
   public int updateTaskResult(String payload, long tenantId, long taskId) {
-    return db.update(
-        "UPDATE eam_maintenance_task SET result=? WHERE tenant_id=? AND id=?",
-        payload,
-        tenantId,
-        taskId);
+    executions.save(tenantId, taskId, payload);
+    return 1;
   }
 
   public int resetScheduleDate47(Object due, Object due2, long tenantId, Object id) {
     return db.update(
-        "UPDATE eam_maintenance_schedule SET next_date=?,anchor_date=?,cycle_index=0"
+        "UPDATE eam_maintenance_plan_device SET next_date=?,anchor_date=?,cycle_index=0"
             + " WHERE tenant_id=? AND id=?",
         due,
         due2,
@@ -505,7 +549,7 @@ public class MaintenanceRepository {
 
   public int advanceSchedule(Object due, Object index, long tenantId, Object id) {
     return db.update(
-        "UPDATE eam_maintenance_schedule SET next_date=?,cycle_index=? WHERE tenant_id=? AND"
+        "UPDATE eam_maintenance_plan_device SET next_date=?,cycle_index=? WHERE tenant_id=? AND"
             + " id=?",
         due,
         index,
@@ -514,8 +558,8 @@ public class MaintenanceRepository {
   }
 
   public List<Map<String, Object>> lockExpiredTasks(long tenantId, Object today) {
-    return db.queryForList(
-        "SELECT id FROM eam_maintenance_task WHERE tenant_id=? AND expires_date<? AND"
+    return lockedTaskRows(
+        "SELECT id FROM v_maintenance_task WHERE tenant_id=? AND expires_date<? AND"
             + " status='待执行' FOR UPDATE",
         tenantId,
         today);
@@ -531,7 +575,7 @@ public class MaintenanceRepository {
 
   public List<Map<String, Object>> listPendingTasks(long tenantId) {
     return db.queryForList(
-        "SELECT * FROM eam_maintenance_task WHERE tenant_id=? AND status='待执行'", tenantId);
+        "SELECT * FROM v_maintenance_task WHERE tenant_id=? AND status='待执行'", tenantId);
   }
 
   public int countExecutionNotices(long tenantId, Object id) {
@@ -547,9 +591,10 @@ public class MaintenanceRepository {
     return db.queryForList(
         "SELECT CAST(i.id AS CHAR) id,CAST(t.id AS CHAR) orderId,'maintenance' module,t.code"
             + " orderNo,JSON_UNQUOTE(JSON_EXTRACT(t.snapshot,'$.equipmentName'))"
-            + " equipmentName,t.status,i.kind,i.title,i.is_todo todo,i.done,i.read_at IS NOT NULL"
+            + " equipmentName,t.status,i.kind,i.title,i.message_key messageKey,i.message_args"
+            + " messageArgs,i.is_todo todo,i.done,i.read_at IS NOT NULL"
             + " isRead,DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time FROM"
-            + " eam_maintenance_inbox i JOIN eam_maintenance_task t ON t.id=i.task_id AND"
+            + " eam_maintenance_inbox i JOIN v_maintenance_task t ON t.id=i.task_id AND"
             + " t.tenant_id=i.tenant_id WHERE i.tenant_id=? AND i.user_id=? ORDER BY i.created_at"
             + " DESC,i.id DESC LIMIT 300",
         tenantId, userId);
@@ -564,7 +609,13 @@ public class MaintenanceRepository {
   }
 
   public List<Map<String, Object>> generationTargets() {
-    return db.queryForList(
-        "SELECT tenant_id,id FROM eam_maintenance_definition WHERE kind='plans'");
+    return db.queryForList("SELECT tenant_id,id FROM v_maintenance_definition WHERE kind='plans'");
+  }
+
+  private List<Map<String, Object>> lockedTaskRows(String sql, Object... args) {
+    db.queryForList(
+        sql.replace("v_maintenance_task", "eam_maintenance_task").replace("SELECT *", "SELECT id"),
+        args);
+    return db.queryForList(sql.replace(" FOR UPDATE", ""), args);
   }
 }

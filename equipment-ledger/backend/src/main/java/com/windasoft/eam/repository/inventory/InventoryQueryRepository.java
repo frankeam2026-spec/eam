@@ -97,7 +97,9 @@ public class InventoryQueryRepository {
                 + " quantity,-a.amount amount,tw.name target_warehouse_name,d.confirmed_at"
                 + " created_at";
       }
-      default -> throw new IllegalArgumentException("未知库存查询");
+      default ->
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.inventory.message0004");
     }
     var args = new ArrayList<Object>();
     if (kind.equals("balances")) {
@@ -121,19 +123,19 @@ public class InventoryQueryRepository {
           " JOIN inv_cost_layer c ON c.tenant_id=s.tenant_id AND c.balance_id=s.id LEFT JOIN"
               + " inv_receipt_line l ON l.tenant_id=c.tenant_id AND l.id=c.source_line_id LEFT JOIN"
               + " inv_receipt r ON r.tenant_id=l.tenant_id AND r.id=l.receipt_id LEFT JOIN"
-              + " inv_operation d ON d.tenant_id=c.tenant_id AND d.id=c.source_line_id";
+              + " v_inv_operation d ON d.tenant_id=c.tenant_id AND d.id=c.source_line_id";
     if (kind.equals("transactions"))
       sql +=
           " JOIN inv_transaction t ON t.tenant_id=s.tenant_id AND t.balance_id=s.id LEFT JOIN"
               + " inv_receipt r ON r.tenant_id=t.tenant_id AND r.id=t.document_id AND t.kind='入库'"
               + " LEFT JOIN inv_issue i ON i.tenant_id=t.tenant_id AND i.id=t.document_id AND"
-              + " t.kind='出库' LEFT JOIN inv_operation d ON d.tenant_id=t.tenant_id AND"
+              + " t.kind='出库' LEFT JOIN v_inv_operation d ON d.tenant_id=t.tenant_id AND"
               + " d.id=t.document_id LEFT JOIN eam_sys_user u ON u.tenant_id=t.tenant_id AND"
               + " u.id=t.actor_id";
     if (kind.equals("transit"))
       sql +=
           " JOIN inv_movement_allocation a ON a.tenant_id=s.tenant_id AND a.balance_id=s.id AND"
-              + " a.quantity<0 JOIN inv_operation d ON d.tenant_id=a.tenant_id AND"
+              + " a.quantity<0 JOIN v_inv_operation d ON d.tenant_id=a.tenant_id AND"
               + " d.id=a.document_id AND d.kind='transfers' AND d.status='在途' JOIN inv_warehouse tw"
               + " ON tw.tenant_id=d.tenant_id AND tw.id=d.target_warehouse_id";
     sql += " WHERE s.tenant_id=?";
@@ -153,7 +155,7 @@ public class InventoryQueryRepository {
       for (int i = 0; i < 4; i++) args.add(like(q));
     }
     if (filters == null || !fields.keySet().containsAll(filters.keySet()))
-      throw new IllegalArgumentException("筛选字段无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0005");
     for (var filter : filters.entrySet())
       if (filter.getValue() != null && !filter.getValue().isBlank()) {
         sql += " AND " + fields.get(filter.getKey()) + " LIKE ? ESCAPE '!'";

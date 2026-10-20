@@ -33,8 +33,8 @@ public class OutboundController {
   }
 
   @GetMapping("/choices")
-  public Object choices() {
-    return Map.of("data", service.choices());
+  public Object choices(@RequestParam(defaultValue = "false") boolean paged) {
+    return Map.of("data", service.choices(paged));
   }
 
   @GetMapping("/export")

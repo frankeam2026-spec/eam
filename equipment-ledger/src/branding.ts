@@ -1,3 +1,5 @@
+import { currentLocale } from './i18n';
+import { tr } from './i18n';
 import { request } from './api';
 export type Branding = {
   systemName: string;
@@ -36,9 +38,10 @@ export async function uploadBrandingImage(file: File, kind: 'logo' | 'background
     method: 'POST',
     body: form,
     credentials: 'same-origin',
+    headers: { 'Accept-Language': currentLocale.value },
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || '图片上传失败');
+  if (!response.ok) throw new Error(body.message || tr('ui.validation.message3'));
   return body as { data: { id: string; url: string } };
 }
 

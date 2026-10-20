@@ -54,7 +54,7 @@ class PermissionServiceTest {
     when(orgs.selectList(any())).thenReturn(List.of());
     var repository =
         new com.windasoft.eam.repository.system.AuthorizationRepository(
-            links, roles, grants, orgs, mock(SystemUserMapper.class), null, null);
+            links, roles, grants, orgs, mock(SystemUserMapper.class), null, null, com.windasoft.eam.support.RelationStubs.roles());
     service =
         new PermissionService(
             auth,

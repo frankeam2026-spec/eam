@@ -505,7 +505,9 @@ public class HomeAnalyticsService {
                       "")));
         }
       }
-      default -> throw new IllegalArgumentException("指标未实现");
+      default ->
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.experience.message0014");
     }
     out.put("rows", rows);
     out.put("summary", summary);
@@ -561,7 +563,7 @@ public class HomeAnalyticsService {
 
   private List<Map<String, Object>> execution(
       Query q, String where, List<Object> args, String group) {
-    String valid = "s.status NOT IN ('已作废','已取消')",
+    String valid = "s.status NOT IN ('已作废','已取消','已免检')",
         done = "s.status IN ('已完成','已审核')",
         submit = effectiveSubmit(q),
         due = deadline(q),
@@ -577,7 +579,7 @@ public class HomeAnalyticsService {
             + valid
             + "),0) total,COALESCE(SUM(NOT("
             + valid
-            + ")),0) cancelled,COALESCE(SUM("
+            + ")),0) excluded,COALESCE(SUM(s.status IN ('已作废','已取消')),0) cancelled,COALESCE(SUM(s.status='已免检'),0) exempted,COALESCE(SUM("
             + valid
             + " AND "
             + done
@@ -671,7 +673,7 @@ public class HomeAnalyticsService {
         completed = count(s, "completed"),
         pending = count(s, "pending"),
         cancelled = count(s, "cancelled");
-    return List.of(
+    var result = new ArrayList<Map<String,Object>>(List.of(
         new LinkedHashMap<>(Map.of("key", "completed", "name", "验收完成", "value", completed)),
         new LinkedHashMap<>(Map.of("key", "pending", "name", "待验收 / 待审核", "value", pending)),
         new LinkedHashMap<>(
@@ -682,7 +684,9 @@ public class HomeAnalyticsService {
                 "其余未完成",
                 "value",
                 Math.max(0, total - completed - pending))),
-        new LinkedHashMap<>(Map.of("key", "cancelled", "name", "人工作废", "value", cancelled)));
+        new LinkedHashMap<>(Map.of("key", "cancelled", "name", "人工作废", "value", cancelled))));
+    if(count(s,"exempted")>0)result.add(new LinkedHashMap<>(Map.of("key","exempted","name",com.windasoft.eam.common.MessageContext.text("daily.exempted"),"value",count(s,"exempted"))));
+    return result;
   }
 
   private List<Map<String, Object>> personnel(Query q) {
@@ -788,7 +792,8 @@ SUM(collaboration) collaboration FROM credits %s GROUP BY pid HAVING SUM(complet
       check(!value.isAfter(now), "统计截至时间不能晚于当前时间");
       return value;
     } catch (java.time.format.DateTimeParseException e) {
-      throw new IllegalArgumentException("统计截至时间无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.experience.message0015");
     }
   }
 
@@ -901,15 +906,18 @@ SUM(collaboration) collaboration FROM credits %s GROUP BY pid HAVING SUM(complet
                 + switch (group) {
                   case "completed" -> "s.status IN ('已完成','已审核')";
                   case "pending" -> "s.status IN ('待验收','待审核')";
-                  case "unfinished" -> "s.status NOT IN ('已完成','已审核','待验收','待审核','已作废','已取消')";
+                  case "unfinished" -> "s.status NOT IN ('已完成','已审核','待验收','待审核','已作废','已取消','已免检')";
                   case "cancelled" -> "s.status IN ('已作废','已取消')";
-                  default -> throw new IllegalArgumentException("分组无效");
+                  case "exempted" -> "s.status='已免检'";
+                  default ->
+                      throw new com.windasoft.eam.common.LocalizedArgumentException(
+                          "server.experience.message0016");
                 };
       }
     }
     if (Set.of("maintenance", "inspection").contains(q.metric.domain())) {
       String series = text(f, "series"),
-          valid = "s.status NOT IN ('已作废','已取消')",
+          valid = "s.status NOT IN ('已作废','已取消','已免检')",
           done = "s.status IN ('已完成','已审核')",
           submitted = effectiveSubmit(q),
           due = deadline(q);
@@ -920,6 +928,7 @@ SUM(collaboration) collaboration FROM credits %s GROUP BY pid HAVING SUM(complet
                 case "completed" -> valid + " AND " + done;
                 case "pending" -> valid + " AND s.status IN ('待验收','待审核')";
                 case "cancelled" -> "s.status IN ('已作废','已取消')";
+                  case "exempted" -> "s.status='已免检'";
                 case "overdue" ->
                     valid + " AND NOT(" + done + ") AND (" + due + " OR s.status='过期作废')";
                 case "upcoming" ->
@@ -946,7 +955,9 @@ SUM(collaboration) collaboration FROM credits %s GROUP BY pid HAVING SUM(complet
                         + due
                         + " OR s.status='过期作废')";
                 case "" -> "1=1";
-                default -> throw new IllegalArgumentException("明细维度无效");
+                default ->
+                    throw new com.windasoft.eam.common.LocalizedArgumentException(
+                        "server.experience.message0017");
               };
     }
     if (q.metric.money()) {

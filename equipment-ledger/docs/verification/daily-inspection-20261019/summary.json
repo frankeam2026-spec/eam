@@ -1,0 +1,142 @@
+{
+  "date": "2026-10-19",
+  "database": "eam_daily_test_20261019",
+  "businessWriteScope": "isolated-only",
+  "passed": 32,
+  "cases": [
+    {
+      "case": "preview-seven",
+      "passed": true
+    },
+    {
+      "case": "save-readback",
+      "passed": true
+    },
+    {
+      "case": "generated-arrangement-task",
+      "passed": true
+    },
+    {
+      "case": "claim",
+      "passed": true
+    },
+    {
+      "case": "stale-claim",
+      "passed": true
+    },
+    {
+      "case": "submit",
+      "passed": true
+    },
+    {
+      "case": "reject-completed-exemption",
+      "passed": true
+    },
+    {
+      "case": "manual-event-idempotency",
+      "passed": true
+    },
+    {
+      "case": "exemption",
+      "passed": true
+    },
+    {
+      "case": "field-error",
+      "passed": true
+    },
+    {
+      "case": "weekly",
+      "passed": true
+    },
+    {
+      "case": "monthly",
+      "passed": true
+    },
+    {
+      "case": "interval",
+      "passed": true
+    },
+    {
+      "case": "daily-slots",
+      "passed": true
+    },
+    {
+      "case": "cross-midnight-and-missing-roster",
+      "passed": true
+    },
+    {
+      "case": "calendar-workday-override",
+      "passed": true
+    },
+    {
+      "case": "operation-team",
+      "passed": true
+    },
+    {
+      "case": "operator-event-selector",
+      "passed": true
+    },
+    {
+      "case": "range-exemption",
+      "passed": true
+    },
+    {
+      "case": "reject-resubmit-history",
+      "passed": true
+    },
+    {
+      "case": "operator-no-plan-edit-access",
+      "passed": true
+    },
+    {
+      "case": "candidate-only-event-options",
+      "passed": true
+    },
+    {
+      "case": "operator-launch-without-plan-permission",
+      "passed": true
+    },
+    {
+      "case": "outsider-cannot-forge-event",
+      "passed": true
+    },
+    {
+      "case": "operator-claim",
+      "passed": true
+    },
+    {
+      "case": "exemption-permission-denied",
+      "passed": true
+    },
+    {
+      "case": "future-generation-exemption",
+      "passed": true
+    },
+    {
+      "case": "team-update",
+      "passed": true
+    },
+    {
+      "case": "team-stale-update-rejected",
+      "passed": true
+    },
+    {
+      "case": "no-retroactive-expired-window",
+      "passed": true
+    },
+    {
+      "case": "daily-plans-new-columns-export",
+      "passed": true
+    },
+    {
+      "case": "daily-tasks-new-columns-export",
+      "passed": true
+    }
+  ],
+  "notVerified": [
+    "10000-record performance",
+    "two-operator real concurrency",
+    "1440x900 layout",
+    "full inventory and export reconciliation"
+  ]
+}

@@ -1,5 +1,40 @@
-<script setup lang="ts">
-import AppListTabs from './common/AppListTabs.vue';
+<script setup lang="ts">import { tr, enumLabel } from '../i18n';
+
+import DialogChoiceInput from './common/DialogChoiceInput.vue';
+import {
+  useRepairList,
+  useRepairColumns,
+  repairListParameters,
+} from '../composables/repair/useRepairList';
+const { rows, total, refresh: refreshList, invalidate: invalidateList } = useRepairList();
+import BusinessFields from './business/BusinessFields.vue';
+import ExportFieldsDialog from './common/ExportFieldsDialog.vue';
+import {
+  businessApi,
+  customColumns,
+  customFilters,
+  customCell,
+  type BusinessField,
+} from '../businessConfig';
+const reportDefinitions = ref<BusinessField[]>([]);
+const processingDefinitions = ref<BusinessField[]>([]);
+const customDefinitions = computed(() => [
+  ...reportDefinitions.value,
+  ...processingDefinitions.value,
+]);
+onMounted(() => {
+  void Promise.all([businessApi.runtime('repair_report'), businessApi.runtime('repair_process')])
+    .then(([report, processing]) => {
+      reportDefinitions.value = report.configuration.fields;
+      processingDefinitions.value = processing.configuration.fields;
+    })
+    .catch((e) => ElMessage.error(e.message));
+});
+const customPanel = ref<InstanceType<typeof BusinessFields>>();
+const customInitializationClean = ref(true);
+const reportFieldErrors = ref<Record<string, string>>({});
+
+import MaintenanceStatus from './common/MaintenanceStatus.vue';
 import { ElMessage } from 'element-plus';
 import AppListToolbar from './common/AppListToolbar.vue';
 import { ElTableColumn } from 'element-plus';
@@ -26,25 +61,8 @@ import TreeSelect from './TreeSelect.vue';
 import ListToolbarIcons from './ListToolbarIcons.vue';
 import type { RepairAttachment } from '../api';
 
-type RepairStatus = '待派工' | '待接单' | '处理中' | '挂起' | '待验收' | '已完成' | '已撤销';
-type WorkOrder = {
-  id: string;
-  orderNo: string;
-  equipmentCode: string;
-  equipmentName: string;
-  department: string;
-  faultType: string;
-  severity: string;
-  description: string;
-  reporter: string;
-  assignee: string;
-  status: RepairStatus;
-  repairAction: string;
-  downtimeMinutes: number;
-  reportedAt: string;
-  attachments: RepairAttachment[];
-  rowVersion?: number;
-};
+type WorkOrder = api.RepairRecord;
+type RepairStatus = WorkOrder['status'];
 const props = defineProps<{ currentUser: string; grantedActions: string[] }>();
 const equipmentPickerOpen = ref(false),
   equipmentSearch = ref(''),
@@ -63,32 +81,21 @@ const baseData = useBaseDataStore();
 const { faultTypeData } = storeToRefs(baseData);
 const faultTypeNodes = computed(() => faultTypeData.value.filter((x) => x.status === '启用'));
 const uploading = ref(false);
-const rows = ref<WorkOrder[]>([]);
 const states: RepairStatus[] = ['待派工', '待接单', '处理中', '挂起', '待验收', '已完成', '已撤销'];
-type QueueKey = 'owned' | 'pending' | 'mine' | 'accept' | 'created' | 'dispatch' | 'all';
 const route = useRoute(),
   router = useRouter();
-const activeQueue = ref<QueueKey>(
-  ['pending', 'owned', 'mine', 'accept', 'created', 'dispatch', 'all'].includes(
-    String(route.query.queue),
-  )
-    ? (route.query.queue as QueueKey)
-    : 'all',
-);
-const queues: { key: QueueKey; label: string }[] = [
-  { key: 'pending', label: '待我接单' },
-  { key: 'mine', label: '待我处理' },
-  { key: 'accept', label: '待我验收' },
-  { key: 'owned', label: '我负责的' },
-  { key: 'created', label: '我发起的' },
-  { key: 'dispatch', label: '待派工' },
-  { key: 'all', label: '全部工单' },
-];
 const query = reactive({ keyword: '', status: '', severity: '', department: '' });
 const applied = ref({ ...query });
 const advancedOpen = ref(false);
 const advancedConditions = ref<FilterCondition[]>([]);
 const advancedFields = computed<FilterField[]>(() => [
+  {
+    key: 'relation',
+    get label() { return tr('ui.equipment.text1039'); },
+    type: 'choice',
+    options: ['owned', 'created'],
+    optionLabels: { owned: '我负责的', created: '我发起的' },
+  },
   ...[
     ['orderNo', '工单编号'],
     ['equipmentCode', '设备编号'],
@@ -100,14 +107,16 @@ const advancedFields = computed<FilterField[]>(() => [
     ['repairAction', '维修措施'],
     ['acceptanceComment', '验收意见'],
   ].map(([key, label]) => ({ key: key!, label: label!, type: 'text' as const })),
-  { key: 'faultType', label: '故障类型', type: 'tree', nodes: faultTypeNodes.value },
-  { key: 'status', label: '工单状态', type: 'choice', options: states },
-  { key: 'severity', label: '紧急程度', type: 'choice', options: ['一般', '紧急', '特急'] },
+  { key: 'faultType', get label() { return tr('ui.equipment.text1040'); }, type: 'tree', nodes: faultTypeNodes.value },
+  { key: 'status', get label() { return tr('ui.equipment.text1041'); }, type: 'choice', options: states },
+  { key: 'severity', get label() { return tr('ui.equipment.text1042'); }, type: 'choice', options: ['一般', '紧急', '特急'] },
   ...[
     ['reportedAt', '报修时间'],
     ['completedAt', '完成时间'],
   ].map(([key, label]) => ({ key: key!, label: label!, type: 'date' as const })),
-  { key: 'downtimeMinutes', label: '停机时长（分钟）', type: 'number' },
+  { key: 'downtimeMinutes', get label() { return tr('ui.equipment.text1043'); }, type: 'number' },
+  ...customFilters(reportDefinitions.value, 'repair_report'),
+  ...customFilters(processingDefinitions.value, 'repair_process'),
 ]);
 function applyAdvanced(conditions: FilterCondition[]) {
   page.value = 1;
@@ -123,52 +132,34 @@ const page = ref(1),
 const selectedRowId = ref<string | null>(null);
 const dispatchPicker = ref(false),
   dispatchTarget = ref<WorkOrder | null>(null);
-const sortKey = ref<keyof WorkOrder | null>('reportedAt'),
+const sortKey = ref<string | null>('reportedAt'),
   sortDirection = ref<'asc' | 'desc' | null>('desc');
-const widths = ref<Record<string, number>>(readWidths());
 const showColumns = ref(false);
-const allColumns: { key: keyof WorkOrder; label: string; width: number; required?: boolean }[] = [
-  { key: 'orderNo', label: '工单编号', width: 150, required: true },
-  { key: 'equipmentCode', label: '设备编号', width: 145 },
-  { key: 'equipmentName', label: '设备名称', width: 150 },
-  { key: 'status', label: '状态', width: 110 },
-  { key: 'description', label: '故障描述', width: 260 },
-  { key: 'department', label: '所属部门', width: 130 },
-  { key: 'reporter', label: '报修人', width: 95 },
-  { key: 'assignee', label: '维修人', width: 95 },
-  { key: 'severity', label: '紧急程度', width: 100 },
-  { key: 'reportedAt', label: '报修时间', width: 155 },
+const baseColumns: {
+  key: string;
+  label: string;
+  width: number;
+  required?: boolean;
+  sortable?: boolean;
+}[] = [
+  { key: 'orderNo', get label() { return tr('ui.equipment.text0173'); }, width: 150, required: true },
+  { key: 'equipmentCode', get label() { return tr('ui.equipment.text0078'); }, width: 145 },
+  { key: 'equipmentName', get label() { return tr('ui.equipment.text0081'); }, width: 150 },
+  { key: 'status', get label() { return tr('ui.equipment.text0170'); }, width: 110 },
+  { key: 'description', get label() { return tr('ui.equipment.text1044'); }, width: 260 },
+  { key: 'department', get label() { return tr('ui.equipment.text0098'); }, width: 130 },
+  { key: 'reporter', get label() { return tr('ui.equipment.text1045'); }, width: 95 },
+  { key: 'assignee', get label() { return tr('ui.equipment.text1046'); }, width: 95 },
+  { key: 'severity', get label() { return tr('ui.equipment.text1042'); }, width: 100 },
+  { key: 'reportedAt', get label() { return tr('ui.equipment.text1047'); }, width: 155 },
 ];
-const visibleKeys = ref<string[]>(readColumns());
-function readWidths() {
-  try {
-    return JSON.parse(localStorage.getItem('eam-repair-widths') || '{}');
-  } catch {
-    return {};
-  }
-}
-function readColumns() {
-  try {
-    const saved = JSON.parse(localStorage.getItem('eam-repair-columns') || 'null') as
-      string[] | null;
-    const stored = saved
-      ? [...new Set(saved.map((key) => (key === 'faultAt' ? 'reportedAt' : key)))]
-      : null;
-    if (!stored) return allColumns.slice(0, 10).map((c) => c.key);
-    if (!localStorage.getItem('eam-repair-status-column-v2')) {
-      localStorage.setItem('eam-repair-status-column-v2', '1');
-      return stored.includes('status') ? stored : [...stored, 'status'];
-    }
-    return stored;
-  } catch {
-    return allColumns.slice(0, 10).map((c) => c.key);
-  }
-}
-watch(widths, (v) => localStorage.setItem('eam-repair-widths', JSON.stringify(v)), { deep: true });
-watch(visibleKeys, (v) => localStorage.setItem('eam-repair-columns', JSON.stringify(v)), {
-  deep: true,
-});
-const columns = computed(() => allColumns.filter((c) => visibleKeys.value.includes(c.key)));
+const allColumns = computed<
+  { key: string; label: string; width: number; required?: boolean; sortable?: boolean }[]
+>(() => [...baseColumns, ...customColumns(customDefinitions.value)]);
+const { visibleColumns: visibleKeys, widths } = useRepairColumns(() =>
+  allColumns.value.slice(0, 10).map((c) => c.key),
+);
+const columns = computed(() => allColumns.value.filter((c) => visibleKeys.value.includes(c.key)));
 function formatListDateTime(value: string) {
   if (!value) return '';
   if (/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) {
@@ -180,37 +171,27 @@ function formatListDateTime(value: string) {
   }
   return value.replace('T', ' ').slice(0, 16);
 }
-function listCell(row: WorkOrder, key: keyof WorkOrder) {
-  return key === 'reportedAt' ? formatListDateTime(row[key]) : String(row[key] ?? '');
+function listCell(row: WorkOrder, key: string) {
+  return key.startsWith('custom:')
+    ? customCell(row, key)
+    : key === 'reportedAt'
+      ? formatListDateTime(row.reportedAt)
+      : String(row[key as keyof WorkOrder] ?? '');
 }
-const queueCounts = ref<Record<QueueKey, number>>({
-  owned: 0,
-  pending: 0,
-  mine: 0,
-  accept: 0,
-  created: 0,
-  dispatch: 0,
-  all: 0,
-});
-const total = ref(0);
 const loading = ref(false);
 const loadError = ref('');
 const pageRows = computed(() => rows.value);
-watch([page, pageSize, activeQueue, sortKey, sortDirection, applied, advancedConditions], () =>
-  load(),
-);
+watch([page, pageSize, sortKey, sortDirection, applied, advancedConditions], () => {
+  selectedRowId.value = null;
+  load();
+});
 function search() {
   applied.value = { ...query };
-  page.value = 1;
-}
-function selectQueue(key: QueueKey) {
-  activeQueue.value = key;
   page.value = 1;
 }
 function reset() {
   Object.assign(query, { keyword: '', status: '', severity: '', department: '' });
   advancedConditions.value = [];
-  activeQueue.value = 'all';
   search();
 }
 function onTableSort(sort: BusinessSort) {
@@ -219,52 +200,48 @@ function onTableSort(sort: BusinessSort) {
     sort.order === 'ascending' ? 'asc' : sort.order === 'descending' ? 'desc' : null;
   page.value = 1;
 }
-function width(key: keyof WorkOrder) {
-  return widths.value[key] || allColumns.find((c) => c.key === key)?.width || 120;
-}
-let resize: { key: keyof WorkOrder; startX: number; startWidth: number } | null = null;
-function startResize(e: PointerEvent, key: keyof WorkOrder) {
-  resize = { key, startX: e.clientX, startWidth: width(key) };
-  window.addEventListener('pointermove', moveResize);
-  window.addEventListener('pointerup', endResize, { once: true });
-}
-function moveResize(e: PointerEvent) {
-  if (resize)
-    widths.value[resize.key] = Math.max(
-      90,
-      Math.min(540, resize.startWidth + e.clientX - resize.startX),
-    );
-}
-function endResize() {
-  resize = null;
-  window.removeEventListener('pointermove', moveResize);
+function width(key: string) {
+  return widths.value[key] || allColumns.value.find((c) => c.key === key)?.width || 120;
 }
 const exporting = ref(false);
 function requestParams() {
-  return {
-    ...applied.value,
-    queue: activeQueue.value,
-    sortBy: sortKey.value || undefined,
-    direction: sortDirection.value || undefined,
-    advanced: JSON.stringify(advancedConditions.value),
-  };
+  return repairListParameters(
+    applied.value,
+    advancedConditions.value,
+    sortKey.value,
+    sortDirection.value,
+  );
 }
-async function exportCsv() {
+
+const exportOpen = ref(false);
+const exportColumns = computed(() => [
+  ...baseColumns,
+  ...customDefinitions.value
+    .filter((f) => f.exportable)
+    .map((f) => ({ key: `custom:${f.id}`, label: f.name })),
+]);
+const exportDefaultKeys = computed(() =>
+  exportColumns.value
+    .filter((c) => (!c.key.startsWith('custom:') ? visibleKeys.value.includes(c.key) : true))
+    .map((c) => c.key),
+);
+function exportCsv() {
+  exportOpen.value = true;
+}
+async function confirmExport(keys: string[]) {
   if (exporting.value) return;
   exporting.value = true;
   try {
-    const blob = await api.exportRepairs({
-      ...requestParams(),
-      columns: columns.value.map((c) => c.key).join(','),
-    });
+    const blob = await api.exportRepairs({ ...requestParams(), columns: keys.join(',') });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.href = url;
     link.download = '维修工单.csv';
     link.click();
+    exportOpen.value = false;
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (e) {
-    notice(e instanceof Error ? e.message : '导出失败');
+    notice(e instanceof Error ? e.message : tr('ui.equipment.text0185'));
   } finally {
     exporting.value = false;
   }
@@ -280,6 +257,7 @@ function openCreate() {
     equipmentName: '',
     department: '',
     faultType: '',
+    faultTypeId: '',
     severity: '',
     description: '',
     reporter: props.currentUser,
@@ -322,26 +300,35 @@ async function closeReport() {
 async function save() {
   if (!active.value || submitting.value || uploading.value) return;
   const f = active.value;
+  reportFieldErrors.value = {};
+  if (!(customPanel.value?.validate() ?? false)) return;
   if (
     !f.equipmentCode ||
     !f.equipmentName ||
-    !f.faultType ||
+    !f.faultTypeId ||
     !f.severity ||
     !f.reporter ||
     !f.description.trim()
   ) {
-    notice('请填写设备、故障类型、故障等级、报修人和故障描述');
+    notice(tr('ui.validation.message29'));
     return;
   }
   submitting.value = true;
   try {
-    await api.saveRepair(f, isNew.value);
+    await api.saveRepair(
+      { ...f, customFields: customPanel.value?.prepare() ?? f.customFields },
+      isNew.value,
+    );
     reportGuard.markSaved();
     await load();
     drawer.value = false;
     notice(isNew.value ? '报修已提交' : '工单已保存', 'success');
   } catch (e) {
-    notice(e instanceof Error ? e.message : '保存失败');
+    if (e instanceof api.ApiError && e.status === 409 && e.message.includes('字段配置'))
+      await customPanel.value?.reload();
+    if (e instanceof api.ApiError && Object.keys(e.fieldErrors).length)
+      reportFieldErrors.value = e.fieldErrors;
+    else notice(e instanceof Error ? e.message : tr('ui.equipment.text0195'));
   } finally {
     submitting.value = false;
   }
@@ -370,7 +357,7 @@ async function transition(row: WorkOrder, action: string) {
     active.value = { ...res.data };
     notice('工单状态已更新', 'success');
   } catch (e) {
-    notice(e instanceof Error ? e.message : '操作失败');
+    notice(e instanceof Error ? e.message : tr('ui.equipment.text0197'));
   } finally {
     submitting.value = false;
   }
@@ -396,7 +383,7 @@ async function confirmDispatch(ids: string[]) {
     window.dispatchEvent(new Event('repair-inbox-changed'));
     notice('派工完成，等待接单', 'success');
   } catch (e) {
-    notice(e instanceof Error ? e.message : '派工失败');
+    notice(e instanceof Error ? e.message : tr('ui.equipment.text1048'));
     await load();
   } finally {
     submitting.value = false;
@@ -407,7 +394,7 @@ async function loadFaultTypes() {
   try {
     await baseData.load('故障类型');
   } catch (e) {
-    notice(e instanceof Error ? e.message : '故障类型加载失败');
+    notice(e instanceof Error ? e.message : tr('ui.equipment.text1049'));
   }
 }
 const equipmentPage = ref(1),
@@ -432,7 +419,7 @@ async function loadEquipmentChoices() {
     if (revision !== equipmentRevision) return;
     equipmentChoices.value = [];
     equipmentTotal.value = 0;
-    notice(e instanceof Error ? e.message : '设备加载失败');
+    notice(e instanceof Error ? e.message : tr('ui.equipment.text1050'));
   } finally {
     if (revision === equipmentRevision) equipmentLoading.value = false;
   }
@@ -474,11 +461,18 @@ const reportAttachmentFiles = computed(() =>
     previewUrl: attachmentImageUrl(file),
   })),
 );
-function chooseEquipment(item: { id: string; code: string; name: string; department: string }) {
+function chooseEquipment(item: {
+  id: string;
+  code: string;
+  name: string;
+  department: string;
+  categoryId?: string;
+}) {
   if (!active.value) return;
   active.value.equipmentCode = item.code;
   active.value.equipmentName = item.name;
   active.value.department = item.department;
+  active.value.equipmentCategoryId = item.categoryId;
   equipmentPickerOpen.value = false;
 }
 async function addFiles(files: File[]) {
@@ -493,7 +487,7 @@ async function addFiles(files: File[]) {
       active.value.attachments.push(result.data);
     }
   } catch (e) {
-    notice(e instanceof Error ? e.message : '附件上传失败');
+    notice(e instanceof Error ? e.message : tr('ui.equipment.text1051'));
   } finally {
     uploading.value = false;
   }
@@ -512,37 +506,19 @@ async function load() {
   loading.value = true;
   loadError.value = '';
   try {
-    const res = await api.listRepairs({
+    const accepted = await refreshList({
       ...requestParams(),
       page: page.value,
       size: pageSize.value,
     });
-    if (sequence !== requestSequence) return;
-    if (
-      !res.counts ||
-      queues.some(({ key }) => !Number.isSafeInteger(res.counts[key]) || res.counts[key] < 0)
-    ) {
-      throw new Error('工单接口版本不匹配，请更新后端并刷新页面');
-    }
-    rows.value = res.data;
-    total.value = res.page.total;
-    queueCounts.value = res.counts;
+    if (sequence !== requestSequence || !accepted) return;
     const lastPage = Math.max(1, Math.ceil(total.value / pageSize.value));
     if (page.value > lastPage) page.value = lastPage;
   } catch (e) {
     if (sequence !== requestSequence) return;
     rows.value = [];
     total.value = 0;
-    queueCounts.value = {
-      owned: 0,
-      pending: 0,
-      mine: 0,
-      accept: 0,
-      created: 0,
-      dispatch: 0,
-      all: 0,
-    };
-    loadError.value = e instanceof Error ? e.message : '工单加载失败';
+    loadError.value = e instanceof Error ? e.message : tr('ui.equipment.text1052');
     notice(loadError.value);
   } finally {
     if (sequence === requestSequence) loading.value = false;
@@ -550,7 +526,8 @@ async function load() {
 }
 onUnmounted(() => {
   ++requestSequence;
-  endResize();
+  ++equipmentRevision;
+  invalidateList();
 });
 onMounted(() => {
   load();
@@ -574,24 +551,19 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
 </script>
 
 <template>
+  <ExportFieldsDialog
+    v-model="exportOpen"
+    :columns="exportColumns"
+    :default-keys="exportDefaultKeys"
+    :busy="exporting"
+    @confirm="confirmExport"
+  />
   <section class="content repair-page">
     <RepairUserPicker
       v-model="dispatchPicker"
-      title="派工"
+      :title="tr('ui.equipment.text1053')"
       :busy="submitting"
       @confirm="confirmDispatch"
-    />
-    <AppListTabs
-      class="repair-queues"
-      :active="activeQueue"
-      :items="
-        queues.map((queue) => ({
-          key: queue.key,
-          label: queue.label,
-          count: queueCounts[queue.key],
-        }))
-      "
-      @select="selectQueue($event as QueueKey)"
     />
     <AppListToolbar class="repair-toolbar">
       <div class="repair-actions">
@@ -600,13 +572,13 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           class="repair-primary"
           @click="openCreate"
           type="primary"
-          ><span><AppIcon name="Plus" /></span>报修
+          ><span><AppIcon name="Plus" /></span>{{ tr('ui.equipment.text0212') }}
         </ElButton>
       </div>
       <form class="repair-filters" @submit.prevent="search">
         <ListSearchInput
           v-model="query.keyword"
-          placeholder="搜索工单编号、设备、故障描述、部门、人员"
+          :placeholder="tr('ui.equipment.text1054')"
         />
         <ElButton
           class="advanced-filter-trigger"
@@ -614,11 +586,11 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           @click="showFilter($event.currentTarget as HTMLElement)"
           native-type="button"
         >
-          添加筛选<span v-if="advancedConditions.length">
+          {{ tr('ui.equipment.text0203') }}<span v-if="advancedConditions.length">
             ({{ advancedConditions.length }})</span
           ></ElButton
         >
-        <ElButton class="repair-reset" @click="reset" native-type="button" text>重置</ElButton>
+        <ElButton class="repair-reset" @click="reset" native-type="button" text>{{ tr('ui.equipment.text0204') }}</ElButton>
       </form>
     </AppListToolbar>
     <AppliedFilterChips
@@ -687,12 +659,10 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 type="primary"
                 link
                 >{{ row.equipmentName }}</ElButton
-              ><span
-                v-else-if="col.key === 'status'"
-                class="repair-status"
-                :class="'s-' + row.status"
-                >{{ row.status }}</span
-              ><span v-else>{{ listCell(row, col.key) }}</span>
+              ><MaintenanceStatus v-else-if="col.key === 'status'" :status="row.status" /><span
+                v-else
+                >{{ listCell(row, col.key) }}</span
+              >
             </template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow1} -->
           <ElTableColumn
@@ -701,7 +671,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             :width="170"
             :min-width="156"
             :resizable="false"
-            ><template #header><div class="table-header-label">操作</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
             ><template #default="{ row: row, $index: tableRowIndex }">
               <ElButton
                 link
@@ -709,33 +679,31 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 v-if="row.status === '待派工' && props.grantedActions.includes('编辑')"
                 @click.stop="openEdit(row)"
               >
-                编辑</ElButton
+                {{ tr('ui.equipment.text0207') }}</ElButton
               ><ElButton link type="primary" @click.stop="rowAction(row)">{{
                 row.status === '待派工'
                   ? props.grantedActions.includes('派工')
-                    ? '派工'
-                    : '查看'
+                    ? tr('ui.equipment.text1053')
+                    : tr('ui.equipment.text0206')
                   : row.status === '待接单'
-                    ? activeQueue === 'pending'
-                      ? '接单'
-                      : '查看'
+                    ? tr('ui.equipment.text0206')
                     : row.status === '处理中' || row.status === '挂起'
-                      ? '处理'
+                      ? tr('ui.equipment.text0766')
                       : row.status === '待验收'
-                        ? '验收'
-                        : '查看'
+                        ? tr('ui.equipment.text0763')
+                        : tr('ui.equipment.text0206')
               }}</ElButton>
             </template></ElTableColumn
           ><template #empty
             ><div v-if="!pageRows.length">
-              {{ loading ? '正在加载…' : loadError || '没有符合条件的工单' }}
+              {{ loading ? tr('ui.equipment.text0162') : loadError || tr('ui.equipment.text1055') }}
             </div></template
           ></AppBusinessTable
         >
       </div>
       <footer class="repair-footer">
         <span
-          >共 <b>{{ total }}</b> 条</span
+          >{{ tr('ui.equipment.text0309') }} <b>{{ total }}</b> {{ tr('ui.equipment.text0296') }}</span
         >
         <AppPagination v-model:page="page" v-model:page-size="pageSize" :total="total" />
         <ListToolbarIcons
@@ -769,104 +737,95 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         <section class="repair-drawer" role="dialog" aria-modal="true">
           <header>
             <div>
-              <span>维修工单</span><i>/</i>
-              <h2>{{ detailMode ? '工单详情' : isNew ? '报修' : '编辑工单' }}</h2>
+              <span>{{ tr('ui.equipment.text0006') }}</span><i>/</i>
+              <h2>{{ detailMode ? tr('ui.equipment.text1056') : isNew ? tr('ui.equipment.text0212') : tr('ui.equipment.text1057') }}</h2>
               <b v-if="active?.orderNo">{{ active.orderNo }}</b>
             </div>
-            <ElButton aria-label="关闭" :disabled="submitting || uploading" @click="closeReport"
+            <ElButton :aria-label="tr('ui.equipment.text0076')" :disabled="submitting || uploading" @click="closeReport"
               ><AppIcon name="Close"
             /></ElButton>
           </header>
           <div v-if="active" class="repair-form-body">
             <section class="repair-form-group">
-              <h3>故障信息</h3>
+              <h3>{{ tr('ui.equipment.text1058') }}</h3>
               <div class="repair-form-grid">
-                <label><span>报修人</span><ElInput v-model="active.reporter" readonly /></label>
+                <label><span>{{ tr('ui.equipment.text1045') }}</span><ElInput v-model="active.reporter" readonly /></label>
                 <label
-                  ><span>设备编号<i>*</i></span>
-                  <div class="repair-device-select">
-                    <ElInput
-                      :model-value="active.equipmentCode"
-                      readonly
-                      placeholder="请从设备台账选择"
-                      @click="!detailMode && openEquipmentPicker()"
-                    /><ElButton
-                      v-if="!detailMode"
-                      class="repair-secondary"
-                      @click="openEquipmentPicker"
-                      native-type="button"
-                    >
-                      选择
-                    </ElButton>
-                  </div></label
+                  ><span>{{ tr('ui.equipment.text0078') }}<i>*</i></span>
+                  <ElInput v-if="detailMode" :model-value="active.equipmentCode" readonly />
+                  <DialogChoiceInput
+                    v-else
+                    :model-value="active.equipmentCode"
+                    :placeholder="tr('ui.equipment.text1059')"
+                    :title="tr('ui.equipment.text0220')"
+                    @open="openEquipmentPicker" /></label
                 ><label
-                  ><span>设备名称<i>*</i></span
+                  ><span>{{ tr('ui.equipment.text0081') }}<i>*</i></span
                   ><ElInput
                     :model-value="active.equipmentName"
                     readonly
-                    placeholder="选择设备后自动带出"
-                    @click="!detailMode && openEquipmentPicker()" /></label
+                    :placeholder="tr('ui.equipment.text1060')" /></label
                 ><label
-                  ><span>所属部门</span
+                  ><span>{{ tr('ui.equipment.text0098') }}</span
                   ><ElInput
                     v-model="active.department"
                     readonly
-                    placeholder="选择设备后自动带出" /></label
+                    :placeholder="tr('ui.equipment.text1060')" /></label
                 ><label
-                  ><span>故障类型<i>*</i></span
+                  ><span>{{ tr('ui.equipment.text1040') }}<i>*</i></span
                   ><TreeSelect
                     v-if="!detailMode"
-                    v-model="active.faultType"
-                    :nodes="faultTypeNodes"
-                    placeholder="请选择故障类型" /><ElInput
+                    v-model="active.faultTypeId"
+                    :nodes="faultTypeNodes.map((x) => ({ ...x, value: x.id }))"
+                    :placeholder="tr('ui.equipment.text1061')" /><ElInput
                     v-else
                     v-model="active.faultType"
                     readonly /></label
                 ><label
-                  ><span>故障等级<i>*</i></span
+                  ><span>{{ tr('ui.equipment.text0221') }}<i>*</i></span
                   ><ElSelect v-model="active.severity" :disabled="detailMode" required
-                    ><ElOption value="" disabled :label="'请选择故障等级'" /><ElOption
+                    ><ElOption value="" disabled :label="tr('ui.equipment.text1062')" /><ElOption
                       :value="'一般'"
-                      :label="'一般'" /><ElOption :value="'紧急'" :label="'紧急'" /><ElOption
+                      :label="tr('ui.equipment.text1063')" /><ElOption :value="'紧急'" :label="tr('ui.equipment.text1064')" /><ElOption
                       :value="'特急'"
-                      :label="'特急'" /></ElSelect></label
+                      :label="tr('ui.equipment.text1065')" /></ElSelect></label
                 ><label v-if="!isNew"
-                  ><span>维修人</span
+                  ><span>{{ tr('ui.equipment.text1046') }}</span
                   ><ElInput
                     v-model="active.assignee"
                     :readonly="detailMode && active.status !== '待派工'"
-                    placeholder="派工时填写维修人" /></label
+                    :placeholder="tr('ui.equipment.text1066')" /></label
                 ><label class="repair-span-2"
-                  ><span>故障描述<i>*</i></span
+                  ><span>{{ tr('ui.equipment.text1044') }}<i>*</i></span
                   ><ElInput
                     v-model="active.description"
                     :readonly="detailMode"
                     :rows="3"
-                    placeholder="描述故障现象、发生经过及现场情况"
+                    :placeholder="tr('ui.equipment.text1067')"
                     type="textarea" /></label
-                ><label v-if="!isNew" class="repair-span-2"
-                  ><span>维修措施</span
+                ><label v-if="detailMode" class="repair-span-2"
+                  ><span>{{ tr('ui.equipment.text1068') }}</span
                   ><ElInput
                     v-model="active.repairAction"
-                    :readonly="detailMode && active.status !== '处理中'"
+                    readonly
                     :rows="3"
-                    placeholder="记录检查结果和维修措施"
+                    :placeholder="tr('ui.equipment.text1069')"
                     type="textarea" /></label
-                ><label v-if="!isNew"
-                  ><span>停机时长（分钟）</span
+                ><label v-if="detailMode"
+                  ><span>{{ tr('ui.equipment.text1043') }}</span
                   ><ElInputNumber
                     v-model="active.downtimeMinutes"
                     :min="0"
-                    :readonly="detailMode && active.status !== '处理中'"
+                    readonly
                     controls-position="right" /></label
                 ><label v-if="detailMode"
-                  ><span>当前状态</span><ElInput :model-value="active.status" readonly
+                  ><span>{{ tr('ui.equipment.text1070') }}</span><ElInput :model-value="active.status" readonly
                 /></label>
               </div>
               <div class="repair-attachment-section">
                 <AppAttachments
                   :files="reportAttachmentFiles"
-                  title="附件与图片"
+                  :title="tr('ui.equipment.text1071')"
                   :readonly="detailMode"
                   :disabled="submitting"
                   :uploading="uploading"
@@ -875,8 +834,24 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 />
               </div>
             </section>
+            <BusinessFields
+              ref="customPanel"
+              :model-value="active"
+              object="repair_report"
+              :category-id="active.equipmentCategoryId"
+              :is-new="isNew"
+              :readonly="detailMode"
+              :errors="reportFieldErrors"
+              @initialize="customInitializationClean = !reportGuard.dirty.value"
+              @ready="
+                () => {
+                  if (customInitializationClean) reportGuard.markSaved();
+                }
+              "
+              @update:model-value="Object.assign(active, $event)"
+            />
             <section class="repair-form-group" v-if="detailMode">
-              <h3>处理动作</h3>
+              <h3>{{ tr('ui.equipment.text1072') }}</h3>
               <div class="repair-transition-actions">
                 <template v-if="active.status === '待派工'"
                   ><ElButton
@@ -886,7 +861,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     @click="transition(active, 'dispatch')"
                     type="primary"
                   >
-                    派工并开始处理</ElButton
+                    {{ tr('ui.equipment.text1073') }}</ElButton
                   ><ElButton
                     v-if="props.grantedActions.includes('撤回')"
                     class="repair-danger"
@@ -895,7 +870,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     type="danger"
                     link
                   >
-                    撤销工单
+                    {{ tr('ui.equipment.text1074') }}
                   </ElButton></template
                 ><template v-else-if="active.status === '处理中'"
                   ><ElButton
@@ -905,14 +880,14 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     @click="transition(active, 'complete')"
                     type="primary"
                   >
-                    维修完成，提交验收</ElButton
+                    {{ tr('ui.equipment.text1075') }}</ElButton
                   ><ElButton
                     v-if="props.grantedActions.includes('处理')"
                     class="repair-secondary"
                     :disabled="submitting || uploading"
                     @click="transition(active, 'suspend')"
                   >
-                    挂起
+                    {{ tr('ui.equipment.text0421') }}
                   </ElButton></template
                 ><template v-else-if="active.status === '挂起'"
                   ><ElButton
@@ -922,7 +897,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     @click="transition(active, 'resume')"
                     type="primary"
                   >
-                    恢复处理
+                    {{ tr('ui.equipment.text1076') }}
                   </ElButton></template
                 ><template v-else-if="active.status === '待验收'"
                   ><ElButton
@@ -932,16 +907,16 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     @click="transition(active, 'accept')"
                     type="primary"
                   >
-                    验收通过</ElButton
+                    {{ tr('ui.equipment.text1077') }}</ElButton
                   ><ElButton
                     v-if="props.grantedActions.includes('验收')"
                     class="repair-secondary"
                     :disabled="submitting || uploading"
                     @click="transition(active, 'return')"
                   >
-                    退回维修
+                    {{ tr('ui.equipment.text1078') }}
                   </ElButton></template
-                ><span v-else class="repair-readonly-state">当前工单已{{ active.status }}</span>
+                ><span v-else class="repair-readonly-state">{{ tr('ui.equipment.text1079') }}{{ enumLabel('status', active.status) }}</span>
               </div>
             </section>
           </div>
@@ -950,14 +925,14 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               class="repair-secondary"
               :disabled="submitting || uploading"
               @click="closeReport"
-              >{{ detailMode ? '关闭' : '取消' }}</ElButton
+              >{{ detailMode ? tr('ui.equipment.text0076') : tr('ui.equipment.text0157') }}</ElButton
             ><ElButton
               v-if="!detailMode"
               class="repair-primary"
               :disabled="submitting || uploading"
               @click="save"
               type="primary"
-              >{{ submitting ? '提交中…' : isNew ? '提交' : '保存' }}</ElButton
+              >{{ submitting ? tr('ui.equipment.text1080') : isNew ? tr('ui.equipment.text0253') : tr('ui.equipment.text0159') }}</ElButton
             >
           </footer>
         </section>
@@ -971,8 +946,8 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       >
         <section class="equipment-picker-dialog" role="dialog" aria-modal="true">
           <header>
-            <b>选择设备</b
-            ><ElButton aria-label="关闭" @click="equipmentPickerOpen = false" native-type="button"
+            <b>{{ tr('ui.equipment.text0220') }}</b
+            ><ElButton :aria-label="tr('ui.equipment.text0076')" @click="equipmentPickerOpen = false" native-type="button"
               ><AppIcon name="Close"
             /></ElButton>
           </header>
@@ -980,10 +955,10 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             <ElInput
               v-model="equipmentSearch"
               autofocus
-              placeholder="搜索设备编号、名称或型号"
+              :placeholder="tr('ui.equipment.text1081')"
               @keyup.enter="searchEquipment"
-            /><ElButton class="repair-secondary" @click="searchEquipment">查询</ElButton
-            ><span>共 {{ equipmentTotal }} 项</span>
+            /><ElButton class="repair-secondary" @click="searchEquipment">{{ tr('ui.equipment.text0700') }}</ElButton
+            ><span>{{ tr('ui.equipment.text0309') }} {{ equipmentTotal }} {{ tr('ui.equipment.text0394') }}</span>
           </div>
           <div class="equipment-picker-table">
             <AppBusinessTable
@@ -999,45 +974,45 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               "
               ><!-- @vue-generic {TableColumnRow2} -->
               <ElTableColumn :min-width="150"
-                ><template #header><div class="table-header-label">设备编号</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0078') }}</div></template
                 ><template #default="{ row: item, $index: tableRowIndex }">{{
                   item.code
                 }}</template></ElTableColumn
               ><!-- @vue-generic {TableColumnRow2} -->
               <ElTableColumn :min-width="210"
-                ><template #header><div class="table-header-label">设备名称</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0081') }}</div></template
                 ><template #default="{ row: item, $index: tableRowIndex }">
                   <b>{{ item.name }}</b>
                 </template></ElTableColumn
               ><!-- @vue-generic {TableColumnRow2} -->
               <ElTableColumn :min-width="150"
-                ><template #header><div class="table-header-label">设备分类</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1082') }}</div></template
                 ><template #default="{ row: item, $index: tableRowIndex }">{{
                   item.category || ''
                 }}</template></ElTableColumn
               ><!-- @vue-generic {TableColumnRow2} -->
               <ElTableColumn :min-width="150"
-                ><template #header><div class="table-header-label">规格型号</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0091') }}</div></template
                 ><template #default="{ row: item, $index: tableRowIndex }">{{
                   item.model || ''
                 }}</template></ElTableColumn
               ><!-- @vue-generic {TableColumnRow2} -->
               <ElTableColumn :min-width="150"
-                ><template #header><div class="table-header-label">所属部门</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0098') }}</div></template
                 ><template #default="{ row: item, $index: tableRowIndex }">{{
                   item.department || ''
                 }}</template></ElTableColumn
               ><!-- @vue-generic {TableColumnRow2} -->
               <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-                ><template #header><div class="table-header-label">操作</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
                 ><template #default="{ row: item, $index: tableRowIndex }"
                   ><ElButton class="repair-link" @click="chooseEquipment(item)" type="primary" link>
-                    选择
+                    {{ tr('ui.equipment.text0848') }}
                   </ElButton></template
                 ></ElTableColumn
               ><template #empty
-                ><div v-if="equipmentLoading">正在加载设备台账…</div>
-                <div v-else-if="!filteredEquipment.length">没有匹配设备</div></template
+                ><div v-if="equipmentLoading">{{ tr('ui.equipment.text1083') }}</div>
+                <div v-else-if="!filteredEquipment.length">{{ tr('ui.equipment.text1084') }}</div></template
               ></AppBusinessTable
             >
           </div>
@@ -1047,7 +1022,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               v-model:page-size="equipmentSize"
               :total="equipmentTotal"
             />
-            <ElButton class="repair-secondary" @click="equipmentPickerOpen = false">取消</ElButton>
+            <ElButton class="repair-secondary" @click="equipmentPickerOpen = false">{{ tr('ui.equipment.text0157') }}</ElButton>
           </footer>
         </section>
       </div></Transition
@@ -1154,42 +1129,6 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   color: #3f4b5c;
   font-weight: 600;
 }
-.repair-status {
-  display: inline-block;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.s-待派工 {
-  background: #fff5de;
-  color: #ae7100;
-}
-.s-待接单 {
-  background: #f1eaff;
-  color: #7953b3;
-}
-.s-处理中 {
-  background: #eaf1ff;
-  color: #205cf5;
-}
-.s-挂起 {
-  background: #f1f2f4;
-  color: #727e90;
-}
-.s-待验收 {
-  background: #e9f8fb;
-  color: #087b91;
-}
-.s-已完成 {
-  background: #eaf7f1;
-  color: #16845b;
-}
-.s-已撤销 {
-  background: #fff0f1;
-  color: #bb5663;
-}
 .repair-footer {
   display: flex;
   align-items: center;
@@ -1223,16 +1162,6 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   display: flex;
   align-items: center;
   gap: 5px;
-}
-.repair-device-select {
-  display: flex;
-  gap: 7px;
-  min-width: 0;
-}
-.repair-device-select button {
-  height: 34px;
-  flex: none;
-  color: var(--brand);
 }
 .equipment-picker-mask {
   position: fixed;
@@ -1509,9 +1438,6 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   flex-direction: column;
   padding: 14px 12px 0;
 }
-.repair-queues {
-  flex: none;
-}
 .repair-table-card {
   flex: 1;
   min-height: 0;
@@ -1532,62 +1458,6 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   border-radius: 0 0 6px 6px;
   border-top: 1px solid #e1e6ed;
   box-shadow: none;
-}
-.repair-queues {
-  height: 36px;
-  display: flex;
-  align-items: stretch;
-  gap: 22px;
-  margin: 0 0 10px;
-  border-bottom: 1px solid #e3e7ed;
-}
-.repair-queues button {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 7px;
-  border: 0;
-  background: transparent;
-  color: #637084;
-  font: inherit;
-  font-size: 13px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.repair-queues button:hover {
-  color: var(--brand);
-}
-.repair-queues button.active {
-  color: var(--brand);
-  font-weight: 600;
-}
-.repair-queues button.active:after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  bottom: -1px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--brand);
-}
-.repair-queues button span {
-  min-width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: #eef1f5;
-  color: #687588;
-  font-size: 11px;
-  font-weight: 500;
-}
-.repair-queues button.active span {
-  background: var(--brand-soft);
-  color: var(--brand);
 }
 @media (max-width: 700px) {
   .repair-footer {

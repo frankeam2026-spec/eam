@@ -832,3 +832,60 @@
 .inspection-task-page small {
   font-size: 13px;
 }
+
+/* Daily arrangement calendar no longer shares space with a legacy shift table. */
+.inspection-editor .daily-calendar {
+  grid-template-columns: minmax(0, 1fr);
+}
+.inspection-editor .daily-calendar .inspection-calendar-fields {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.inspection-editor .daily-calendar .inspection-calendar-fields > p {
+  grid-column: 1 / -1;
+}
+@media (max-width: 1050px) {
+  .inspection-editor .daily-calendar .inspection-calendar-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Daily plan editing keeps independent concerns in mounted tabs. */
+.inspection-editor > .daily-plan-tabs {
+  flex: none;
+  background: var(--el-bg-color);
+  padding: 0 16px;
+}
+.daily-plan-tabs > .el-tabs__header {
+  margin: 0;
+}
+.daily-plan-tabs > .el-tabs__content {
+  display: none;
+}
+.daily-plan-editor .inspection-form-grid {
+  gap: 12px 24px;
+}
+.daily-plan-editor > .inspection-form-card {
+  flex-shrink: 0;
+}
+
+.daily-reminder-settings .el-collapse {
+  border: 0;
+}
+.daily-reminder-settings .el-collapse-item__header {
+  font-size: 14px;
+  font-weight: 600;
+}
+.daily-reminder-settings .el-collapse-item__wrap {
+  border-bottom: 0;
+}
+.daily-reminder-settings .el-collapse-item__content {
+  padding: 12px 0 0;
+}
+.inspection-reminder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px 24px;
+}
+.inspection-reminder-grid .el-form-item {
+  margin-bottom: 0;
+}

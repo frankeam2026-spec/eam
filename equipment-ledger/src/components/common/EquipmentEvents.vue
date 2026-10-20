@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ref, watch, onBeforeUnmount, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElButton, ElSelect, ElOption, ElTimeline, ElTimelineItem, ElSkeleton } from 'element-plus';
@@ -47,7 +48,7 @@ async function load() {
     events.value = result.data;
     total.value = result.total;
   } catch (e) {
-    if (seq === revision) error.value = e instanceof Error ? e.message : '动态加载失败';
+    if (seq === revision) error.value = e instanceof Error ? e.message : tr('ui.equipment.text1360');
   } finally {
     if (seq === revision) {
       loading.value = false;
@@ -76,28 +77,28 @@ const colors: Record<string, string> = {
 <template>
   <section class="equipment-events-panel" :aria-busy="loading">
     <header class="equipment-panel-heading">
-      <h3><AppIcon name="Clock" />{{ full ? '设备动态' : '最近动态' }}</h3>
+      <h3><AppIcon name="Clock" />{{ full ? tr('ui.equipment.text1361') : tr('ui.equipment.text1362') }}</h3>
       <div v-if="full" class="event-controls">
         <ElSelect
           v-model="state.kind"
           :empty-values="[null, undefined]"
-          aria-label="动态类型"
+          :aria-label="tr('ui.equipment.text1363')"
           @change="state.page = 1"
         >
-          <ElOption value="" label="全部类型" />
+          <ElOption value="" :label="tr('ui.equipment.text1364')" />
           <ElOption v-for="(label, key) in eventLabels" :key="key" :value="key" :label="label" />
         </ElSelect>
-        <ElSelect v-model="state.sort" aria-label="动态排序" @change="state.page = 1">
-          <ElOption value="desc" label="最新在前" /><ElOption value="asc" label="最早在前" />
+        <ElSelect v-model="state.sort" :aria-label="tr('ui.equipment.text1365')" @change="state.page = 1">
+          <ElOption value="desc" :label="tr('ui.equipment.text1366')" /><ElOption value="asc" :label="tr('ui.equipment.text1367')" />
         </ElSelect>
       </div>
       <ElButton v-else link type="primary" @click="emit('all')"
-        >查看全部<AppIcon name="Right"
+        >{{ tr('ui.equipment.text0892') }}<AppIcon name="Right"
       /></ElButton>
     </header>
     <ElSkeleton v-if="loading" :rows="3" animated />
     <div v-else-if="error" class="equipment-panel-message" role="alert">
-      {{ error }} <ElButton link type="primary" @click="load">重试</ElButton>
+      {{ error }} <ElButton link type="primary" @click="load">{{ tr('ui.equipment.text0299') }}</ElButton>
     </div>
     <ElTimeline v-else-if="events.length" class="equipment-timeline">
       <ElTimelineItem
@@ -109,7 +110,7 @@ const colors: Record<string, string> = {
       >
         <div class="event-line">
           <span class="event-kind" :class="event.kind">{{ eventLabels[event.kind] }}</span
-          ><strong>{{ event.actor || '系统' }}</strong
+          ><strong>{{ event.actor || tr('ui.equipment.text1368') }}</strong
           ><span class="event-action" :title="event.action">{{ event.action }}</span>
         </div>
         <ElButton
@@ -123,10 +124,10 @@ const colors: Record<string, string> = {
       </ElTimelineItem>
     </ElTimeline>
     <p v-else class="equipment-panel-empty">
-      {{ full && state.kind ? '该类型暂无可查看的动态' : '暂无可查看的动态' }}
+      {{ full && state.kind ? tr('ui.equipment.text1369') : tr('ui.equipment.text1370') }}
     </p>
     <footer v-if="full && total" class="equipment-events-footer">
-      <span>共 {{ total }} 条</span
+      <span>{{ tr('ui.equipment.text0309') }} {{ total }} {{ tr('ui.equipment.text0296') }}</span
       ><AppPagination v-model:page="state.page" v-model:page-size="state.size" :total="total" />
     </footer>
   </section>

@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ref, watch } from 'vue';
 import { defaultBranding } from '../../branding';
 const props = defineProps<{ name: string; logoUrl: string }>();
@@ -15,7 +16,7 @@ watch(
     <img
       class="brand-logo"
       :src="failed ? defaultBranding.logoUrl : logoUrl"
-      alt="系统Logo"
+      :alt="tr('ui.equipment.text0932')"
       @error="failed = true"
     /><strong>{{ name }}</strong>
   </div>

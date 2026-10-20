@@ -33,12 +33,13 @@ class RepairConcurrencyTest {
                 mock(EquipmentMapper.class),
                 mock(com.windasoft.eam.repository.basedata.BaseItemMapper.class),
                 mock(NumberCounterMapper.class),
-                "./data/uploads"),
+                "./data/uploads", com.windasoft.eam.support.RelationStubs.repair()),
             null,
             json,
             auth,
             mock(PermissionService.class),
-            new com.windasoft.eam.service.repair.RepairViewAssembler(json));
+            new com.windasoft.eam.service.repair.RepairViewAssembler(json),
+            mock(com.windasoft.eam.service.basedata.BaseDataReferenceService.class));
     row = new RepairOrder();
     row.setId(1L);
     row.setTenantId(10001L);

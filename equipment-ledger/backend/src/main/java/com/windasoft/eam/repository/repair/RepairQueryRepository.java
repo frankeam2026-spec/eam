@@ -12,16 +12,23 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class RepairQueryRepository {
+  private final RepairRelationsRepository collaborators;
   private final RepairOrderMapper mapper;
   private final ObjectMapper json;
 
-  public RepairQueryRepository(RepairOrderMapper mapper, ObjectMapper json) {
+  public RepairQueryRepository(
+      RepairOrderMapper mapper, ObjectMapper json, RepairRelationsRepository collaborators) {
+    this.collaborators = collaborators;
     this.mapper = mapper;
     this.json = json;
   }
 
   public static final class Query {
     private final LambdaQueryWrapper<RepairOrder> rows;
+
+    public LambdaQueryWrapper<RepairOrder> rows() {
+      return rows;
+    }
 
     private Query(LambdaQueryWrapper<RepairOrder> rows) {
       this.rows = rows;
@@ -60,7 +67,9 @@ public class RepairQueryRepository {
   }
 
   public Page<RepairOrder> page(Query query, long page, long size, boolean count) {
-    return mapper.selectPage(new Page<RepairOrder>(page, size, count), query.rows);
+    var result = mapper.selectPage(new Page<RepairOrder>(page, size, count), query.rows);
+    collaborators.hydrate(result.getRecords());
+    return result;
   }
 
   public long count(Query query) {
@@ -135,8 +144,9 @@ public class RepairQueryRepository {
             acceptance);
     String sort = params.getOrDefault("sortBy", "reportedAt"),
         direction = params.getOrDefault("direction", "desc");
+    if (sort.startsWith("custom:")) return query;
     if (!FIELDS.containsKey(sort) || !List.of("asc", "desc").contains(direction))
-      throw new IllegalArgumentException("排序条件无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0007");
     query.orderBy(true, "asc".equals(direction), FIELDS.get(sort)).orderByAsc(RepairOrder::getId);
     return query;
   }
@@ -150,7 +160,8 @@ public class RepairQueryRepository {
       long user,
       java.util.function.BiConsumer<LambdaQueryWrapper<RepairOrder>, Boolean> scope,
       java.util.function.Consumer<LambdaQueryWrapper<RepairOrder>> acceptance) {
-    if (!QUEUES.contains(queue)) throw new IllegalArgumentException("工单队列无效");
+    if (!QUEUES.contains(queue))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0008");
     String keyword = text(params.get("keyword"));
     var q =
         new LambdaQueryWrapper<RepairOrder>()
@@ -216,7 +227,8 @@ public class RepairQueryRepository {
 
   private static String text(String value) {
     String result = value == null ? "" : value.trim();
-    if (result.length() > 200) throw new IllegalArgumentException("查询条件不能超过200个字符");
+    if (result.length() > 200)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0009");
     return result;
   }
 }

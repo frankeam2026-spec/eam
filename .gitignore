@@ -20,3 +20,9 @@ equipment-ledger/artifacts/
 **/dist/
 **/target/
 **/data/uploads/
+
+# Local engineering test reports
+equipment-ledger/test-results/
+
+# Separate local site preview checkout
+eam-equipment-form-site/

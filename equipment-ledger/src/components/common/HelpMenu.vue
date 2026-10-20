@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import AppIcon from './AppIcon.vue';
 import { ElDropdown, ElDropdownMenu, ElDropdownItem, ElButton } from 'element-plus';
 import AppDialog from './AppDialog.vue';
@@ -14,54 +15,54 @@ const titles: Record<string, string> = {
 
 <template>
   <ElDropdown class="help-menu" trigger="click" placement="bottom-end" @command="section = $event">
-    <ElButton class="help-trigger" title="帮助" aria-label="帮助" native-type="button"
+    <ElButton class="help-trigger" :title="tr('ui.equipment.text1408')" :aria-label="tr('ui.equipment.text1408')" native-type="button"
       ><AppIcon name="Help"
     /></ElButton>
     <template #dropdown>
       <ElDropdownMenu>
-        <ElDropdownItem command="guide">操作指南</ElDropdownItem>
-        <ElDropdownItem command="feedback">问题反馈</ElDropdownItem>
-        <ElDropdownItem command="about" divided>关于系统</ElDropdownItem>
+        <ElDropdownItem command="guide">{{ tr('ui.equipment.text0050') }}</ElDropdownItem>
+        <ElDropdownItem command="feedback">{{ tr('ui.equipment.text1409') }}</ElDropdownItem>
+        <ElDropdownItem command="about" divided>{{ tr('ui.equipment.text1410') }}</ElDropdownItem>
       </ElDropdownMenu>
     </template>
   </ElDropdown>
   <AppDialog
     :model-value="Boolean(section)"
-    :title="titles[section] || '帮助'"
+    :title="titles[section] || tr('ui.equipment.text1408')"
     width="520px"
     @update:model-value="section = ''"
   >
     <div class="help-content">
       <template v-if="section === 'guide'">
-        <h3>查找设备</h3>
+        <h3>{{ tr('ui.equipment.text1411') }}</h3>
         <p>
-          在设备台账中通过编号、名称或型号搜索。点击设备编号查看基本信息及维修、保养、巡检和备件记录。
+          {{ tr('ui.equipment.text1412') }}
         </p>
-        <h3>处理任务</h3>
+        <h3>{{ tr('ui.equipment.text1413') }}</h3>
         <p>
-          进入工作台的待办，按维修、保养或点巡检查找任务。点击对应操作进入接单、处理或验收页面。
+          {{ tr('ui.equipment.text1414') }}
         </p>
-        <h3>筛选列表</h3>
+        <h3>{{ tr('ui.equipment.text1415') }}</h3>
         <p>
-          使用输入框快速查询，列筛选查询对应字段。支持筛选器的列表可以组合更多条件；设置列可调整展示字段。
+          {{ tr('ui.equipment.text1416') }}
         </p>
       </template>
       <template v-else-if="section === 'feedback'">
-        <p>遇到问题时，请将以下信息提供给系统管理员，方便定位：</p>
+        <p>{{ tr('ui.equipment.text1417') }}</p>
         <ul>
-          <li>所在模块、设备编号或任务编号。</li>
-          <li>操作步骤、预期结果及实际结果。</li>
-          <li>问题截图和发生时间。</li>
+          <li>{{ tr('ui.equipment.text1418') }}</li>
+          <li>{{ tr('ui.equipment.text1419') }}</li>
+          <li>{{ tr('ui.equipment.text1420') }}</li>
         </ul>
-        <p>请勿在反馈中提供密码。</p>
+        <p>{{ tr('ui.equipment.text1421') }}</p>
       </template>
       <template v-else-if="section === 'about'">
-        <h3>设备管理系统</h3>
-        <p>版本：{{ version }}</p>
-        <p>设备台账 · 维修 · 保养 · 点巡检 · 系统管理</p>
+        <h3>{{ tr('ui.equipment.text1422') }}</h3>
+        <p>{{ tr('ui.equipment.text1423') }}{{ version }}</p>
+        <p>{{ tr('ui.equipment.text1424') }}</p>
       </template>
     </div>
-    <template #footer><ElButton @click="section = ''">关闭</ElButton></template>
+    <template #footer><ElButton @click="section = ''">{{ tr('ui.equipment.text0076') }}</ElButton></template>
   </AppDialog>
 </template>
 

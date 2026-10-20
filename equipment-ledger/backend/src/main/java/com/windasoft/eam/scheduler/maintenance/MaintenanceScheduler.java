@@ -17,8 +17,10 @@ public class MaintenanceScheduler {
   @Scheduled(fixedDelay = 60000, initialDelay = 10000)
   public void generate() {
     for (var plan : service.generationTargets()) {
-      long tenant = MaintenanceService.number(plan.get("tenant_id")),
-          id = MaintenanceService.number(plan.get("id"));
+      long
+          tenant =
+              com.windasoft.eam.common.maintenance.MaintenanceSupport.number(plan.get("tenant_id")),
+          id = com.windasoft.eam.common.maintenance.MaintenanceSupport.number(plan.get("id"));
       try {
         service.generate(tenant, id);
       } catch (Exception e) {

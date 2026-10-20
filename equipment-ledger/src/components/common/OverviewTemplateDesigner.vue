@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { computed, ref, onMounted } from 'vue';
 import { ElForm, ElSelect, ElOption, ElButton, ElAlert, type FormInstance } from 'element-plus';
 import OverviewSection from './OverviewSection.vue';
@@ -34,8 +35,8 @@ const rules = computed(() =>
     model.value.blocks.map((b, i) => [
       `blocks.${i}.title`,
       [
-        { required: true, whitespace: true, message: '请输入区块标题', trigger: 'blur' },
-        { max: 80, message: '标题不能超过80字', trigger: 'blur' },
+        { required: true, whitespace: true, get message() { return tr('ui.equipment.text1555'); }, trigger: 'blur' },
+        { max: 80, get message() { return tr('ui.equipment.text1556'); }, trigger: 'blur' },
       ],
     ]),
   ),
@@ -100,7 +101,7 @@ onMounted(async () => {
     presets.value = (await analyticsApi.presets()).data;
     for (const m of catalog.value.data) overviewLabels['analytics:' + m.id] = m.name;
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '指标加载失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text1557');
   }
 });
 </script>
@@ -115,27 +116,27 @@ onMounted(async () => {
     @submit.prevent
     ><ElAlert v-if="error" type="error" :closable="false" :title="error" />
     <div v-if="!preview" class="template-controls">
-      <ElSelect v-model="model.layoutMode" aria-label="首页布局"
-        ><ElOption value="work" label="工作布局 2∶1" /><ElOption
+      <ElSelect v-model="model.layoutMode" :aria-label="tr('ui.equipment.text1558')"
+        ><ElOption value="work" :label="tr('ui.equipment.text1559')" /><ElOption
           value="analysis"
-          label="分析布局 1∶1" /></ElSelect
+          :label="tr('ui.equipment.text1560')" /></ElSelect
       ><AnalyticsPeriodSelect
         :model-value="model.period || { preset: 'month' }"
         @update:model-value="model.period = $event"
-      /><ElSelect v-model="preset" placeholder="预置角色方案"
+      /><ElSelect v-model="preset" :placeholder="tr('ui.equipment.text1561')"
         ><ElOption v-for="(p, i) in presets" :key="p.name" :value="i" :label="p.name" /></ElSelect
-      ><ElButton :disabled="preset === undefined || busy" @click="apply">应用到草稿</ElButton>
+      ><ElButton :disabled="preset === undefined || busy" @click="apply">{{ tr('ui.equipment.text1562') }}</ElButton>
     </div>
     <div v-if="!preview" class="template-controls">
-      <ElSelect v-model="selected" filterable placeholder="添加首页区块"
+      <ElSelect v-model="selected" filterable :placeholder="tr('ui.equipment.text1563')"
         ><ElOption
           v-for="t in available"
           :key="t"
           :value="t"
           :label="overviewLabels[t] || t" /></ElSelect
       ><ElButton :disabled="!selected || model.blocks.length >= 12 || busy" @click="add"
-        >添加区块</ElButton
-      ><span>分析区块允许重复添加。保存草稿并发布后供角色使用。</span>
+        >{{ tr('ui.equipment.text1564') }}</ElButton
+      ><span>{{ tr('ui.equipment.text1565') }}</span>
     </div>
     <div
       class="template-sections"
@@ -152,11 +153,11 @@ onMounted(async () => {
           {{
             model.layoutMode === 'analysis'
               ? col === 'main'
-                ? '左栏'
-                : '右栏'
+                ? tr('ui.equipment.text1566')
+                : tr('ui.equipment.text1567')
               : col === 'main'
-                ? '主栏'
-                : '侧栏'
+                ? tr('ui.equipment.text1541')
+                : tr('ui.equipment.text1542')
           }}
         </h3>
         <OverviewSection
@@ -181,7 +182,7 @@ onMounted(async () => {
           ><p class="template-description">
             {{
               catalog?.data.find((m) => m.id === b.type.slice(10))?.definition ||
-              '执行人员的工作入口，运行时按个人权限加载。'
+              tr('ui.equipment.text1568')
             }}
           </p></OverviewSection
         >
@@ -191,7 +192,7 @@ onMounted(async () => {
           @dragover.prevent
           @drop.stop.prevent="drop(col as 'main' | 'side')"
         >
-          拖放区块到此列末尾
+          {{ tr('ui.equipment.text1569') }}
         </div>
       </div>
     </div></ElForm

@@ -1,0 +1,88 @@
+{
+  "recordedAt": "2026-10-17T18:22:39.580350+08:00",
+  "environment": "local-dev read-only checks, no business writes",
+  "checks": [
+    {
+      "name": "maintenance-bounded-metadata",
+      "passed": true
+    },
+    {
+      "name": "maintenance-equipment-page",
+      "passed": true,
+      "total": 14
+    },
+    {
+      "name": "maintenance-selected-tail-hydration",
+      "passed": true
+    },
+    {
+      "name": "maintenance-function-location-preserved",
+      "passed": true
+    },
+    {
+      "name": "maintenance-empty-search",
+      "passed": true
+    },
+    {
+      "name": "maintenance-users-search",
+      "passed": true
+    },
+    {
+      "name": "maintenance-standards-page",
+      "passed": true,
+      "total": 2
+    },
+    {
+      "name": "inspection-bounded-metadata",
+      "passed": true
+    },
+    {
+      "name": "inspection-equipment-page",
+      "passed": true,
+      "total": 14
+    },
+    {
+      "name": "inspection-selected-tail-hydration",
+      "passed": true
+    },
+    {
+      "name": "inspection-function-location-preserved",
+      "passed": true
+    },
+    {
+      "name": "inspection-empty-search",
+      "passed": true
+    },
+    {
+      "name": "inspection-users-search",
+      "passed": true
+    },
+    {
+      "name": "inspection-standards-page",
+      "passed": true,
+      "total": 2
+    },
+    {
+      "name": "outbound-bounded-metadata",
+      "passed": true
+    },
+    {
+      "name": "outbound-recipient-page",
+      "passed": true,
+      "total": 4
+    },
+    {
+      "name": "outbound-task-page-and-company",
+      "passed": true,
+      "total": 11
+    },
+    {
+      "name": "requisition-selected-task-and-warehouses",
+      "passed": true
+    },
+    {
+      "name": "requisition-metadata-no-entire-task-list",
+      "passed": true
+    }
+  ]
+}

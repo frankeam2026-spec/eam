@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import { ElSwitch } from 'element-plus';
 withDefaults(defineProps<{ modelValue?: string; disabled?: boolean }>(), {
   modelValue: '否',
@@ -13,10 +14,10 @@ defineEmits<{ 'update:modelValue': [value: string] }>();
       active-value="是"
       inactive-value="否"
       :disabled="disabled"
-      aria-label="是否"
+      :aria-label="tr('ui.equipment.text0066')"
       @update:model-value="$emit('update:modelValue', String($event))"
     /><span class="boolean-value" :class="{ enabled: modelValue === '是' }">{{
-      modelValue === '是' ? '是' : '否'
+      modelValue === '是' ? tr('ui.equipment.text0067') : tr('ui.equipment.text0068')
     }}</span></span
   >
 </template>

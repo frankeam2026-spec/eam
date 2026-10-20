@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { computed } from 'vue';
 import {
   ElAlert,
@@ -48,12 +49,12 @@ const rate = (value: unknown) =>
   value == null ? '暂无可评价任务' : `${Number(value).toFixed(2)}%`;
 const execution = computed(() => ['execution', 'departments'].includes(props.metric?.chart || ''));
 const stats = computed(() => [
-  { label: '有效任务', key: 'total' },
-  { label: '验收完成', key: 'completed' },
-  { label: '待验收 / 待审核', key: 'pending' },
-  { label: '到期未完成', key: 'overdue' },
-  { label: '尚未到期', key: 'upcoming' },
-  { label: '人工作废', key: 'cancelled' },
+  { get label() { return tr('ui.equipment.text1299'); }, key: 'total' },
+  { get label() { return tr('ui.equipment.text0760'); }, key: 'completed' },
+  { get label() { return tr('ui.equipment.text1300'); }, key: 'pending' },
+  { get label() { return tr('ui.equipment.text1301'); }, key: 'overdue' },
+  { get label() { return tr('ui.equipment.text1302'); }, key: 'upcoming' },
+  { get label() { return tr('ui.equipment.text1303'); }, key: 'cancelled' },
 ]);
 const value = (key: string) => summary.value[key] ?? 0;
 const option = computed(() => {
@@ -152,14 +153,14 @@ function chartClick(p: { dataIndex: number; seriesIndex: number }) {
     <div class="analysis-caption">
       <ElTooltip :content="metric?.definition || result?.definition || ''" placement="top"
         ><span
-          >{{ result?.period?.label || '统计周期'
-          }}<template v-if="metric?.chart === 'bar'"> · 前{{ topN || 10 }}项</template> ·
-          {{ execution ? '已生成任务' : metric?.unit }}
+          >{{ result?.period?.label || tr('ui.equipment.text1298')
+          }}<template v-if="metric?.chart === 'bar'"> {{ tr('ui.equipment.text1304') }}{{ topN || 10 }}{{ tr('ui.equipment.text0394') }}</template> ·
+          {{ execution ? tr('ui.equipment.text1305') : metric?.unit }}
           <AppIcon name="Help" class="definition-help" /></span></ElTooltip
       ><ElSelect
         v-if="result?.currencies?.length"
         :model-value="result.currency"
-        aria-label="统计币种"
+        :aria-label="tr('ui.equipment.text1306')"
         @update:model-value="emit('currency', String($event))"
         ><ElOption v-for="c in result.currencies" :key="c" :label="c" :value="c" /></ElSelect
       ><ElButton
@@ -168,19 +169,19 @@ function chartClick(p: { dataIndex: number; seriesIndex: number }) {
         link
         :disabled="interactive === false"
         @click="emit('drill', {})"
-        >明细</ElButton
+        >{{ tr('ui.equipment.text1307') }}</ElButton
       >
     </div>
     <ElSkeleton v-if="loading && !result" :rows="4" animated />
     <ElAlert
       v-else-if="error || result?.status === 'error'"
-      :title="error || result?.message || '加载失败'"
+      :title="error || result?.message || tr('ui.equipment.text0160')"
       type="error"
       :closable="false"
-      ><ElButton link type="primary" @click="emit('retry')">重试</ElButton></ElAlert
+      ><ElButton link type="primary" @click="emit('retry')">{{ tr('ui.equipment.text0299') }}</ElButton></ElAlert
     >
     <p v-else-if="result?.status === 'forbidden'" class="analysis-empty">
-      无权查看此分析，请调整区块范围或联系管理员。
+      {{ tr('ui.equipment.text1308') }}
     </p>
     <p
       v-else-if="result?.status === 'empty' || result?.status === 'data_missing'"
@@ -188,8 +189,8 @@ function chartClick(p: { dataIndex: number; seriesIndex: number }) {
     >
       {{
         result.status === 'data_missing'
-          ? '历史数据不完整，暂无法统计'
-          : '该周期及授权范围内暂无数据'
+          ? tr('ui.equipment.text1309')
+          : tr('ui.equipment.text1310')
       }}
     </p>
     <template v-else-if="result">
@@ -210,23 +211,23 @@ function chartClick(p: { dataIndex: number; seriesIndex: number }) {
             text
             :disabled="interactive === false"
             @click="emit('drill', { series: 'completed' })"
-            ><span>验收完成进度</span><b>{{ rate(summary.completionRate) }}</b></ElButton
+            ><span>{{ tr('ui.equipment.text1311') }}</span><b>{{ rate(summary.completionRate) }}</b></ElButton
           ><ElButton
             text
             :disabled="interactive === false"
             @click="emit('drill', { series: 'onTime' })"
-            ><span>按时提交率</span><b>{{ rate(summary.onTimeRate) }}</b
+            ><span>{{ tr('ui.equipment.text1312') }}</span><b>{{ rate(summary.onTimeRate) }}</b
             ><small
-              >{{ summary.onTime || 0 }} / {{ summary.evaluable || 0 }} 可评价任务</small
+              >{{ summary.onTime || 0 }} / {{ summary.evaluable || 0 }} {{ tr('ui.equipment.text1313') }}</small
             ></ElButton
           >
         </div>
         <div v-if="summary.unknownDeadlineUnfinished" class="execution-note">
-          有 {{ summary.unknownDeadlineUnfinished }} 项未完成任务缺少截止时间，暂不归入到期分类。
+          {{ tr('ui.equipment.text1314') }} {{ summary.unknownDeadlineUnfinished }} {{ tr('ui.equipment.text1315') }}
         </div>
         <div class="execution-note">
-          验收完成中：按时提交 {{ summary.completedOnTime || 0 }}，逾期提交
-          {{ summary.completedLate || 0 }}；验收等待不计入提交耗时。
+          {{ tr('ui.equipment.text1316') }} {{ summary.completedOnTime || 0 }}{{ tr('ui.equipment.text1317') }}
+          {{ summary.completedLate || 0 }}{{ tr('ui.equipment.text1318') }}
         </div>
         <AppBusinessTable
           v-if="metric?.id !== 'maintenance_execution'"
@@ -237,11 +238,11 @@ function chartClick(p: { dataIndex: number; seriesIndex: number }) {
           row-key="key"
           :max-height="310"
           ><ElTableColumn
-            :label="metric?.id === 'inspection_execution' ? '任务类别' : '部门'"
+            :label="metric?.id === 'inspection_execution' ? tr('ui.equipment.text1319') : tr('ui.equipment.text1320')"
             prop="name"
             min-width="130"
             show-overflow-tooltip
-          /><ElTableColumn label="有效任务" prop="total" width="95" align="right"
+          /><ElTableColumn :label="tr('ui.equipment.text1299')" prop="total" width="95" align="right"
             ><template #default="{ row }"
               ><ElButton
                 link
@@ -251,7 +252,7 @@ function chartClick(p: { dataIndex: number; seriesIndex: number }) {
                 >{{ row.total }}</ElButton
               ></template
             ></ElTableColumn
-          ><ElTableColumn label="验收完成" prop="completed" width="95" align="right"
+          ><ElTableColumn :label="tr('ui.equipment.text0760')" prop="completed" width="95" align="right"
             ><template #default="{ row }"
               ><ElButton
                 link
@@ -261,9 +262,9 @@ function chartClick(p: { dataIndex: number; seriesIndex: number }) {
                 >{{ row.completed }}</ElButton
               ></template
             ></ElTableColumn
-          ><ElTableColumn label="完成进度" width="105" align="right"
+          ><ElTableColumn :label="tr('ui.equipment.text1321')" width="105" align="right"
             ><template #default="{ row }">{{ rate(row.completionRate) }}</template></ElTableColumn
-          ><ElTableColumn label="按时提交率" width="130" align="right"
+          ><ElTableColumn :label="tr('ui.equipment.text1312')" width="130" align="right"
             ><template #default="{ row }">{{ rate(row.onTimeRate) }}</template></ElTableColumn
           ></AppBusinessTable
         >
@@ -277,7 +278,7 @@ function chartClick(p: { dataIndex: number; seriesIndex: number }) {
         row-key="key"
         :max-height="350"
         ><ElTableColumn
-          label="人员"
+          :label="tr('ui.equipment.text1322')"
           prop="name"
           min-width="100"
           show-overflow-tooltip
@@ -306,13 +307,13 @@ function chartClick(p: { dataIndex: number; seriesIndex: number }) {
                   ? `${Number(row.score).toFixed(2)}（${row.scoreCount}份）`
                   : row[c.key]
               }}</ElButton
-            ><span v-else>暂无评分</span></template
+            ><span v-else>{{ tr('ui.equipment.text1323') }}</span></template
           ></ElTableColumn
         ></AppBusinessTable
       >
       <template v-else
         ><div v-if="metric?.money" class="money-total">
-          实际消耗 <b>{{ money(summary.totalAmount) }}</b> {{ result.currency }}
+          {{ tr('ui.equipment.text1324') }} <b>{{ money(summary.totalAmount) }}</b> {{ result.currency }}
         </div>
         <AnalyticsChart
           :option="option"
@@ -327,24 +328,24 @@ function chartClick(p: { dataIndex: number; seriesIndex: number }) {
             type="primary"
             :disabled="interactive === false"
             @click="emit('drill', { key: '__shared__' })"
-            >公共用料 {{ money(summary.shared?.amount) }} {{ result.currency }}</ElButton
+            >{{ tr('ui.equipment.text1325') }} {{ money(summary.shared?.amount) }} {{ result.currency }}</ElButton
           ><ElButton
             link
             type="primary"
             :disabled="interactive === false"
             @click="emit('drill', { key: '__unassigned__' })"
-            >历史未归属 {{ money(summary.unassigned?.amount) }} {{ result.currency }}</ElButton
+            >{{ tr('ui.equipment.text1326') }} {{ money(summary.unassigned?.amount) }} {{ result.currency }}</ElButton
           >
         </div></template
       >
     </template>
     <div v-if="quality.length" class="analysis-quality">
-      数据覆盖说明：{{ quality.join('；') }}。缺失事实未补造。
+      {{ tr('ui.equipment.text1327') }}{{ quality.join('；') }}{{ tr('ui.equipment.text1328') }}
     </div>
     <footer v-if="result?.asOf">
-      统计截至：{{ result.asOf.replace('T', ' ').slice(0, 19)
-      }}<span v-if="metric?.id === 'personnel'"> · 未完成量截至当前</span
-      ><span v-if="loading"> · 刷新中</span>
+      {{ tr('ui.equipment.text1329') }}{{ result.asOf.replace('T', ' ').slice(0, 19)
+      }}<span v-if="metric?.id === 'personnel'"> {{ tr('ui.equipment.text1330') }}</span
+      ><span v-if="loading"> {{ tr('ui.equipment.text1331') }}</span>
     </footer>
   </div>
 </template>

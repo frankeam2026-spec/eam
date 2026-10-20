@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElTableColumn } from 'element-plus';
 import AppBusinessTable from './AppBusinessTable.vue';
 import { computed, ref, watch } from 'vue';
@@ -57,7 +58,7 @@ async function load() {
     rows.value = result.data;
     total.value = result.page.total;
   } catch (e) {
-    if (current === revision) error.value = e instanceof Error ? e.message : '加载物料失败';
+    if (current === revision) error.value = e instanceof Error ? e.message : tr('ui.equipment.text1509');
   } finally {
     if (current === revision) loading.value = false;
   }
@@ -109,18 +110,18 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 <template>
   <AppDialog
     :model-value="modelValue"
-    title="选择物料"
+    :title="tr('ui.equipment.text0575')"
     :width="showStock ? '1120px' : '960px'"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <form class="material-picker-toolbar" @submit.prevent="search">
-      <span>已选 {{ selected.size }} 项</span>
-      <span v-if="showStock && stockContext" class="stock-context">库存：{{ stockContext }}</span>
-      <ElButton text :disabled="!selected.size" @click="selected = new Map()">清空</ElButton>
-      <ListSearchInput v-model="query" placeholder="搜索料号、名称、规格型号、分类" />
+      <span>{{ tr('ui.equipment.text0295') }} {{ selected.size }} {{ tr('ui.equipment.text0394') }}</span>
+      <span v-if="showStock && stockContext" class="stock-context">{{ tr('ui.equipment.text1510') }}{{ stockContext }}</span>
+      <ElButton text :disabled="!selected.size" @click="selected = new Map()">{{ tr('ui.equipment.text1358') }}</ElButton>
+      <ListSearchInput v-model="query" :placeholder="tr('ui.equipment.text1511')" />
     </form>
     <div class="material-picker-table" :aria-busy="loading">
-      <p v-if="error" role="alert">{{ error }} <ElButton text @click="load">重试</ElButton></p>
+      <p v-if="error" role="alert">{{ error }} <ElButton text @click="load">{{ tr('ui.equipment.text0299') }}</ElButton></p>
       <AppBusinessTable
         :rows="rows"
         :pagination="false"
@@ -142,7 +143,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                 v-if="multiple"
                 :model-value="allChecked"
                 :indeterminate="someChecked"
-                aria-label="选择当前页物料"
+                :aria-label="tr('ui.equipment.text1512')"
                 @change="togglePage(Boolean($event))"
               /></div></template
           ><template #default="{ row: row, $index: tableRowIndex }">
@@ -154,67 +155,67 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             /> </template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">料号</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0154') }}</div></template
           ><template #default="{ row: row, $index: tableRowIndex }">{{
             row.code
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="210"
-          ><template #header><div class="table-header-label">物料名称</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0155') }}</div></template
           ><template #default="{ row: row, $index: tableRowIndex }">{{
             row.name
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">规格型号</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0091') }}</div></template
           ><template #default="{ row: row, $index: tableRowIndex }">{{
             row.model
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">单位</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0095') }}</div></template
           ><template #default="{ row: row, $index: tableRowIndex }">{{
             row.unit
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150"
-          ><template #header><div class="table-header-label">分类</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0476') }}</div></template
           ><template #default="{ row: row, $index: tableRowIndex }">{{
             row.category
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn v-if="showStock" :min-width="150" class-name="numeric"
-          ><template #header><div class="table-header-label">在库数量</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1513') }}</div></template
           ><template #default="{ row: row, $index: tableRowIndex }">{{
             formatNumber(row.stockQuantity)
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn v-if="showStock" :min-width="150" class-name="numeric"
-          ><template #header><div class="table-header-label">预留数量</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0651') }}</div></template
           ><template #default="{ row: row, $index: tableRowIndex }">{{
             formatNumber(row.reservedQuantity)
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn v-if="showStock" :min-width="150" class-name="numeric"
-          ><template #header><div class="table-header-label">可用数量</div></template
+          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0666') }}</div></template
           ><template #default="{ row: row, $index: tableRowIndex }">{{
             formatNumber(row.availableQuantity)
           }}</template></ElTableColumn
         ><template #empty
           ><div v-if="!rows.length">
-            {{ loading ? '正在加载…' : applied ? '没有符合条件的物料' : '暂无可选物料' }}
+            {{ loading ? tr('ui.equipment.text0162') : applied ? tr('ui.equipment.text1514') : tr('ui.equipment.text1515') }}
           </div></template
         ></AppBusinessTable
       >
     </div>
     <div class="material-picker-footer">
-      <span>共 {{ total }} 条</span
+      <span>{{ tr('ui.equipment.text0309') }} {{ total }} {{ tr('ui.equipment.text0296') }}</span
       ><AppPagination v-model:page="page" v-model:page-size="size" :total="total" />
     </div>
     <template #footer
-      ><ElButton @click="emit('update:modelValue', false)">取消</ElButton
+      ><ElButton @click="emit('update:modelValue', false)">{{ tr('ui.equipment.text0157') }}</ElButton
       ><ElButton type="primary" :disabled="!selected.size" @click="confirm"
-        >添加{{ multiple ? `（${selected.size}）` : '' }}</ElButton
+        >{{ tr('ui.equipment.text0774') }}{{ multiple ? `（${selected.size}）` : '' }}</ElButton
       ></template
     >
   </AppDialog>

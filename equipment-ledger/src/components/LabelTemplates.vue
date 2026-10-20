@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import { ElAlert } from 'element-plus';
 import 'element-plus/es/components/alert/style/css';
 import AppListToolbar from './common/AppListToolbar.vue';
@@ -60,7 +61,7 @@ async function copyRow(t: api.LabelTemplate) {
   if (await open(t)) await copy();
 }
 async function removeRow(t: api.LabelTemplate) {
-  if (!(await confirmAction(`确认删除模板“${t.name}”？`))) return;
+  if (!(await confirmAction(tr('ui.common.dynamic43',{p0:t.name})))) return;
   try {
     await api.deleteLabelTemplate(t.id);
     await load();
@@ -121,7 +122,7 @@ async function load() {
 async function save() {
   if (!editor.value || busy.value) return;
   if (!editor.value.name.trim()) {
-    message('请输入模板名称');
+    message(tr('ui.equipment.text0685'));
     return;
   }
   busy.value = true;
@@ -148,7 +149,7 @@ async function copy() {
   designKey.value++;
 }
 async function remove() {
-  if (!editor.value?.id || !(await confirmAction(`确认删除模板“${editor.value.name}”？`))) return;
+  if (!editor.value?.id || !(await confirmAction(tr('ui.common.dynamic43',{p0:editor.value.name})))) return;
   try {
     await api.deleteLabelTemplate(editor.value.id);
     editor.value = null;
@@ -254,11 +255,11 @@ const printOpen = ref(false),
   copies = ref(1);
 async function openPrint(t: api.LabelTemplate | null = editor.value) {
   if (!t?.id) {
-    message('请先保存模板');
+    message(tr('ui.validation.message20'));
     return;
   }
   if (t === editor.value && dirty.value) {
-    message('请先保存修改后再打印');
+    message(tr('ui.validation.message21'));
     return;
   }
   printTarget.value = t;
@@ -321,15 +322,15 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
     <template v-if="!editor"
       ><AppListToolbar class="template-list-toolbar">
         <ElButton v-if="can('新增')" class="" @click="create" type="primary"
-          ><AppIcon name="Plus" /> 新增
+          ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}
         </ElButton>
         <form @submit.prevent="page = 1">
-          <ListSearchInput v-model="keyword" placeholder="搜索模板名称、备注" /><ElButton
+          <ListSearchInput v-model="keyword" :placeholder="tr('ui.equipment.text0668')" /><ElButton
             class="list-reset"
             @click="reset"
             native-type="button"
             text
-            >重置</ElButton
+            >{{ tr('ui.equipment.text0204') }}</ElButton
           >
         </form>
       </AppListToolbar>
@@ -345,27 +346,27 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                 <strong :title="t.name">{{ t.name }}</strong
                 ><span class="template-dimensions">{{ t.widthMm }} × {{ t.heightMm }} mm</span>
                 <p class="template-remark" :title="t.remark">
-                  {{ t.remark || '设备标签打印模板' }}
+                  {{ t.remark || tr('ui.equipment.text0669') }}
                 </p>
               </div></ElButton
             >
             <div class="template-card-actions">
               <ElButton type="primary" link @click="open(t)">{{
-                can('编辑') ? '编辑模板' : '查看模板'
+                can('编辑') ? tr('ui.equipment.text0670') : tr('ui.equipment.text0671')
               }}</ElButton>
               <div class="template-card-secondary-actions">
-                <ElButton v-if="can('打印')" @click="openPrint(t)">打印</ElButton>
+                <ElButton v-if="can('打印')" @click="openPrint(t)">{{ tr('ui.equipment.text0549') }}</ElButton>
                 <ElDropdown v-if="can('新增') || can('删除')" trigger="click">
-                  <ElButton aria-label="模板更多操作" title="更多操作"
+                  <ElButton :aria-label="tr('ui.equipment.text0672')" :title="tr('ui.equipment.text0673')"
                     ><AppIcon name="More"
                   /></ElButton>
                   <template #dropdown
                     ><ElDropdownMenu>
                       <ElDropdownItem v-if="can('新增')" @click="copyRow(t)"
-                        >复制模板</ElDropdownItem
+                        >{{ tr('ui.equipment.text0674') }}</ElDropdownItem
                       >
                       <ElDropdownItem v-if="can('删除')" @click="removeRow(t)" class="danger-text"
-                        >删除模板</ElDropdownItem
+                        >{{ tr('ui.equipment.text0675') }}</ElDropdownItem
                       >
                     </ElDropdownMenu></template
                   >
@@ -375,11 +376,11 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           </article>
         </div>
         <div v-if="!pageRows.length" class="gallery-empty">
-          {{ keyword ? '没有匹配的模板' : '暂无模板，点击新增开始设计' }}
+          {{ keyword ? tr('ui.equipment.text0676') : tr('ui.equipment.text0677') }}
         </div>
       </div>
       <footer class="template-pagination">
-        <span>共 {{ list.length }} 个模板</span
+        <span>{{ tr('ui.equipment.text0309') }} {{ list.length }} {{ tr('ui.equipment.text0678') }}</span
         ><AppPagination
           v-model:page="page"
           v-model:page-size="pageSize"
@@ -389,17 +390,17 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
     ></template>
     <template v-else
       ><header class="print-page-head">
-        <AppBackButton label="返回模板列表" :disabled="busy" @click="back" /><strong>{{
-          editor.id ? '编辑模板' : '新增模板'
+        <AppBackButton :label="tr('ui.equipment.text0679')" :disabled="busy" @click="back" /><strong>{{
+          editor.id ? tr('ui.equipment.text0670') : tr('ui.equipment.text0680')
         }}</strong
-        ><span v-if="dirty" class="unsaved">未保存</span>
+        ><span v-if="dirty" class="unsaved">{{ tr('ui.equipment.text0681') }}</span>
         <div>
           <ElButton @click="focusDesign = !focusDesign">{{
-            focusDesign ? '退出专注' : '专注设计'
+            focusDesign ? tr('ui.equipment.text0682') : tr('ui.equipment.text0683')
           }}</ElButton>
-          <ElButton v-if="can('新增')" class="" :disabled="busy" @click="copy"> 复制</ElButton
+          <ElButton v-if="can('新增')" class="" :disabled="busy" @click="copy"> {{ tr('ui.equipment.text0270') }}</ElButton
           ><ElButton class="" :disabled="busy || pdfBusy" @click="preview">{{
-            pdfBusy ? '生成中…' : '预览'
+            pdfBusy ? tr('ui.equipment.text0684') : tr('ui.equipment.text0269')
           }}</ElButton
           ><ElButton
             v-if="can('打印')"
@@ -407,9 +408,9 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             :disabled="busy || !editor.id"
             @click="openPrint()"
           >
-            打印</ElButton
+            {{ tr('ui.equipment.text0549') }}</ElButton
           ><ElButton v-if="editable" class="" :disabled="busy" @click="save" type="primary">{{
-            busy ? '保存中…' : '保存'
+            busy ? tr('ui.equipment.text0158') : tr('ui.equipment.text0159')
           }}</ElButton>
         </div>
       </header>
@@ -417,21 +418,21 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         <div class="template-center" v-if="editor">
           <div class="template-meta">
             <label
-              >名称<ElInput
+              >{{ tr('ui.equipment.text0404') }}<ElInput
                 v-model="editor.name"
                 :disabled="!editable"
                 maxlength="100"
-                placeholder="请输入模板名称"
+                :placeholder="tr('ui.equipment.text0685')"
             /></label>
             <span class="template-dimensions-summary"
-              >标签尺寸 {{ editor.widthMm }} × {{ editor.heightMm }} mm</span
+              >{{ tr('ui.equipment.text0686') }} {{ editor.widthMm }} × {{ editor.heightMm }} mm</span
             >
             <label class="remark"
-              >备注<ElInput
+              >{{ tr('ui.equipment.text0130') }}<ElInput
                 v-model="editor.remark"
                 :disabled="!editable"
                 maxlength="500"
-                placeholder="模板用途"
+                :placeholder="tr('ui.equipment.text0687')"
             /></label>
           </div>
           <PrintGridDesigner
@@ -445,7 +446,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             ><template #paper>
               <div class="paper-settings-form">
                 <label
-                  >纸张<ElSelect
+                  >{{ tr('ui.equipment.text0688') }}<ElSelect
                     :placeholder="`自定义 ${editor.widthMm} × ${editor.heightMm} mm`"
                     :disabled="!editable"
                     @change="paper($event)"
@@ -453,8 +454,8 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                     ><ElOption
                       value=""
                       :label="
-                        '自定义 ' + String(editor.widthMm) + ' ' + String(editor.heightMm)
-                      " /><ElOption value="label" :label="'标签 80 × 50'" /><ElOption
+                        tr('ui.equipment.text0689') + String(editor.widthMm) + ' ' + String(editor.heightMm)
+                      " /><ElOption value="label" :label="tr('ui.equipment.text0690')" /><ElOption
                       value="A5"
                       :label="'A5 148 × 210'" /><ElOption
                       value="A4"
@@ -464,7 +465,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                 ></label>
                 <div class="paper-dimensions">
                   <label
-                    >长度（mm）<ElInputNumber
+                    >{{ tr('ui.equipment.text0691') }}<ElInputNumber
                       :key="'widthMm' + dimensionRevision"
                       :model-value="editor.widthMm"
                       @change="setDimension('widthMm', $event)"
@@ -474,7 +475,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                       :step="0.1"
                       controls-position="right" /></label
                   ><label
-                    >宽度（mm）<ElInputNumber
+                    >{{ tr('ui.equipment.text0692') }}<ElInputNumber
                       :key="'heightMm' + dimensionRevision"
                       :model-value="editor.heightMm"
                       @change="setDimension('heightMm', $event)"
@@ -485,16 +486,16 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                       controls-position="right"
                   /></label>
                 </div>
-                <ElButton :disabled="!editable" @click="rotate">切换横纵方向</ElButton>
+                <ElButton :disabled="!editable" @click="rotate">{{ tr('ui.equipment.text0693') }}</ElButton>
               </div></template
             ></PrintGridDesigner
           >
           <div v-else class="legacy-template">
-            <h3>原自由布局模板</h3>
-            <p>原模板可继续预览和打印。转换后可使用单元格排版，保存前不改变已有模板。</p>
+            <h3>{{ tr('ui.equipment.text0694') }}</h3>
+            <p>{{ tr('ui.equipment.text0695') }}</p>
             <ElButton v-if="editable" class="" @click="convert" type="primary"
-              >转换为单元格模板</ElButton
-            ><ElButton v-if="can('新增')" class="" @click="create">新建表格模板</ElButton>
+              >{{ tr('ui.equipment.text0696') }}</ElButton
+            ><ElButton v-if="can('新增')" class="" @click="create">{{ tr('ui.equipment.text0697') }}</ElButton>
           </div>
         </div>
       </div></template
@@ -503,15 +504,15 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
     <div v-if="printOpen" class="print-modal-mask">
       <section class="print-picker">
         <header>
-          <strong>选择打印设备</strong
-          ><ElButton @click="printOpen = false" aria-label="关闭" title="关闭"
+          <strong>{{ tr('ui.equipment.text0698') }}</strong
+          ><ElButton @click="printOpen = false" :aria-label="tr('ui.equipment.text0076')" :title="tr('ui.equipment.text0076')"
             ><AppIcon name="Close"
           /></ElButton>
         </header>
         <div class="print-search">
           <ElInput
             v-model="equipmentKeyword"
-            placeholder="设备名称、编码、型号"
+            :placeholder="tr('ui.equipment.text0699')"
             @keyup.enter="
               equipmentPage = 1;
               searchEquipment();
@@ -524,7 +525,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             "
             type="primary"
           >
-            查询
+            {{ tr('ui.equipment.text0700') }}
           </ElButton>
         </div>
         <div class="print-picker-scroll">
@@ -541,37 +542,37 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             class="business-table"
             ><!-- @vue-generic {TableColumnRow1} -->
             <ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">设备编号</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0078') }}</div></template
               ><template #default="{ row: e, $index: tableRowIndex }">{{
                 e.code
               }}</template></ElTableColumn
             ><!-- @vue-generic {TableColumnRow1} -->
             <ElTableColumn :min-width="210"
-              ><template #header><div class="table-header-label">设备名称</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0081') }}</div></template
               ><template #default="{ row: e, $index: tableRowIndex }">{{
                 e.name
               }}</template></ElTableColumn
             ><!-- @vue-generic {TableColumnRow1} -->
             <ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">所属部门</div></template
+              ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0098') }}</div></template
               ><template #default="{ row: e, $index: tableRowIndex }">{{
                 e.department
               }}</template></ElTableColumn
             ><template #empty
-              ><div v-if="!equipmentRows.length">暂无设备</div></template
+              ><div v-if="!equipmentRows.length">{{ tr('ui.equipment.text0701') }}</div></template
             ></AppBusinessTable
           >
         </div>
         <div class="print-picker-pages">
-          <span>已选 {{ ids.length }} 台 · 共 {{ equipmentTotal }} 台</span
+          <span>{{ tr('ui.equipment.text0295') }} {{ ids.length }} {{ tr('ui.equipment.text0702') }} {{ equipmentTotal }} {{ tr('ui.equipment.text0370') }}</span
           ><ElButton
             :disabled="equipmentPage === 1"
             @click="
               equipmentPage--;
               searchEquipment();
             "
-            aria-label="上一页"
-            title="上一页"
+            :aria-label="tr('ui.equipment.text0703')"
+            :title="tr('ui.equipment.text0703')"
             ><AppIcon name="Left" /></ElButton
           ><span>{{ equipmentPage }}</span
           ><ElButton
@@ -585,14 +586,14 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         </div>
         <footer>
           <label
-            >每台份数<ElInputNumber
+            >{{ tr('ui.equipment.text0704') }}<ElInputNumber
               v-model="copies"
               :min="1"
               :max="20"
               controls-position="right" /></label
-          ><ElButton class="" @click="printOpen = false">取消</ElButton
+          ><ElButton class="" @click="printOpen = false">{{ tr('ui.equipment.text0157') }}</ElButton
           ><ElButton class="" :disabled="busy || !ids.length" @click="generate" type="primary">{{
-            busy ? '生成中…' : '生成打印文件'
+            busy ? tr('ui.equipment.text0684') : tr('ui.equipment.text0705')
           }}</ElButton>
         </footer>
       </section>
@@ -601,14 +602,14 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
       <section class="pdf-dialog">
         <header>
           <strong>{{ pdfTitle }}</strong
-          ><a :href="pdfUrl" download="设备标签.pdf">下载PDF</a
-          ><ElButton class="" @click="printPdf" type="primary">打印</ElButton
-          ><ElButton class="pdf-close" @click="closePdf" aria-label="关闭" title="关闭" text
+          ><a :href="pdfUrl" download="设备标签.pdf">{{ tr('ui.equipment.text0706') }}</a
+          ><ElButton class="" @click="printPdf" type="primary">{{ tr('ui.equipment.text0549') }}</ElButton
+          ><ElButton class="pdf-close" @click="closePdf" :aria-label="tr('ui.equipment.text0076')" :title="tr('ui.equipment.text0076')" text
             ><AppIcon name="Close"
           /></ElButton>
         </header>
-        <iframe id="print-pdf-frame" :src="pdfUrl" title="打印PDF预览"></iframe>
-        <footer>打印缩放设为100%，使用匹配的纸张尺寸。</footer>
+        <iframe id="print-pdf-frame" :src="pdfUrl" :title="tr('ui.equipment.text0707')"></iframe>
+        <footer>{{ tr('ui.equipment.text0708') }}</footer>
       </section>
     </div>
   </section>

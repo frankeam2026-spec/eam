@@ -15,6 +15,10 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class RepairOrderService {
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.business.BusinessValueService custom;
+
+  private final com.windasoft.eam.service.basedata.BaseDataReferenceService references;
   private final RepairOrderRepository repository;
   private final RepairWorkflowService workflow;
   private final ObjectMapper objectMapper;
@@ -28,7 +32,9 @@ public class RepairOrderService {
       ObjectMapper objectMapper,
       AuthContext auth,
       PermissionService permissions,
-      RepairViewAssembler views) {
+      RepairViewAssembler views,
+      com.windasoft.eam.service.basedata.BaseDataReferenceService references) {
+    this.references = references;
     this.repository = repository;
     this.workflow = workflow;
     this.objectMapper = objectMapper;
@@ -53,12 +59,21 @@ public class RepairOrderService {
     row.setRowVersion(0);
     row.setDeleted(0);
     repository.insert(row);
+    custom.save(
+        "repair_report",
+        row.getId(),
+        form.customFields(),
+        form.customSchemaVersion(),
+        String.valueOf(repository.equipment(auth.tenantId(), form.equipmentCode()).getCategoryId()),
+        true);
     workflow.record(
         row,
         "报修",
         Map.of(
             "description",
             row.getDescription(),
+            "faultTypeId",
+            row.getFaultTypeId().toString(),
             "faultType",
             row.getFaultType(),
             "reportedAt",
@@ -73,17 +88,27 @@ public class RepairOrderService {
     var row = require(id);
     permissions.checkRepair(row, "编辑");
     VersionGuard.check(row.getRowVersion(), rowVersion);
-    if (!"待派工".equals(row.getStatus())) throw new IllegalArgumentException("仅待派工工单可以编辑");
+    if (!"待派工".equals(row.getStatus()))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0041");
     copy(form, row);
     setEquipment(row, form.equipmentCode());
     permissions.checkRepair(row, "编辑");
     VersionGuard.updated(repository.update(row));
+    custom.save(
+        "repair_report",
+        row.getId(),
+        form.customFields(),
+        form.customSchemaVersion(),
+        String.valueOf(repository.equipment(auth.tenantId(), form.equipmentCode()).getCategoryId()),
+        false);
     workflow.record(
         row,
         "编辑报修",
         Map.of(
             "description",
             row.getDescription(),
+            "faultTypeId",
+            row.getFaultTypeId().toString(),
             "faultType",
             row.getFaultType(),
             "attachments",
@@ -95,7 +120,7 @@ public class RepairOrderService {
   public Map<String, Object> action(Long id, RepairAction request, int rowVersion) {
     if (workflow != null) {
       if ("complete".equals(request.action()))
-        throw new IllegalArgumentException("请在处理页面填写完整处理记录并提交");
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0042");
       var body = objectMapper.valueToTree(request);
       if ("dispatch".equals(request.action()))
         ((com.fasterxml.jackson.databind.node.ObjectNode) body)
@@ -111,9 +136,11 @@ public class RepairOrderService {
         switch (request.action()) {
           case "dispatch" -> "派工";
           case "complete", "suspend", "resume" -> "处理";
-          case "accept", "return" -> "验收";
+          case "accept", "reject", "return" -> "验收";
           case "cancel" -> "撤回";
-          default -> throw new IllegalArgumentException("不支持的工单操作");
+          default ->
+              throw new com.windasoft.eam.common.LocalizedArgumentException(
+                  "server.repair.message0025");
         };
     permissions.checkRepair(row, requiredAction);
     VersionGuard.check(row.getRowVersion(), rowVersion);
@@ -121,16 +148,20 @@ public class RepairOrderService {
       case "dispatch" -> {
         if (!"待派工".equals(row.getStatus())) throw invalid();
         if (request.assignee() == null || request.assignee().isBlank())
-          throw new IllegalArgumentException("派工时必须填写维修人");
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0043");
         row.setAssignee(request.assignee().trim());
         row.setAssigneeUserId(permissions.userIdByName(row.getAssignee()));
-        if (row.getAssigneeUserId() == null) throw new IllegalArgumentException("维修人必须是当前租户员工");
+        if (row.getAssigneeUserId() == null)
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0044");
         next = "处理中";
       }
       case "complete" -> {
         if (!"处理中".equals(row.getStatus())) throw invalid();
         if (request.repairAction() == null || request.repairAction().isBlank())
-          throw new IllegalArgumentException("请先记录维修措施");
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0045");
         row.setRepairAction(request.repairAction().trim());
         row.setDowntimeMinutes(
             Math.max(0, request.downtimeMinutes() == null ? 0 : request.downtimeMinutes()));
@@ -141,7 +172,7 @@ public class RepairOrderService {
         if (!"待验收".equals(row.getStatus())) throw invalid();
         next = "已完成";
       }
-      case "return" -> {
+      case "reject", "return" -> {
         if (!"待验收".equals(row.getStatus())) throw invalid();
         next = "处理中";
       }
@@ -157,7 +188,9 @@ public class RepairOrderService {
         if (!"待派工".equals(row.getStatus())) throw invalid();
         next = "已撤销";
       }
-      default -> throw new IllegalArgumentException("不支持的工单操作");
+      default ->
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0025");
     }
     row.setStatus(next);
     VersionGuard.updated(repository.update(row));
@@ -168,16 +201,19 @@ public class RepairOrderService {
   private RepairOrder require(Long id) {
     var row = repository.find(auth.tenantId(), id);
     if (row == null || Integer.valueOf(1).equals(row.getDeleted()))
-      throw new IllegalArgumentException("维修工单不存在");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0046");
     return row;
   }
 
   private static IllegalArgumentException invalid() {
-    return new IllegalArgumentException("工单当前状态不允许此操作");
+    return new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0029");
   }
 
   private void copy(RepairForm f, RepairOrder row) {
-    row.setFaultType(f.faultType().trim());
+    var fault =
+        references.required(auth.tenantId(), f.faultTypeId(), "FAULT_TYPE", "faultTypeId", "故障类型");
+    row.setFaultTypeId(fault.getId());
+    row.setFaultType(fault.getName());
     row.setSeverity(f.severity());
     row.setDescription(f.description().trim());
     row.setAttachmentsJson(
@@ -193,11 +229,11 @@ public class RepairOrderService {
 
   private void setEquipment(RepairOrder row, String code) {
     var equipment = repository.equipment(auth.tenantId(), code);
-    if (equipment == null) throw new IllegalArgumentException("设备不存在");
+    if (equipment == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
     permissions.checkEquipment(equipment, "查看");
     row.setEquipmentId(equipment.getId());
     row.setCompanyOrgId(equipment.getCompanyOrgId());
-    row.setFaultTypeId(repository.baseId(auth.tenantId(), "FAULT_TYPE", row.getFaultType()));
     row.setEquipmentCode(equipment.getEquipmentCode());
     row.setEquipmentName(equipment.getName());
     row.setDepartment(equipment.getDepartment());

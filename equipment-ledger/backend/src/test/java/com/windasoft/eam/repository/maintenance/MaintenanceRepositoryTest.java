@@ -11,14 +11,25 @@ class MaintenanceRepositoryTest {
   @Test
   void automatedGenerationPreservesNullActor() {
     var repository =
-        new MaintenanceRepository(mock(JdbcTemplate.class), mock(NumberCounterMapper.class));
+        new MaintenanceRepository(
+            mock(JdbcTemplate.class),
+            mock(NumberCounterMapper.class),
+            mock(MaintenanceDefinitionStorage.class),
+            mock(MaintenanceExecutionStorage.class),
+            mock(com.windasoft.eam.repository.common.TaskSourceRelationsRepository.class));
     assertDoesNotThrow(() -> repository.insertTaskEvent(1L, 10001L, 2L, null, "系统", "生成任务", "{}"));
   }
 
   @Test
   void dynamicReferenceColumnHasWhitelist() {
     var db = mock(JdbcTemplate.class);
-    var repository = new MaintenanceRepository(db, mock(NumberCounterMapper.class));
+    var repository =
+        new MaintenanceRepository(
+            db,
+            mock(NumberCounterMapper.class),
+            mock(MaintenanceDefinitionStorage.class),
+            mock(MaintenanceExecutionStorage.class),
+            mock(com.windasoft.eam.repository.common.TaskSourceRelationsRepository.class));
     assertThrows(
         IllegalArgumentException.class,
         () -> repository.countScheduleReferences(10001L, 1L, "id OR 1=1"));

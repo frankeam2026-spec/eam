@@ -97,7 +97,10 @@ public class AnomalyFileService {
         files.stream()
             .filter(f -> fileId.equals(text(f, "id")))
             .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException("附件不存在"));
+            .orElseThrow(
+                () ->
+                    new com.windasoft.eam.common.LocalizedArgumentException(
+                        "server.repair.message0011"));
     String source = service.fileSource(ref, a);
     String table =
         source.equals("maintenance")

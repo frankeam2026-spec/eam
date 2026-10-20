@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ref, watch, onBeforeUnmount, nextTick } from 'vue';
 import {
   ElButton,
@@ -61,7 +62,7 @@ async function preview() {
     replaceUrl(pdfFromBase64(data.pdf));
     fingerprint.value = data.fingerprint;
   } catch (e) {
-    if (version === revision) error.value = e instanceof Error ? e.message : '预览失败';
+    if (version === revision) error.value = e instanceof Error ? e.message : tr('ui.equipment.text1516');
   } finally {
     if (version === revision) busy.value = false;
   }
@@ -85,7 +86,7 @@ async function load() {
     templateId.value = data.defaultId;
     await loadRecords();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '打印配置读取失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text1517');
   } finally {
     busy.value = false;
   }
@@ -104,7 +105,7 @@ watch(
 );
 async function generate() {
   if (selectedJob.value) return selectedJob.value;
-  if (!fingerprint.value) throw new Error('请先预览单据');
+  if (!fingerprint.value) throw new Error(tr('ui.equipment.text1518'));
   const { data } = await printing.generate(
     props.documentId,
     templateId.value,
@@ -125,11 +126,11 @@ async function output(kind: 'print' | 'download') {
     if (kind === 'download') downloadPrint(url.value, job.documentCode);
     else {
       await nextTick();
-      if (!pdfPreview.value) throw new Error('请先加载PDF预览');
+      if (!pdfPreview.value) throw new Error(tr('ui.equipment.text1519'));
       await pdfPreview.value.print();
     }
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '生成失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text1520');
   } finally {
     busy.value = false;
   }
@@ -142,7 +143,7 @@ async function openRecord(row: PrintJob) {
     selectedJob.value = row;
     tab.value = 'print';
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '读取失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text1521');
   } finally {
     busy.value = false;
   }
@@ -159,28 +160,28 @@ async function openRecord(row: PrintJob) {
     <div class="document-print-content" v-loading="busy">
       <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon />
       <ElTabs v-model="tab"
-        ><ElTabPane label="打印预览" name="print" /><ElTabPane
+        ><ElTabPane :label="tr('ui.equipment.text1522')" name="print" /><ElTabPane
           :label="`留底记录（最近${records.length}条）`"
           name="history"
       /></ElTabs>
       <template v-if="tab === 'print'">
         <div class="document-print-options">
-          <span>打印模板</span
+          <span>{{ tr('ui.equipment.text0035') }}</span
           ><ElSelect v-model="templateId" :disabled="busy" @change="preview"
             ><ElOption v-for="t in templates" :key="t.id" :label="t.name" :value="t.id" /></ElSelect
-          ><ElButton :disabled="busy || !templateId" @click="preview">重新预览</ElButton
-          ><ElTag v-if="selectedJob" type="success">已留底 · {{ selectedJob.createdAt }}</ElTag>
+          ><ElButton :disabled="busy || !templateId" @click="preview">{{ tr('ui.equipment.text1523') }}</ElButton
+          ><ElTag v-if="selectedJob" type="success">{{ tr('ui.equipment.text1524') }} {{ selectedJob.createdAt }}</ElTag>
         </div>
         <p class="document-print-help">
           {{
             selectedJob
               ? `当前查看生成时的PDF，单据状态：${selectedJob.documentStatus}。重新预览可使用当前单据及模板。`
-              : '预览确认后打印或下载，系统保存正式PDF留底。针式多联纸请在打印机中选择实际纸张，按实际尺寸打印。'
+              : tr('ui.equipment.text1525')
           }}
         </p>
         <AppPdfPreview v-if="url" ref="pdfPreview" :src="url" class="document-print-frame" />
         <div v-else class="document-print-empty">
-          {{ busy ? '正在生成预览…' : '请选择模板生成预览' }}
+          {{ busy ? tr('ui.equipment.text1526') : tr('ui.equipment.text1527') }}
         </div>
       </template>
       <AppBusinessTable
@@ -191,38 +192,38 @@ async function openRecord(row: PrintJob) {
         row-key="id"
         :max-height="430"
       >
-        <ElTableColumn prop="createdAt" label="生成时间" min-width="170" /><ElTableColumn
+        <ElTableColumn prop="createdAt" :label="tr('ui.equipment.text1528')" min-width="170" /><ElTableColumn
           prop="templateName"
-          label="模板"
+          :label="tr('ui.equipment.text1529')"
           min-width="190"
           show-overflow-tooltip
-        /><ElTableColumn prop="actorName" label="生成人" width="110" /><ElTableColumn
+        /><ElTableColumn prop="actorName" :label="tr('ui.equipment.text1530')" width="110" /><ElTableColumn
           prop="documentStatus"
-          label="生成时状态"
+          :label="tr('ui.equipment.text1531')"
           width="110"
-        /><ElTableColumn prop="pageCount" label="页数" width="70" /><ElTableColumn
-          label="操作"
+        /><ElTableColumn prop="pageCount" :label="tr('ui.equipment.text1532')" width="70" /><ElTableColumn
+          :label="tr('ui.equipment.text0145')"
           fixed="right"
           width="156"
           ><template #default="{ row }"
             ><ElButton link type="primary" @click="openRecord(row as PrintJob)"
-              >查看原PDF</ElButton
+              >{{ tr('ui.equipment.text1533') }}</ElButton
             ></template
           ></ElTableColumn
         >
       </AppBusinessTable>
     </div>
     <template #footer
-      ><ElButton :disabled="busy" @click="emit('update:modelValue', false)">关闭</ElButton
+      ><ElButton :disabled="busy" @click="emit('update:modelValue', false)">{{ tr('ui.equipment.text0076') }}</ElButton
       ><ElButton v-if="tab === 'print'" :disabled="busy || !url" @click="output('download')"
-        >下载PDF</ElButton
+        >{{ tr('ui.equipment.text0706') }}</ElButton
       ><ElButton
         v-if="tab === 'print'"
         type="primary"
         :loading="busy"
         :disabled="!url"
         @click="output('print')"
-        >打印</ElButton
+        >{{ tr('ui.equipment.text0549') }}</ElButton
       ></template
     >
   </AppDialog>

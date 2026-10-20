@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ElFormItem } from 'element-plus';
+import { ElFormItem, type FormItemRule } from 'element-plus';
 import 'element-plus/es/components/form/style/css';
 import 'element-plus/es/components/form-item/style/css';
 withDefaults(
@@ -8,6 +8,7 @@ withDefaults(
     prop?: string;
     error?: string;
     required?: boolean;
+    rules?: FormItemRule | FormItemRule[];
     labelWidth?: string | number;
   }>(),
   { required: undefined },
@@ -20,6 +21,7 @@ withDefaults(
     :prop="prop"
     :error="error || ''"
     :required="required"
+    :rules="rules"
     :label-width="labelWidth"
     ><slot
   /></ElFormItem>

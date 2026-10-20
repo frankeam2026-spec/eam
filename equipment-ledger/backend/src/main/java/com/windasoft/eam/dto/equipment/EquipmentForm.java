@@ -7,8 +7,8 @@ import java.time.LocalDate;
 import java.util.List;
 
 public record EquipmentForm(
-    @Size(max = 32, message = "设备编号不能超过32个字符") String code,
-    @NotBlank(message = "设备名称必填") String name,
+    @Size(max = 32, message = "{server.equipment.message0002}") String code,
+    @NotBlank(message = "{server.equipment.message0003}") String name,
     String category,
     String model,
     String serial,
@@ -16,7 +16,7 @@ public record EquipmentForm(
     String department,
     String owner,
     String brand,
-    @NotBlank(message = "设备状态必选") String state,
+    @NotBlank(message = "{server.equipment.message0004}") String state,
     String useState,
     String source,
     LocalDate acquiredAt,
@@ -45,11 +45,16 @@ public record EquipmentForm(
     LocalDate calibrationDate,
     LocalDate calibrationValidUntil,
     @Size(max = 100) String inspectorName,
-    @jakarta.validation.constraints.NotNull(message = "请选择所属部门") Long departmentOrgId,
-    @jakarta.validation.constraints.NotNull(message = "位置必选") Long locationId,
-    @jakarta.validation.constraints.NotNull(message = "请选择设备类别") Long categoryId,
-    @jakarta.validation.constraints.NotNull(message = "请选择单位") Long unitId,
-    @jakarta.validation.constraints.NotNull(message = "请选择使用状态") Long useStateId,
+    @jakarta.validation.constraints.NotNull(message = "{ui.equipment.text0099}")
+        Long departmentOrgId,
+    @jakarta.validation.constraints.NotNull(message = "{server.equipment.message0005}")
+        Long locationId,
+    @jakarta.validation.constraints.NotNull(message = "{ui.equipment.text0084}") Long categoryId,
+    @jakarta.validation.constraints.NotNull(message = "{server.equipment.message0006}") Long unitId,
+    @jakarta.validation.constraints.NotNull(message = "{server.equipment.message0007}")
+        Long useStateId,
     Long sourceId,
     Long ownerId,
-    @Size(max = 50, message = "负责人最多选择50人") List<Long> ownerIds) {}
+    @Size(max = 50, message = "{server.equipment.message0001}") List<Long> ownerIds,
+    JsonNode customFields,
+    Integer customSchemaVersion) {}

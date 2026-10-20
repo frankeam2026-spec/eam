@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import AppListToolbar from './common/AppListToolbar.vue';
 import AppListTabs from './common/AppListTabs.vue';
 import { ElTableColumn } from 'element-plus';
@@ -49,7 +50,7 @@ const rows = ref<InboxItem[]>([]),
 const columnsOpen = ref(false),
   columns = ref(['orderNo', 'equipmentName', 'kind', 'status', 'owner', 'due', 'time']);
 const labels: Record<string, string> = {
-  title: '任务说明',
+  get title(){return tr('ui.common.dynamic51');},
   module: '模块',
   orderNo: '任务编号',
   equipmentName: '设备名称',
@@ -162,7 +163,7 @@ async function load() {
       if (page.value > lastPage) page.value = lastPage;
     }
   } catch (e) {
-    if (sequence === revision) error.value = e instanceof Error ? e.message : '加载失败';
+    if (sequence === revision) error.value = e instanceof Error ? e.message : tr('ui.equipment.text0160');
   } finally {
     if (sequence === revision) loading.value = false;
   }
@@ -251,7 +252,7 @@ async function open(row: InboxItem, actionable = false) {
     try {
       await inbox.read(row);
     } catch {
-      ElMessage.warning('提醒未能标为已读');
+      ElMessage.warning(tr('ui.equipment.text1021'));
     }
   }
   const returnQuery = new URLSearchParams({
@@ -275,7 +276,7 @@ async function readAll() {
     await inbox.read();
     await load();
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '操作失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0197'));
   }
 }
 async function markRead(row: InboxItem) {
@@ -283,7 +284,7 @@ async function markRead(row: InboxItem) {
     await inbox.read(row);
     await load();
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '操作失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0197'));
   }
 }
 function searchRows() {
@@ -350,7 +351,7 @@ async function exportRows() {
     a.click();
     URL.revokeObjectURL(url);
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '导出失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0185'));
   }
 }
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -378,23 +379,22 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         ['pending', 'completed', 'created'].includes(tab)
           ? [
               { key: 'pending', label: '待办', count: inbox.summary.counts.pending },
-              { key: 'completed', label: '已办', count: inbox.summary.counts.completed },
-              { key: 'created', label: '我发起' },
+              { key: 'completed', label: '已办', count: inbox.summary.counts.completed }
             ]
           : [{ key: tab, label: currentContext }]
       "
       @select="selectTab"
     />
     <div class="inbox-workspace">
-      <aside class="task-navigation" aria-label="事项分类">
-        <header>{{ tab === 'notification' ? '提醒分类' : '任务分类' }}</header>
+      <aside class="task-navigation" :aria-label="tr('ui.equipment.text1022')">
+        <header>{{ tab === 'notification' ? tr('ui.equipment.text1023') : tr('ui.equipment.text1024') }}</header>
         <template v-if="tab !== 'notification'">
           <ElButton
             class="queue-all"
             :class="{ selected: !module && !kind }"
             @click="selectCategory()"
             ><span>{{
-              projected ? '全部工作' : tab === 'completed' ? '全部已办' : '全部待办'
+              projected ? tr('ui.equipment.text1025') : tab === 'completed' ? tr('ui.equipment.text1026') : tr('ui.equipment.text1027')
             }}</span
             ><b>{{
               projected
@@ -425,13 +425,13 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         </template>
         <template v-else>
           <ElButton :class="{ selected: readState === 'all' }" @click="readState = 'all'">
-            全部提醒
+            {{ tr('ui.equipment.text1028') }}
           </ElButton>
           <ElButton :class="{ selected: readState === 'unread' }" @click="readState = 'unread'">
-            未读提醒 <b>{{ inbox.summary.counts.unread }}</b></ElButton
+            {{ tr('ui.equipment.text1029') }} <b>{{ inbox.summary.counts.unread }}</b></ElButton
           >
           <section class="queue-group">
-            <ElButton :class="{ selected: !module }" @click="module = ''">全部模块</ElButton>
+            <ElButton :class="{ selected: !module }" @click="module = ''">{{ tr('ui.equipment.text1030') }}</ElButton>
             <ElButton
               v-for="group in moduleGroups"
               :key="group.key"
@@ -446,27 +446,27 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         <AppListToolbar class="inbox-toolbar">
           <div class="queue-context">
             <strong>{{ currentContext }}</strong
-            ><span>{{ total }} 条</span>
+            ><span>{{ total }} {{ tr('ui.equipment.text0296') }}</span>
           </div>
           <form class="inbox-search" @submit.prevent="searchRows">
-            <ListSearchInput v-model="search" placeholder="搜索编号、设备、事项" />
+            <ListSearchInput v-model="search" :placeholder="tr('ui.equipment.text1031')" />
             <ElButton
               class="text-action"
               @click="resetFilters"
               native-type="button"
               type="primary"
               link
-              >重置</ElButton
+              >{{ tr('ui.equipment.text0204') }}</ElButton
             >
             <ElButton
               class="text-action refresh-action"
               :disabled="loading"
               @click="refresh"
-              aria-label="刷新任务"
+              :aria-label="tr('ui.equipment.text1032')"
               native-type="button"
               type="primary"
               link
-              ><AppIcon name="Refresh" />刷新
+              ><AppIcon name="Refresh" />{{ tr('ui.equipment.text0424') }}
             </ElButton>
             <ElButton
               v-if="tab === 'notification' && inbox.summary.counts.unread"
@@ -475,7 +475,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               type="primary"
               link
             >
-              全部已读
+              {{ tr('ui.equipment.text1033') }}
             </ElButton>
           </form>
         </AppListToolbar>
@@ -526,7 +526,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                 :width="170"
                 :min-width="156"
                 :resizable="false"
-                ><template #header><div class="table-header-label">操作</div></template
+                ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
                 ><template #default="{ row: row, $index: tableRowIndex }">
                   <ElButton
                     class="text-action task-open"
@@ -535,7 +535,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                     type="primary"
                     link
                     >{{
-                      projected || tab === 'completed' ? '查看' : inbox.actionName(row)
+                      projected || tab === 'completed' ? tr('ui.equipment.text0206') : inbox.actionName(row)
                     }}</ElButton
                   >
                 </template></ElTableColumn
@@ -543,12 +543,12 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                 ><div v-if="!rows.length">
                   {{
                     loading
-                      ? '加载中…'
+                      ? tr('ui.equipment.text0396')
                       : error
-                        ? '加载失败'
+                        ? tr('ui.equipment.text0160')
                         : tab === 'pending'
-                          ? '当前没有待办事项'
-                          : '暂无已办事项'
+                          ? tr('ui.equipment.text1034')
+                          : tr('ui.equipment.text1035')
                   }}
                 </div></template
               ></AppBusinessTable
@@ -577,17 +577,17 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                     type="primary"
                     link
                   >
-                    标为已读</ElButton
+                    {{ tr('ui.equipment.text1036') }}</ElButton
                   ><ElButton class="text-action" @click="open(row)" type="primary" link
-                    >查看详情</ElButton
+                    >{{ tr('ui.equipment.text1037') }}</ElButton
                   >
                 </footer>
               </article>
-              <p v-if="!rows.length" class="inbox-empty">{{ loading ? '加载中…' : '暂无提醒' }}</p>
+              <p v-if="!rows.length" class="inbox-empty">{{ loading ? tr('ui.equipment.text0396') : tr('ui.equipment.text1038') }}</p>
             </div>
           </div>
           <footer class="inbox-footer">
-            <span>共 {{ total }} 条</span
+            <span>{{ tr('ui.equipment.text0309') }} {{ total }} {{ tr('ui.equipment.text0296') }}</span
             ><AppPagination
               v-model:page="page"
               v-model:page-size="size"

@@ -8,11 +8,14 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class InventoryOperationRepository {
   private final JdbcTemplate db;
+  private final InventoryDocumentStorage documents;
   private final NumberCounterMapper counter;
 
-  public InventoryOperationRepository(JdbcTemplate db, NumberCounterMapper counter) {
+  public InventoryOperationRepository(
+      JdbcTemplate db, NumberCounterMapper counter, InventoryDocumentStorage documents) {
     this.db = db;
     this.counter = counter;
+    this.documents = documents;
   }
 
   public void nextMonthlyNumber(String rule, String period) {
@@ -25,17 +28,17 @@ public class InventoryOperationRepository {
 
   public List<Map<String, Object>> loadOperation(
       long tenantId, Object kind, Object doc, boolean locked) {
+    if (locked) documents.lock(tenantId, doc, kind);
     return db.queryForList(
-        "SELECT * FROM inv_operation WHERE tenant_id=? AND kind=? AND id=? AND deleted=0"
-            + (locked ? " FOR UPDATE" : ""),
+        "SELECT * FROM v_inv_operation WHERE tenant_id=? AND kind=? AND id=? AND deleted=0",
         tenantId,
         kind,
         doc);
   }
 
   public List<Map<String, Object>> loadSource(long tenantId, Object sourceId, String table) {
-    if (!Set.of("inv_receipt", "inv_issue", "inv_operation").contains(table))
-      throw new IllegalArgumentException("未知库存来源");
+    if (!Set.of("inv_receipt", "inv_issue", "v_inv_operation").contains(table))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0013");
     return db.queryForList(
         "SELECT * FROM " + table + " WHERE tenant_id=? AND id=?", tenantId, sourceId);
   }
@@ -130,10 +133,9 @@ public class InventoryOperationRepository {
   }
 
   public List<Map<String, Object>> lockSourceOperation(long tenantId, Object source) {
+    documents.lock(tenantId, source, null);
     return db.queryForList(
-        "SELECT * FROM inv_operation WHERE tenant_id=? AND id=? AND deleted=0 FOR UPDATE",
-        tenantId,
-        source);
+        "SELECT * FROM v_inv_operation WHERE tenant_id=? AND id=? AND deleted=0", tenantId, source);
   }
 
   public int insertTenantLock(long tenantId) {
@@ -189,16 +191,6 @@ public class InventoryOperationRepository {
         doc);
   }
 
-  public List<Map<String, Object>> searchOperations(long tenantId, Object kind) {
-    return db.queryForList(
-        "SELECT d.*,DATE_FORMAT(d.created_at,'%Y-%m-%d %H:%i:%s')"
-            + " fmt_created_at,DATE_FORMAT(d.confirmed_at,'%Y-%m-%d %H:%i:%s')"
-            + " fmt_confirmed_at,w.name warehouse_name FROM inv_operation d JOIN inv_warehouse"
-            + " w ON w.tenant_id=d.tenant_id AND w.id=d.warehouse_id WHERE d.tenant_id=? AND"
-            + " d.kind=? AND d.deleted=0 ORDER BY d.created_at DESC,d.id DESC",
-        tenantId, kind);
-  }
-
   public List<Map<String, Object>> listStock(long tenantId) {
     return db.queryForList(
         "SELECT s.*,m.code material_code,m.name material_name,m.unit,b.name bin_name,pc.code"
@@ -243,7 +235,7 @@ public class InventoryOperationRepository {
             + " AND status='已入库' AND deleted=0 UNION ALL SELECT id,code,warehouse_id,'issue'"
             + " source_kind FROM inv_issue WHERE tenant_id=? AND reversed=0 AND status='已出库'"
             + " AND deleted=0 UNION ALL SELECT id,code,warehouse_id,kind source_kind FROM"
-            + " inv_operation WHERE tenant_id=? AND status IN ('已完成','在途') AND"
+            + " v_inv_operation WHERE tenant_id=? AND status IN ('已完成','在途') AND"
             + " kind<>'reversals' AND deleted=0",
         tenantId,
         tenantId2,
@@ -294,19 +286,8 @@ public class InventoryOperationRepository {
       Object target,
       String payload,
       long userId) {
-    return db.update(
-        "INSERT INTO"
-            + " inv_operation(id,tenant_id,kind,code,company_id,warehouse_id,target_warehouse_id,payload,created_by)"
-            + " VALUES(?,?,?,?,?,?,?,?,?)",
-        record,
-        tenantId,
-        kind,
-        value,
-        companyId,
-        warehouseId,
-        target,
-        payload,
-        userId);
+    return documents.insert(
+        record, tenantId, kind, value, companyId, warehouseId, target, payload, userId);
   }
 
   public int updateOperation(
@@ -316,16 +297,7 @@ public class InventoryOperationRepository {
       String payload,
       long tenantId,
       Object record) {
-    return db.update(
-        "UPDATE inv_operation SET"
-            + " warehouse_id=?,company_id=?,target_warehouse_id=?,payload=?,row_version=row_version+1"
-            + " WHERE tenant_id=? AND id=?",
-        warehouseId,
-        companyId,
-        target,
-        payload,
-        tenantId,
-        record);
+    return documents.update(tenantId, record, companyId, warehouseId, target, payload);
   }
 
   public List<Map<String, Object>> lockPersonalReturnAllocation(long tenantId, Object allocation) {
@@ -338,9 +310,9 @@ public class InventoryOperationRepository {
 
   public List<Map<String, Object>> findPendingReturn(long tenantId, Object value) {
     return db.queryForList(
-        "SELECT id,code FROM inv_operation WHERE tenant_id=? AND kind='returns' AND status='草稿'"
-            + " AND deleted=0 AND JSON_CONTAINS(payload,JSON_OBJECT('allocationId',?),"
-            + " '$.lines')",
+        "SELECT d.id,d.code FROM inv_return d WHERE d.tenant_id=? AND d.status='草稿' AND d.deleted=0"
+            + " AND EXISTS(SELECT 1 FROM inv_return_line l WHERE l.tenant_id=d.tenant_id AND"
+            + " l.document_id=d.id AND l.allocation_id=?)",
         tenantId,
         value);
   }
@@ -361,17 +333,8 @@ public class InventoryOperationRepository {
       Object warehouse,
       String payload,
       long userId) {
-    return db.update(
-        "INSERT INTO"
-            + " inv_operation(id,tenant_id,kind,code,company_id,warehouse_id,payload,created_by)"
-            + " VALUES(?,?,'returns',?,?,?,?,?)",
-        doc,
-        tenantId,
-        code,
-        companyId,
-        warehouse,
-        payload,
-        userId);
+    return documents.insert(
+        doc, tenantId, "returns", code, companyId, warehouse, null, payload, userId);
   }
 
   public List<Map<String, Object>> listActiveUsers(long tenantId) {
@@ -381,14 +344,22 @@ public class InventoryOperationRepository {
 
   public int insertReturnTodo(
       long recordId, long tenantId, Object recipient, Object doc, Object value) {
-    return db.update(
-        "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
-            + " VALUES(?,?,?,?,'returns','待退料入库',?,1)",
-        recordId,
+    int count =
+        db.update(
+            "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
+                + " VALUES(?,?,?,?,'returns','待退料入库',?,1)",
+            recordId,
+            tenantId,
+            recipient,
+            doc,
+            value);
+    db.update(
+        "UPDATE inv_inbox SET message_key=?,message_args=? WHERE tenant_id=? AND id=?",
+        com.windasoft.eam.common.NotificationMessages.key("待退料入库"),
+        com.windasoft.eam.common.NotificationMessages.arguments("待退料入库", value),
         tenantId,
-        recipient,
-        doc,
-        value);
+        recordId);
+    return count;
   }
 
   public int ensureBalance(
@@ -638,26 +609,27 @@ public class InventoryOperationRepository {
 
   public int insertTransferTodo(
       long recordId, long tenantId, Object user, Object doc, Object value) {
-    return db.update(
-        "INSERT INTO"
-            + " inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
-            + " VALUES(?,?,?,?,'transfers','待收货',?,1)",
-        recordId,
+    int count =
+        db.update(
+            "INSERT INTO"
+                + " inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
+                + " VALUES(?,?,?,?,'transfers','待收货',?,1)",
+            recordId,
+            tenantId,
+            user,
+            doc,
+            value);
+    db.update(
+        "UPDATE inv_inbox SET message_key=?,message_args=? WHERE tenant_id=? AND id=?",
+        com.windasoft.eam.common.NotificationMessages.key("待收货"),
+        com.windasoft.eam.common.NotificationMessages.arguments("待收货", value),
         tenantId,
-        user,
-        doc,
-        value);
+        recordId);
+    return count;
   }
 
   public int confirmOperation(Object status, String payload, long tenantId, Object doc) {
-    return db.update(
-        "UPDATE inv_operation SET"
-            + " status=?,payload=?,confirmed_at=CURRENT_TIMESTAMP(3),row_version=row_version+1"
-            + " WHERE tenant_id=? AND id=?",
-        status,
-        payload,
-        tenantId,
-        doc);
+    return documents.confirm(tenantId, doc, status, payload);
   }
 
   public int completeReturnTodos(long tenantId, Object doc) {
@@ -670,14 +642,22 @@ public class InventoryOperationRepository {
 
   public int insertReturnNotice(
       long recordId, long tenantId, Object surplusRequestedBy, Object doc, Object value) {
-    return db.update(
-        "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
-            + " VALUES(?,?,?,?,'returns','退料已入库',?,0)",
-        recordId,
+    int count =
+        db.update(
+            "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
+                + " VALUES(?,?,?,?,'returns','退料已入库',?,0)",
+            recordId,
+            tenantId,
+            surplusRequestedBy,
+            doc,
+            value);
+    db.update(
+        "UPDATE inv_inbox SET message_key=?,message_args=? WHERE tenant_id=? AND id=?",
+        com.windasoft.eam.common.NotificationMessages.key("退料已入库"),
+        com.windasoft.eam.common.NotificationMessages.arguments("退料已入库", value),
         tenantId,
-        surplusRequestedBy,
-        doc,
-        value);
+        recordId);
+    return count;
   }
 
   public int countReservedMaterial(long tenantId, Object material) {
@@ -711,12 +691,12 @@ public class InventoryOperationRepository {
 
   public int countOpenOperations(long tenantId, Object except, Object value, Object material) {
     return db.queryForObject(
-        "SELECT COUNT(*) FROM inv_operation d WHERE d.tenant_id=? AND d.deleted=0 AND"
-            + " d.id<>? AND d.status IN ('草稿','在途') AND"
-            + " (JSON_CONTAINS(d.payload,JSON_OBJECT('materialId',?), '$.lines') OR"
+        "SELECT COUNT(*) FROM v_inv_operation d WHERE d.tenant_id=? AND d.deleted=0 AND d.id<>? AND"
+            + " d.status IN ('草稿','在途') AND (EXISTS(SELECT 1 FROM v_inv_operation_material l WHERE"
+            + " l.tenant_id=d.tenant_id AND l.document_id=d.id AND l.material_id=?) OR"
             + " EXISTS(SELECT 1 FROM inv_movement_allocation a JOIN inv_balance b ON"
-            + " b.tenant_id=a.tenant_id AND b.id=a.balance_id WHERE a.tenant_id=d.tenant_id"
-            + " AND a.document_id=d.id AND b.material_id=?))",
+            + " b.tenant_id=a.tenant_id AND b.id=a.balance_id WHERE a.tenant_id=d.tenant_id AND"
+            + " a.document_id=d.id AND b.material_id=?))",
         Integer.class,
         tenantId,
         except,
@@ -826,12 +806,7 @@ public class InventoryOperationRepository {
   }
 
   public int reverseOpening(long tenantId, Object value) {
-    return db.update(
-        "UPDATE inv_operation SET status='已冲销',row_version=row_version+1 WHERE tenant_id=? AND"
-            + " kind='openings' AND status='已完成' AND"
-            + " JSON_UNQUOTE(JSON_EXTRACT(payload,'$.receiptId'))=?",
-        tenantId,
-        value);
+    return documents.reverseOpening(tenantId, value);
   }
 
   public List<Map<String, Object>> lockIssueAllocations(long tenantId, Object source) {
@@ -912,11 +887,7 @@ public class InventoryOperationRepository {
   }
 
   public int reverseSource(long tenantId, Object source) {
-    return db.update(
-        "UPDATE inv_operation SET status='已冲销',row_version=row_version+1 WHERE tenant_id=? AND"
-            + " id=?",
-        tenantId,
-        source);
+    return documents.reverse(tenantId, source);
   }
 
   public int completeSourceTodos(long tenantId, Object source) {
@@ -927,10 +898,7 @@ public class InventoryOperationRepository {
   }
 
   public int deleteOperation(long tenantId, Object doc) {
-    return db.update(
-        "UPDATE inv_operation SET deleted=1,row_version=row_version+1 WHERE tenant_id=? AND id=?",
-        tenantId,
-        doc);
+    return documents.delete(tenantId, doc);
   }
 
   public int moveCostLayers(Object destination, long tenantId, Object balanceId) {

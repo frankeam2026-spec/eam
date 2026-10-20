@@ -22,7 +22,9 @@ public class AnalyticsSourceService {
       case "inspection" -> inspection(scope);
       case "anomaly" -> anomaly(scope);
       case "material" -> material(scope, equipmentCost);
-      default -> throw new IllegalArgumentException("未知统计来源");
+      default ->
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.experience.message0013");
     };
   }
 
@@ -57,7 +59,7 @@ r.company_org_id company_id,r.department_org_id department_id,COALESCE(d.name,r.
 COALESCE(r.accepted_owner_id,r.assignee_user_id) owner_id,COALESCE(u.display_name,r.assignee,'未分派') owner_name,
 r.status,r.reported_at occurred_at,r.accepted_at,r.completed_at submitted_at,r.acceptance_score score,
 r.fault_type_id,COALESCE(bt.name,r.fault_type) fault_type,r.fault_cause_id,COALESCE(bc.name,r.fault_cause) fault_cause,
-r.collaborators_json collaborators,'repair' module,CONCAT('/repairs/',r.id) url
+COALESCE((SELECT JSON_ARRAYAGG(JSON_OBJECT('id',CAST(rc.user_id AS CHAR),'name',rc.name_snapshot)) FROM eam_repair_collaborator rc WHERE rc.tenant_id=r.tenant_id AND rc.order_id=r.id),JSON_ARRAY()) collaborators,'repair' module,CONCAT('/repairs/',r.id) url
 FROM eam_repair_order r
 LEFT JOIN eam_org_unit d ON d.tenant_id=r.tenant_id AND d.id=r.department_org_id
 LEFT JOIN eam_sys_user u ON u.tenant_id=r.tenant_id AND u.id=COALESCE(r.accepted_owner_id,r.assignee_user_id)
@@ -70,7 +72,7 @@ WHERE r.tenant_id=? AND r.deleted=0 AND r.status NOT IN ('已撤销','已取消'
   }
 
   private AnalyticsRepository.Source task(boolean inspection, String kind, String range) {
-    String table = inspection ? "eam_inspection_task" : "eam_maintenance_task",
+    String table = inspection ? "v_inspection_task" : "v_maintenance_task",
         events = inspection ? "eam_inspection_event" : "eam_maintenance_event";
     String menu =
         inspection
@@ -175,7 +177,7 @@ WHERE r.tenant_id=? AND r.deleted=0 AND r.status NOT IN ('已撤销','已取消'
         "SELECT r.id source_id,r.code,r.equipment_id,e.equipment_code,e.name"
             + " equipment_name,r.company_org_id company_id,r.department_org_id"
             + " department_id,r.status,r.discovered_at occurred_at,CONCAT('/anomalies/',r.id)"
-            + " url,'anomaly' module FROM eam_equipment_anomaly r LEFT JOIN eam_equipment e ON"
+            + " url,'anomaly' module FROM v_anomaly r LEFT JOIN eam_equipment e ON"
             + " e.tenant_id=r.tenant_id AND e.id=r.equipment_id WHERE r.tenant_id=? AND r.status"
             + " NOT IN ('已作废','作废') AND "
             + allowed,
@@ -223,8 +225,8 @@ LEFT JOIN eam_equipment e ON e.tenant_id=r.tenant_id AND e.id=r.equipment_id
 LEFT JOIN inv_outbound_line ol ON ol.tenant_id=a.tenant_id AND ol.id=a.outbound_line_id
 LEFT JOIN inv_requisition q ON q.tenant_id=r.tenant_id AND q.id=r.requisition_id
 LEFT JOIN eam_repair_order rt ON rt.tenant_id=r.tenant_id AND rt.id=COALESCE(ol.task_id,q.task_id) AND COALESCE(ol.task_kind,q.task_kind)='维修'
-LEFT JOIN eam_maintenance_task mt ON mt.tenant_id=r.tenant_id AND mt.id=COALESCE(ol.task_id,q.task_id) AND COALESCE(ol.task_kind,q.task_kind)='保养'
-LEFT JOIN eam_inspection_task it ON it.tenant_id=r.tenant_id AND it.id=COALESCE(ol.task_id,q.task_id) AND COALESCE(ol.task_kind,q.task_kind)='点巡检'
+LEFT JOIN v_maintenance_task mt ON mt.tenant_id=r.tenant_id AND mt.id=COALESCE(ol.task_id,q.task_id) AND COALESCE(ol.task_kind,q.task_kind)='保养'
+LEFT JOIN v_inspection_task it ON it.tenant_id=r.tenant_id AND it.id=COALESCE(ol.task_id,q.task_id) AND COALESCE(ol.task_kind,q.task_kind)='点巡检'
 LEFT JOIN inv_cost_layer cl ON cl.tenant_id=a.tenant_id AND cl.id=a.cost_layer_id
 WHERE r.tenant_id=? AND i.reversed=0 AND i.deleted=0 AND r.status NOT IN ('已冲销','已撤销') AND
 """

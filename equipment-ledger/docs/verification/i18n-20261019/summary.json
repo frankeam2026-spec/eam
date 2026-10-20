@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-19",
+  "database": "eam_i18n_test_20261019",
+  "mutatingApiPorts": [
+    18083,
+    18084
+  ],
+  "frontend": {
+    "tests": 22,
+    "failures": 0,
+    "errors": 0
+  },
+  "backendCleanBuild": {
+    "tests": 126,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "catalogKeys": 3257,
+  "apiScenarios": 21,
+  "permissionScenarios": 6,
+  "runtimeArtifact": "i18n-20261019-r6.jar",
+  "artifactSha256": "2a7dd723462423cc5a84170a21c0a790edd084e3e4eb79e04fcb482731580594"
+}

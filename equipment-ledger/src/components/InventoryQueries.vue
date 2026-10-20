@@ -1,4 +1,8 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
+import { onUnmounted } from 'vue';
+import { useInventoryQueryList } from '../composables/inventory/useInventoryLists';
+const { rows, total, refresh: refreshList, invalidate: invalidateList } = useInventoryQueryList();
 import AppListTabs from './common/AppListTabs.vue';
 import AppListToolbar from './common/AppListToolbar.vue';
 import { ElTableColumn } from 'element-plus';
@@ -145,21 +149,23 @@ const filterable = computed(
     ]),
 );
 const columns = ref<string[]>([]),
-  rows = ref<InventoryQueryRow[]>([]),
   filters = ref<Record<string, string>>({}),
   query = ref(''),
   applied = ref(''),
   page = ref(1),
   size = ref(10),
-  total = ref(0),
   loading = ref(false),
   error = ref(''),
   filterOpen = ref(false),
   columnsOpen = ref(false),
   exportBusy = ref(false);
 let revision = 0;
+onUnmounted(() => {
+  revision++;
+  invalidateList();
+});
 function message(e: unknown) {
-  return e instanceof Error ? e.message : '加载失败，请重试';
+  return e instanceof Error ? e.message : tr('ui.equipment.text0468');
 }
 function display(row: InventoryQueryRow, key: string) {
   const value = String(row[key] ?? '');
@@ -192,16 +198,14 @@ async function load() {
   loading.value = true;
   error.value = '';
   try {
-    const result = await inventoryQueryApi.list(
+    const accepted = await refreshList(
       kind.value,
       applied.value,
       filters.value,
       page.value,
       size.value,
     );
-    if (current !== revision) return;
-    rows.value = result.data;
-    total.value = result.page.total;
+    if (current !== revision || !accepted) return;
     const last = Math.max(1, Math.ceil(total.value / size.value));
     if (page.value > last) page.value = last;
   } catch (e) {
@@ -302,16 +306,16 @@ function source(row: InventoryQueryRow) {
 async function freeze(row: InventoryQueryRow) {
   try {
     const result = await ElMessageBox.prompt(
-      '请输入' + (row.stockStatus === '冻结' ? '解冻' : '冻结') + '原因',
+      tr('ui.equipment.text1261') + (row.stockStatus === '冻结' ? '解冻' : '冻结') + '原因',
       '库存状态',
       {
-        inputValidator: (s: string) => !!s.trim() || '请填写原因',
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        inputValidator: (s: string) => !!s.trim() || tr('ui.equipment.text0461'),
+        get confirmButtonText() { return tr('ui.equipment.text0402'); },
+        get cancelButtonText() { return tr('ui.equipment.text0157'); },
       },
     );
     await operationApi.freeze(row, row.stockStatus === '冻结' ? '可用' : '冻结', result.value);
-    ElMessage.success('库存状态已更新');
+    ElMessage.success(tr('ui.equipment.text0610'));
     await load();
   } catch (e) {
     if (e !== 'cancel' && e !== 'close') ElMessage.error(message(e));
@@ -329,22 +333,22 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
       @select="router.push({ name: 'inventory-queries', params: { kind: $event } })"
     />
     <AppListToolbar class="toolbar">
-      <ElButton @click="router.push('/material-custody')">领用余料</ElButton>
+      <ElButton @click="router.push('/material-custody')">{{ tr('ui.equipment.text0025') }}</ElButton>
       <form @submit.prevent="search">
         <ListToolbarIcons
           mode="filter"
           :filter-open="filterOpen"
           :columns-open="columnsOpen"
           @toggle-filter="filterOpen = !filterOpen"
-        /><ListSearchInput v-model="query" placeholder="搜索料号、名称、型号、批次号" /><ElButton
+        /><ListSearchInput v-model="query" :placeholder="tr('ui.equipment.text0611')" /><ElButton
           text
           @click="reset"
-          >重置</ElButton
+          >{{ tr('ui.equipment.text0204') }}</ElButton
         >
       </form>
     </AppListToolbar>
     <p v-if="error" class="error" role="alert">
-      {{ error }}<ElButton text @click="load">重试</ElButton>
+      {{ error }}<ElButton text @click="load">{{ tr('ui.equipment.text0299') }}</ElButton>
     </p>
     <div class="card" :aria-busy="loading">
       <div class="scroll">
@@ -365,7 +369,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                   v-if="filterable.has(key)"
                   v-model="filters[key]"
                   clearable
-                  :placeholder="'筛选' + fields[kind][key]"
+                  :placeholder="tr('ui.equipment.text0301') + fields[kind][key]"
                 /></div></template
             ><template #default="{ row: row, $index: tableRowIndex }">
               <ElTag
@@ -388,24 +392,24 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             :width="170"
             :min-width="156"
             :resizable="false"
-            ><template #header><div class="table-header-label">操作</div></template
+            ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
             ><template #default="{ row: row, $index: tableRowIndex }">
               <ElButton
                 type="primary"
                 link
                 :disabled="Number(row.quantity) <= 0"
                 @click="freeze(row)"
-                >{{ row.stockStatus === '冻结' ? '解冻' : '冻结' }}</ElButton
+                >{{ row.stockStatus === '冻结' ? tr('ui.equipment.text0612') : tr('ui.equipment.text0613') }}</ElButton
               >
             </template></ElTableColumn
           ></AppBusinessTable
         >
         <div v-if="!rows.length" class="empty-state">
-          {{ loading ? '正在加载…' : error ? '加载失败，请重试' : '暂无数据' }}
+          {{ loading ? tr('ui.equipment.text0162') : error ? tr('ui.equipment.text0468') : tr('ui.equipment.text0308') }}
         </div>
       </div>
       <footer>
-        <span>共 {{ total }} 条</span
+        <span>{{ tr('ui.equipment.text0309') }} {{ total }} {{ tr('ui.equipment.text0296') }}</span
         ><AppPagination
           v-model:page="page"
           v-model:page-size="size"

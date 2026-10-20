@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { computed } from 'vue';
 import { ElImage, ElButton } from 'element-plus';
 import 'element-plus/es/components/image/style/css';
@@ -39,19 +40,19 @@ function sizeLabel(size?: number) {
         >
           <template #error
             ><span class="attachment-image-error"
-              ><AppIcon name="Picture" />图片加载失败</span
+              ><AppIcon name="Picture" />{{ tr('ui.equipment.text1332') }}</span
             ></template
           >
         </ElImage>
         <figcaption v-if="showCover || removable" class="attachment-image-actions">
-          <span v-if="showCover && index === 0" class="cover-label">首图</span>
+          <span v-if="showCover && index === 0" class="cover-label">{{ tr('ui.equipment.text1333') }}</span>
           <ElButton
             v-else-if="showCover && removable"
             link
             type="primary"
             :disabled="disabled"
             @click="emit('set-cover', file.id)"
-            >设为首图</ElButton
+            >{{ tr('ui.equipment.text1334') }}</ElButton
           >
           <ElButton
             v-if="removable"
@@ -60,7 +61,7 @@ function sizeLabel(size?: number) {
             :disabled="disabled"
             :aria-label="`移除图片${index + 1}`"
             @click="emit('remove', file.id)"
-            >移除</ElButton
+            >{{ tr('ui.equipment.text0151') }}</ElButton
           >
         </figcaption>
       </figure>
@@ -69,7 +70,7 @@ function sizeLabel(size?: number) {
       <div v-for="file in documents" :key="file.id" class="attachment-document">
         <AppIcon name="Document" />
         <a :href="file.url || file.dataUrl" :title="file.name" target="_blank" rel="noopener">{{
-          file.name || '文档附件'
+          file.name || tr('ui.equipment.text1335')
         }}</a>
         <span v-if="file.size != null" class="attachment-size">{{ sizeLabel(file.size) }}</span>
         <ElButton
@@ -77,9 +78,9 @@ function sizeLabel(size?: number) {
           link
           type="danger"
           :disabled="disabled"
-          aria-label="移除文档附件"
+          :aria-label="tr('ui.equipment.text1336')"
           @click="emit('remove', file.id)"
-          >移除</ElButton
+          >{{ tr('ui.equipment.text0151') }}</ElButton
         >
       </div>
     </div>

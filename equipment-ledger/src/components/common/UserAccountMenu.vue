@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import AppIcon from './AppIcon.vue';
 import { ElDropdown, ElDropdownMenu, ElDropdownItem, ElButton } from 'element-plus';
 import { useRouter } from 'vue-router';
@@ -13,17 +14,17 @@ function command(value: string) {
 </script>
 <template>
   <ElDropdown trigger="click" placement="bottom-end" @command="command">
-    <ElButton class="account-trigger" aria-label="用户菜单" native-type="button"
+    <ElButton class="account-trigger" :aria-label="tr('ui.equipment.text1598')" native-type="button"
       ><span class="account-avatar">{{ auth.currentUser.slice(0, 1) }}</span
       ><span class="account-name"
         ><b>{{ auth.currentUser }}</b
-        ><small>{{ auth.currentDepartment || '当前用户' }}</small></span
+        ><small>{{ auth.currentDepartment || tr('ui.equipment.text1599') }}</small></span
       ><AppIcon name="Down"
     /></ElButton>
     <template #dropdown
       ><ElDropdownMenu class="account-dropdown-menu"
-        ><ElDropdownItem command="settings">个人设置</ElDropdownItem
-        ><ElDropdownItem command="logout" divided>退出</ElDropdownItem></ElDropdownMenu
+        ><ElDropdownItem command="settings">{{ tr('ui.equipment.text1600') }}</ElDropdownItem
+        ><ElDropdownItem command="logout" divided>{{ tr('ui.equipment.text1601') }}</ElDropdownItem></ElDropdownMenu
       ></template
     >
   </ElDropdown>

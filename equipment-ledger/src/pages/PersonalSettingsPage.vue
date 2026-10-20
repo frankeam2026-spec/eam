@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import 'element-plus/es/components/card/style/css';
 import 'element-plus/es/components/descriptions/style/css';
 import 'element-plus/es/components/descriptions-item/style/css';
@@ -22,6 +23,7 @@ import {
   type FormInstance,
   type FormRules,
 } from 'element-plus';
+import LanguageSelect from '../components/common/LanguageSelect.vue';
 import AppBackButton from '../components/common/AppBackButton.vue';
 import AppFormField from '../components/common/AppFormField.vue';
 import AppFormFooter from '../components/common/AppFormFooter.vue';
@@ -42,9 +44,9 @@ const passwordForm = ref<FormInstance>();
 const password = reactive({ currentPassword: '', newPassword: '', confirmation: '' });
 const fieldErrors = reactive<Record<string, string>>({});
 const themes: { value: Theme; name: string; color: string }[] = [
-  { value: 'blue', name: '蓝色', color: '#205cf5' },
-  { value: 'navy', name: '深蓝', color: '#003e96' },
-  { value: 'pink', name: '粉色', color: '#ff8ba3' },
+  { value: 'blue', get name() { return tr('common.theme.blue'); }, color: '#205cf5' },
+  { value: 'navy', get name() { return tr('common.theme.navy'); }, color: '#003e96' },
+  { value: 'pink', get name() { return tr('common.theme.pink'); }, color: '#ff8ba3' },
 ];
 const busy = computed(() => saving.value || ui.savingTheme);
 const { markSaved } = useUnsavedChanges(
@@ -53,15 +55,15 @@ const { markSaved } = useUnsavedChanges(
   () => busy.value,
 );
 const rules: FormRules = {
-  currentPassword: [{ required: true, message: '请输入当前密码', trigger: 'blur' }],
+  currentPassword: [{ required: true, get message() { return tr('ui.equipment.text1743'); }, trigger: 'blur' }],
   newPassword: [
     {
       validator: (_rule, value: string, callback) => {
-        if (!value) return callback(new Error('请输入新密码'));
+        if (!value) return callback(new Error(tr('ui.equipment.text1178')));
         if (value.length < 12 || new TextEncoder().encode(value).length > 72)
-          return callback(new Error('新密码至少12位，且不超过72字节'));
+          return callback(new Error(tr('ui.equipment.text1744')));
         if (value === password.currentPassword)
-          return callback(new Error('新密码不能与当前密码相同'));
+          return callback(new Error(tr('ui.equipment.text1745')));
         callback();
       },
       trigger: 'blur',
@@ -70,8 +72,8 @@ const rules: FormRules = {
   confirmation: [
     {
       validator: (_rule, value: string, callback) => {
-        if (!value) return callback(new Error('请再次输入新密码'));
-        if (value !== password.newPassword) return callback(new Error('两次输入的新密码不一致'));
+        if (!value) return callback(new Error(tr('ui.equipment.text1180')));
+        if (value !== password.newPassword) return callback(new Error(tr('ui.equipment.text1746')));
         callback();
       },
       trigger: 'blur',
@@ -100,7 +102,7 @@ async function load() {
     const { data } = await getPersonalSettings();
     roles.value = data.roles;
   } catch (error) {
-    loadError.value = error instanceof Error ? error.message : '个人设置加载失败';
+    loadError.value = error instanceof Error ? error.message : tr('ui.equipment.text1747');
   } finally {
     loading.value = false;
   }
@@ -109,7 +111,7 @@ async function chooseTheme(value: string | number | boolean | undefined) {
   if (!themes.some((theme) => theme.value === value) || value === ui.palette || busy.value) return;
   try {
     await ui.setTheme(value as Theme);
-    ElMessage.success('主题已保存');
+    ElMessage.success(tr('ui.equipment.text1748'));
   } catch {
     /* Store keeps the failure message and restores the previous theme. */
   }
@@ -139,14 +141,14 @@ async function savePassword() {
     await changeOwnPassword(password.currentPassword, password.newPassword);
     clearPassword();
     window.dispatchEvent(new Event('eam-session-expired'));
-    auth.authMessage = '密码已修改，请使用新密码重新登录';
-    ElMessage.success('密码已修改，请重新登录');
+    auth.authMessage = tr('ui.equipment.text1749');
+    ElMessage.success(tr('ui.equipment.text1750'));
   } catch (error) {
     if (error instanceof ApiError && Object.keys(error.fieldErrors).length) {
       Object.assign(fieldErrors, error.fieldErrors);
       const first = Object.keys(error.fieldErrors)[0];
       if (first) passwordForm.value.scrollToField(first);
-    } else requestError.value = error instanceof Error ? error.message : '修改密码失败';
+    } else requestError.value = error instanceof Error ? error.message : tr('ui.equipment.text1751');
   } finally {
     saving.value = false;
   }
@@ -161,35 +163,40 @@ onMounted(() => {
   <section class="personal-settings-page">
     <header class="settings-heading">
       <AppBackButton :disabled="busy" @click="back" />
-      <h1>个人设置</h1>
+      <h1>{{ tr('ui.equipment.text1600') }}</h1>
     </header>
     <div class="settings-scroll">
       <div class="settings-content">
         <ElAlert v-if="loadError" type="error" :closable="false" show-icon>
           <template #title>{{ loadError }}</template>
-          <ElButton link type="primary" :loading="loading" @click="load">重新加载</ElButton>
+          <ElButton link type="primary" :loading="loading" @click="load">{{ tr('ui.equipment.text0910') }}</ElButton>
         </ElAlert>
         <ElCard shadow="never" class="settings-card">
-          <template #header><h2>基本信息</h2></template>
+          <template #header><h2>{{ tr('ui.equipment.text0077') }}</h2></template>
           <ElDescriptions :column="2" size="default" class="profile-details">
-            <ElDescriptionsItem label="姓名">{{ auth.currentUser }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="账号">{{ auth.user?.account }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="所属公司">{{ auth.currentCompany }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="所属部门">{{ auth.currentDepartment }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="角色" :span="2">
+            <ElDescriptionsItem :label="tr('ui.equipment.text1168')">{{ auth.currentUser }}</ElDescriptionsItem>
+            <ElDescriptionsItem :label="tr('ui.equipment.text1570')">{{ auth.user?.account }}</ElDescriptionsItem>
+            <ElDescriptionsItem :label="tr('ui.equipment.text0487')">{{ auth.currentCompany }}</ElDescriptionsItem>
+            <ElDescriptionsItem :label="tr('ui.equipment.text0098')">{{ auth.currentDepartment }}</ElDescriptionsItem>
+            <ElDescriptionsItem :label="tr('ui.equipment.text1171')" :span="2">
               <div class="profile-roles">
                 <ElTag v-for="role in roles" :key="role">{{ role }}</ElTag>
               </div>
             </ElDescriptionsItem>
           </ElDescriptions>
-          <p class="settings-note">基本信息由管理员维护。</p>
+          <p class="settings-note">{{ tr('ui.equipment.text1752') }}</p>
         </ElCard>
         <ElCard shadow="never" class="settings-card">
-          <template #header><h2>主题皮肤</h2></template>
+          <template #header><h2>{{ tr('language.field.displayLanguage') }}</h2></template>
+          <LanguageSelect authenticated />
+          <p class="settings-note">{{ tr('ui.equipment.text1753') }}</p>
+        </ElCard>
+        <ElCard shadow="never" class="settings-card">
+          <template #header><h2>{{ tr('ui.equipment.text1754') }}</h2></template>
           <ElRadioGroup
             :model-value="ui.palette"
             :disabled="busy"
-            aria-label="选择主题"
+            :aria-label="tr('ui.equipment.text1755')"
             @update:model-value="chooseTheme"
           >
             <ElRadioButton v-for="theme in themes" :key="theme.value" :value="theme.value">
@@ -200,22 +207,22 @@ onMounted(() => {
             </ElRadioButton>
           </ElRadioGroup>
           <p class="settings-note">
-            {{ ui.savingTheme ? '正在保存主题…' : '选择后自动保存，仅对当前账号生效。' }}
+            {{ ui.savingTheme ? tr('ui.equipment.text1756') : tr('ui.equipment.text1753') }}
           </p>
           <ElAlert v-if="ui.preferenceError" type="error" :closable="false" show-icon>
             <template #title>{{ ui.preferenceError }}</template>
-            <ElButton link type="primary" @click="retryTheme">重新加载</ElButton>
+            <ElButton link type="primary" @click="retryTheme">{{ tr('ui.equipment.text0910') }}</ElButton>
           </ElAlert>
         </ElCard>
         <ElCard shadow="never" class="settings-card">
-          <template #header><h2>修改密码</h2></template>
+          <template #header><h2>{{ tr('ui.equipment.text1757') }}</h2></template>
           <ElAlert
             v-if="auth.developmentMode"
             class="password-mode-notice"
             type="info"
             :closable="false"
             show-icon
-            title="当前为开发免登录模式，暂不支持修改密码。启用正式登录后可使用。"
+            :title="tr('ui.equipment.text1758')"
           />
           <ElForm
             ref="passwordForm"
@@ -228,7 +235,7 @@ onMounted(() => {
             @submit.prevent="savePassword"
           >
             <AppFormField
-              label="当前密码"
+              :label="tr('ui.equipment.text1759')"
               prop="currentPassword"
               :error="fieldErrors.currentPassword"
               required
@@ -238,11 +245,11 @@ onMounted(() => {
                 type="password"
                 show-password
                 autocomplete="current-password"
-                placeholder="请输入当前密码"
+                :placeholder="tr('ui.equipment.text1743')"
               />
             </AppFormField>
             <AppFormField
-              label="新密码"
+              :label="tr('ui.equipment.text1221')"
               prop="newPassword"
               :error="fieldErrors.newPassword"
               required
@@ -252,11 +259,11 @@ onMounted(() => {
                 type="password"
                 show-password
                 autocomplete="new-password"
-                placeholder="至少12位，且不超过72字节"
+                :placeholder="tr('ui.equipment.text1760')"
               />
             </AppFormField>
             <AppFormField
-              label="确认密码"
+              :label="tr('ui.equipment.text1223')"
               prop="confirmation"
               :error="fieldErrors.confirmation"
               required
@@ -266,7 +273,7 @@ onMounted(() => {
                 type="password"
                 show-password
                 autocomplete="new-password"
-                placeholder="请再次输入新密码"
+                :placeholder="tr('ui.equipment.text1180')"
                 @keyup.enter="savePassword"
               />
             </AppFormField>
@@ -278,18 +285,18 @@ onMounted(() => {
             show-icon
             :title="requestError"
           />
-          <p class="settings-note">修改成功后需要重新登录，其他设备上的登录也将失效。</p>
+          <p class="settings-note">{{ tr('ui.equipment.text1761') }}</p>
         </ElCard>
       </div>
     </div>
     <AppFormFooter>
-      <ElButton :disabled="busy" @click="back">关闭</ElButton>
+      <ElButton :disabled="busy" @click="back">{{ tr('ui.equipment.text0076') }}</ElButton>
       <ElButton
         type="primary"
         :disabled="auth.developmentMode || ui.savingTheme"
         :loading="saving"
         @click="savePassword"
-        >修改密码</ElButton
+        >{{ tr('ui.equipment.text1757') }}</ElButton
       >
     </AppFormFooter>
   </section>

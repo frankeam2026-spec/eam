@@ -1,5 +1,7 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElInput, ElSelect, ElOption, ElTreeSelect, ElDatePicker } from 'element-plus';
+import BusinessReferencePicker from '../business/BusinessReferencePicker.vue';
 import AppDecimalInput from './AppDecimalInput.vue';
 import {
   filterTreeOptions,
@@ -12,9 +14,20 @@ const model = defineModel<FilterCondition>({ required: true });
 </script>
 <template>
   <div class="filter-value-input">
+    <BusinessReferencePicker
+      v-if="field.businessSource"
+      :object="field.businessSource.object"
+      :source="field.businessSource.source"
+      :model-value="model.values"
+      :labels="model.valueLabels"
+      multiple
+      inactive
+      @update:model-value="model.values = Array.isArray($event) ? $event : []"
+      @labels="model.valueLabels = $event"
+    />
     <ElSelect
       :teleported="teleported"
-      v-if="field.type === 'choice'"
+      v-else-if="field.type === 'choice'"
       v-model="model.values"
       multiple
       filterable
@@ -23,9 +36,14 @@ const model = defineModel<FilterCondition>({ required: true });
       collapse-tags-tooltip
       :max-collapse-tags="2"
       :aria-label="field.label"
-      placeholder="请选择，可多选"
+      :placeholder="tr('ui.equipment.text1406')"
     >
-      <ElOption v-for="value in field.options" :key="value" :label="value" :value="value" />
+      <ElOption
+        v-for="value in field.options"
+        :key="value"
+        :label="field.optionLabels?.[value] ?? value"
+        :value="value"
+      />
     </ElSelect>
     <ElTreeSelect
       :teleported="teleported"
@@ -44,7 +62,7 @@ const model = defineModel<FilterCondition>({ required: true });
       :max-collapse-tags="2"
       :render-after-expand="false"
       :aria-label="field.label"
-      placeholder="请选择，可多选（包含下级）"
+      :placeholder="tr('ui.equipment.text1407')"
     />
     <ElDatePicker
       :teleported="teleported"
@@ -69,13 +87,13 @@ const model = defineModel<FilterCondition>({ required: true });
       <AppDecimalInput
         v-model="model.values[0]"
         :aria-label="`${field.label}最小值`"
-        placeholder="最小值"
+        :placeholder="tr('ui.equipment.text1292')"
       />
-      <span>至</span>
+      <span>{{ tr('ui.equipment.text0883') }}</span>
       <AppDecimalInput
         v-model="model.values[1]"
         :aria-label="`${field.label}最大值`"
-        placeholder="最大值"
+        :placeholder="tr('ui.equipment.text1293')"
       />
     </div>
     <ElInput

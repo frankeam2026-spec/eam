@@ -1,10 +1,10 @@
 export type LocationNode = { id: string; name: string; parentId?: string };
-/** Older equipment records omit spaces around the path separator. */
+/** 兼容历史位置快照，统一使用“ > ”展示和回填。 */
 export function normalizeLocationPath(value: unknown): string {
   return String(value ?? '')
-    .split('·')
+    .split(/[·>]/)
     .map((part) => part.trim())
-    .join(' · ');
+    .join(' > ');
 }
 export function locationPath(node: LocationNode, nodes: LocationNode[]): string {
   const parts: string[] = [];
@@ -15,5 +15,5 @@ export function locationPath(node: LocationNode, nodes: LocationNode[]): string 
     parts.unshift(current.name);
     current = nodes.find((item) => String(item.id) === String(current!.parentId));
   }
-  return normalizeLocationPath(parts.join(' · '));
+  return normalizeLocationPath(parts.join(' > '));
 }

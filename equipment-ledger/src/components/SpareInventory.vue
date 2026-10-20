@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import { ElTableColumn } from 'element-plus';
 import { ElButton, ElInput, ElCheckboxGroup, ElCheckbox } from 'element-plus';
 
@@ -49,7 +50,7 @@ async function load() {
     rows.value = (await api.listSpareStocks()).data;
     error.value = '';
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '加载失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text0160');
   }
 }
 async function save() {
@@ -59,9 +60,9 @@ async function save() {
     await api.createSpareStock(form.value);
     open.value = false;
     await load();
-    ElMessage.success('备件入库完成');
+    ElMessage.success(tr('ui.equipment.text1157'));
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '入库失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text1158'));
   } finally {
     busy.value = false;
   }
@@ -104,7 +105,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         "
         type="primary"
       >
-        新增入库
+        {{ tr('ui.equipment.text0624') }}
       </ElButton>
       <div>
         <ListToolbarIcons
@@ -115,7 +116,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           @toggle-filter="filtersOpen = !filtersOpen"
           @toggle-columns="columnsOpen = !columnsOpen"
           @export="exportRows"
-        /><ListSearchInput v-model="query" placeholder="搜索备件编号、名称、型号" /><ElButton
+        /><ListSearchInput v-model="query" :placeholder="tr('ui.equipment.text1159')" /><ElButton
           class="text-action"
           @click="
             query = '';
@@ -125,7 +126,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           type="primary"
           link
         >
-          重置
+          {{ tr('ui.equipment.text0204') }}
         </ElButton>
       </div>
     </div>
@@ -160,12 +161,12 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               }}
             </template></ElTableColumn
           ><template #empty
-            ><div v-if="!pageRows.length">暂无库存备件</div></template
+            ><div v-if="!pageRows.length">{{ tr('ui.equipment.text1160') }}</div></template
           ></AppBusinessTable
         >
       </div>
       <footer>
-        <span>共 {{ filtered.length }} 条</span
+        <span>{{ tr('ui.equipment.text0309') }} {{ filtered.length }} {{ tr('ui.equipment.text0296') }}</span
         ><AppPagination v-model:page="page" v-model:page-size="size" :total="filtered.length" />
         <ListToolbarIcons
           mode="footer"
@@ -185,27 +186,27 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         >
       </footer>
     </div>
-    <AppDialog v-model="open" title="新增备件入库" :busy="busy"
+    <AppDialog v-model="open" :title="tr('ui.equipment.text1161')" :busy="busy"
       ><div class="stock-form">
         <label
-          ><span>备件编号 *</span
-          ><ElInput v-model="form.code" maxlength="64" placeholder="输入备件编号" /></label
+          ><span>{{ tr('ui.equipment.text1162') }}</span
+          ><ElInput v-model="form.code" maxlength="64" :placeholder="tr('ui.equipment.text1163')" /></label
         ><label
-          ><span>备件名称 *</span
-          ><ElInput v-model="form.name" maxlength="100" placeholder="输入备件名称" /></label
+          ><span>{{ tr('ui.equipment.text1164') }}</span
+          ><ElInput v-model="form.name" maxlength="100" :placeholder="tr('ui.equipment.text1165')" /></label
         ><label
-          ><span>规格型号</span
-          ><ElInput v-model="form.model" maxlength="200" placeholder="输入规格型号" /></label
+          ><span>{{ tr('ui.equipment.text0091') }}</span
+          ><ElInput v-model="form.model" maxlength="200" :placeholder="tr('ui.equipment.text1166')" /></label
         ><label
-          ><span>入库数量 *</span
+          ><span>{{ tr('ui.equipment.text1167') }}</span
           ><AppDecimalInput
             :model-value="form.quantity"
             @update:model-value="form.quantity = Number($event)"
         /></label>
       </div>
       <template #footer
-        ><ElButton class="" :disabled="busy" @click="open = false">取消</ElButton
-        ><ElButton class="" :disabled="busy" @click="save" type="primary">入库</ElButton></template
+        ><ElButton class="" :disabled="busy" @click="open = false">{{ tr('ui.equipment.text0157') }}</ElButton
+        ><ElButton class="" :disabled="busy" @click="save" type="primary">{{ tr('ui.equipment.text0503') }}</ElButton></template
       ></AppDialog
     >
   </section>

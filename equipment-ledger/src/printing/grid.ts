@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 import type { LabelTemplate } from '../api';
 export type GridCell = {
   row: number;
@@ -33,28 +34,28 @@ export type GridLayout = {
   area: { startRow: number; endRow: number; startCol: number; endCol: number } | null;
 };
 export const fields = [
-  { key: 'name', label: '设备名称' },
-  { key: 'code', label: '设备编号' },
-  { key: 'model', label: '规格型号' },
-  { key: 'owner', label: '负责人' },
-  { key: 'category', label: '类别' },
-  { key: 'department', label: '部门' },
-  { key: 'functionLocation', label: '位置' },
-  { key: 'equipment_qrcode', label: '二维码' },
-  { key: 'equipment_barcode', label: '条形码' },
-  { key: 'fixed_text', label: '固定文本' },
-  { key: 'brand', label: '品牌' },
-  { key: 'assetNo', label: '资产编号' },
-  { key: 'serial', label: '序列号' },
-  { key: 'unit', label: '单位' },
-  { key: 'purchaseDate', label: '购置日期' },
-  { key: 'supplier', label: '供应商' },
-  { key: 'calibrationDate', label: '计量日期' },
-  { key: 'level', label: '设备等级' },
+  { key: 'name', get label() { return tr('ui.equipment.text0081'); } },
+  { key: 'code', get label() { return tr('ui.equipment.text0078'); } },
+  { key: 'model', get label() { return tr('ui.equipment.text0091'); } },
+  { key: 'owner', get label() { return tr('ui.equipment.text0102'); } },
+  { key: 'category', get label() { return tr('ui.equipment.text0083'); } },
+  { key: 'department', get label() { return tr('ui.equipment.text1320'); } },
+  { key: 'functionLocation', get label() { return tr('ui.equipment.text0108'); } },
+  { key: 'equipment_qrcode', get label() { return tr('ui.equipment.text0972'); } },
+  { key: 'equipment_barcode', get label() { return tr('ui.equipment.text0973'); } },
+  { key: 'fixed_text', get label() { return tr('ui.equipment.text1805'); } },
+  { key: 'brand', get label() { return tr('ui.equipment.text0093'); } },
+  { key: 'assetNo', get label() { return tr('ui.equipment.text0085'); } },
+  { key: 'serial', get label() { return tr('ui.equipment.text0087'); } },
+  { key: 'unit', get label() { return tr('ui.equipment.text0095'); } },
+  { key: 'purchaseDate', get label() { return tr('ui.equipment.text0122'); } },
+  { key: 'supplier', get label() { return tr('ui.equipment.text0118'); } },
+  { key: 'calibrationDate', get label() { return tr('ui.equipment.text1806'); } },
+  { key: 'level', get label() { return tr('ui.equipment.text0113'); } },
   // { key: 'fixed_image', label: '图片' },
-  { key: 'calibrationValidUntil', label: '计量有效期' },
-  { key: 'inspectorName', label: '检验员' },
-  { key: 'inServiceDate', label: '启用日期' },
+  { key: 'calibrationValidUntil', get label() { return tr('ui.equipment.text1807'); } },
+  { key: 'inspectorName', get label() { return tr('ui.equipment.text1808'); } },
+  { key: 'inServiceDate', get label() { return tr('ui.equipment.text0124'); } },
 ];
 export const sample: Record<string, string> = {
   name: '数控车床',
@@ -174,11 +175,11 @@ export function legacyToGrid(t: LabelTemplate): GridLayout {
       er = ys.indexOf(Number(Math.min(t.heightMm, e.y + e.height).toFixed(2))),
       ec = xs.indexOf(Number(Math.min(t.widthMm, e.x + e.width).toFixed(2)));
     if (row < 0 || col < 0 || er <= row || ec <= col)
-      throw new Error('旧模板存在无效坐标，请保留原模板并新建表格模板');
+      throw new Error(tr('ui.equipment.text1809'));
     for (let r = row; r < er; r++)
       for (let c = col; c < ec; c++)
         if (getCell(g, r, c))
-          throw new Error('旧模板含重叠内容，不能直接转换；请保留原模板并新建表格模板');
+          throw new Error(tr('ui.equipment.text1810'));
     g.cells.push({
       ...emptyCell(row, col),
       rowSpan: er - row,

@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import { computed } from 'vue';
 import { ElTreeSelect } from 'element-plus';
 export type TreeSelectNode = {
@@ -15,15 +16,25 @@ const props = withDefaults(
     nodes: TreeSelectNode[];
     placeholder?: string;
     pathValue?: boolean;
+    showFullPath?: boolean;
+    showFullPathInDropdown?: boolean;
     disabled?: boolean;
   }>(),
-  { modelValue: '', placeholder: '请选择', pathValue: false, disabled: false },
+  {
+    modelValue: '',
+    get placeholder() { return tr('ui.equipment.text0096'); },
+    pathValue: false,
+    showFullPath: false,
+    showFullPathInDropdown: false,
+    disabled: false,
+  },
 );
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 type Option = {
   id: string;
   label: string;
   path: string;
+  displayPath: string;
   output: string;
   disabled?: boolean;
   children: Option[];
@@ -45,6 +56,7 @@ const options = computed(() => {
           label: node.name,
           disabled: node.disabled,
           path: names.join(' · '),
+          displayPath: names.join(' > '),
           output: node.value ?? (props.pathValue ? names.join(' · ') : node.name),
           children: branch(node.id, names, next),
         };
@@ -75,11 +87,14 @@ function change(id: string | undefined) {
     :model-value="selectedId"
     :data="options"
     :props="{
-      label: pathValue ? 'path' : 'label',
+      label: showFullPath ? 'displayPath' : pathValue ? 'path' : 'label',
       children: 'children',
       disabled: 'disabled',
     }"
     node-key="id"
+    :title="
+      showFullPath ? flatOptions.find((node) => node.id === selectedId)?.displayPath : undefined
+    "
     :placeholder="placeholder"
     :disabled="disabled"
     filterable
@@ -89,7 +104,13 @@ function change(id: string | undefined) {
     :teleported="true"
     popper-class="eam-tree-select-popper"
     @update:model-value="change"
-  />
+  >
+    <template #default="{ data }">
+      <span :title="showFullPathInDropdown ? data.displayPath : undefined">
+        {{ showFullPathInDropdown ? data.displayPath : pathValue ? data.path : data.label }}
+      </span>
+    </template>
+  </ElTreeSelect>
 </template>
 <style scoped>
 .tree-select {

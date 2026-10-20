@@ -1,3 +1,4 @@
+import { currentLocale } from '../i18n';
 import { inventoryMenu } from '../inventory';
 import { maintenanceMenu, inspectionMenu } from '../rolePermissions';
 import { createRouter, createWebHashHistory } from 'vue-router';
@@ -11,6 +12,8 @@ export type AppPage =
   | 'repair-plans'
   | 'home-templates'
   | 'print-templates'
+  | 'business-config'
+  | 'languages'
   | 'personalization'
   | 'personal-settings'
   | 'material-custody'
@@ -59,6 +62,18 @@ export const router = createRouter({
           name: 'personal-settings',
           component: () => import('../pages/PersonalSettingsPage.vue'),
           meta: { page: 'personal-settings' },
+        },
+        {
+          path: 'business-config',
+          name: 'business-config',
+          component: () => import('../pages/BusinessConfigPage.vue'),
+          meta: { page: 'business-config', menu: 'businessConfig' },
+        },
+        {
+          path: 'languages',
+          name:'languages',
+          component:()=>import('../pages/LanguageManagementPage.vue'),
+          meta:{page:'languages',menu:'language'},
         },
         {
           path: 'personalization',
@@ -196,6 +211,12 @@ export const router = createRouter({
           meta: { page: 'inventory', menu: 'inventoryQuery' },
         },
         {
+          path: 'maintenance/plans/:id',
+          name: 'maintenance-plan-detail',
+          component: () => import('../components/MaintenancePlanDetail.vue'),
+          meta: { page: 'maintenance', menu: 'maintenancePlan' },
+        },
+        {
           path: 'maintenance/task/:id',
           name: 'maintenance-task',
           component: () => import('../components/MaintenanceTask.vue'),
@@ -230,6 +251,12 @@ export const router = createRouter({
           name: 'equipment',
           component: () => import('../pages/EquipmentLedgerPage.vue'),
           meta: { page: 'equipment', menu: 'equipment' },
+        },
+        {
+          path: 'equipment/import',
+          name: 'equipment-import',
+          redirect: (to) => ({ name: 'equipment', query: { ...to.query, import: '1' } }),
+          meta: { page: 'equipment', menu: 'equipment', action: '导入' },
         },
         {
           path: 'equipment/new',
@@ -410,7 +437,7 @@ router.afterEach((to, from, failure) => {
   fetch('/api/v1/home/recent', {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Accept-Language': currentLocale.value, 'Content-Type': 'application/json' },
     body: JSON.stringify({ url: to.path }),
   }).catch(() => {});
 });

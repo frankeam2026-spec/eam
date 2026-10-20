@@ -3,8 +3,8 @@ package com.windasoft.eam.service.repair;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.AcceptanceDecision;
 import com.windasoft.eam.common.VersionGuard;
-import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.entity.system.SystemUser;
@@ -21,6 +21,11 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class RepairWorkflowService {
   @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.business.BusinessValueService custom;
+
+  private final com.windasoft.eam.service.basedata.BaseDataReferenceService references;
+
+  @org.springframework.beans.factory.annotation.Autowired
   private com.windasoft.eam.service.inventory.InventoryMutex experienceInventoryMutex;
 
   private final com.windasoft.eam.repository.repair.RepairWorkflowRepository flow;
@@ -32,7 +37,9 @@ public class RepairWorkflowService {
       com.windasoft.eam.repository.repair.RepairWorkflowRepository flow,
       AuthContext auth,
       PermissionService permissions,
-      ObjectMapper json) {
+      ObjectMapper json,
+      com.windasoft.eam.service.basedata.BaseDataReferenceService references) {
+    this.references = references;
     this.flow = flow;
     this.auth = auth;
     this.permissions = permissions;
@@ -48,7 +55,8 @@ public class RepairWorkflowService {
 
   public RepairOrder require(long id) {
     var row = flow.findOrder(auth.tenantId(), id);
-    if (row == null) throw new IllegalArgumentException("工单不存在");
+    if (row == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0012");
     return row;
   }
 
@@ -71,7 +79,16 @@ public class RepairWorkflowService {
     viewAllowed(row);
     var eq = equipment(row);
     Map<String, Object> result = new LinkedHashMap<>();
+    var extra = custom.read("repair_report", row.getId());
+    row.setCustomFields(extra.customFields());
+    row.setCustomFieldLabels(extra.customFieldLabels());
+    row.setCustomSchemaVersion(extra.customSchemaVersion());
+    var processing = new LinkedHashMap<String, Object>();
+    processing.put("id", Long.toString(id));
+    custom.attach("repair_process", processing);
+    result.put("processingFields", processing);
     result.put("order", row);
+    result.put("categoryId", eq.getCategoryId() == null ? "" : eq.getCategoryId().toString());
     result.put("model", eq.getModel() == null ? "" : eq.getModel());
     result.put("candidates", flow.candidates(auth.tenantId(), id));
     result.put(
@@ -97,22 +114,26 @@ public class RepairWorkflowService {
     return result;
   }
 
-  public List<String> results() {
-    var result = new ArrayList<String>();
-    result.add("已解决");
-    result.addAll(
-        flow.processingResults(auth.tenantId()).stream()
-            .map(BaseItem::getName)
-            .filter(x -> !"已解决".equals(x))
-            .toList());
-    return result;
+  public List<Map<String, Object>> results() {
+    return flow.processingResults(auth.tenantId()).stream()
+        .map(
+            item ->
+                Map.<String, Object>of(
+                    "id",
+                    item.getId().toString(),
+                    "name",
+                    item.getName(),
+                    "resolved",
+                    com.windasoft.eam.service.basedata.BaseDataReferenceService.fixed(item)))
+        .toList();
   }
 
   @Transactional
   public RepairOrder action(long id, int version, JsonNode body) {
     experienceInventoryMutex.enter();
     var row = flow.lock(auth.tenantId(), id);
-    if (row == null) throw new IllegalArgumentException("工单不存在");
+    if (row == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0012");
     VersionGuard.check(row.getRowVersion(), version);
     String action = text(body, "action", 30), previous = row.getStatus();
     Map<String, Object> details = new LinkedHashMap<>();
@@ -130,7 +151,9 @@ public class RepairWorkflowService {
           details.put("reason", reason);
         }
         List<Long> ids = ids(body.get("userIds"));
-        if (ids.isEmpty()) throw new IllegalArgumentException("请选择至少一位人员");
+        if (ids.isEmpty())
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0013");
         var names = new ArrayList<String>();
         for (long userId : ids) names.add(user(userId).getDisplayName());
         flow.closeTodos(auth.tenantId(), id);
@@ -172,26 +195,53 @@ public class RepairWorkflowService {
       case "process" -> {
         owner(row);
         state(row, "处理中");
-        String content = text(body, "content", 20000),
-            cause = text(body, "faultCause", 10000),
-            type = text(body, "faultType", 200),
-            method = text(body, "repairMethod", 20),
-            result = text(body, "result", 100);
-        if (content.isBlank() || cause.isBlank() || type.isBlank() || result.isBlank())
-          throw new IllegalArgumentException("请填写故障原因、故障类型、处理内容和处理结果");
-        if (!Set.of("自修", "外协").contains(method)) throw new IllegalArgumentException("维修方式无效");
-        if (!results().contains(result)) throw new IllegalArgumentException("处理结果未在基础数据中定义");
-        if (flow.baseCount(auth.tenantId(), "FAULT_TYPE", type) == 0)
-          throw new IllegalArgumentException("请选择有效故障类型");
-        if (flow.baseCount(auth.tenantId(), "FAULT_CAUSE", cause) == 0)
-          throw new IllegalArgumentException("请选择基础数据中有效的故障原因");
+        custom.save(
+            "repair_process",
+            id,
+            body.get("customFields"),
+            body.has("customSchemaVersion") ? body.path("customSchemaVersion").asInt() : null,
+            Objects.toString(equipment(row).getCategoryId(), ""),
+            false);
+        String content = text(body, "content", 20000), method = text(body, "repairMethod", 20);
+        if (content.isBlank())
+          throw new com.windasoft.eam.common.FieldValidationException("content", "请填写处理内容");
+        if (!Set.of("自修", "外协").contains(method))
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0014");
+        var typeItem =
+            references.required(
+                auth.tenantId(),
+                body.path("faultTypeId").asText(),
+                "FAULT_TYPE",
+                "faultTypeId",
+                "故障类型");
+        var causeItem =
+            references.required(
+                auth.tenantId(),
+                body.path("faultCauseId").asText(),
+                "FAULT_CAUSE",
+                "faultCauseId",
+                "故障原因");
+        var resultItem =
+            references.required(
+                auth.tenantId(),
+                body.path("processingResultId").asText(),
+                "PROCESS_RESULT",
+                "processingResultId",
+                "处理结果");
+        String type = typeItem.getName(),
+            cause = causeItem.getName(),
+            result = resultItem.getName();
+        boolean resolved =
+            com.windasoft.eam.service.basedata.BaseDataReferenceService.fixed(resultItem);
         var collaborators = ids(body.get("collaboratorIds"));
         var collaboratorsView = new ArrayList<Map<String, String>>();
         for (long userId : collaborators)
           collaboratorsView.add(
               Map.of("id", String.valueOf(userId), "name", user(userId).getDisplayName()));
-        row.setFaultCauseId(flow.baseId(auth.tenantId(), "FAULT_CAUSE", cause));
-        row.setFaultTypeId(flow.baseId(auth.tenantId(), "FAULT_TYPE", type));
+        row.setFaultCauseId(causeItem.getId());
+        row.setFaultTypeId(typeItem.getId());
+        row.setProcessingResultId(resultItem.getId());
         row.setFaultCause(cause);
         row.setFaultType(type);
         row.setRepairMethod(method);
@@ -200,8 +250,10 @@ public class RepairWorkflowService {
         row.setPreventiveMeasures(text(body, "prevention", 20000));
         row.setCollaboratorsJson(write(collaboratorsView));
         row.setProcessAttachmentsJson(attachments(body.get("attachments")));
-        if ("已解决".equals(result))
-          custody.finishTask("维修", id, json.convertValue(body, java.util.Map.class));
+        if (resolved) custody.finishTask("维修", id, json.convertValue(body, java.util.Map.class));
+        details.put("faultTypeId", typeItem.getId().toString());
+        details.put("faultCauseId", causeItem.getId().toString());
+        details.put("processingResultId", resultItem.getId().toString());
         details.putAll(
             Map.of(
                 "faultCause",
@@ -220,10 +272,11 @@ public class RepairWorkflowService {
                 collaboratorsView,
                 "attachments",
                 read(row.getProcessAttachmentsJson())));
-        if ("已解决".equals(result)) {
+        if (resolved) {
           if (flow.materials(auth.tenantId(), id).stream()
               .anyMatch(x -> "待出库".equals(x.get("status"))))
-            throw new IllegalArgumentException("请先完成或撤回待出库的领料申请");
+            throw new com.windasoft.eam.common.LocalizedArgumentException(
+                "server.repair.message0015");
           row.setCompletedAt(LocalDateTime.now());
           row.setStatus("待验收");
           flow.closeTodos(auth.tenantId(), id);
@@ -233,13 +286,15 @@ public class RepairWorkflowService {
             if (permissions.canAccept(candidate, row)) recipients.add(candidate.getId());
           for (long userId : recipients) todo(row, userId, "待验收", true);
         }
-        label = "已解决".equals(result) ? "提交验收" : "记录处理";
+        label = resolved ? "提交验收" : "记录处理";
       }
       case "suspend", "resume" -> {
         owner(row);
         state(row, action.equals("suspend") ? "处理中" : "挂起");
         String reason = text(body, "reason", 2000);
-        if (reason.isBlank()) throw new IllegalArgumentException("请填写说明");
+        if (reason.isBlank())
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0016");
         row.setStatus(action.equals("suspend") ? "挂起" : "处理中");
         details.put("reason", reason);
         label = action.equals("suspend") ? "挂起" : "恢复处理";
@@ -248,57 +303,73 @@ public class RepairWorkflowService {
         owner(row);
         state(row, "处理中", "挂起");
         String vendor = text(body, "vendor", 200);
-        if (vendor.isBlank()) throw new IllegalArgumentException("请填写外协单位");
+        if (vendor.isBlank())
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0017");
         row.setRepairMethod("外协");
         row.setOutsourceVendor(vendor);
         details.put("vendor", vendor);
         details.put("reason", text(body, "reason", 2000));
         label = "委外";
       }
-      case "accept", "return" -> {
+      case "accept", "reject", "return" -> {
+        var decision = AcceptanceDecision.parse(action);
         state(row, "待验收");
         if (!canAccept(row)) deny();
         int score = body.path("score").asInt(0);
-        if (score < 1 || score > 5) throw new IllegalArgumentException("请选择1～5分评分");
+        if (score < 1 || score > 5)
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0018");
         String comment = text(body, "comment", 10000);
-        if (comment.isBlank()) throw new IllegalArgumentException("请填写验收说明");
-        if (action.equals("accept")) {
+        if (comment.isBlank())
+          throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text1088");
+        if (decision == AcceptanceDecision.ACCEPT) {
           row.setAcceptedAt(LocalDateTime.now());
           row.setAcceptedOwnerId(row.getAssigneeUserId());
           row.setAcceptanceScore(score);
           details.put("ownerId", Objects.toString(row.getAssigneeUserId(), ""));
         }
         details.put("score", score);
-        details.put("result", action.equals("accept") ? "通过" : "打回");
+        details.put("decision", decision.code());
+        details.put("result", decision.label());
         details.put("comment", comment);
         details.put("attachments", read(attachments(body.get("attachments"))));
         row.setAcceptanceComment(comment);
-        row.setStatus(action.equals("accept") ? "已完成" : "处理中");
+        row.setStatus(decision == AcceptanceDecision.ACCEPT ? "已完成" : "处理中");
         flow.closeTodos(auth.tenantId(), id);
         todo(
             row,
             row.getAssigneeUserId(),
-            action.equals("accept") ? "验收通过" : "待处理",
-            !action.equals("accept"));
+            decision == AcceptanceDecision.ACCEPT ? "验收通过" : "待处理",
+            decision != AcceptanceDecision.ACCEPT);
         if (row.getReporterUserId() != null
             && !Objects.equals(row.getReporterUserId(), auth.userId()))
-          todo(row, row.getReporterUserId(), action.equals("accept") ? "验收通过" : "验收打回", false);
-        label = action.equals("accept") ? "验收通过" : "验收打回";
+          todo(
+              row,
+              row.getReporterUserId(),
+              decision == AcceptanceDecision.ACCEPT ? "验收通过" : "验收打回",
+              false);
+        label = decision == AcceptanceDecision.ACCEPT ? "验收通过" : "验收打回";
       }
-      case "material" -> throw new IllegalArgumentException("请通过任务用料提交领料申请，旧库存需先完成期初初始化");
+      case "material" ->
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0019");
       case "cancelMaterial" -> {
         owner(row);
         state(row, "处理中", "挂起");
         long materialId = id(body, "materialId");
         if (flow.cancelMaterial(auth.tenantId(), materialId, id) != 1)
-          throw new IllegalArgumentException("只能撤回待出库的领料申请");
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0020");
         details.put("materialId", String.valueOf(materialId));
         label = "撤回领料";
         if (flow.materials(auth.tenantId(), id).stream()
             .noneMatch(x -> "待出库".equals(x.get("status"))))
           flow.closeIssueTodos(auth.tenantId(), id);
       }
-      case "issue" -> throw new IllegalArgumentException("请在物料与库存的领料单中确认发料，旧领料申请可撤回后重新提交");
+      case "issue" ->
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0021");
       case "install" -> {
         owner(row);
         state(row, "处理中");
@@ -307,7 +378,8 @@ public class RepairWorkflowService {
         var material = flow.lockMaterial(auth.tenantId(), materialId, id);
         BigDecimal quantity = quantity(body);
         if (material == null || flow.consume(auth.tenantId(), materialId, quantity) != 1)
-          throw new IllegalArgumentException("可安装数量不足，请先由仓管出库");
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0022");
         long stockId = ((Number) material.get("stock_id")).longValue();
         var stock = flow.lockStock(auth.tenantId(), stockId);
         flow.install(IdWorker.getId(), auth.tenantId(), eq.getId(), stockId, id, quantity);
@@ -333,9 +405,13 @@ public class RepairWorkflowService {
             flow.installed(auth.tenantId(), eq.getId()).stream()
                 .filter(x -> String.valueOf(installedId).equals(x.get("id")))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("在用备件不存在"));
+                .orElseThrow(
+                    () ->
+                        new com.windasoft.eam.common.LocalizedArgumentException(
+                            "server.repair.message0023"));
         if (flow.remove(auth.tenantId(), eq.getId(), installedId) != 1)
-          throw new IllegalArgumentException("该备件已被换下");
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0024");
         String reason = text(body, "reason", 2000);
         flow.history(
             IdWorker.getId(),
@@ -356,7 +432,9 @@ public class RepairWorkflowService {
                 reason));
         label = "换下备件";
       }
-      default -> throw new IllegalArgumentException("不支持的工单操作");
+      default ->
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0025");
     }
     details.put("after", row.getStatus());
     VersionGuard.updated(flow.updateOrder(row));
@@ -385,12 +463,14 @@ public class RepairWorkflowService {
   }
 
   public List<Map<String, Object>> inbox() {
-    return flow.inboxRows(auth.tenantId(), auth.userId());
+    return (java.util.List<java.util.Map<String, Object>>)
+        com.windasoft.eam.common.NotificationMessages.render(
+            flow.inboxRows(auth.tenantId(), auth.userId()));
   }
 
   public void markRead(long id) {
     if (flow.markRead(auth.tenantId(), auth.userId(), id) != 1)
-      throw new IllegalArgumentException("提醒不存在");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0026");
   }
 
   public List<Map<String, Object>> stockChoices(long orderId) {
@@ -406,7 +486,7 @@ public class RepairWorkflowService {
 
   @Transactional
   public void addStock(JsonNode body) {
-    throw new IllegalArgumentException("请通过物料档案和入库单维护库存");
+    throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0027");
   }
 
   private void todo(RepairOrder row, Long userId, String kind, boolean todo) {
@@ -417,7 +497,7 @@ public class RepairWorkflowService {
           userId,
           row.getId(),
           kind,
-          row.getOrderNo() + " · " + row.getEquipmentName() + " · " + kind,
+          row.getOrderNo() + " · " + row.getEquipmentName(),
           todo);
   }
 
@@ -445,28 +525,33 @@ public class RepairWorkflowService {
 
   private Equipment equipment(RepairOrder row) {
     var e = flow.equipment(auth.tenantId(), row.getEquipmentCode());
-    if (e == null) throw new IllegalArgumentException("设备不存在");
+    if (e == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
     return e;
   }
 
   private SystemUser user(long id) {
     var u = flow.activeUser(auth.tenantId(), id);
-    if (u == null) throw new IllegalArgumentException("请选择当前租户内的启用用户");
+    if (u == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0028");
     return u;
   }
 
   private static void state(RepairOrder row, String... allowed) {
     if (!Arrays.asList(allowed).contains(row.getStatus()))
-      throw new IllegalArgumentException("工单当前状态不允许此操作");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0029");
   }
 
   private static void deny() {
-    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "没有该工单的操作权限");
+    throw new com.windasoft.eam.common.LocalizedStatusException(
+        HttpStatus.FORBIDDEN, "server.repair.message0030");
   }
 
   private static String text(JsonNode n, String key, int max) {
     String v = n.path(key).asText("").trim();
-    if (v.length() > max) throw new IllegalArgumentException("内容过长：" + key);
+    if (v.length() > max)
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.repair.message0031", key);
     return v;
   }
 
@@ -476,13 +561,15 @@ public class RepairWorkflowService {
       if (id <= 0) throw new NumberFormatException();
       return id;
     } catch (Exception e) {
-      throw new IllegalArgumentException("请选择有效记录：" + key);
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.repair.message0032", key);
     }
   }
 
   private static List<Long> ids(JsonNode node) {
     if (node == null || node.isNull()) return List.of();
-    if (!node.isArray() || node.size() > 50) throw new IllegalArgumentException("最多选择50位人员");
+    if (!node.isArray() || node.size() > 50)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0033");
     var ids = new LinkedHashSet<Long>();
     for (var x : node)
       try {
@@ -490,7 +577,7 @@ public class RepairWorkflowService {
         if (value <= 0) throw new NumberFormatException();
         ids.add(value);
       } catch (Exception e) {
-        throw new IllegalArgumentException("人员编号无效");
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0034");
       }
     return List.copyOf(ids);
   }
@@ -503,7 +590,7 @@ public class RepairWorkflowService {
           || value.compareTo(new BigDecimal("99999999999")) > 0) throw new ArithmeticException();
       return value;
     } catch (Exception e) {
-      throw new IllegalArgumentException("数量必须大于0，最多3位小数");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0035");
     }
   }
 
@@ -513,19 +600,22 @@ public class RepairWorkflowService {
 
   public String attachments(JsonNode node) {
     if (node == null || node.isNull()) return "[]";
-    if (!node.isArray() || node.size() > 30) throw new IllegalArgumentException("最多30个附件");
+    if (!node.isArray() || node.size() > 30)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0036");
     for (var file : node) {
       String fileId = file.path("id").asText();
       String sourceUrl = file.path("url").asText();
       if (sourceUrl.matches("/api/v1/anomalies/[0-9]+/files/[0-9a-f-]{36}")) {
         var segments = sourceUrl.split("/");
-        if (!sourceUrl.endsWith("/" + fileId)) throw new IllegalArgumentException("来源附件地址无效");
+        if (!sourceUrl.endsWith("/" + fileId))
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.repair.message0037");
         anomalySources.checkRepairAttachment(Long.parseLong(segments[4]), fileId);
         continue;
       }
       if (!fileId.matches("[0-9a-fA-F-]{36}")
           || !file.path("url").asText().equals("/api/v1/repairs/attachments/" + fileId))
-        throw new IllegalArgumentException("请选择有效上传附件");
+        throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0038");
     }
     return write(node);
   }
@@ -534,7 +624,7 @@ public class RepairWorkflowService {
     try {
       return json.writeValueAsString(value);
     } catch (Exception e) {
-      throw new IllegalArgumentException("记录格式无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0039");
     }
   }
 

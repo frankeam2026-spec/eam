@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ref } from 'vue';
 import { ElButton, ElInputNumber, ElSelect, ElOption, ElMessage } from 'element-plus';
 import type { StockRow } from '../../api';
@@ -11,7 +12,7 @@ const selected = ref(''),
   quantity = ref(1);
 function add() {
   if (!selected.value) {
-    ElMessage.warning('请选择备件');
+    ElMessage.warning(tr('ui.equipment.text1087'));
     return;
   }
   const list = [...props.modelValue];
@@ -26,7 +27,7 @@ function add() {
 <template>
   <div class="spare-requirements">
     <div class="spare-requirements-controls">
-      <ElSelect v-model="selected" filterable placeholder="选择库存备件"
+      <ElSelect v-model="selected" filterable :placeholder="tr('ui.equipment.text1584')"
         ><ElOption
           v-for="s in stocks"
           :key="s.id"
@@ -38,7 +39,7 @@ function add() {
         :precision="3"
         :step="1"
         controls-position="right"
-      /><ElButton @click="add">添加</ElButton>
+      /><ElButton @click="add">{{ tr('ui.equipment.text0774') }}</ElButton>
     </div>
     <div v-for="(r, index) in modelValue" :key="r.stockId" class="spare-requirement">
       <span
@@ -66,7 +67,7 @@ function add() {
             modelValue.filter((_, i) => i !== index),
           )
         "
-        >移除</ElButton
+        >{{ tr('ui.equipment.text0151') }}</ElButton
       >
     </div>
   </div>

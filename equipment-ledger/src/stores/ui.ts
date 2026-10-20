@@ -1,3 +1,5 @@
+import { tr } from '../i18n';
+import { bindLanguage, resetLanguage, initializeLanguage } from '../i18n';
 import { ref, watch } from 'vue';
 import { defineStore } from 'pinia';
 import { getPersonalSettings, savePersonalTheme } from '../api';
@@ -15,6 +17,8 @@ export const useUiStore = defineStore('ui', () => {
     revision++;
     preferenceError.value = '';
     palette.value = 'blue';
+    resetLanguage();
+    void initializeLanguage();
   }
   async function bindUser(tenantId: string, userId: string) {
     const key = `${tenantId}:${userId}`;
@@ -25,11 +29,12 @@ export const useUiStore = defineStore('ui', () => {
     preferenceError.value = '';
     try {
       const { data } = await getPersonalSettings();
+      if (version === revision && identity === key) await bindLanguage(tenantId,userId);
       if (version === revision && identity === key && validTheme(data.theme))
         palette.value = data.theme;
     } catch (error) {
       if (version === revision)
-        preferenceError.value = error instanceof Error ? error.message : '主题加载失败';
+        preferenceError.value = error instanceof Error ? error.message : tr('ui.equipment.text1816');
     }
   }
   async function setTheme(value: Theme) {
@@ -45,7 +50,7 @@ export const useUiStore = defineStore('ui', () => {
     } catch (error) {
       if (identity === key && revision === version) {
         palette.value = previous;
-        preferenceError.value = error instanceof Error ? error.message : '主题保存失败';
+        preferenceError.value = error instanceof Error ? error.message : tr('ui.equipment.text1817');
       }
       throw error;
     } finally {

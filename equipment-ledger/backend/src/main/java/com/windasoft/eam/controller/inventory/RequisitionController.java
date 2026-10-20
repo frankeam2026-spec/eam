@@ -30,8 +30,11 @@ public class RequisitionController {
   }
 
   @GetMapping("/choices")
-  public Object choices() {
-    return Map.of("data", service.choices());
+  public Object choices(
+      @RequestParam(defaultValue = "false") boolean paged,
+      @RequestParam(defaultValue = "") String taskKind,
+      @RequestParam(required = false) Long taskId) {
+    return Map.of("data", service.choices(paged, taskKind, taskId));
   }
 
   @GetMapping("/materials")

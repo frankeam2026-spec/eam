@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ref, onBeforeUnmount } from 'vue';
 import { ElUpload, ElButton, type UploadInstance, type UploadFile } from 'element-plus';
 import 'element-plus/es/components/upload/style/css';
@@ -43,6 +44,6 @@ defineExpose({
     :show-file-list="false"
     :on-change="changed"
   >
-    <slot><ElButton :disabled="disabled">选择文件</ElButton></slot>
+    <slot><ElButton :disabled="disabled">{{ tr('ui.equipment.text1340') }}</ElButton></slot>
   </ElUpload>
 </template>

@@ -19,6 +19,12 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class EquipmentQueryService {
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.business.BusinessValueService custom;
+
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.business.BusinessQueryService customQueries;
+
   private final EquipmentQueryRepository repository;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -36,10 +42,136 @@ public class EquipmentQueryService {
   }
 
   public EquipmentPage list(EquipmentListQuery request) {
-    var result = repository.list(auth.tenantId(), request, permissions::filterEquipment);
+    return list(request, false);
+  }
+
+  private EquipmentPage list(EquipmentListQuery request, boolean exporting) {
+    var adjusted =
+        new EquipmentListQuery(
+            request.page(),
+            request.size(),
+            request.keyword(),
+            request.category(),
+            request.state(),
+            request.department(),
+            request.company(),
+            request.model(),
+            request.serial(),
+            request.owner(),
+            request.brand(),
+            request.useState(),
+            request.source(),
+            request.acquiredFrom(),
+            request.acquiredTo(),
+            request.warrantyBefore(),
+            request.sortBy(),
+            request.direction(),
+            customQueries.standard(request.advanced()),
+            request.scopeType(),
+            request.scopeIds(),
+            request.scopeCompanyId());
+    var result =
+        repository.list(
+            auth.tenantId(),
+            adjusted,
+            q -> {
+              permissions.filterEquipment(q);
+              if (exporting) permissions.filterEquipment(q, "导出");
+              customQueries.apply(q, "equipment", request.advanced());
+              customQueries.sort(q, "equipment", request.sortBy(), request.direction());
+            });
+    var extra =
+        custom.batch("equipment", result.getRecords().stream().map(Equipment::getId).toList());
+    result
+        .getRecords()
+        .forEach(
+            e -> {
+              var v = extra.get(e.getId());
+              e.setCustomFields(v.customFields());
+              e.setCustomFieldLabels(v.customFieldLabels());
+              e.setCustomSchemaVersion(v.customSchemaVersion());
+            });
     return new EquipmentPage(
         result.getRecords().stream().map(this::view).toList(),
         new EquipmentPage.PageInfo(result.getCurrent(), result.getSize(), result.getTotal()));
+  }
+
+  private static final Map<String, String> EXPORT_FIELDS =
+      Map.ofEntries(
+          Map.entry("code", "设备编号"),
+          Map.entry("name", "设备名称"),
+          Map.entry("state", "设备状态"),
+          Map.entry("useState", "使用状态"),
+          Map.entry("assetNo", "资产编号"),
+          Map.entry("category", "设备分类"),
+          Map.entry("department", "所属部门"),
+          Map.entry("functionLocation", "位置"),
+          Map.entry("model", "规格型号"),
+          Map.entry("serial", "出厂编号"),
+          Map.entry("owner", "负责人"),
+          Map.entry("brand", "品牌"),
+          Map.entry("source", "设备来源"),
+          Map.entry("unit", "单位"),
+          Map.entry("supplier", "供应商"),
+          Map.entry("acquiredAt", "购置日期"),
+          Map.entry("amount", "采购金额（元）"),
+          Map.entry("warranty", "保修期至"));
+
+  @org.springframework.transaction.annotation.Transactional(readOnly = true)
+  public void export(EquipmentListQuery request, List<String> columns, java.io.PrintWriter writer) {
+    permissions.require("equipment", "导出");
+    var fields = customQueries.fields("equipment");
+    var labels = new HashMap<>(EXPORT_FIELDS);
+    EXPORT_FIELDS
+        .keySet()
+        .forEach(
+            k ->
+                labels.put(
+                    k,
+                    com.windasoft.eam.common.MessageContext.text("output.equipment.field." + k)));
+    fields.forEach(
+        (id, f) -> {
+          if (f.path("exportable").asBoolean()) labels.put("custom:" + id, f.path("name").asText());
+        });
+    if (columns.isEmpty()
+        || columns.size() > labels.size()
+        || !labels.keySet().containsAll(columns)
+        || new HashSet<>(columns).size() != columns.size())
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0028");
+    // Validate the full query before committing response headers through the first write.
+    var first = list(request.at(1, 500), true);
+    writer.print('\ufeff');
+    writer.println(
+        columns.stream()
+            .map(k -> csv(labels.get(k)))
+            .collect(java.util.stream.Collectors.joining(",")));
+    for (int page = 1; ; page++) {
+      var result = page == 1 ? first : list(request.at(page, 500), true);
+      for (var row : result.data()) {
+        Map<String, Object> view =
+            objectMapper.convertValue(
+                row, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        writer.println(
+            columns.stream()
+                .map(
+                    k ->
+                        csv(
+                            k.startsWith("custom:")
+                                ? row.customFieldLabels().get(k.substring(7))
+                                : Objects.toString(view.get(k), "")))
+                .collect(java.util.stream.Collectors.joining(",")));
+      }
+      if (result.data().size() < 500) break;
+      if (writer.checkError()) throw new IllegalStateException("导出连接已断开");
+    }
+  }
+
+  private static String csv(String value) {
+    String text = Objects.toString(value, "");
+    if (!text.stripLeading().isEmpty() && "=+-@".indexOf(text.stripLeading().charAt(0)) >= 0
+        || text.startsWith("\t")
+        || text.startsWith("\r")) text = "'" + text;
+    return "\"" + text.replace("\"", "\"\"") + "\"";
   }
 
   public EquipmentView get(long id) {
@@ -95,8 +227,27 @@ public class EquipmentQueryService {
         .toList();
   }
 
+  public com.windasoft.eam.dto.common.PageResult<EquipmentOptions.Employee> ownerCandidates(
+      String action, com.windasoft.eam.dto.common.ListQuery query) {
+    if (!List.of("新增", "编辑").contains(action))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0029");
+    permissions.require("equipment", action);
+    var page = repository.ownerCandidates(auth.tenantId(), query);
+    return new com.windasoft.eam.dto.common.PageResult<>(
+        page.getRecords().stream()
+            .map(
+                u ->
+                    new EquipmentOptions.Employee(
+                        String.valueOf(u.getId()), u.getDisplayName(), u.getAccount()))
+            .toList(),
+        query.page(),
+        query.size(),
+        page.getTotal());
+  }
+
   public EquipmentOptions batchOptions(String action) {
-    if (!List.of("新增", "编辑").contains(action)) throw new IllegalArgumentException("无效的操作");
+    if (!List.of("新增", "编辑").contains(action))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0029");
     permissions.require("equipment", action);
     var allOrgs = repository.organizations(auth.tenantId(), true);
     var selectable =
@@ -162,7 +313,8 @@ public class EquipmentQueryService {
                 r ->
                     Map.<String, Object>ofEntries(
                         Map.entry("number", safe(r.getOrderNo())),
-                        Map.entry("time", r.getReportedAt() == null ? "" : r.getReportedAt().toString()),
+                        Map.entry(
+                            "time", r.getReportedAt() == null ? "" : r.getReportedAt().toString()),
                         Map.entry("description", safe(r.getDescription())),
                         Map.entry("person", safe(r.getAssignee())),
                         Map.entry("status", safe(r.getStatus())),
@@ -180,30 +332,38 @@ public class EquipmentQueryService {
 
   private Equipment require(long id) {
     var e = repository.find(auth.tenantId(), id);
-    if (e == null) throw new IllegalArgumentException("设备不存在");
+    if (e == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
     return e;
   }
 
   private String locationPath(Long id, Long company, boolean required) {
     if (id == null) {
-      if (required) throw new IllegalArgumentException("请选择位置");
+      if (required)
+        throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0109");
       return null;
     }
     var parts = new java.util.ArrayList<String>();
     var visited = new java.util.HashSet<Long>();
     var node = repository.baseItem(id);
     if (node == null) {
-      if (required) throw new IllegalArgumentException("位置不存在");
+      if (required)
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0030");
       return null;
     }
     while (node != null) {
-      if (!visited.add(node.getId())) throw new IllegalArgumentException("位置树结构异常");
+      if (!visited.add(node.getId()))
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0031");
       if (!node.getTenantId().equals(auth.tenantId())
           || !"LOCATION".equals(node.getItemType())
           || !java.util.Objects.equals(node.getCompanyOrgId(), company))
-        throw new IllegalArgumentException("位置不属于设备所属公司");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0032");
       if (required && node.getId().equals(id) && !Integer.valueOf(1).equals(node.getStatus()))
-        throw new IllegalArgumentException("位置已停用");
+        throw new com.windasoft.eam.common.LocalizedArgumentException(
+            "server.equipment.message0033");
       parts.addFirst(node.getName());
       node = node.getParentId() == null ? null : repository.baseItem(node.getParentId());
     }
@@ -237,6 +397,12 @@ public class EquipmentQueryService {
   }
 
   public EquipmentView view(Equipment e) {
+    if (e.getCustomFields() == null) {
+      var v = custom.read("equipment", e.getId());
+      e.setCustomFields(v.customFields());
+      e.setCustomFieldLabels(v.customFieldLabels());
+      e.setCustomSchemaVersion(v.customSchemaVersion());
+    }
     var owners = repository.owners(auth.tenantId(), e.getId());
     return new EquipmentView(
         String.valueOf(e.getId()),
@@ -294,6 +460,9 @@ public class EquipmentQueryService {
         json(e.getImagesJson()),
         json(e.getDocumentsJson()),
         repository.children(auth.tenantId(), e.getId()),
-        repository.bom(auth.tenantId(), e.getId()));
+        repository.bom(auth.tenantId(), e.getId()),
+        e.getCustomFields(),
+        e.getCustomFieldLabels(),
+        e.getCustomSchemaVersion());
   }
 }

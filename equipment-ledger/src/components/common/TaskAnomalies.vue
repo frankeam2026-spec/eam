@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElButton } from 'element-plus';
 
 import { ref, watch } from 'vue';
@@ -33,14 +34,14 @@ async function load() {
       error.value = '';
     }
   } catch (e) {
-    if (seq === revision) error.value = e instanceof Error ? e.message : '异常关联加载失败';
+    if (seq === revision) error.value = e instanceof Error ? e.message : tr('ui.equipment.text1585');
   }
 }
 watch(() => [props.kind, props.taskId], load, { immediate: true });
 async function record() {
   const chosen = items.value.find((i) => i.id === item.value);
   if (!chosen) {
-    ElMessage.warning('请选择来源项目');
+    ElMessage.warning(tr('ui.equipment.text1586'));
     return;
   }
   busy.value = true;
@@ -59,7 +60,7 @@ async function record() {
     await load();
     router.push('/anomalies/' + r.data.id);
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '登记失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text1587'));
   } finally {
     busy.value = false;
   }
@@ -68,7 +69,7 @@ async function record() {
 <template>
   <section class="task-anomalies">
     <header>
-      <h3>关联异常</h3>
+      <h3>{{ tr('ui.equipment.text1588') }}</h3>
       <ElButton
         v-if="canRecord && kind !== '维修'"
         class=""
@@ -78,7 +79,7 @@ async function record() {
           description = '';
         "
       >
-        记录异常／报修
+        {{ tr('ui.equipment.text1589') }}
       </ElButton>
     </header>
     <p v-if="error" role="alert">{{ error }}</p>
@@ -94,29 +95,29 @@ async function record() {
       ]"
       ><template #actions="{ row }"
         ><ElButton link type="primary" class="" @click="router.push('/anomalies/' + row.id)">
-          查看／处理
+          {{ tr('ui.equipment.text1590') }}
         </ElButton></template
       ></AppBusinessTable
-    ><AppDialog v-model="open" title="记录来源项目异常" :busy="busy"
+    ><AppDialog v-model="open" :title="tr('ui.equipment.text1591')" :busy="busy"
       ><div class="anomaly-fields">
         <label
-          >来源项目 *<ElSelect v-model="item" filterable
+          >{{ tr('ui.equipment.text1592') }}<ElSelect v-model="item" filterable
             ><ElOption
               v-for="i in items"
               :key="i.id"
               :value="i.id"
               :label="i.name" /></ElSelect></label
         ><label
-          >异常说明 *<ElInput v-model="description" type="textarea" :rows="4" maxlength="4000"
+          >{{ tr('ui.equipment.text1593') }}<ElInput v-model="description" type="textarea" :rows="4" maxlength="4000"
         /></label>
         <p>
-          确认后进入异常详情，可以直接消除、报修或安排维修。当前任务其他未提交内容继续保留在编辑区。
+          {{ tr('ui.equipment.text1594') }}
         </p>
       </div>
       <template #footer
-        ><ElButton class="" :disabled="busy" @click="open = false">取消</ElButton
+        ><ElButton class="" :disabled="busy" @click="open = false">{{ tr('ui.equipment.text0157') }}</ElButton
         ><ElButton class="" :disabled="busy" @click="record" type="primary"
-          >确认异常</ElButton
+          >{{ tr('ui.equipment.text1595') }}</ElButton
         ></template
       ></AppDialog
     >

@@ -15,6 +15,10 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/system")
 public class SystemManagementController {
   private final OrganizationService organizations;
+
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.system.UserListService userLists;
+
   private final UserManagementService users;
   private final RoleManagementService roles;
 
@@ -51,8 +55,19 @@ public class SystemManagementController {
   }
 
   @GetMapping("/users")
-  public Map<String, Object> users() {
-    return users.users();
+  public Object users(@RequestParam Map<String, String> parameters) {
+    return userLists.query(com.windasoft.eam.dto.common.ListQuery.from(parameters));
+  }
+
+  @GetMapping("/users/summary")
+  public Object userSummary() {
+    return userLists.summary();
+  }
+
+  @GetMapping("/users/export")
+  public Object userExport(@RequestParam Map<String, String> parameters) {
+    return Map.of(
+        "data", userLists.export(com.windasoft.eam.dto.common.ListQuery.from(parameters)));
   }
 
   @PostMapping("/users")

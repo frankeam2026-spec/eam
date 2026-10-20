@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElButton } from 'element-plus';
 
 import { computed } from 'vue';
@@ -61,9 +62,9 @@ const nodes = computed(() => {
 <template>
   <aside class="task-organizations">
     <header>
-      <strong>公司与部门</strong><ElButton @click="emit('update:modelValue', '')">全部</ElButton>
+      <strong>{{ tr('ui.equipment.text1596') }}</strong><ElButton @click="emit('update:modelValue', '')">{{ tr('ui.equipment.text0300') }}</ElButton>
     </header>
-    <ElInput v-model="search" placeholder="搜索公司、部门" clearable /><ElTree
+    <ElInput v-model="search" :placeholder="tr('ui.equipment.text1200')" clearable /><ElTree
       :data="nodes"
       node-key="id"
       :props="{ label: 'name', children: 'children' }"
@@ -80,7 +81,7 @@ const nodes = computed(() => {
         ></template
       ></ElTree
     >
-    <p v-if="!nodes.length">暂无可查看的公司或部门</p>
+    <p v-if="!nodes.length">{{ tr('ui.equipment.text1597') }}</p>
   </aside>
 </template>
 <style scoped>

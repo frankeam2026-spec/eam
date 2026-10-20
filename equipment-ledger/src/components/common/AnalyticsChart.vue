@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { init, use, type EChartsType, type EChartsCoreOption } from 'echarts/core';
 import { BarChart, LineChart } from 'echarts/charts';
@@ -63,7 +64,7 @@ onBeforeUnmount(() => {
     class="analytics-chart"
     :style="{ height: `${height || 280}px` }"
     role="img"
-    aria-label="统计图表，点击数据查看明细"
+    :aria-label="tr('ui.equipment.text1297')"
   />
 </template>
 <style scoped>

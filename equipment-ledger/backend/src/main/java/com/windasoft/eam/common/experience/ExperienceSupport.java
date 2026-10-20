@@ -3,14 +3,14 @@ package com.windasoft.eam.common.experience;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.*;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 
 public final class ExperienceSupport {
   public static long id(Object x) {
     try {
       return Long.parseLong(Objects.toString(x, "0"));
     } catch (Exception e) {
-      throw new IllegalArgumentException("编号格式不正确");
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.experience.message0004");
     }
   }
 
@@ -21,7 +21,8 @@ public final class ExperienceSupport {
   public static String required(Map<String, Object> x, String key, int max) {
     var s = text(x, key);
     if (s.isBlank() || s.length() > max)
-      throw new IllegalArgumentException(key + " 必填且不能超过" + max + "字符");
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.experience.message0005", key, max);
     return s;
   }
 
@@ -30,7 +31,8 @@ public final class ExperienceSupport {
   }
 
   public static void conflict() {
-    throw new ResponseStatusException(HttpStatus.CONFLICT, "内容已变化，请重新加载后操作");
+    throw new com.windasoft.eam.common.LocalizedStatusException(
+        HttpStatus.CONFLICT, "server.experience.message0006");
   }
 
   public static List<Map<String, Object>> rows(Object x) {
@@ -38,7 +40,9 @@ public final class ExperienceSupport {
     return values.stream()
         .map(
             v -> {
-              if (!(v instanceof Map<?, ?>)) throw new IllegalArgumentException("明细格式无效");
+              if (!(v instanceof Map<?, ?>))
+                throw new com.windasoft.eam.common.LocalizedArgumentException(
+                    "server.experience.message0007");
               return (Map<String, Object>) v;
             })
         .toList();
@@ -48,7 +52,8 @@ public final class ExperienceSupport {
     try {
       return value == null ? null : json.readValue(value.toString(), Object.class);
     } catch (Exception e) {
-      throw new IllegalArgumentException("保存的数据格式无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.experience.message0008");
     }
   }
 
@@ -61,7 +66,8 @@ public final class ExperienceSupport {
     try {
       return json.writeValueAsString(x);
     } catch (Exception e) {
-      throw new IllegalArgumentException("数据格式无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.experience.message0009");
     }
   }
 
@@ -111,8 +117,8 @@ public final class ExperienceSupport {
                     case "range" -> {
                       String high =
                           values.size() < 2 ? "" : values.get(1).toString().replace('T', ' ');
-                      yield com.windasoft.eam.common.AdvancedFilters.matchesRange(actual, first, high,
-                          actual.matches("-?[0-9]+(\\.[0-9]+)?"));
+                      yield com.windasoft.eam.common.AdvancedFilters.matchesRange(
+                          actual, first, high, actual.matches("-?[0-9]+(\\.[0-9]+)?"));
                     }
                     default -> false;
                   };

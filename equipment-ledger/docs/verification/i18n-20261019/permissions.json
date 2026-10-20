@@ -1,0 +1,26 @@
+[
+  {
+    "case": "anonymous-only-public-translations",
+    "passed": true
+  },
+  {
+    "case": "management-denied-on-every-entry",
+    "passed": true
+  },
+  {
+    "case": "single-menu-permission-allows-management",
+    "passed": true
+  },
+  {
+    "case": "partial-package-export-preserves-overrides",
+    "passed": true
+  },
+  {
+    "case": "preferences-isolated-between-accounts",
+    "passed": true
+  },
+  {
+    "case": "preference-survives-new-session",
+    "passed": true
+  }
+]

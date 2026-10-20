@@ -15,6 +15,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+  private String validationMessage(String value) {
+    if (value != null && value.matches("\\{[a-zA-Z0-9_.]+}"))
+      return MessageContext.text(value.substring(1, value.length() - 1));
+    return value;
+  }
+
   private static final org.slf4j.Logger log =
       org.slf4j.LoggerFactory.getLogger(ApiExceptionHandler.class);
 
@@ -28,7 +34,16 @@ public class ApiExceptionHandler {
           default -> "REQUEST_ERROR";
         };
     return ResponseEntity.status(e.getStatusCode())
-        .body(Map.of("code", code, "message", e.getReason() == null ? "请求无法完成" : e.getReason()));
+        .body(
+            Map.of(
+                "code",
+                code,
+                "message",
+                e instanceof LocalizedStatusException localized
+                    ? MessageContext.render(localized.messageRef())
+                    : e.getReason() == null
+                        ? com.windasoft.eam.common.MessageContext.text("server.common.message0070")
+                        : e.getReason()));
   }
 
   @ExceptionHandler(IllegalArgumentException.class)
@@ -39,7 +54,11 @@ public class ApiExceptionHandler {
                 "code",
                 "INVALID_ARGUMENT",
                 "message",
-                e.getMessage() == null ? "请求参数不正确" : e.getMessage()));
+                e instanceof LocalizedArgumentException localized
+                    ? MessageContext.render(localized.messageRef())
+                    : e.getMessage() == null
+                        ? com.windasoft.eam.common.MessageContext.text("server.common.message0071")
+                        : e.getMessage()));
   }
 
   @ExceptionHandler({
@@ -49,20 +68,35 @@ public class ApiExceptionHandler {
   })
   ResponseEntity<?> malformedRequest(Exception e) {
     return ResponseEntity.badRequest()
-        .body(Map.of("code", "INVALID_ARGUMENT", "message", "请求格式或参数类型不正确"));
+        .body(
+            Map.of(
+                "code",
+                "INVALID_ARGUMENT",
+                "message",
+                com.windasoft.eam.common.MessageContext.text("server.common.message0072")));
   }
 
   @ExceptionHandler(DataIntegrityViolationException.class)
   ResponseEntity<?> dataConflict(DataIntegrityViolationException e) {
     log.warn("API database constraint conflict", e);
     return ResponseEntity.status(HttpStatus.CONFLICT)
-        .body(Map.of("code", "DATA_CONFLICT", "message", "数据存在重复或关联冲突，请检查后重试"));
+        .body(
+            Map.of(
+                "code",
+                "DATA_CONFLICT",
+                "message",
+                com.windasoft.eam.common.MessageContext.text("server.common.message0073")));
   }
 
   @ExceptionHandler(MaxUploadSizeExceededException.class)
   ResponseEntity<?> uploadLimit(MaxUploadSizeExceededException e) {
     return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-        .body(Map.of("code", "UPLOAD_TOO_LARGE", "message", "附件超过允许的大小，请缩小文件后重试"));
+        .body(
+            Map.of(
+                "code",
+                "UPLOAD_TOO_LARGE",
+                "message",
+                com.windasoft.eam.common.MessageContext.text("server.common.message0074")));
   }
 
   @ExceptionHandler(FieldValidationException.class)
@@ -73,9 +107,15 @@ public class ApiExceptionHandler {
                 "code",
                 "VALIDATION_ERROR",
                 "message",
-                e.getMessage(),
+                e.messageRef() == null
+                    ? validationMessage(e.getMessage())
+                    : MessageContext.render(e.messageRef()),
                 "fieldErrors",
-                Map.of(e.field(), e.getMessage())));
+                Map.of(
+                    e.field(),
+                    e.messageRef() == null
+                        ? validationMessage(e.getMessage())
+                        : MessageContext.render(e.messageRef()))));
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -87,7 +127,9 @@ public class ApiExceptionHandler {
             x ->
                 errors.putIfAbsent(
                     x.getField(),
-                    x.getDefaultMessage() == null ? "该字段不正确" : x.getDefaultMessage()));
+                    x.getDefaultMessage() == null
+                        ? com.windasoft.eam.common.MessageContext.text("server.common.message0075")
+                        : validationMessage(x.getDefaultMessage())));
     return ResponseEntity.badRequest()
         .body(
             Map.of(
@@ -103,6 +145,11 @@ public class ApiExceptionHandler {
   ResponseEntity<?> unexpected(Exception e) {
     log.error("API request failed", e);
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-        .body(Map.of("code", "INTERNAL_ERROR", "message", "系统暂时无法处理请求"));
+        .body(
+            Map.of(
+                "code",
+                "INTERNAL_ERROR",
+                "message",
+                com.windasoft.eam.common.MessageContext.text("server.common.message0076")));
   }
 }

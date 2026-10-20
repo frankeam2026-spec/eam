@@ -16,8 +16,9 @@ public class InspectionScheduler {
   @Scheduled(fixedDelay = 60000, initialDelay = 10000)
   public void generate() {
     for (var p : service.generationTargets()) {
-      long tenant = InspectionService.number(p.get("tenant_id")),
-          id = InspectionService.number(p.get("id"));
+      long
+          tenant = com.windasoft.eam.common.inspection.InspectionSupport.number(p.get("tenant_id")),
+          id = com.windasoft.eam.common.inspection.InspectionSupport.number(p.get("id"));
       try {
         service.generate(tenant, id);
       } catch (Exception e) {

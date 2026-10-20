@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 import { computed, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
@@ -35,8 +36,8 @@ export function useOverviewCustomization() {
       layout.value.blocks.map((block, index) => [
         `blocks.${index}.title`,
         [
-          { required: true, whitespace: true, message: '请输入区块标题', trigger: 'blur' },
-          { max: 80, message: '标题不能超过80个字', trigger: 'blur' },
+          { required: true, whitespace: true, get message() { return tr('ui.equipment.text1555'); }, trigger: 'blur' },
+          { max: 80, get message() { return tr('ui.equipment.text1614'); }, trigger: 'blur' },
         ],
       ]),
     ),
@@ -68,7 +69,7 @@ export function useOverviewCustomization() {
       apply(await overviewApi.load(templateId));
       return true;
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '首页配置加载失败';
+      error.value = e instanceof Error ? e.message : tr('ui.equipment.text1615');
       return false;
     } finally {
       initializing.value = false;
@@ -100,10 +101,10 @@ export function useOverviewCustomization() {
     try {
       if (!(await form.value?.validate().catch(() => false))) return false;
       apply(await overviewApi.save(state.value, layout.value));
-      ElMessage.success('个人首页已保存');
+      ElMessage.success(tr('ui.equipment.text1616'));
       return true;
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '首页保存失败';
+      error.value = e instanceof Error ? e.message : tr('ui.equipment.text1617');
       return false;
     } finally {
       saving.value = false;

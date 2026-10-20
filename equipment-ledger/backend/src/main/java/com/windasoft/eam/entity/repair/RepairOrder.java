@@ -1,6 +1,7 @@
 package com.windasoft.eam.entity.repair;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.Version;
@@ -18,6 +19,7 @@ public class RepairOrder {
   private Long companyOrgId;
   private Long faultTypeId;
   private Long faultCauseId;
+  private Long processingResultId;
   private LocalDateTime acceptedAt;
   private Long acceptedOwnerId;
   private Integer acceptanceScore;
@@ -29,8 +31,13 @@ public class RepairOrder {
   private String repairMethod;
   private String processingResult;
   private String preventiveMeasures;
+
+  @TableField(exist = false)
   private String collaboratorsJson;
+
+  @com.baomidou.mybatisplus.annotation.TableField(exist = false)
   private String processAttachmentsJson;
+
   private String outsourceVendor;
   private String orderNo;
   private String equipmentCode;
@@ -47,7 +54,22 @@ public class RepairOrder {
   private LocalDateTime reportedAt;
   private LocalDateTime completedAt;
   private String acceptanceComment;
+
+  @com.baomidou.mybatisplus.annotation.TableField(exist = false)
   private String attachmentsJson;
+
   @Version private Integer rowVersion;
   private Integer deleted;
+
+  @TableField(exist = false)
+  private java.util.Map<String, Object> customFields;
+
+  @TableField(exist = false)
+  private java.util.Map<String, String> customFieldLabels;
+
+  @TableField(exist = false)
+  private Integer customSchemaVersion;
+
+  @TableField(exist = false)
+  private String equipmentCategoryId;
 }

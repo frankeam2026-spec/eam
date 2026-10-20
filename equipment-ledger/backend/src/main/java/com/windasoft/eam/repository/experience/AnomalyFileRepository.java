@@ -20,7 +20,8 @@ public class AnomalyFileRepository {
 
   public Path path(String source, String id, String extension) {
     if (!Set.of("anomalies", "maintenance", "inspection").contains(source))
-      throw new IllegalArgumentException("附件来源无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.experience.message0001");
     return directory.resolve(source).resolve(id + extension).normalize();
   }
 
@@ -54,7 +55,8 @@ public class AnomalyFileRepository {
 
   public List<Map<String, Object>> findSource(long tenantId, Object fileId, String table) {
     if (!Set.of("eam_anomaly_file", "eam_maintenance_file", "eam_inspection_file").contains(table))
-      throw new IllegalArgumentException("附件来源无效");
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.experience.message0001");
     return db.queryForList(
         "SELECT name,extension FROM " + table + " WHERE tenant_id=? AND id=?", tenantId, fileId);
   }

@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../../i18n';
+
 import { ElTag, ElButton, ElTooltip } from 'element-plus';
 import { conditionLabel } from '../../query/advancedFilters';
 import type { FilterCondition, FilterField } from '../../query/advancedFilters';
@@ -12,7 +13,7 @@ const emit = defineEmits<{
   <div
     v-if="conditions.length || $slots.leading"
     class="applied-filter-chips"
-    aria-label="已应用筛选条件"
+    :aria-label="tr('ui.equipment.text1355')"
   >
     <slot name="leading" />
     <ElTag
@@ -37,7 +38,7 @@ const emit = defineEmits<{
       <template v-else>{{ conditionLabel(condition, fields) }}</template>
     </ElTag>
     <ElButton v-if="conditions.length" link type="primary" @click="emit('change', [])"
-      >清空筛选</ElButton
+      >{{ tr('ui.equipment.text1356') }}</ElButton
     >
   </div>
 </template>

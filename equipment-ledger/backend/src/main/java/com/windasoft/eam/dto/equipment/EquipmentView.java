@@ -56,4 +56,7 @@ public record EquipmentView(
     JsonNode images,
     JsonNode documents,
     List<Map<String, Object>> children,
-    List<Map<String, Object>> relatedSpares) {}
+    List<Map<String, Object>> relatedSpares,
+    Map<String, Object> customFields,
+    Map<String, String> customFieldLabels,
+    int customSchemaVersion) {}

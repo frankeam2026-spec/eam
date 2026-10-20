@@ -51,9 +51,11 @@ public class LabelTemplateService {
     permissions.require("equipmentTag", "编辑");
     var row = require(id);
     assign(row, f);
-    if (f.rowVersion() == null) throw new IllegalArgumentException("缺少版本号");
+    if (f.rowVersion() == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0066");
     row.setRowVersion(f.rowVersion());
-    if (repository.update(row) != 1) throw new IllegalArgumentException("模板已被修改，请重新打开");
+    if (repository.update(row) != 1)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0067");
     return Map.of("data", view(require(id)));
   }
 
@@ -73,7 +75,9 @@ public class LabelTemplateService {
             .map(
                 key -> {
                   var e = repository.equipment(auth.tenantId(), key);
-                  if (e == null) throw new IllegalArgumentException("设备不存在");
+                  if (e == null)
+                    throw new com.windasoft.eam.common.LocalizedArgumentException(
+                        "server.common.message0064");
                   permissions.checkEquipment(e, "查看");
                   return Map.of(
                       "name",
@@ -93,7 +97,8 @@ public class LabelTemplateService {
 
   public LabelTemplate require(Long id) {
     var row = repository.find(auth.tenantId(), id);
-    if (row == null) throw new IllegalArgumentException("模板不存在");
+    if (row == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0068");
     return row;
   }
 
@@ -103,7 +108,7 @@ public class LabelTemplateService {
           f.layout(), f.widthMm().doubleValue(), f.heightMm().doubleValue());
     else validator.validateElements(f);
     if (repository.nameCount(auth.tenantId(), f.name().trim(), row.getId()) > 0)
-      throw new IllegalArgumentException("模板名称已存在");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0069");
     row.setName(f.name().trim());
     row.setWidthMm(f.widthMm());
     row.setHeightMm(f.heightMm());

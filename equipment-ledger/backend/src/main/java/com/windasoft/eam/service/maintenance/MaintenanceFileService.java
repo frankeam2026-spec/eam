@@ -12,27 +12,29 @@ public class MaintenanceFileService {
   private final AuthContext auth;
   private final PermissionService permissions;
   private final MaintenanceFileRepository repository;
-  private final MaintenanceService service;
+  private final MaintenanceListService lists;
 
   public MaintenanceFileService(
       AuthContext auth,
       PermissionService permissions,
       MaintenanceFileRepository repository,
-      MaintenanceService service) {
+      MaintenanceListService lists) {
     this.auth = auth;
     this.permissions = permissions;
     this.repository = repository;
-    this.service = service;
+    this.lists = lists;
   }
 
   public Object upload(MaintenanceUpload file) throws Exception {
-    MaintenanceService.require(permissions.anyMaintenance("查看"), "没有保养访问权限");
-    MaintenanceService.require(!file.empty() && file.size() <= 20L * 1024 * 1024, "请选择不超过20MB的附件");
+    com.windasoft.eam.common.maintenance.MaintenanceSupport.require(
+        permissions.anyMaintenance("查看"), "没有保养访问权限");
+    com.windasoft.eam.common.maintenance.MaintenanceSupport.require(
+        !file.empty() && file.size() <= 20L * 1024 * 1024, "请选择不超过20MB的附件");
     String name = Objects.toString(file.name(), "附件");
     name = Path.of(name).getFileName().toString();
     int dot = name.lastIndexOf('.');
     String ext = dot < 0 ? "" : name.substring(dot).toLowerCase();
-    MaintenanceService.require(
+    com.windasoft.eam.common.maintenance.MaintenanceSupport.require(
         ext.matches("\\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv)"), "不支持该附件格式");
     String id = UUID.randomUUID().toString();
     repository.store(id, ext, file.content());
@@ -54,29 +56,19 @@ public class MaintenanceFileService {
   }
 
   public MaintenanceDownload download(String id) {
-    MaintenanceService.require(id.matches("[0-9a-f-]{36}"), "附件不存在");
+    com.windasoft.eam.common.maintenance.MaintenanceSupport.require(
+        id.matches("[0-9a-f-]{36}"), "附件不存在");
     var files = repository.find(auth.tenantId(), id);
-    MaintenanceService.require(!files.isEmpty(), "附件不存在");
+    com.windasoft.eam.common.maintenance.MaintenanceSupport.require(!files.isEmpty(), "附件不存在");
     var f = files.getFirst();
-    boolean allowed = MaintenanceService.number(f.get("user_id")) == auth.userId();
-    if (!allowed) {
-      for (var t : service.tasks())
-        if (service.encode(t).contains(id)) {
-          allowed = true;
-          break;
-        }
-    }
-    if (!allowed) {
-      for (String kind : List.of("standards", "plans"))
-        if (permissions.allowed(PermissionService.maintenanceMenu(kind), "查看")
-            && service.definitions(kind).stream().anyMatch(d -> service.encode(d).contains(id))) {
-          allowed = true;
-          break;
-        }
-    }
-    if (!allowed) MaintenanceService.deny();
+    boolean allowed =
+        com.windasoft.eam.common.maintenance.MaintenanceSupport.number(f.get("user_id"))
+            == auth.userId();
+    if (!allowed) allowed = lists.hasFile(id);
+    if (!allowed) com.windasoft.eam.common.maintenance.MaintenanceSupport.deny();
     var file = repository.path(id, Objects.toString(f.get("extension")));
-    MaintenanceService.require(Files.isRegularFile(file), "附件不存在");
+    com.windasoft.eam.common.maintenance.MaintenanceSupport.require(
+        Files.isRegularFile(file), "附件不存在");
     String ext = Objects.toString(f.get("extension"));
     String type =
         switch (ext) {

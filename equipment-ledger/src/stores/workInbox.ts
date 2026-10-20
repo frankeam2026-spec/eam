@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import { workInboxSummary, readWorkInbox, type InboxItem, type InboxSummary } from '../api';
@@ -14,7 +15,7 @@ export const useWorkInboxStore = defineStore('work-inbox', () => {
         summary.value = await workInboxSummary();
         error.value = '';
       } catch (e) {
-        error.value = e instanceof Error ? e.message : '收件箱加载失败';
+        error.value = e instanceof Error ? e.message : tr('ui.equipment.text1818');
       }
     })().finally(() => {
       pending = undefined;

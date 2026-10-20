@@ -1,0 +1,78 @@
+name: Engineering quality
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: equipment-ledger
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: equipment-ledger/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: frontend-report
+          path: equipment-ledger/test-results/
+          if-no-files-found: ignore
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - run: mvn -B -f equipment-ledger/backend/pom.xml test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-tests
+          path: equipment-ledger/backend/target/surefire-reports/
+  mysql-integration:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: eam_engineering_test
+          MYSQL_USER: eam
+          MYSQL_PASSWORD: engineering-test-only
+          MYSQL_ROOT_PASSWORD: isolated-test-only
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -pisolated-test-only"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+    env:
+      EAM_ENGINEERING_DB_URL: jdbc:mysql://127.0.0.1:3306/eam_engineering_test?connectionTimeZone=UTC
+      EAM_ENGINEERING_DB_USER: eam
+      EAM_ENGINEERING_DB_PASSWORD: engineering-test-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - run: mvn -B -f equipment-ledger/backend/pom.xml '-Dtest=EngineeringQueryMySqlIT,SelectorMySqlIT' test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mysql-integration-tests
+          path: |
+            equipment-ledger/backend/target/surefire-reports/
+            equipment-ledger/backend/target/engineering-query-plans.jsonl
+            equipment-ledger/backend/target/selector-query-plans.jsonl

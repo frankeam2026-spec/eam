@@ -15,6 +15,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class EquipmentWriteRepository {
   private final EquipmentMapper equipment;
+  private final EquipmentMediaRepository media;
   private final BaseItemMapper base;
   private final OrgUnitMapper orgs;
   private final SystemUserMapper users;
@@ -23,12 +24,14 @@ public class EquipmentWriteRepository {
 
   public EquipmentWriteRepository(
       EquipmentMapper equipment,
+      EquipmentMediaRepository media,
       BaseItemMapper base,
       OrgUnitMapper orgs,
       SystemUserMapper users,
       NumberCounterMapper counter,
       JdbcTemplate db) {
     this.equipment = equipment;
+    this.media = media;
     this.base = base;
     this.orgs = orgs;
     this.users = users;
@@ -37,11 +40,23 @@ public class EquipmentWriteRepository {
   }
 
   public int insert(Equipment e) {
+    int changed = equipment.insert(e);
+    if (changed > 0) media.save(e);
+    return changed;
+  }
+
+  public Map<String, String> importCodeKeys(Collection<String> codes) {
+    return com.windasoft.eam.repository.imports.ImportCodeIdentity.keys(db, codes);
+  }
+
+  public int insertImported(Equipment e) {
     return equipment.insert(e);
   }
 
   public int update(Equipment e) {
-    return equipment.updateById(e);
+    int changed = equipment.updateById(e);
+    if (changed > 0) media.save(e);
+    return changed;
   }
 
   public int delete(Long id) {
@@ -49,10 +64,11 @@ public class EquipmentWriteRepository {
   }
 
   public Equipment find(long tenant, Long id) {
-    return equipment.selectOne(
-        new LambdaQueryWrapper<Equipment>()
-            .eq(Equipment::getTenantId, tenant)
-            .eq(Equipment::getId, id));
+    return media.hydrate(
+        equipment.selectOne(
+            new LambdaQueryWrapper<Equipment>()
+                .eq(Equipment::getTenantId, tenant)
+                .eq(Equipment::getId, id)));
   }
 
   public long countCode(long tenant, String code, Long currentId) {
@@ -71,13 +87,14 @@ public class EquipmentWriteRepository {
   public long maxEquipmentNumber(String year) {
     String prefix = "EQ-" + year + "-";
     // The counter is shared by this database; include historical rows when advancing it.
-    Long maximum = db.queryForObject(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(equipment_code, ?) AS UNSIGNED)),0)"
-            + " FROM eam_equipment WHERE equipment_code LIKE ? AND equipment_code REGEXP ?",
-        Long.class,
-        prefix.length() + 1,
-        prefix + "%",
-        "^" + prefix + "[0-9]+$");
+    Long maximum =
+        db.queryForObject(
+            "SELECT COALESCE(MAX(CAST(SUBSTRING(equipment_code, ?) AS UNSIGNED)),0)"
+                + " FROM eam_equipment WHERE equipment_code LIKE ? AND equipment_code REGEXP ?",
+            Long.class,
+            prefix.length() + 1,
+            prefix + "%",
+            "^" + prefix + "[0-9]+$");
     return maximum == null ? 0L : maximum;
   }
 
@@ -86,14 +103,16 @@ public class EquipmentWriteRepository {
   }
 
   public BaseItem baseItem(Long id) {
-    return base.selectById(id);
+    return base.selectOne(
+        new LambdaQueryWrapper<BaseItem>().eq(BaseItem::getId, id).last("FOR SHARE"));
   }
 
   public BaseItem baseItemInTenant(long tenant, Long id) {
     return base.selectOne(
         new LambdaQueryWrapper<BaseItem>()
             .eq(BaseItem::getTenantId, tenant)
-            .eq(BaseItem::getId, id));
+            .eq(BaseItem::getId, id)
+            .last("FOR SHARE"));
   }
 
   public BaseItem activeBase(long tenant, String id, String type) {
@@ -102,7 +121,8 @@ public class EquipmentWriteRepository {
             .eq(BaseItem::getTenantId, tenant)
             .eq(BaseItem::getId, id)
             .eq(BaseItem::getItemType, type)
-            .eq(BaseItem::getStatus, 1));
+            .eq(BaseItem::getStatus, 1)
+            .last("FOR SHARE"));
   }
 
   public OrgUnit activeDepartment(long tenant, String id) {

@@ -63,8 +63,8 @@ public class RequisitionRepository {
 
   public List<Map<String, Object>> loadTask(
       long tenantId, Object taskId, String table, String kind, boolean lock) {
-    if (!(Set.of("eam_maintenance_task", "eam_inspection_task").contains(table)))
-      throw new IllegalArgumentException("未知任务关联类型");
+    if (!(Set.of("v_maintenance_task", "v_inspection_task").contains(table)))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0008");
     return db.queryForList(
         "SELECT * FROM "
             + table
@@ -90,14 +90,22 @@ public class RequisitionRepository {
 
   public int insertWarehouseTodo(
       long recordId, long tenantId, Object recipient, Object requestId, Object value) {
-    return db.update(
-        "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
-            + " VALUES(?,?,?,?,'requisitions','待出库',?,1)",
-        recordId,
+    int count =
+        db.update(
+            "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
+                + " VALUES(?,?,?,?,'requisitions','待出库',?,1)",
+            recordId,
+            tenantId,
+            recipient,
+            requestId,
+            value);
+    db.update(
+        "UPDATE inv_inbox SET message_key=?,message_args=? WHERE tenant_id=? AND id=?",
+        com.windasoft.eam.common.NotificationMessages.key("待出库"),
+        com.windasoft.eam.common.NotificationMessages.arguments("待出库", value),
         tenantId,
-        recipient,
-        requestId,
-        value);
+        recordId);
+    return count;
   }
 
   public int completeWarehouseTodos(long tenantId, Object requestId) {
@@ -131,7 +139,7 @@ public class RequisitionRepository {
       Object action,
       String table) {
     if (!(Set.of("eam_maintenance_event", "eam_inspection_event").contains(table)))
-      throw new IllegalArgumentException("未知任务关联类型");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0008");
     return db.update(
         "INSERT INTO "
             + table
@@ -233,15 +241,6 @@ public class RequisitionRepository {
             + " document_id=? ORDER BY created_at,id",
         tenantId,
         requestId);
-  }
-
-  public List<Map<String, Object>> searchRequests(long tenantId) {
-    return db.queryForList(
-        "SELECT r.*,DATE_FORMAT(r.created_at,'%Y-%m-%d %H:%i:%s') fmt_created_at,w.name"
-            + " warehouse_name FROM inv_requisition r JOIN inv_warehouse w ON"
-            + " w.tenant_id=r.tenant_id AND w.id=r.warehouse_id WHERE r.tenant_id=? AND"
-            + " r.deleted=0 ORDER BY r.created_at DESC,r.id DESC",
-        tenantId);
   }
 
   public BigDecimal sumIssued(long tenantId, Object id) {
@@ -580,12 +579,13 @@ public class RequisitionRepository {
     if (!(Map.of(
             "eam_repair_order",
             "department_org_id",
-            "eam_maintenance_task",
+            "v_maintenance_task",
             "department_id",
-            "eam_inspection_task",
+            "v_inspection_task",
             "department_id")
         .getOrDefault(table, "")
-        .equals(field))) throw new IllegalArgumentException("未知任务关联类型");
+        .equals(field)))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0008");
     return db.queryForObject(
         "SELECT " + field + " FROM " + table + " WHERE tenant_id=? AND id=?",
         Long.class,
@@ -612,14 +612,22 @@ public class RequisitionRepository {
 
   public int insertApplicantNotice(
       long recordId, long tenantId, Object applicantId, Object requestId, Object value) {
-    return db.update(
-        "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
-            + " VALUES(?,?,?,?,'requisitions','出库完成',?,0)",
-        recordId,
+    int count =
+        db.update(
+            "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
+                + " VALUES(?,?,?,?,'requisitions','出库完成',?,0)",
+            recordId,
+            tenantId,
+            applicantId,
+            requestId,
+            value);
+    db.update(
+        "UPDATE inv_inbox SET message_key=?,message_args=? WHERE tenant_id=? AND id=?",
+        com.windasoft.eam.common.NotificationMessages.key("出库完成"),
+        com.windasoft.eam.common.NotificationMessages.arguments("出库完成", value),
         tenantId,
-        applicantId,
-        requestId,
-        value);
+        recordId);
+    return count;
   }
 
   public List<Map<String, Object>> lockReservationsForClose(long tenantId, Object requestId) {
@@ -654,13 +662,21 @@ public class RequisitionRepository {
 
   public int insertCloseNotice(
       long recordId, long tenantId, Object applicantId, Object requestId, Object value) {
-    return db.update(
-        "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
-            + " VALUES(?,?,?,?,'requisitions','需求已关闭',?,0)",
-        recordId,
+    int count =
+        db.update(
+            "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
+                + " VALUES(?,?,?,?,'requisitions','需求已关闭',?,0)",
+            recordId,
+            tenantId,
+            applicantId,
+            requestId,
+            value);
+    db.update(
+        "UPDATE inv_inbox SET message_key=?,message_args=? WHERE tenant_id=? AND id=?",
+        com.windasoft.eam.common.NotificationMessages.key("需求已关闭"),
+        com.windasoft.eam.common.NotificationMessages.arguments("需求已关闭", value),
         tenantId,
-        applicantId,
-        requestId,
-        value);
+        recordId);
+    return count;
   }
 }

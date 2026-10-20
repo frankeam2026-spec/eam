@@ -1,4 +1,5 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
 import AppFilePicker from './common/AppFilePicker.vue';
 import { ElButton } from 'element-plus';
 
@@ -49,7 +50,7 @@ async function load() {
     saved.value = { ...data };
     markSaved();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '配置加载失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text0924');
   } finally {
     loading.value = false;
   }
@@ -85,11 +86,11 @@ async function upload(files: File[], kind: 'logo' | 'background') {
   if (!file || !current.value || busy.value) return;
   const limit = kind === 'logo' ? 2 : 10;
   if (!['image/png', 'image/jpeg'].includes(file.type)) {
-    ElMessage.error('请选择PNG或JPG图片');
+    ElMessage.error(tr('ui.equipment.text0925'));
     return;
   }
   if (file.size > limit * 1024 * 1024) {
-    ElMessage.error(`图片不能超过${limit}MB`);
+    ElMessage.error(tr('server.system.message0012',{p0:limit}));
     return;
   }
   uploading.value = kind;
@@ -105,14 +106,14 @@ async function upload(files: File[], kind: 'logo' | 'background') {
       current.value.backgroundUrl = data.url;
     }
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '上传失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text0926');
   } finally {
     uploading.value = '';
   }
 }
 async function save() {
   if (!current.value || busy.value) return;
-  nameError.value = current.value.systemName.trim() ? '' : '请输入系统名称';
+  nameError.value = current.value.systemName.trim() ? '' : tr('ui.equipment.text0927');
   if (nameError.value) {
     document.querySelector<HTMLInputElement>('.personalization-name input')?.focus();
     return;
@@ -126,9 +127,9 @@ async function save() {
     store.apply(data);
     discardStaged();
     markSaved();
-    ElMessage.success('个性化设置已保存');
+    ElMessage.success(tr('ui.equipment.text0928'));
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '保存失败';
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text0195');
     if (e instanceof ApiError && e.fieldErrors.systemName) {
       nameError.value = e.fieldErrors.systemName;
       error.value = '';
@@ -145,16 +146,16 @@ onMounted(load);
       <div v-if="error" class="settings-error" role="alert">
         {{ error
         }}<ElButton v-if="!current" class="text-action" @click="load" type="primary" link
-          >重试</ElButton
+          >{{ tr('ui.equipment.text0299') }}</ElButton
         >
       </div>
       <section v-if="current" class="settings-card">
         <header>
           <div>
-            <h3>系统品牌</h3>
-            <p>集团、公司和部门共用，保存后统一生效。</p>
+            <h3>{{ tr('ui.equipment.text0929') }}</h3>
+            <p>{{ tr('ui.equipment.text0930') }}</p>
           </div>
-          <ElButton class="" :disabled="busy" @click="reset">恢复默认</ElButton>
+          <ElButton class="" :disabled="busy" @click="reset">{{ tr('ui.equipment.text0553') }}</ElButton>
         </header>
         <ElForm
           class="settings-fields"
@@ -170,7 +171,7 @@ onMounted(load);
           <AppFormField
             class="personalization-name"
             prop="systemName"
-            label="系统名称"
+            :label="tr('ui.equipment.text0931')"
             :error="nameError"
             required
           >
@@ -180,20 +181,20 @@ onMounted(load);
               maxlength="30"
               show-word-limit
               :disabled="busy"
-              placeholder="请输入系统名称"
+              :placeholder="tr('ui.equipment.text0927')"
               @input="nameError = ''"
             />
           </AppFormField>
           <div class="setting-row">
-            <label>系统Logo</label>
+            <label>{{ tr('ui.equipment.text0932') }}</label>
             <div class="field-content">
               <div class="image-setting">
-                <div class="logo-frame"><img :src="current.logoUrl" alt="当前系统Logo" /></div>
+                <div class="logo-frame"><img :src="current.logoUrl" :alt="tr('ui.equipment.text0933')" /></div>
                 <div class="image-actions">
                   <div class="button-row">
                     <ElButton class="" :disabled="busy" @click="logoPicker?.open()"
                       ><AppIcon name="Upload" />{{
-                        uploading === 'logo' ? '上传中…' : current.logoFileId ? '替换' : '上传'
+                        uploading === 'logo' ? tr('ui.equipment.text0134') : current.logoFileId ? tr('ui.equipment.text0934') : tr('ui.equipment.text0135')
                       }}</ElButton
                     ><ElButton
                       v-if="current.logoFileId"
@@ -203,11 +204,11 @@ onMounted(load);
                       type="primary"
                       link
                     >
-                      移除
+                      {{ tr('ui.equipment.text0151') }}
                     </ElButton>
                   </div>
-                  <small>PNG、JPG，最大2MB；建议使用透明背景的方形Logo。</small
-                  ><small v-if="!current.logoFileId">当前使用默认Logo</small>
+                  <small>{{ tr('ui.equipment.text0935') }}</small
+                  ><small v-if="!current.logoFileId">{{ tr('ui.equipment.text0936') }}</small>
                 </div>
               </div>
               <AppFilePicker
@@ -219,21 +220,21 @@ onMounted(load);
             </div>
           </div>
           <div class="setting-row">
-            <label>登录页背景</label>
+            <label>{{ tr('ui.equipment.text0937') }}</label>
             <div class="field-content">
               <div class="image-setting">
                 <div class="background-frame">
-                  <img :src="current.backgroundUrl" alt="当前登录背景图片" />
+                  <img :src="current.backgroundUrl" :alt="tr('ui.equipment.text0938')" />
                 </div>
                 <div class="image-actions">
                   <div class="button-row">
                     <ElButton class="" :disabled="busy" @click="backgroundPicker?.open()"
                       ><AppIcon name="Upload" />{{
                         uploading === 'background'
-                          ? '上传中…'
+                          ? tr('ui.equipment.text0134')
                           : current.backgroundFileId
-                            ? '替换'
-                            : '上传'
+                            ? tr('ui.equipment.text0934')
+                            : tr('ui.equipment.text0135')
                       }}</ElButton
                     ><ElButton
                       v-if="current.backgroundFileId"
@@ -243,11 +244,11 @@ onMounted(load);
                       type="primary"
                       link
                     >
-                      移除
+                      {{ tr('ui.equipment.text0151') }}
                     </ElButton>
                   </div>
-                  <small>PNG、JPG，最大10MB；建议1920×1080，图片等比例铺满。</small
-                  ><small v-if="!current.backgroundFileId">当前使用默认背景</small>
+                  <small>{{ tr('ui.equipment.text0939') }}</small
+                  ><small v-if="!current.backgroundFileId">{{ tr('ui.equipment.text0940') }}</small>
                 </div>
               </div>
               <AppFilePicker
@@ -259,7 +260,7 @@ onMounted(load);
             </div>
           </div>
           <div class="setting-row">
-            <label>背景显示位置</label>
+            <label>{{ tr('ui.equipment.text0941') }}</label>
             <div class="field-content">
               <ElSelect v-model="current.backgroundPosition" :disabled="busy"
                 ><ElOption
@@ -273,16 +274,16 @@ onMounted(load);
                   :key="p.value"
                   :value="p.value"
                   :label="p.label" /></ElSelect
-              ><small>调整图片裁切位置，保持登录表单清晰可见。</small>
+              ><small>{{ tr('ui.equipment.text0942') }}</small>
             </div>
           </div>
         </ElForm>
       </section>
     </div>
     <AppFormFooter
-      ><ElButton class="" :disabled="busy || !current" @click="cancel">取消</ElButton
+      ><ElButton class="" :disabled="busy || !current" @click="cancel">{{ tr('ui.equipment.text0157') }}</ElButton
       ><ElButton class="" :disabled="busy || !current || !dirty" @click="save" type="primary">{{
-        saving ? '保存中…' : '保存'
+        saving ? tr('ui.equipment.text0158') : tr('ui.equipment.text0159')
       }}</ElButton></AppFormFooter
     >
   </div>

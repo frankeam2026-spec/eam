@@ -17,16 +17,18 @@ public class ReceiptController {
   public Object list(
       @RequestParam(defaultValue = "") String q,
       @RequestParam(defaultValue = "{}") String filters,
+      @RequestParam(defaultValue = "[]") String conditions,
       @RequestParam(defaultValue = "1") int page,
       @RequestParam(defaultValue = "10") int size) {
-    return service.list(q, filters, page, size);
+    return service.list(q, filters, page, size, conditions);
   }
 
   @GetMapping("/export")
   public Object export(
       @RequestParam(defaultValue = "") String q,
-      @RequestParam(defaultValue = "{}") String filters) {
-    return Map.of("data", service.export(q, filters));
+      @RequestParam(defaultValue = "{}") String filters,
+      @RequestParam(defaultValue = "[]") String conditions) {
+    return Map.of("data", service.export(q, filters, conditions));
   }
 
   @GetMapping("/choices")

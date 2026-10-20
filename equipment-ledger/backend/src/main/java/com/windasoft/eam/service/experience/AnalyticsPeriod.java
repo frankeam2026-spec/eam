@@ -62,7 +62,8 @@ public record AnalyticsPeriod(LocalDate from, LocalDate to, LocalDateTime asOf, 
           from = LocalDate.parse(text(source, "from"));
           to = LocalDate.parse(text(source, "to"));
         } catch (Exception e) {
-          throw new IllegalArgumentException("请选择完整的日期区间");
+          throw new com.windasoft.eam.common.LocalizedArgumentException(
+              "server.experience.message0010");
         }
       }
     }

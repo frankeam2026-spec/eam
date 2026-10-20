@@ -1,0 +1,866 @@
+{
+  "recordedAt": "2026-10-17T13:51:57+08:00",
+  "scope": "第一、二批工程改造，当前工作区",
+  "backend": {
+    "suites": 24,
+    "tests": 141,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      {
+        "suite": "com.windasoft.eam.service.system.OrganizationScopeServiceTest",
+        "name": "querySelectionIncludesChildCompaniesWithoutChangingPermissionExpansion",
+        "seconds": "0.004",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "inventoryMaterialAndReceiptQueriesPageBeyondTenThousand",
+        "seconds": "1.914",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "outboundUnionKeepsLegacyIdentityAndScope",
+        "seconds": "0.544",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "maintenanceAcceptanceCountAndPageAgreeForStringAndNumericParticipants",
+        "seconds": "0.521",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "maintenanceAndInspectionQueryPlansAreRecordedForReview",
+        "seconds": "1.138",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "typedExtensionExistsDoesNotDuplicateMultiSelectAndPreservesZero",
+        "seconds": "0.523",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "inspectionPagesAndParticipantsBeyondTenThousand",
+        "seconds": "1.638",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "maintenanceExecuteSubmitReturnAndAcceptPreserveVersionsAndStock",
+        "seconds": "0.555",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "queryUsesTheRegisteredTenantKindIndex",
+        "seconds": "0.52",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "inspectionDraftSubmitReturnAndReviewPreserveTheSameTaskAndCost",
+        "seconds": "0.545",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "pagesBeyondTenThousandHaveNoTruncationOrDuplicates",
+        "seconds": "0.682",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "outboundFailureAfterLedgerWritesRollsBackStockCostDocumentAndNotice",
+        "seconds": "0.552",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "inventoryServiceEnforcesCompanyAndHidesAmountsInListExportAndFilters",
+        "seconds": "0.528",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "inspectionQueuesRangesAndOrganizationIntersect",
+        "seconds": "0.502",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "maintenanceServiceAndCsvShareTheSameAuthorizedQuery",
+        "seconds": "0.562",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "equipmentCreateCopyAndRelationsPersistStableIdsAndTypedExtensionValues",
+        "seconds": "0.579",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "missingOrOtherDepartmentGrantDoesNotExpandScope",
+        "seconds": "0.536",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "userPagingDoesNotExposeSecretsOrOtherDepartments",
+        "seconds": "0.994",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "equipmentAndRepairSqlQueriesKeepTotalsBeyondTenThousandAndExportsMatch",
+        "seconds": "2.341",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "requisitionPartialReservationAndOwnAccessAreComputedBeforePaging",
+        "seconds": "0.519",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "receiptLayersPreviewAndIdempotentOutboundsReconcileActualCost",
+        "seconds": "0.572",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "inspectionDerivedMetricsKeepTheExistingMeaning",
+        "seconds": "0.503",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "savingDueMaintenanceAndInspectionPlansGeneratesOnceAndKeepsTypeIds",
+        "seconds": "0.553",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "repairReportEditDispatchClaimProcessReturnAndAcceptanceKeepOneOrder",
+        "seconds": "0.551",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.integration.EngineeringQueryMySqlIT",
+        "name": "conditionsAndExportBatchingHaveTheSameCohort",
+        "seconds": "0.511",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.LayerPackageArchitectureTest",
+        "name": "migratedServicesAndControllersHaveNoDatabaseFields",
+        "seconds": "0.003",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.LayerPackageArchitectureTest",
+        "name": "businessClassesUseLayerFirstPackages",
+        "seconds": "0.005",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.common.CsvCellsTest",
+        "name": "preservesTextAndEscapesFormulasAndQuotes",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.common.CsvCellsTest",
+        "name": "formatsOnlyActualDateTimeStrings",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.system.PermissionServiceTest",
+        "name": "missingRolesDenyAccess",
+        "seconds": "0.051",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.system.PermissionServiceTest",
+        "name": "groupDisplayCompanyIsARealBusinessOwner",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.system.PermissionServiceTest",
+        "name": "viewAllDoesNotGrantDeleteAll",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.system.PermissionServiceTest",
+        "name": "selectedCompaniesDoNotIncludeTheirChildren",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.system.PermissionServiceTest",
+        "name": "broadReadDoesNotEnlargeNarrowWriteAcrossCompanyTree",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.system.PermissionServiceTest",
+        "name": "matchingRoleScopesAreCombined",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.system.PermissionServiceTest",
+        "name": "departmentTreeDoesNotCrossCompanyBoundary",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.system.PermissionServiceTest",
+        "name": "allScopeStillRejectsOtherTenant",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.system.PermissionServiceTest",
+        "name": "companyTreeIncludesOnlyDescendantCompanies",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.system.PermissionServiceTest",
+        "name": "directCompanyUserGetsOwnCompanyScope",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.system.PermissionServiceTest",
+        "name": "ownCompanyExcludesSubsidiaries",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.AnalyticsPeriodTest",
+        "name": "badRangeRejected",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.AnalyticsPeriodTest",
+        "name": "twelveMonthsIncludesCurrentPartialMonth",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.AnalyticsPeriodTest",
+        "name": "followingUsesGlobalPeriod",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.AnalyticsPeriodTest",
+        "name": "quarterAndYearBoundaries",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.AnalyticsPeriodTest",
+        "name": "aprilCohortRetainsAprilAndIncludesEndDay",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.maintenance.MaintenanceRepositoryTest",
+        "name": "automatedGenerationPreservesNullActor",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.maintenance.MaintenanceRepositoryTest",
+        "name": "dynamicReferenceColumnHasWhitelist",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairWorkflowServiceTest",
+        "name": "staleClaimDoesNotCreateTodoOrAudit",
+        "seconds": "0.008",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairWorkflowServiceTest",
+        "name": "alreadyClaimedOrderCannotBeClaimedAgain",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairWorkflowServiceTest",
+        "name": "acceptanceRequiresRecipientAuthorization",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairWorkflowServiceTest",
+        "name": "nonCandidateCannotClaim",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairWorkflowServiceTest",
+        "name": "acceptanceRejectsInvalidScore",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairWorkflowServiceTest",
+        "name": "acceptanceRequiresExplanation",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairWorkflowServiceTest",
+        "name": "onlyAcceptedOwnerCanProcess",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairWorkflowServiceTest",
+        "name": "suspendRequiresAcceptedOwner",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.business.BusinessRulesTest",
+        "name": "inactiveSourcesCannotBeReferenced",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.business.BusinessRulesTest",
+        "name": "circularDependenciesAreRejected",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.business.BusinessRulesTest",
+        "name": "zeroAndFalseAreValues",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.business.BusinessRulesTest",
+        "name": "invalidLayoutIsRejected",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.business.BusinessRulesTest",
+        "name": "layoutSupportsLegacyAndSpanning",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.business.BusinessRulesTest",
+        "name": "conditionalRequiredAndHiddenPreserveBehavior",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.inventory.UsageCostTest",
+        "name": "rejectsInvalidRemainderAndQuantity",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.inventory.UsageCostTest",
+        "name": "finalUseSettlesTail",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.inventory.UsageCostTest",
+        "name": "returnSettlesOnlyUnusedCost",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.inventory.UsageCostTest",
+        "name": "partialReturnThenUseSettlesPostedBudget",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.inventory.UsageCostTest",
+        "name": "neverOverdrawsCents",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.VersionGuardTest",
+        "name": "negativeVersionIsInvalid",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.VersionGuardTest",
+        "name": "matchingVersionSucceeds",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.VersionGuardTest",
+        "name": "absentStoredVersionFailsClosed",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.VersionGuardTest",
+        "name": "oneUpdateSucceeds",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.VersionGuardTest",
+        "name": "lostConcurrentUpdateConflicts",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.VersionGuardTest",
+        "name": "staleVersionConflicts",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairConcurrencyTest",
+        "name": "staleEditDoesNotWrite",
+        "seconds": "0.016",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairConcurrencyTest",
+        "name": "staleTransitionDoesNotWrite",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairConcurrencyTest",
+        "name": "concurrentWriteAfterReadAlsoConflicts",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.LayerDependencyArchitectureTest",
+        "name": "layerBoundariesHoldBeyondDirectoryNames",
+        "seconds": "0.223",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.LayerDependencyArchitectureTest",
+        "name": "descriptorAndGenericReferencesCannotHideDatabaseDependencies",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.maintenance.MaintenanceGenerationServiceTest",
+        "name": "dueDateMinusAdvanceControlsGenerationAndCursorMakesTheNextRunIdempotent",
+        "seconds": "0.02",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.inventory.InventoryMaterialNumberTest",
+        "name": "collisionSkipsExistingMaterialAndSequenceNeverTruncates",
+        "seconds": "0.002",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.inventory.InventoryMaterialNumberTest",
+        "name": "materialUsesLifetimeFiveDigits",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "advancedRejectsWrongOperatorForType",
+        "seconds": "0.008",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "nullCsvIsEmptyCell",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "csvQuotesAndEscapesText",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "advancedAllowsHiddenFieldsAndRanges",
+        "seconds": "0.002",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "oversizedPageIsRejected",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "advancedRejectsMalformedExportBeforeWriting",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "unknownSortIsRejected",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "unknownQueueIsRejected",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "exportAppliesBothViewAndExportScopes",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "listHasBoundedPageAndAllQueueCounts",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "unknownExportFieldIsRejectedBeforeWriting",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "unknownFilterIsRejected",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "advancedRejectsReversedRange",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "advancedRejectsSecurityFields",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.repair.RepairQueryServiceTest",
+        "name": "csvNeutralizesFormulaIncludingMultiline",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.equipment.EquipmentQueryServiceTest",
+        "name": "invalidOptionsActionDoesNotReadDatabase",
+        "seconds": "0.008",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.equipment.EquipmentQueryServiceTest",
+        "name": "unavailableDeviceKeepsExistingError",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.equipment.EquipmentQueryServiceTest",
+        "name": "deniedNavigationDoesNotReadDatabase",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.equipment.EquipmentQueryServiceTest",
+        "name": "qrAccessRequiresViewPermission",
+        "seconds": "0.047",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.equipment.EquipmentQueryServiceTest",
+        "name": "responsePreservesStringIdsMoneyScaleEmptyValuesAndAssociations",
+        "seconds": "0.002",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.equipment.EquipmentQueryServiceTest",
+        "name": "permissionCheckedBeforeBuildingDetail",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.ApiExceptionHandlerTest",
+        "name": "wrongPathTypeReturns400",
+        "seconds": "0.039",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.ApiExceptionHandlerTest",
+        "name": "staleVersionReturnsConflictContract",
+        "seconds": "0.003",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.ApiExceptionHandlerTest",
+        "name": "malformedJsonReturns400",
+        "seconds": "0.006",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.ApiExceptionHandlerTest",
+        "name": "databaseConflictDoesNotExposeSql",
+        "seconds": "0.005",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.ApiExceptionHandlerTest",
+        "name": "uploadLimitReturns413",
+        "seconds": "0.002",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.ApiExceptionHandlerTest",
+        "name": "missingRequiredVersionReturns400",
+        "seconds": "0.002",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.ApiExceptionHandlerTest",
+        "name": "nullArgumentMessageStillReturns400",
+        "seconds": "0.002",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.AdvancedFiltersTest",
+        "name": "exactMatchRemainsAvailableAndUnlistedFieldsAreRejected",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.AdvancedFiltersTest",
+        "name": "dateOnlyUpperBoundIsNextDayExclusive",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.AdvancedFiltersTest",
+        "name": "sharedRangesCoverWholeDayAndSingleNumericBounds",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.AdvancedFiltersTest",
+        "name": "treeScopeUsesBoundParametersAndIgnoresDisplaySelection",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.common.AdvancedFiltersTest",
+        "name": "textContainsTreatsWildcardCharactersAsText",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.inventory.InventoryRepositoryTest",
+        "name": "identifiersCannotBecomeArbitrarySql",
+        "seconds": "0.391",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.inventory.InventoryRepositoryTest",
+        "name": "materialIdReferencesSurviveTheWriteWhitelist",
+        "seconds": "0.005",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.inventory.InventoryRepositoryTest",
+        "name": "queryWhitelistRejectsInjectedFields",
+        "seconds": "0.002",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.inventory.InventoryRepositoryTest",
+        "name": "emptyBatchLookupDoesNotBuildInvalidInClause",
+        "seconds": "0.021",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.inventory.InventoryRepositoryTest",
+        "name": "nullableTaskDepartmentStaysNullable",
+        "seconds": "0.003",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.EquipmentExperienceServiceTest",
+        "name": "installedPreviewHasSameSourceAndNoMixedQuantityTotal",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.EquipmentExperienceServiceTest",
+        "name": "countsAreFullButPreviewCappedAndPagesStable",
+        "seconds": "0.002",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.EquipmentExperienceServiceTest",
+        "name": "inclusiveDateDeadlineAndMissingTime",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.EquipmentExperienceServiceTest",
+        "name": "eventsDefaultAscendingAndOverviewCanRequestNewest",
+        "seconds": "0.002",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.EquipmentExperienceServiceTest",
+        "name": "forbiddenRepairExcludedFromCountsAndEvents",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.EquipmentExperienceServiceTest",
+        "name": "participantAccessDoesNotPretendEmptyUnauthorisedModulesAreZero",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.EquipmentExperienceServiceTest",
+        "name": "invalidSortKindAndOtherTenantRejected",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.experience.EquipmentExperienceServiceTest",
+        "name": "allTaskKindsAndOpenAnomaliesAreCountedSeparately",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.inventory.RequisitionChoicesTest",
+        "name": "materialPickerRejectsInvalidPage",
+        "seconds": "0.004",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.inventory.RequisitionChoicesTest",
+        "name": "pagedMaterialsAllowTaskApplicantWithoutInventoryMenu",
+        "seconds": "0.002",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.inventory.RequisitionChoicesTest",
+        "name": "personalTaskApplicantNeedsNoWarehouseManagementPermission",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.inventory.RequisitionChoicesTest",
+        "name": "materialPickerRejectsWarehouseFromAnotherCompany",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.inventory.RequisitionChoicesTest",
+        "name": "legacyRepairWithoutDepartmentUsesExplicitEquipmentCompany",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.inventory.RequisitionChoicesTest",
+        "name": "requestWarehousesDoNotDependOnInventoryQueryView",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.inventory.RequisitionChoicesTest",
+        "name": "noAuthorizedWarehouseKeepsTaskForClearEmptyFeedback",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.equipment.EquipmentQueryArchitectureTest",
+        "name": "queryServiceCannotAccessMappersJdbcOrHttp",
+        "seconds": "0.002",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.service.equipment.EquipmentQueryArchitectureTest",
+        "name": "queryControllerCannotAccessDatabaseOrOwnTransactions",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.common.SqlListFiltersTest",
+        "name": "upperDateIncludesEntireSelectedDay",
+        "seconds": "0.016",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.common.SqlListFiltersTest",
+        "name": "constantScopeBranchesDoNotLeaveUnusedBindingsOrJsonWork",
+        "seconds": "0.004",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.common.SqlListFiltersTest",
+        "name": "supportsSingleEndedRangeAndRejectsReversed",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.common.SqlListFiltersTest",
+        "name": "rawValuesAreNeverSqlIdentifiersOrFragments",
+        "seconds": "0.001",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.common.SqlListFiltersTest",
+        "name": "absentPermissionIsDenyAndCompanyScopeDoesNotBecomeAll",
+        "seconds": "0.0",
+        "status": "passed"
+      },
+      {
+        "suite": "com.windasoft.eam.repository.common.SqlListFiltersTest",
+        "name": "pagingAndSortAreBounded",
+        "seconds": "0.001",
+        "status": "passed"
+      }
+    ]
+  },
+  "jarSha256": "3783e45c258b8ff827ca2e61ef983157229ba09efa3edcd0d1ec1eac23b1aae9",
+  "frontend": {
+    "tests": 15,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  }
+}

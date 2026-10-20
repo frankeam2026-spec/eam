@@ -1,4 +1,6 @@
-<script setup lang="ts">
+<script setup lang="ts">import { tr } from '../i18n';
+
+import LanguageSelect from './common/LanguageSelect.vue';
 import { ElButton, ElInput } from 'element-plus';
 
 import SystemBrand from './common/SystemBrand.vue';
@@ -47,39 +49,40 @@ function submit() {
     />
     <SystemBrand class="login-brand" :name="visual.systemName" :logo-url="visual.logoUrl" />
     <section class="login-card">
-      <h1>登录系统</h1>
-      <p>使用企业账号访问设备与运维数据</p>
-      <div v-if="state === 'loading'" class="login-status">正在连接服务…</div>
+      <LanguageSelect />
+      <h1>{{ tr('ui.equipment.text0733') }}</h1>
+      <p>{{ tr('ui.equipment.text0734') }}</p>
+      <div v-if="state === 'loading'" class="login-status">{{ tr('ui.equipment.text0735') }}</div>
       <div v-else-if="state === 'unavailable'" class="login-status">
-        <span>{{ message || '服务暂时无法连接' }}</span
-        ><ElButton @click="emit('retry')" native-type="button">重新连接</ElButton>
+        <span>{{ message || tr('ui.equipment.text0736') }}</span
+        ><ElButton @click="emit('retry')" native-type="button">{{ tr('ui.equipment.text0737') }}</ElButton>
       </div>
       <form v-else @submit.prevent="submit">
         <label
-          >租户编号<ElInput
+          >{{ tr('ui.equipment.text0738') }}<ElInput
             v-model="form.tenantId"
             inputmode="numeric"
             autocomplete="organization"
-            placeholder="请输入租户编号" /></label
+            :placeholder="tr('ui.equipment.text0739')" /></label
         ><label
-          >登录账号<ElInput
+          >{{ tr('ui.equipment.text0740') }}<ElInput
             v-model="form.account"
             autocomplete="username"
-            placeholder="请输入账号" /></label
+            :placeholder="tr('ui.equipment.text0741')" /></label
         ><label
-          >密码<ElInput
+          >{{ tr('ui.equipment.text0742') }}<ElInput
             v-model="form.password"
             type="password"
             autocomplete="current-password"
-            placeholder="请输入密码"
+            :placeholder="tr('ui.equipment.text0743')"
         /></label>
         <div v-if="message" class="login-error">{{ message }}</div>
         <ElButton class="login-submit" :disabled="submitting" native-type="submit" type="primary"
-          >登录</ElButton
+          >{{ tr('ui.equipment.text0744') }}</ElButton
         >
       </form>
     </section>
-    <div class="login-foot">企业级设备管理 · 安全访问</div>
+    <div class="login-foot">{{ tr('ui.equipment.text0745') }}</div>
   </main>
 </template>
 

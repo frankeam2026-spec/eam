@@ -12,7 +12,10 @@
     "typecheck": "vue-tsc -b",
     "check:icons": "node scripts/check-icons.mjs",
     "check:tables": "node scripts/check-business-tables.mjs",
-    "check:controls": "node scripts/check-ui-controls.mjs"
+    "check:controls": "node scripts/check-ui-controls.mjs",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run check:i18n && npm run test && npm run check:icons && npm run check:tables && npm run check:controls",
+    "check:i18n": "node scripts/i18n/check-catalog.mjs && node scripts/i18n/check-ui.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.2",
@@ -25,11 +28,16 @@
     "typescript": "5.8.3",
     "vite": "6.4.4",
     "vue": "3.5.43",
+    "vue-i18n": "^11.4.16",
     "vue-router": "4.6.4",
     "vue-tsc": "2.2.10"
   },
   "devDependencies": {
-    "prettier": "3.9.9"
+    "@vue/test-utils": "2.4.6",
+    "jsdom": "26.1.0",
+    "opencc-js": "1.4.2",
+    "prettier": "3.9.9",
+    "vitest": "5.0.5"
   },
   "engines": {
     "node": ">=22"

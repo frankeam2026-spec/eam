@@ -1,4 +1,37 @@
 <script setup lang="ts">
+import { tr } from '../i18n';
+
+import DailyArrangementEditor from './inspection/DailyArrangementEditor.vue';
+import { ApiError } from '../api';
+const dailyErrors = ref<Record<string, string>>({});
+const dailyEditorTab = ref('basic');
+const reminderSettings = [
+  { key: 'advanceHours', unit: 'advanceUnit', label: 'ui.equipment.text0328' },
+  { key: 'remindHours', unit: 'remindUnit', label: 'ui.equipment.text0330' },
+  { key: 'expireRemindHours', unit: 'expireRemindUnit', label: 'ui.equipment.text0331' },
+] as const;
+import DialogChoiceInput from './common/DialogChoiceInput.vue';
+import { useStandardSelectorPage } from '../composables/useStandardSelectorPage';
+import PagedChoiceField from './common/PagedChoiceField.vue';
+import AppPagination from './common/AppPagination.vue';
+import { planningSelectors, resolvePlanning, mergeOptions, type SelectorRow } from '../selectors';
+const selector = planningSelectors('inspection');
+function rememberPeople(rows: SelectorRow[]) {
+  choices.value.users = mergeOptions(choices.value.users, rows);
+}
+function rememberEquipment(rows: SelectorRow[]) {
+  choices.value.equipment = mergeOptions(choices.value.equipment, rows);
+}
+
+import { useColumnPreferences } from '../composables/useColumnPreferences';
+import { useInspectionList } from '../composables/inspection/useInspectionList';
+import { useBusinessColumns } from '../composables/useBusinessColumns';
+import { customCell, type BusinessObject } from '../businessConfig';
+import BusinessFields from './business/BusinessFields.vue';
+import { useBusinessExtension } from '../composables/useBusinessExtension';
+const { extension, extensionErrors, prepareExtension, extensionError } = useBusinessExtension();
+const extensionInitializationClean = ref(true);
+import { standardApplies } from '../utils/baseReferences';
 import AppListToolbar from './common/AppListToolbar.vue';
 import { ElTableColumn } from 'element-plus';
 import AppFilePicker from './common/AppFilePicker.vue';
@@ -10,9 +43,7 @@ function onTableSort(sort: BusinessSort) {
   page.value = 1;
 }
 import type { BusinessSort } from './common/BusinessTable.types';
-function persistTableWidths() {
-  localStorage.setItem('eam-inspection-widths-' + kind.value, JSON.stringify(widths.value));
-}
+
 import AppBusinessTable from './common/AppBusinessTable.vue';
 import AppIcon from './common/AppIcon.vue';
 import RowMoreActions from './common/RowMoreActions.vue';
@@ -33,6 +64,12 @@ import {
   ElDatePicker,
   ElSwitch,
   ElCheckbox,
+  ElCollapse,
+  ElCollapseItem,
+  ElForm,
+  ElFormItem,
+  ElTabs,
+  ElTabPane,
   ElRadioGroup,
   ElRadioButton,
   ElDropdown,
@@ -46,6 +83,8 @@ import {
   inspectionLabels,
   inspectionStates,
   emptyInspection,
+  emptyArrangement,
+  type DailyArrangement,
   csvRows,
   downloadCsv,
   type InspectionKind,
@@ -58,7 +97,7 @@ import {
 import type { MaintenanceItem } from '../maintenance';
 import { useAuthStore } from '../stores/auth';
 import { confirmAction } from '../services/dialog';
-import AppPagination from './common/AppPagination.vue';
+
 import AppFormFooter from './common/AppFormFooter.vue';
 import AppDialog from './common/AppDialog.vue';
 import ListSearchInput from './common/ListSearchInput.vue';
@@ -105,22 +144,21 @@ const loading = ref(false),
 const columnFilters = ref<Record<string, string>>({}),
   conditions = ref<FilterCondition[]>([]),
   selected = ref<string[]>([]),
-  visibleColumns = ref<string[]>([]),
   sortKey = ref(''),
   sortAsc = ref(true);
-const widths = ref<Record<string, number>>({});
-const fields = computed<[string, string][]>(() =>
+const baseFields = computed<[string, string][]>(() =>
   isTasks.value
     ? [
         ['code', '任务编号'],
         ['planName', '计划名称'],
         ['equipmentName', '设备名称'],
+        ...(!daily.value ? [['typeName', '巡检类型'] as [string, string]] : []),
         ...(daily.value
           ? ([
-              ['shiftName', '班次'],
-              ['shiftDate', '班次日期'],
+              ['arrangementName', '检查安排'],
+              ['businessDate', '应检日期'],
             ] as [string, string][])
-          : ([['typeName', '巡检类型']] as [string, string][])),
+          : []),
         ['status', '状态'],
         ['dueAt', '计划开始时间'],
         ['expiresAt', '计划结束时间'],
@@ -151,13 +189,11 @@ const fields = computed<[string, string][]>(() =>
         ...(standard.value
           ? []
           : ([
+              ...(!daily.value ? [['typeName', '巡检类型']] : []),
               ['startDate', '开始日期'],
               ['endDate', '结束日期'],
               ...(daily.value
-                ? [
-                    ['personMode', '点检人设置'],
-                    ['shiftCount', '班次数'],
-                  ]
+                ? [['arrangementCount', tr('daily.arrangementCount')]]
                 : [
                     ['periodLabel', '巡检周期'],
                     ['nextAt', '下次巡检时间'],
@@ -167,43 +203,89 @@ const fields = computed<[string, string][]>(() =>
         ['createdAt', '创建时间'],
       ],
 );
+const extensionObject = computed<BusinessObject | undefined>(() =>
+  standard.value
+    ? undefined
+    : daily.value
+      ? isTasks.value
+        ? 'inspection_daily_task'
+        : 'inspection_daily_plan'
+      : isTasks.value
+        ? 'inspection_periodic_task'
+        : 'inspection_periodic_plan',
+);
+const { extensionColumns, extensionFilters, extensionExportColumns, configurationError } =
+  useBusinessColumns(extensionObject);
+const fields = computed<[string, string][]>(() => [
+  ...(baseFields.value as [string, string][]),
+  ...extensionColumns.value.map((c) => [c.key, c.label] as [string, string]),
+]);
+const {
+  visibleColumns,
+  widths,
+  restore: restoreColumnPreferences,
+  persistWidths: persistTableWidths,
+} = useColumnPreferences('eam-inspection', kind, () =>
+  fields.value.slice(0, isTasks.value ? 10 : fields.value.length).map(([key]) => key),
+);
 const shownFields = computed(() =>
   fields.value.filter(([key]) => visibleColumns.value.includes(key)),
 );
 const filterFields = computed<FilterField[]>(() =>
-  fields.value.map(([key, label]) => ({
-    key,
-    label,
-    type:
-      key === 'status' || key === 'enabled'
-        ? 'choice'
-        : key.endsWith('At') || key.endsWith('Date')
-          ? 'date'
-          : [
-                'expected',
-                'checked',
-                'missing',
-                'skipped',
-                'abnormal',
-                'workSeconds',
-                'delayDays',
-                'equipmentCount',
-                'itemCount',
-              ].includes(key)
-            ? 'number'
-            : 'text',
-    ...(key === 'status'
-      ? { options: inspectionStates }
-      : key === 'enabled'
-        ? { options: ['启用', '停用'] }
-        : {}),
-    dateOnly: key.endsWith('Date'),
-  })),
+  baseFields.value
+    .map<FilterField>(([key, label]) => ({
+      key,
+      label,
+      type:
+        key === 'status' || key === 'enabled'
+          ? 'choice'
+          : key.endsWith('At') || key.endsWith('Date')
+            ? 'date'
+            : [
+                  'expected',
+                  'checked',
+                  'missing',
+                  'skipped',
+                  'abnormal',
+                  'workSeconds',
+                  'delayDays',
+                  'equipmentCount',
+                  'itemCount',
+                ].includes(key)
+              ? 'number'
+              : 'text',
+      ...(key === 'status'
+        ? { options: inspectionStates }
+        : key === 'enabled'
+          ? { options: ['启用', '停用'] }
+          : {}),
+      dateOnly: key.endsWith('Date'),
+    }))
+    .concat(extensionFilters.value),
 );
 const people = (ids: string[]) =>
   ids.map((id) => choices.value.users.find((u) => u.id === id)?.name || id).join('、');
 function value(row: InspectionDefinition | InspectionTask, key: string): string | number {
+  if (key.startsWith('custom:')) return customCell(row, key);
   const r = row as any;
+  if (
+    key !== 'enabled' &&
+    Object.hasOwn(r, key) &&
+    [
+      'departmentName',
+      'ownerNames',
+      'reviewerNames',
+      'reviewer',
+      'startedAt',
+      'finishedAt',
+      'reviewedAt',
+      'equipmentCount',
+      'itemCount',
+      'shiftCount',
+      'periodLabel',
+    ].includes(key)
+  )
+    return key.endsWith('At') ? formatDateTime(r[key], '') : (r[key] ?? '');
   if (key === 'enabled') return r.enabled ? '启用' : '停用';
   if (key === 'departmentName')
     return choices.value.organizations.find((o) => o.id === r.departmentId)?.name || '';
@@ -221,65 +303,28 @@ function value(row: InspectionDefinition | InspectionTask, key: string): string 
 }
 const organizationFilter = ref('');
 const taskOrganizations = ref<InspectionChoices['organizations']>([]);
-function matchesOrganization(row: { departmentId?: string; companyId?: string }) {
-  if (!organizationFilter.value) return true;
-  const byId = new Map(choices.value.organizations.map((x) => [x.id, x]));
-  for (const id of [row.departmentId, row.companyId]) {
-    let current = id;
-    const seen = new Set<string>();
-    while (current && !seen.has(current)) {
-      if (current === organizationFilter.value) return true;
-      seen.add(current);
-      current = byId.get(current)?.parentId;
-    }
-  }
-  return false;
-}
 watch(organizationFilter, () => {
   page.value = 1;
 });
 watch(kind, () => {
   organizationFilter.value = '';
 });
-const filtered = computed(() => {
-  let result = records.value.filter((r) => {
-    if (isTasks.value) {
-      if (!matchesOrganization(r)) return false;
-      const t = r as InspectionTask;
-      if (
-        queue.value === '我的待执行' &&
-        !(t.canExecute && ['未开始', '待执行', '执行中', '已过期', '审核不通过'].includes(t.status))
-      )
-        return false;
-      if (queue.value === '我的待审核' && !(t.canReview && t.status === '待审核')) return false;
-    }
-    if (
-      search.value &&
-      !fields.value.some(([key]) =>
-        String(value(r, key)).toLowerCase().includes(search.value.toLowerCase()),
-      )
-    )
-      return false;
-    if (
-      !Object.entries(columnFilters.value).every(
-        ([key, term]) => !term || String(value(r, key)).toLowerCase().includes(term.toLowerCase()),
-      )
-    )
-      return false;
-    return matchesAdvanced(conditions.value, (key) => value(r, key));
-  });
-  if (sortKey.value)
-    result = [...result].sort(
-      (a, b) =>
-        String(value(a, sortKey.value)).localeCompare(String(value(b, sortKey.value)), 'zh-CN', {
-          numeric: true,
-        }) * (sortAsc.value ? 1 : -1),
-    );
-  return result;
-});
-const pageRows = computed(() =>
-  filtered.value.slice((page.value - 1) * size.value, page.value * size.value),
-);
+const listTotal = ref(0);
+const serverList = useInspectionList();
+const pageRows = computed(() => records.value);
+function listParameters() {
+  return {
+    page: page.value,
+    size: size.value,
+    q: search.value,
+    conditions: JSON.stringify(conditions.value),
+    filters: JSON.stringify(columnFilters.value),
+    sortBy: sortKey.value || '',
+    direction: sortAsc.value ? 'asc' : 'desc',
+    queue: queue.value,
+    organization: isTasks.value ? organizationFilter.value : '',
+  };
+}
 watch(
   [search, queue, columnFilters, conditions, size],
   () => {
@@ -288,15 +333,7 @@ watch(
   },
   { deep: true },
 );
-watch(
-  visibleColumns,
-  () =>
-    localStorage.setItem(
-      'eam-inspection-columns-' + kind.value,
-      JSON.stringify(visibleColumns.value),
-    ),
-  { deep: true },
-);
+
 let loadVersion = 0;
 const unsaved = useUnsavedChanges(
   () => form.value,
@@ -306,38 +343,42 @@ const unsaved = useUnsavedChanges(
 async function load() {
   const version = ++loadVersion;
   loading.value = true;
-  if (!editing.value) {
-    try {
-      const saved: string[] = JSON.parse(
-        localStorage.getItem('eam-inspection-columns-' + kind.value) || '[]',
-      );
-      visibleColumns.value = saved.length
-        ? saved
-        : fields.value.slice(0, isTasks.value ? 10 : fields.value.length).map(([k]) => k);
-    } catch {
-      visibleColumns.value = fields.value.map(([k]) => k);
-    }
-  }
   error.value = '';
   try {
-    const [choiceResult, standardResult, typeResult] = await Promise.all([
-      inspectionApi.choices(),
-      isTasks.value || !auth.can('inspectionStandard')
-        ? Promise.resolve({ data: [] as InspectionDefinition[] })
-        : inspectionApi.list('standards'),
+    if (!editing.value) {
+      const applied = await serverList.refresh(kind.value, listParameters());
+      if (!applied || version !== loadVersion) return;
+      records.value = serverList.rows.value;
+      listTotal.value = serverList.total.value;
+      choices.value.organizations = serverList.organizations.value;
+      taskOrganizations.value = serverList.organizations.value;
+      return;
+    }
+    const loadedId = String(route.params.id || route.query.copy || '');
+    const loaded = loadedId
+      ? { ...emptyInspection(), ...(await inspectionApi.get(kind.value, loadedId)).data }
+      : emptyInspection();
+    const [choiceResult, selected, typeResult] = await Promise.all([
+      inspectionApi.choices(true),
+      resolvePlanning<InspectionDefinition>('inspection', loaded),
       isTasks.value || !auth.can('inspectionType')
         ? Promise.resolve({ data: [] as InspectionDefinition[] })
         : inspectionApi.list('types'),
     ]);
     if (version !== loadVersion) return;
     choices.value = choiceResult;
-    standards.value = standardResult.data;
-    types.value = typeResult.data;
+    choices.value.equipment = selected.equipment;
+    choices.value.users = mergeOptions(
+      selected.users,
+      auth.user
+        ? [{ id: auth.user.id, name: auth.user.name, department: auth.user.department }]
+        : [],
+    );
+    standards.value = selected.standards;
+    types.value = typeResult.data.length ? typeResult.data : choiceResult.types || [];
     if (editing.value) {
-      const id = String(route.params.id || route.query.copy || '');
-      form.value = id
-        ? { ...emptyInspection(), ...(await inspectionApi.get(kind.value, id)).data }
-        : emptyInspection();
+      const id = loadedId;
+      form.value = loaded;
       if (route.query.copy) {
         form.value.id = '';
         delete form.value.rowVersion;
@@ -345,38 +386,31 @@ async function load() {
         form.value.name += '（副本）';
       }
       if (!form.value.departmentId) form.value.departmentId = auth.user?.orgId || '';
-      if (!form.value.typeId)
+      if (!daily.value && !form.value.typeId)
         form.value.typeId =
-          types.value.find((t) => t.unit === '周' && t.period === 1)?.id ||
+          types.value.find(
+            (t) => t.enabled && t.unit === (daily.value ? '日' : '周') && t.period === 1,
+          )?.id ||
           types.value[0]?.id ||
           '';
-      if (!id && kind.value === 'periodic-plans') typeChange();
+      if (daily.value) form.value.typeId = '';
+      if (!id && !standard.value && !daily.value) typeChange();
       if (!form.value.owners.length && auth.user) form.value.owners = [auth.user.id];
       if (!form.value.items) form.value.items = [];
-      selectedDetails.value = [];
-      unsaved.markSaved();
-    } else {
-      if (isTasks.value) {
-        const result = await inspectionApi.tasks(daily.value ? 'daily' : 'periodic');
-        if (version !== loadVersion) return;
-        records.value = result.data;
-        taskOrganizations.value = result.organizations;
-      } else {
-        records.value = (await inspectionApi.list(kind.value)).data;
+      if (daily.value && !form.value.arrangements.length) {
+        const a = emptyArrangement(form.value.startDate);
+        a.name = tr('daily.defaultName');
+        a.owners = [...form.value.owners];
+        a.followUpUserId = auth.user?.id || '';
+        form.value.arrangements = [a];
       }
-      let saved: string[] = [];
-      try {
-        saved = JSON.parse(localStorage.getItem('eam-inspection-columns-' + kind.value) || '[]');
-        widths.value = JSON.parse(
-          localStorage.getItem('eam-inspection-widths-' + kind.value) || '{}',
-        );
-      } catch {}
-      visibleColumns.value = saved.length
-        ? saved
-        : fields.value.slice(0, isTasks.value ? 10 : fields.value.length).map(([k]) => k);
+      selectedDetails.value = [];
+      dailyErrors.value = {};
+      unsaved.markSaved();
     }
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '加载失败';
+    if (version === loadVersion)
+      error.value = e instanceof Error ? e.message : tr('ui.equipment.text0160');
   } finally {
     if (version === loadVersion) loading.value = false;
   }
@@ -384,6 +418,7 @@ async function load() {
 watch(
   () => route.fullPath,
   () => {
+    restoreColumnPreferences();
     keyword.value = '';
     search.value = '';
     queue.value = '全部';
@@ -394,6 +429,13 @@ watch(
     load();
   },
 );
+watch(
+  [page, size, search, queue, columnFilters, conditions, sortKey, sortAsc, organizationFilter],
+  () => {
+    if (!editing.value) void load();
+  },
+  { deep: true, flush: 'post' },
+);
 let timer: ReturnType<typeof setInterval>;
 onMounted(() => {
   load();
@@ -401,28 +443,57 @@ onMounted(() => {
     if (!editing.value && isTasks.value) load();
   }, 60000);
 });
-onUnmounted(() => clearInterval(timer));
+onUnmounted(() => {
+  equipmentRevision++;
+  clearInterval(timer);
+  loadVersion++;
+  serverList.invalidate();
+});
 function list() {
   router.push({ name: 'inspection', params: { kind: kind.value } });
 }
 async function save() {
   if (busy.value) return;
+  if (!standard.value && !prepareExtension(form.value)) {
+    dailyEditorTab.value = 'basic';
+    return;
+  }
   busy.value = true;
   error.value = '';
+  dailyErrors.value = {};
   try {
     await inspectionApi.save(kind.value, form.value);
     unsaved.markSaved();
-    ElMessage.success('已保存');
+    ElMessage.success(tr('ui.equipment.text0194'));
     busy.value = false;
     list();
     window.dispatchEvent(new Event('work-inbox-changed'));
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '保存失败';
+    if (extensionError(e)) {
+      dailyEditorTab.value = 'basic';
+      return;
+    }
+    if (e instanceof ApiError && Object.keys(e.fieldErrors).length) {
+      dailyErrors.value = e.fieldErrors;
+      const firstField = Object.keys(e.fieldErrors)[0] || '';
+      dailyEditorTab.value =
+        firstField.startsWith('arrangements') || firstField.startsWith('roster')
+          ? 'arrangements'
+          : firstField.startsWith('details')
+            ? 'equipment'
+            : ['restDays', 'holidays', 'workdays'].includes(firstField)
+              ? 'calendar'
+              : 'basic';
+      error.value = Object.values(e.fieldErrors)[0] || e.message;
+      return;
+    }
+    error.value = e instanceof Error ? e.message : tr('ui.equipment.text0195');
   } finally {
     busy.value = false;
   }
 }
 function open(row?: InspectionDefinition | InspectionTask) {
+  dailyEditorTab.value = 'basic';
   if (isTasks.value) {
     router.push({ name: 'inspection-task', params: { id: row!.id }, query: { kind: kind.value } });
     return;
@@ -432,48 +503,189 @@ function open(row?: InspectionDefinition | InspectionTask) {
     params: { kind: kind.value, ...(row ? { id: row.id } : {}) },
   });
 }
+const eventOpen = ref(false),
+  eventPlan = ref<{ id: string; rowVersion?: number; arrangements: DailyArrangement[] }>(),
+  eventArrangement = ref(''),
+  eventAt = ref(''),
+  eventKey = ref(''),
+  eventError = ref('');
+const eventChoice = ref('');
+const eventEquipmentIds = ref<string[]>([]),
+  eventEquipmentOptions = ref<SelectorRow[]>([]);
+function eventEquipmentPage(q: string, page: number, size: number) {
+  const rows = eventEquipmentOptions.value.filter((e) =>
+    `${e.code} ${e.name}`.toLowerCase().includes(q.toLowerCase()),
+  );
+  return Promise.resolve({
+    data: rows.slice((page - 1) * size, page * size),
+    page: { total: rows.length },
+  });
+}
+function chooseEvent(rows: SelectorRow[]) {
+  const row = rows[0] as SelectorRow & {
+    planId: string;
+    arrangementId: string;
+    equipmentId: string;
+    rowVersion: number;
+  };
+  if (!row) return;
+  eventPlan.value = {
+    id: row.planId,
+    rowVersion: row.rowVersion,
+    arrangements: [
+      {
+        ...emptyArrangement(form.value.startDate),
+        id: row.arrangementId,
+        name: row.name,
+        frequency: 'event',
+      },
+    ],
+  };
+  eventArrangement.value = row.arrangementId;
+  eventEquipmentIds.value = [row.equipmentId];
+  eventEquipmentOptions.value = [{ id: row.equipmentId, name: row.name, code: row.code }];
+  eventAt.value = localTime();
+  eventKey.value = uuid();
+  eventError.value = '';
+  eventOpen.value = true;
+}
+async function openManualEvent(row: InspectionDefinition | InspectionTask) {
+  eventError.value = '';
+  try {
+    eventPlan.value = (await inspectionApi.get('daily-plans', row.id)).data;
+    eventArrangement.value =
+      eventPlan.value.arrangements.find((a) => a.frequency === 'event' && a.enabled)?.id || '';
+    if (!eventArrangement.value) {
+      ElMessage.warning(tr('daily.noEvent'));
+      return;
+    }
+    eventEquipmentOptions.value = (await resolvePlanning('inspection', eventPlan.value)).equipment;
+    eventEquipmentIds.value = eventEquipmentOptions.value.map((e) => e.id);
+    eventAt.value = localTime();
+    eventKey.value = crypto.randomUUID();
+    eventOpen.value = true;
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : tr('common.error.requestFailed'));
+  }
+}
+async function triggerManualEvent() {
+  if (!eventPlan.value) return;
+  busy.value = true;
+  eventError.value = '';
+  try {
+    const result = await inspectionApi.dailyEvent(eventPlan.value.id, {
+      arrangementId: eventArrangement.value,
+      equipmentIds: eventEquipmentIds.value,
+      eventAt: eventAt.value,
+      idempotencyKey: eventKey.value,
+      rowVersion: eventPlan.value.rowVersion,
+    });
+    eventOpen.value = false;
+    ElMessage.success(tr('daily.eventCreated', { count: result.data.count }));
+    window.dispatchEvent(new Event('work-inbox-changed'));
+  } catch (e) {
+    eventError.value = e instanceof Error ? e.message : tr('common.error.requestFailed');
+  } finally {
+    busy.value = false;
+  }
+}
+const exemptionOpen = ref(false),
+  exemptionPlan = ref<InspectionDefinition>(),
+  exemptionEquipment = ref<string[]>([]),
+  exemptionRange = ref<string[]>([]),
+  exemptionReason = ref(''),
+  exemptionError = ref(''),
+  exemptionOptions = ref<SelectorRow[]>([]);
+async function openExemption(row: InspectionDefinition | InspectionTask) {
+  try {
+    const plan = (await inspectionApi.get('daily-plans', row.id)).data;
+    exemptionPlan.value = plan;
+    exemptionOptions.value = (await resolvePlanning('inspection', plan)).equipment;
+    exemptionEquipment.value = [];
+    exemptionRange.value = [];
+    exemptionReason.value = '';
+    exemptionError.value = '';
+    exemptionOpen.value = true;
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : tr('common.error.requestFailed'));
+  }
+}
+function exemptionPage(q: string, page: number, size: number) {
+  const rows = exemptionOptions.value.filter((e) =>
+    `${e.code} ${e.name}`.toLowerCase().includes(q.toLowerCase()),
+  );
+  return Promise.resolve({
+    data: rows.slice((page - 1) * size, page * size),
+    page: { number: page, size, total: rows.length },
+  });
+}
+async function approveExemption() {
+  if (!exemptionPlan.value) return;
+  busy.value = true;
+  exemptionError.value = '';
+  try {
+    const result = await inspectionApi.dailyExemption(exemptionPlan.value.id, {
+      equipmentIds: exemptionEquipment.value,
+      startAt: exemptionRange.value[0] || '',
+      endAt: exemptionRange.value[1] || '',
+      reason: exemptionReason.value,
+      rowVersion: exemptionPlan.value.rowVersion,
+    });
+    exemptionOpen.value = false;
+    ElMessage.success(tr('daily.exemptionCreated', { count: result.data.count }));
+    window.dispatchEvent(new Event('work-inbox-changed'));
+  } catch (e) {
+    exemptionError.value = e instanceof Error ? e.message : tr('common.error.requestFailed');
+  } finally {
+    busy.value = false;
+  }
+}
+function planMoreActions(row: InspectionDefinition | InspectionTask) {
+  return [
+    ...(daily.value && can('编辑')
+      ? [{ label: tr('daily.launchEvent'), run: () => openManualEvent(row) }]
+      : []),
+    ...(daily.value && auth.can('inspectionDailyTask', '免检')
+      ? [{ label: tr('daily.rangeExemption'), run: () => openExemption(row) }]
+      : []),
+    ...(can('删除')
+      ? [{ label: tr('ui.equipment.text0146'), danger: true, run: () => remove(row) }]
+      : []),
+  ];
+}
 function copy(row: InspectionDefinition | InspectionTask) {
   router.push({ name: 'inspection-new', params: { kind: kind.value }, query: { copy: row.id } });
 }
 async function remove(row: InspectionDefinition | InspectionTask) {
-  if (!(await confirmAction('删除此记录？'))) return;
+  if (!(await confirmAction(tr('ui.equipment.text0277')))) return;
   try {
     await inspectionApi.remove(kind.value, row.id);
     await load();
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '删除失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0278'));
   }
 }
 async function exportList() {
   try {
-    const ids = filtered.value.map((r) => r.id);
-    const rows = (await inspectionApi.export(kind.value, ids)).data;
-    const byId = new Map(rows.map((r) => [r.id, r]));
-    downloadCsv(inspectionLabels[kind.value], [
-      fields.value.map(([, label]) => label),
-      ...ids.map((id) =>
-        fields.value.map(([key]) => String(value(byId.get(id)!, key)).replace('T', ' ')),
-      ),
-    ]);
+    const exportFields: [string, string][] = [
+      ...baseFields.value,
+      ...extensionExportColumns.value.map((c) => [c.key, c.label] as [string, string]),
+    ];
+    const blob = await inspectionApi.exportFile(kind.value, {
+      ...listParameters(),
+      columns: JSON.stringify(exportFields.map(([key]) => key)),
+    });
+    const url = URL.createObjectURL(blob),
+      link = document.createElement('a');
+    link.href = url;
+    link.download = inspectionLabels[kind.value] + '.csv';
+    link.click();
+    URL.revokeObjectURL(url);
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '导出失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0185'));
   }
 }
-function resize(event: MouseEvent, key: string) {
-  event.preventDefault();
-  event.stopPropagation();
-  const start = event.clientX,
-    width =
-      (event.currentTarget as HTMLElement).parentElement?.getBoundingClientRect().width || 160;
-  const move = (e: MouseEvent) => (widths.value[key] = Math.max(90, width + e.clientX - start));
-  const stop = () => {
-    window.removeEventListener('mousemove', move);
-    window.removeEventListener('mouseup', stop);
-    localStorage.setItem('eam-inspection-widths-' + kind.value, JSON.stringify(widths.value));
-  };
-  window.addEventListener('mousemove', move);
-  window.addEventListener('mouseup', stop);
-}
+
 function reset() {
   keyword.value = '';
   search.value = '';
@@ -488,13 +700,35 @@ const dateRange = computed<string[]>({
     form.value.endDate = v?.[1] || '';
   },
 });
+const dailyProjectOptions = computed(() => {
+  const options = new Map<
+    string,
+    { key: string; label: string; standardId: string; itemId: string }
+  >();
+  for (const detail of form.value.details)
+    for (const ref of detail.projectRefs) {
+      const standard = standards.value.find((s) => s.id === ref.standardId);
+      const item = standard?.items.find((i) => i.id === ref.itemId);
+      const key = `${ref.standardId}:${ref.itemId}`;
+      options.set(key, { ...ref, key, label: item ? `${standard?.name} / ${item.name}` : key });
+    }
+  return [...options.values()];
+});
+const dailyRosterSlots = computed(() =>
+  form.value.arrangements.filter((a) => a.frequency === 'shift').flatMap((a) => a.slots),
+);
+const dailyHasRoster = computed(() =>
+  form.value.arrangements.some((a) => a.personMode === 'roster'),
+);
 function typeChange() {
   const t = types.value.find((t) => t.id === form.value.typeId);
   if (t) {
     form.value.period = t.period;
     form.value.unit = t.unit;
-    form.value.validHours = t.unit === '年' ? t.period * 12 : t.period;
-    form.value.validUnit = t.unit === '年' ? '月' : t.unit;
+    if (!daily.value) {
+      form.value.validHours = t.unit === '年' ? t.period * 12 : t.period;
+      form.value.validUnit = t.unit === '年' ? '月' : t.unit;
+    }
   }
 }
 function toTree(nodes: { id: string; name: string; parentId?: string }[]): any[] {
@@ -505,7 +739,7 @@ function toTree(nodes: { id: string; name: string; parentId?: string }[]): any[]
           n.parentId === parent ||
           (!parent && (!n.parentId || !nodes.some((p) => p.id === n.parentId))),
       )
-      .map((n) => ({ value: n.name, label: n.name, children: build(n.id) }));
+      .map((n) => ({ value: n.id, label: n.name, children: build(n.id) }));
   return build('');
 }
 const departmentNodes = computed(() =>
@@ -521,37 +755,92 @@ const selectedDetails = ref<string[]>([]),
   equipmentSearch = ref(''),
   pickedEquipment = ref<string[]>([]),
   equipmentCategory = ref('');
-const equipmentOptions = computed(() =>
-  choices.value.equipment.filter(
-    (e) =>
-      (!equipmentSearch.value ||
-        [e.code, e.name, e.model].some((v) => v?.includes(equipmentSearch.value))) &&
-      (!equipmentCategory.value || e.category === equipmentCategory.value),
-  ),
+const equipmentOptions = ref<InspectionChoices['equipment']>([]),
+  equipmentPage = ref(1),
+  equipmentSize = ref(20),
+  equipmentTotal = ref(0),
+  equipmentLoading = ref(false),
+  equipmentError = ref('');
+const equipmentSelectedOnly = ref(false);
+const equipmentVisible = computed(() =>
+  equipmentSelectedOnly.value
+    ? pickedEquipment.value.map(
+        (id) =>
+          choices.value.equipment.find((row) => row.id === id) || {
+            id,
+            name: '已选设备不可用',
+            code: id,
+          },
+      )
+    : equipmentOptions.value,
 );
+watch(equipmentSelectedOnly, (value) => {
+  if (!value && equipmentOpen.value) void loadEquipmentPage();
+});
+let equipmentRevision = 0;
+async function loadEquipmentPage() {
+  if (!equipmentOpen.value || equipmentSelectedOnly.value) return;
+  const seq = ++equipmentRevision;
+  equipmentLoading.value = true;
+  equipmentError.value = '';
+  equipmentOptions.value = [];
+  try {
+    const result = await selector.equipment(
+      equipmentSearch.value,
+      equipmentPage.value,
+      equipmentSize.value,
+      equipmentCategory.value,
+    );
+    if (seq !== equipmentRevision) return;
+    equipmentOptions.value = result.data;
+    equipmentTotal.value = result.page.total;
+    rememberEquipment(result.data);
+  } catch (e) {
+    if (seq === equipmentRevision)
+      equipmentError.value = e instanceof Error ? e.message : tr('ui.equipment.text0279');
+  } finally {
+    if (seq === equipmentRevision) equipmentLoading.value = false;
+  }
+}
+watch([equipmentPage, equipmentSize, equipmentSearch, equipmentCategory], () => {
+  if (equipmentOpen.value) void loadEquipmentPage();
+});
+watch([equipmentSearch, equipmentCategory], () => {
+  equipmentPage.value = 1;
+});
+watch(equipmentOpen, (open) => {
+  if (!open) equipmentRevision++;
+});
 function equipmentPicker() {
+  equipmentSelectedOnly.value = false;
   pickedEquipment.value = [];
   equipmentSearch.value = '';
+  equipmentPage.value = 1;
   equipmentOpen.value = true;
+  void loadEquipmentPage();
 }
 function applicable(st: InspectionDefinition, eq: InspectionChoices['equipment'][number]) {
-  if (!st.equipmentIds.length && !st.categoryNames.length) return true;
-  if (st.equipmentIds.includes(eq.id)) return true;
-  const seen = new Set<string>();
-  let c = choices.value.categories.find((c) => c.name === eq.category);
-  while (c && !seen.has(c.id)) {
-    if (st.categoryNames.includes(c.name)) return true;
-    seen.add(c.id);
-    c = choices.value.categories.find((p) => p.id === c!.parentId);
-  }
-  return st.categoryNames.includes(eq.category || '');
+  return standardApplies(st, eq, choices.value.categories);
 }
 function refsFor(eq: InspectionChoices['equipment'][number]) {
   return standards.value
     .filter((st) => applicable(st, eq) && st.enabled !== false)
     .flatMap((st) => st.items.map((item) => ({ standardId: st.id, itemId: item.id })));
 }
-function addEquipment() {
+async function loadDefaults(ids: string[]) {
+  if (!auth.can('inspectionStandard')) return;
+  for (let at = 0; at < ids.length; at += 200) {
+    const result = await selector.defaults<InspectionDefinition>(ids.slice(at, at + 200));
+    standards.value = mergeOptions(standards.value, result.data);
+  }
+}
+async function addEquipment() {
+  try {
+    await loadDefaults(pickedEquipment.value);
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0280'));
+    return;
+  }
   for (const id of pickedEquipment.value) {
     if (form.value.details.some((d) => d.equipmentId === id)) continue;
     const eq = choices.value.equipment.find((e) => e.id === id)!;
@@ -580,12 +869,24 @@ const projectOpen = ref(false),
   showAllStandards = ref(false),
   projectSearch = ref(''),
   projectRefs = ref<string[]>([]);
-const projectStandards = computed(() =>
-  standards.value.filter(
-    (st) =>
-      showAllStandards.value ||
-      (projectRow.value && eqOf(projectRow.value) && applicable(st, eqOf(projectRow.value)!)),
-  ),
+const {
+  rows: projectStandards,
+  search: standardSearch,
+  page: standardPage,
+  total: standardTotal,
+  size: standardSize,
+  loading: standardLoading,
+  error: standardError,
+  load: reloadStandards,
+} = useStandardSelectorPage<InspectionDefinition>(
+  'inspection',
+  projectOpen,
+  computed(() => projectRow.value?.equipmentId || ''),
+  showAllStandards,
+  projectStandardId,
+  (rows) => {
+    standards.value = mergeOptions(standards.value, rows);
+  },
 );
 const projectItems = computed(
   () =>
@@ -600,6 +901,7 @@ function pickProjects(detail: InspectionDetail) {
   projectRow.value = detail;
   showAllStandards.value = false;
   projectSearch.value = '';
+  standardSearch.value = '';
   projectRefs.value = detail.projectRefs.map((r) => r.standardId + '/' + r.itemId);
   projectStandardId.value = projectStandards.value[0]?.id || '';
   projectOpen.value = true;
@@ -612,15 +914,21 @@ function applyProjects() {
   });
   projectOpen.value = false;
 }
-function matchProjects() {
+async function matchProjects() {
   const targets = selectedDetails.value.length
     ? form.value.details.filter((d) => selectedDetails.value.includes(d.key))
     : form.value.details;
+  try {
+    await loadDefaults(targets.map((row) => row.equipmentId));
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0280'));
+    return;
+  }
   targets.forEach((d) => {
     const eq = eqOf(d);
     if (eq) d.projectRefs = refsFor(eq);
   });
-  ElMessage.success('已按设备及类别匹配检查项目');
+  ElMessage.success(tr('ui.equipment.text0281'));
 }
 const detailBatch = ref(''),
   detailBatchOpen = ref(false),
@@ -654,11 +962,11 @@ function newType() {
 async function saveType() {
   if (busy.value) return;
   if (!typeForm.value.name.trim()) {
-    ElMessage.warning('请输入巡检类型名称');
+    ElMessage.warning(tr('ui.equipment.text0282'));
     return;
   }
   if (!Number.isInteger(typeForm.value.period) || typeForm.value.period < 1) {
-    ElMessage.warning('巡检周期需为大于零的整数');
+    ElMessage.warning(tr('ui.equipment.text0283'));
     return;
   }
   if (
@@ -666,7 +974,7 @@ async function saveType() {
     typeForm.value.sortOrder < 0 ||
     typeForm.value.sortOrder > 999999
   ) {
-    ElMessage.warning('排序需为 0～999999 的整数');
+    ElMessage.warning(tr('ui.equipment.text0284'));
     return;
   }
   busy.value = true;
@@ -674,20 +982,20 @@ async function saveType() {
     await inspectionApi.save('types', typeForm.value);
     types.value = (await inspectionApi.list('types')).data;
     typeForm.value = { ...emptyInspection(), unit: '日' };
-    ElMessage.success('巡检类型已保存');
+    ElMessage.success(tr('ui.equipment.text0285'));
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '保存失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0195'));
   } finally {
     busy.value = false;
   }
 }
 async function deleteType(type: InspectionDefinition) {
-  if (!(await confirmAction(`删除巡检类型“${type.name}”？`))) return;
+  if (!(await confirmAction(tr('ui.common.dynamic39', { p0: type.name })))) return;
   try {
     await inspectionApi.remove('types', type.id);
     types.value = (await inspectionApi.list('types')).data;
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '删除失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0278'));
   }
 }
 const importInput = ref<InstanceType<typeof AppFilePicker>>(),
@@ -698,17 +1006,17 @@ async function importEquipment(files: File[]) {
   try {
     const data = csvRows((await file.text()).replace(/^\uFEFF/, ''));
     const index = data[0]?.findIndex((h) => ['设备编号', '设备编号'].includes(h)) ?? -1;
-    if (index < 0) throw new Error('CSV 需包含“设备编号”或“设备编号”表头');
+    if (index < 0) throw new Error(tr('ui.equipment.text0286'));
     const ids = data.slice(1).map((r) => {
       const eq = choices.value.equipment.find((e) => e.code === r[index]);
-      if (!eq) throw new Error(`设备不存在或无权限：${r[index]}`);
+      if (!eq) throw new Error(tr('ui.common.dynamic40', { p0: r[index] }));
       return eq.id;
     });
     pickedEquipment.value = ids;
     addEquipment();
-    ElMessage.success('设备已导入并匹配检查项目');
+    ElMessage.success(tr('ui.equipment.text0287'));
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '导入失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0288'));
   } finally {
   }
 }
@@ -721,22 +1029,22 @@ async function importRoster(files: File[]) {
     const date = headers.indexOf('日期'),
       shift = headers.indexOf('班次'),
       account = headers.indexOf('人员账号');
-    if (Math.min(date, shift, account) < 0) throw new Error('CSV 表头需要：日期、班次、人员账号');
+    if (Math.min(date, shift, account) < 0) throw new Error(tr('ui.equipment.text0289'));
     const result = data.slice(1).map((r) => {
       const s = form.value.shifts.find((s) => s.name === r[shift]);
-      if (!s) throw new Error(`班次不存在：${r[shift]}`);
+      if (!s) throw new Error(tr('ui.common.dynamic41', { p0: r[shift] }));
       const users = (r[account] || '').split(/[、;；]/).map((v) => {
         const u = choices.value.users.find((u) => u.account === v.trim());
-        if (!u) throw new Error(`人员账号不存在：${v}`);
+        if (!u) throw new Error(tr('ui.common.dynamic42', { p0: v }));
         return u.id;
       });
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(r[date] || '')) throw new Error('日期格式为 YYYY-MM-DD');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(r[date] || '')) throw new Error(tr('ui.equipment.text0290'));
       return { key: uuid(), date: r[date]!, shiftId: s.id, users };
     });
     form.value.roster.push(...result);
-    ElMessage.success('排班已导入');
+    ElMessage.success(tr('ui.equipment.text0291'));
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '导入失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0288'));
   } finally {
   }
 }
@@ -750,7 +1058,7 @@ function openBatchReview() {
       (t) => t.status !== '待审核' || !t.canReview || t.reviewMode === '逐项审核',
     )
   ) {
-    ElMessage.warning('批量审核只支持您可审核的整机审核任务，逐项审核请进入详情');
+    ElMessage.warning(tr('ui.equipment.text0292'));
     return;
   }
   reviewOpen.value = true;
@@ -766,7 +1074,7 @@ async function batchReview(body: unknown) {
     await load();
     window.dispatchEvent(new Event('work-inbox-changed'));
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '审核失败');
+    ElMessage.error(e instanceof Error ? e.message : tr('ui.equipment.text0293'));
   } finally {
     busy.value = false;
   }
@@ -832,10 +1140,22 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         <AppListToolbar class="inspection-toolbar">
           <div class="inspection-toolbar-actions">
             <ElButton v-if="!isTasks && can('新增')" type="primary" @click="open()"
-              ><AppIcon name="Plus" /> 新增</ElButton
-            ><ElButton v-if="isTasks" :disabled="!selected.length" @click="openBatchReview"
-              >审核</ElButton
-            ><span v-if="selected.length">已选 {{ selected.length }} 条</span>
+              ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}</ElButton
+            ><ElButton v-if="isTasks" :disabled="!selected.length" @click="openBatchReview">{{
+              tr('ui.equipment.text0294')
+            }}</ElButton
+            ><PagedChoiceField
+              v-if="isTasks && daily && can('执行')"
+              v-model="eventChoice"
+              :options="[]"
+              :load-rows="inspectionApi.dailyEventOptions"
+              :title="tr('daily.launchEvent')"
+              :placeholder="tr('daily.launchEvent')"
+              @select="chooseEvent"
+            /><span v-if="selected.length"
+              >{{ tr('ui.equipment.text0295') }} {{ selected.length }}
+              {{ tr('ui.equipment.text0296') }}</span
+            >
           </div>
           <form class="inspection-search" @submit.prevent="search = keyword.trim()">
             <ListToolbarIcons
@@ -846,15 +1166,14 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               @toggle-filter="filterOpen = !filterOpen"
             /><ListSearchInput
               v-model="keyword"
-              :placeholder="
-                isTasks ? '搜索任务编号、计划、设备、负责人' : '搜索编号、名称、所属部门'
-              "
+              :placeholder="isTasks ? tr('ui.equipment.text0297') : tr('ui.equipment.text0298')"
             /><ElButton
               v-if="isTasks"
               :class="{ active: conditions.length }"
               @click="showFilter($event.currentTarget as HTMLElement)"
-              >添加筛选<span v-if="conditions.length">（{{ conditions.length }}）</span></ElButton
-            ><ElButton @click="reset">重置</ElButton>
+              >{{ tr('ui.equipment.text0203')
+              }}<span v-if="conditions.length">（{{ conditions.length }}）</span></ElButton
+            ><ElButton @click="reset">{{ tr('ui.equipment.text0204') }}</ElButton>
           </form>
         </AppListToolbar>
         <AppliedFilterChips
@@ -866,7 +1185,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           @change="replaceFilters"
         />
         <p v-if="error" class="inspection-error">
-          {{ error }} <ElButton text @click="load">重试</ElButton>
+          {{ error }} <ElButton text @click="load">{{ tr('ui.equipment.text0299') }}</ElButton>
         </p>
         <div class="inspection-list-card">
           <div class="inspection-list-scroll">
@@ -897,21 +1216,30 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 :prop="key!"
                 :min-width="150"
                 :key="key"
-                :sortable="true ? 'custom' : false"
+                :sortable="
+                  key.startsWith('custom:') &&
+                  !extensionColumns.find((c) => c.key === key)?.sortable
+                    ? false
+                    : 'custom'
+                "
                 ><template #header
                   ><span class="business-column-label" :title="label">{{ label }}</span>
-                  <div v-if="filterOpen && !isTasks" class="table-column-filter" @click.stop>
+                  <div
+                    v-if="filterOpen && !isTasks && !key.startsWith('custom:')"
+                    class="table-column-filter"
+                    @click.stop
+                  >
                     <ElSelect
                       v-if="key === 'status'"
                       v-model="columnFilters[key]"
                       clearable
-                      placeholder="全部"
+                      :placeholder="tr('ui.equipment.text0300')"
                       ><ElOption v-for="s in inspectionStates" :key="s" :value="s" /></ElSelect
                     ><ElInput
                       v-else
                       v-model="columnFilters[key]"
                       clearable
-                      placeholder="筛选"
+                      :placeholder="tr('ui.equipment.text0301')"
                     /></div></template
                 ><template #default="{ row: r, $index: tableRowIndex }">
                   <ElButton
@@ -940,9 +1268,13 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 :width="170"
                 :min-width="156"
                 :resizable="false"
-                ><template #header><div class="table-header-label">操作</div></template
+                ><template #header
+                  ><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
                 ><template #default="{ row: r, $index: tableRowIndex }">
                   <div class="inspection-row-actions">
+                    <p v-if="configurationError" class="error" role="alert">
+                      {{ configurationError }}
+                    </p>
                     <template v-if="isTasks"
                       ><ElButton
                         class="inspection-text-button"
@@ -952,13 +1284,17 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                         >{{
                           (r as InspectionTask).canReview &&
                           (r as InspectionTask).status === '待审核'
-                            ? '审核'
+                            ? tr('ui.equipment.text0294')
                             : (r as InspectionTask).canExecute &&
-                                ['未开始', '待执行', '执行中', '审核不通过', '已过期'].includes(
-                                  (r as InspectionTask).status,
-                                )
-                              ? '执行'
-                              : '查看'
+                                [
+                                  tr('ui.equipment.text0302'),
+                                  tr('ui.equipment.text0303'),
+                                  tr('ui.equipment.text0304'),
+                                  tr('ui.equipment.text0305'),
+                                  tr('ui.equipment.text0306'),
+                                ].includes((r as InspectionTask).status)
+                              ? tr('ui.equipment.text0307')
+                              : tr('ui.equipment.text0206')
                         }}</ElButton
                       ></template
                     ><template v-else
@@ -969,7 +1305,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                         type="primary"
                         link
                       >
-                        编辑</ElButton
+                        {{ tr('ui.equipment.text0207') }}</ElButton
                       ><ElButton
                         v-if="can('新增')"
                         class="inspection-text-button"
@@ -977,10 +1313,14 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                         type="primary"
                         link
                       >
-                        复制</ElButton
+                        {{ tr('ui.equipment.text0270') }}</ElButton
                       ><RowMoreActions
-                        v-if="can('删除') && can('编辑') && can('新增')"
-                        :actions="[{ label: '删除', danger: true, run: () => remove(r) }]"
+                        v-if="
+                          daily
+                            ? can('编辑') || auth.can('inspectionDailyTask', '免检') || can('删除')
+                            : can('删除') && can('编辑') && can('新增')
+                        "
+                        :actions="planMoreActions(r)"
                       /><ElButton
                         v-else-if="can('删除')"
                         class="inspection-text-button danger"
@@ -988,24 +1328,26 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                         type="danger"
                         link
                       >
-                        删除
+                        {{ tr('ui.equipment.text0146') }}
                       </ElButton></template
                     >
                   </div>
                 </template></ElTableColumn
               ><template #empty
                 ><div v-if="!pageRows.length">
-                  {{ loading ? '正在加载…' : '暂无数据' }}
+                  {{ loading ? tr('ui.equipment.text0162') : tr('ui.equipment.text0308') }}
                 </div></template
               ></AppBusinessTable
             >
           </div>
           <footer class="inspection-list-footer">
-            <span>共 {{ filtered.length }} 条</span
+            <span
+              >{{ tr('ui.equipment.text0309') }} {{ listTotal }}
+              {{ tr('ui.equipment.text0296') }}</span
             ><AppPagination
               v-model:page="page"
               v-model:page-size="size"
-              :total="filtered.length"
+              :total="listTotal"
             /><ListToolbarIcons
               mode="footer"
               :can-export="can('导出')"
@@ -1036,56 +1378,86 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           :disabled="busy"
           @click="list"
         /><span>{{ inspectionLabels[kind] }}</span
-        ><span>/</span><strong>{{ form.id ? '编辑' : '新增' }}</strong
-        ><span class="inspection-heading-spacer" /><ElButton text @click="list">关闭</ElButton>
+        ><span>/</span
+        ><strong>{{ form.id ? tr('ui.equipment.text0207') : tr('ui.equipment.text0149') }}</strong
+        ><span class="inspection-heading-spacer" /><ElButton text @click="list">{{
+          tr('ui.equipment.text0076')
+        }}</ElButton>
       </header>
-      <div class="inspection-editor-scroll">
+      <ElTabs v-if="daily" v-model="dailyEditorTab" class="daily-plan-tabs">
+        <ElTabPane name="basic" :label="tr('ui.equipment.text1641')" />
+        <ElTabPane
+          name="equipment"
+          :label="tr('ui.equipment.text0368') + ' (' + form.details.length + ')'"
+        />
+        <ElTabPane
+          name="arrangements"
+          :label="tr('daily.title') + ' (' + form.arrangements.length + ')'"
+        />
+        <ElTabPane name="calendar" :label="tr('daily.calendar')" />
+      </ElTabs>
+      <div class="inspection-editor-scroll" :class="{ 'daily-plan-editor': daily }">
         <p v-if="error" class="inspection-error">{{ error }}</p>
-        <section class="inspection-form-card">
+        <section v-show="!daily || dailyEditorTab === 'basic'" class="inspection-form-card">
           <div class="inspection-form-grid">
             <label
-              ><span>{{ standard ? '标准编号' : '计划编号' }}</span
-              ><ElInput v-model="form.code" placeholder="留空自动生成" maxlength="64" /></label
+              ><span>{{
+                standard ? tr('ui.equipment.text0310') : tr('ui.equipment.text0311')
+              }}</span
+              ><ElInput
+                v-model="form.code"
+                :placeholder="tr('ui.equipment.text0312')"
+                maxlength="64" /></label
             ><label
-              ><span><b>*</b>{{ standard ? '标准名称' : '计划名称' }}</span
+              ><span
+                ><b>*</b
+                >{{ standard ? tr('ui.equipment.text0313') : tr('ui.equipment.text0314') }}</span
               ><ElInput v-model="form.name" maxlength="150" /></label
             ><label
-              ><span><b>*</b>所属部门</span
+              ><span><b>*</b>{{ tr('ui.equipment.text0098') }}</span
               ><TreeSelect
                 v-model="form.departmentId"
                 :nodes="departmentNodes"
-                placeholder="请选择部门"
+                :placeholder="tr('ui.equipment.text0315')"
             /></label>
             <template v-if="standard"
               ><label class="wide"
-                ><span>要求</span
+                ><span>{{ tr('ui.equipment.text0316') }}</span
                 ><ElInput
                   v-model="form.requirement"
                   type="textarea"
                   :rows="2"
-                  placeholder="说明检查要求" /></label
+                  :placeholder="tr('ui.equipment.text0317')" /></label
               ><label class="wide"
-                ><span>适用设备类别</span
+                ><span>{{ tr('ui.equipment.text0318') }}</span
                 ><ElTreeSelect
-                  v-model="form.categoryNames"
+                  v-model="form.categoryIds"
                   :data="toTree(choices.categories)"
                   multiple
                   check-strictly
                   filterable
                   clearable
-                  placeholder="不限制类别" /></label
+                  :placeholder="tr('ui.equipment.text0319')" /></label
               ><label class="wide"
-                ><span>适用设备</span
-                ><ElSelect v-model="form.equipmentIds" multiple filterable placeholder="不限制设备"
-                  ><ElOption
-                    v-for="e in choices.equipment"
-                    :key="e.id"
-                    :value="e.id"
-                    :label="e.code + ' · ' + e.name" /></ElSelect></label
+                ><span>{{ tr('ui.equipment.text0320') }}</span
+                ><PagedChoiceField
+                  v-model="form.equipmentIds"
+                  multiple
+                  :options="choices.equipment"
+                  :load-rows="selector.equipment"
+                  :columns="[
+                    { key: 'code', label: '设备编码' },
+                    { key: 'name', label: '设备名称' },
+                    { key: 'model', label: '规格型号' },
+                    { key: 'department', label: '所属部门' },
+                  ]"
+                  :title="tr('ui.equipment.text0220')"
+                  :placeholder="tr('ui.equipment.text0321')"
+                  @select="rememberEquipment" /></label
             ></template>
             <template v-else
               ><label class="span-two"
-                ><span><b>*</b>计划日期</span
+                ><span><b>*</b>{{ tr(daily ? 'daily.plan.validity' : 'ui.equipment.text0322') }}</span
                 ><ElDatePicker
                   v-model="dateRange"
                   type="daterange"
@@ -1093,103 +1465,118 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   start-placeholder="开始日期"
                   end-placeholder="结束日期"
                   range-separator="至" /></label
-              ><label><span>启用</span><ElSwitch v-model="form.enabled" /></label>
+              ><label
+                ><span>{{ tr('ui.equipment.text0216') }}</span
+                ><ElSwitch v-model="form.enabled" />
+                <div v-if="form.legacyCategoryNames?.length">
+                  {{ tr('ui.equipment.text0323')
+                  }}<ElTag
+                    v-for="name in form.legacyCategoryNames"
+                    :key="name"
+                    type="warning"
+                    closable
+                    @close="
+                      form.legacyCategoryNames = form.legacyCategoryNames.filter((x) => x !== name)
+                    "
+                    >{{ name }}</ElTag
+                  >
+                  {{ tr('ui.equipment.text0324') }}
+                </div></label
+              >
+              <label v-if="!daily"
+                ><span><b>*</b>{{ tr('ui.equipment.text0325') }}</span
+                ><ElSelect v-model="form.typeId" @change="typeChange"
+                  ><ElOption
+                    v-for="t in types"
+                    :key="t.id"
+                    :value="t.id"
+                    :label="t.name"
+                    :disabled="!t.enabled" /></ElSelect
+              ></label>
               <template v-if="!daily"
                 ><label
-                  ><span><b>*</b>巡检类型</span
-                  ><ElSelect v-model="form.typeId" @change="typeChange"
-                    ><ElOption
-                      v-for="t in types"
-                      :key="t.id"
-                      :value="t.id"
-                      :label="t.name" /></ElSelect></label
+                  ><span>{{ tr('ui.equipment.text0326') }}</span>
+                  <ElInput :model-value="`${form.period} ${form.unit}`" readonly /></label
                 ><label
-                  ><span><b>*</b>巡检周期</span>
-                  <div class="inspection-number-unit">
-                    <ElInputNumber
-                      v-model="form.period"
-                      :min="1"
-                      :max="10000"
-                      controls-position="right"
-                    /><ElSelect v-model="form.unit"
-                      ><ElOption v-for="u in ['日', '周', '月', '年']" :key="u" :value="u"
-                    /></ElSelect></div></label
-                ><label
-                  ><span><b>*</b>下次巡检时间</span
+                  ><span><b>*</b>{{ tr('ui.equipment.text0327') }}</span
                   ><ElDatePicker
                     v-model="form.nextAt"
                     type="datetime"
                     value-format="YYYY-MM-DDTHH:mm:ss" /></label></template
-              ><label
-                ><span>提前生成</span>
+              ><label v-if="!daily"
+                ><span>{{ tr('ui.equipment.text0328') }}</span>
                 <DurationInput
                   v-model="form.advanceHours"
                   v-model:unit="form.advanceUnit"
                   :min="0"
                   :max-years="1"
               /></label>
-              <label
-                ><span>任务有效时长</span>
+              <label v-if="!daily"
+                ><span>{{ tr('ui.equipment.text0329') }}</span>
                 <DurationInput
                   v-model="form.validHours"
                   v-model:unit="form.validUnit"
                   :min="1"
                   :max-years="10" /></label
-              ><label
-                ><span>开始前提醒</span>
+              ><label v-if="!daily"
+                ><span>{{ tr('ui.equipment.text0330') }}</span>
                 <DurationInput
                   v-model="form.remindHours"
                   v-model:unit="form.remindUnit"
                   :min="0"
                   :max-years="1" /></label
-              ><label
-                ><span>过期前提醒</span>
+              ><label v-if="!daily"
+                ><span>{{ tr('ui.equipment.text0331') }}</span>
                 <DurationInput
                   v-model="form.expireRemindHours"
                   v-model:unit="form.expireRemindUnit"
                   :min="0"
                   :max-years="1"
               /></label>
-              <label v-if="daily"
-                ><span>点检人设置</span
-                ><ElSelect v-model="form.personMode"
-                  ><ElOption
-                    v-for="v in ['任何人可点检', '指定负责人', '按照排班表']"
-                    :key="v"
-                    :value="v" /></ElSelect></label
-              ><label
-                ><span>结果审核</span
+              <label
+                ><span>{{ tr('ui.equipment.text0333') }}</span
                 ><ElSelect v-model="form.reviewMode"
                   ><ElOption
-                    v-for="v in ['无需审核', '整机审核', '逐项审核']"
+                    v-for="v in daily
+                      ? ['无需验收', '整机验收']
+                      : ['无需验收', '整机验收', '逐项审核']"
                     :key="v"
-                    :value="v" /></ElSelect></label
-              ><label
+                    :value="v" /></ElSelect
+              ></label>
+              <!-- <label
                 ><span>设备校验</span
                 ><ElSelect v-model="form.scanMode"
                   ><ElOption
                     v-for="v in ['无需扫码', '逐台校验', '校验一台即可提交']"
                     :key="v"
                     :value="v" /></ElSelect
-              ></label>
-              <label class="span-two" v-if="!daily || form.personMode !== '任何人可点检'"
-                ><span>{{ form.personMode === '按照排班表' ? '未排班负责人' : '负责人' }}</span
-                ><ElSelect v-model="form.owners" multiple filterable
-                  ><ElOption
-                    v-for="u in choices.users"
-                    :key="u.id"
-                    :value="u.id"
-                    :label="u.name + ' · ' + u.department" /></ElSelect></label
-              ><label v-if="form.reviewMode !== '无需审核'" class="span-two"
-                ><span><b>*</b>审核人</span
-                ><ElSelect v-model="form.reviewers" multiple filterable
-                  ><ElOption
-                    v-for="u in choices.users"
-                    :key="u.id"
-                    :value="u.id"
-                    :label="u.name + ' · ' + u.department" /></ElSelect
-              ></label>
-              <div class="inspection-flags wide">
+              ></label> -->
+              <label class="span-two" v-if="!daily"
+                ><span>{{
+                  form.personMode === '按照排班表'
+                    ? tr('ui.equipment.text0334')
+                    : tr('ui.equipment.text0102')
+                }}</span
+                ><PagedChoiceField
+                  v-model="form.owners"
+                  multiple
+                  :options="choices.users"
+                  :load-rows="selector.users"
+                  :title="tr('ui.equipment.text0335')"
+                  :placeholder="tr('ui.equipment.text0336')"
+                  @select="rememberPeople" /></label
+              ><label v-if="form.reviewMode !== '无需验收'" class="span-two"
+                ><span><b>*</b>{{ tr('ui.equipment.text0337') }}</span
+                ><PagedChoiceField
+                  v-model="form.reviewers"
+                  multiple
+                  :options="choices.users"
+                  :load-rows="selector.users"
+                  :title="tr('ui.equipment.text0335')"
+                  :placeholder="tr('ui.equipment.text0336')"
+                  @select="rememberPeople"
+              /></label>
+              <!-- <div class="inspection-flags wide">
                 <ElCheckbox v-model="form.onlyAbnormal">只需填写异常项</ElCheckbox
                 ><ElCheckbox v-model="form.allowLate">过期仍可检查</ElCheckbox
                 ><ElCheckbox v-if="daily" v-model="form.skipUnstaffed">未排班不开班</ElCheckbox
@@ -1202,12 +1589,40 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     :max="1000"
                     controls-position="right"
                 /></label>
-              </div>
+              </div> -->
             </template>
             <label class="wide"
-              ><span>说明</span><ElInput v-model="form.remark" type="textarea" :rows="2" /></label
-            ><label v-if="standard"><span>启用</span><ElSwitch v-model="form.enabled" /></label>
+              ><span>{{ tr('ui.equipment.text0177') }}</span
+              ><ElInput v-model="form.remark" type="textarea" :rows="2" /></label
+            ><label v-if="standard"
+              ><span>{{ tr('ui.equipment.text0216') }}</span
+              ><ElSwitch v-model="form.enabled"
+            /></label>
           </div>
+        </section>
+        <section
+          v-if="daily"
+          v-show="dailyEditorTab === 'basic'"
+          class="inspection-form-card daily-reminder-settings"
+        >
+          <ElCollapse>
+            <ElCollapseItem name="reminders" :title="tr('daily.plan.reminders')">
+              <ElForm label-width="110px" class="inspection-reminder-grid">
+                <ElFormItem
+                  v-for="setting in reminderSettings"
+                  :key="setting.key"
+                  :label="tr(setting.label)"
+                >
+                  <DurationInput
+                    v-model="form[setting.key]"
+                    v-model:unit="form[setting.unit]"
+                    :min="0"
+                    :max-years="1"
+                  />
+                </ElFormItem>
+              </ElForm>
+            </ElCollapseItem>
+          </ElCollapse>
         </section>
         <InspectionProjectEditor
           v-if="standard"
@@ -1216,115 +1631,91 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           @add-type="newType"
         />
         <template v-else>
-          <section v-if="daily" class="inspection-form-card">
+          <section v-if="daily" v-show="dailyEditorTab === 'calendar'" class="inspection-form-card">
             <div class="inspection-section-tools">
-              <h3>工作日与班次</h3>
-              <ElButton
-                @click="
-                  form.shifts.push({
-                    id: uuid(),
-                    name: '',
-                    start: '08:00:00',
-                    end: '20:00:00',
-                  })
-                "
-                ><AppIcon name="Plus" /> 新增班次</ElButton
-              >
+              <h3>{{ tr('daily.calendar') }}</h3>
             </div>
-            <div class="inspection-calendar-grid">
+            <div class="inspection-calendar-grid daily-calendar">
               <div class="inspection-calendar-fields">
                 <label
-                  ><span>休息日设置</span
+                  ><span>{{ tr('ui.equipment.text0340') }}</span
                   ><ElRadioGroup v-model="form.restCycle" @change="form.restDays = []"
-                    ><ElRadioButton value="按周">按周</ElRadioButton
-                    ><ElRadioButton value="按月">按月</ElRadioButton></ElRadioGroup
+                    ><ElRadioButton value="按周">{{ tr('ui.equipment.text0341') }}</ElRadioButton
+                    ><ElRadioButton value="按月">{{
+                      tr('ui.equipment.text0342')
+                    }}</ElRadioButton></ElRadioGroup
                   ></label
                 ><label
-                  ><span>不开班日期</span
-                  ><ElSelect v-model="form.restDays" multiple placeholder="选择休息日"
+                  ><span>{{ tr('ui.equipment.text0343') }}</span
+                  ><ElSelect
+                    v-model="form.restDays"
+                    multiple
+                    :placeholder="tr('ui.equipment.text0344')"
                     ><ElOption
                       v-for="d in form.restCycle === '按周' ? 7 : 31"
                       :key="d"
                       :value="d"
                       :label="
                         form.restCycle === '按周'
-                          ? ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][d - 1]
-                          : d + '日'
+                          ? [
+                              tr('ui.equipment.text0345'),
+                              tr('ui.equipment.text0346'),
+                              tr('ui.equipment.text0347'),
+                              tr('ui.equipment.text0348'),
+                              tr('ui.equipment.text0349'),
+                              tr('ui.equipment.text0350'),
+                              tr('ui.equipment.text0351'),
+                            ][d - 1]
+                          : d + tr('ui.equipment.text0352')
                       " /></ElSelect></label
                 ><label
-                  ><span>节假日</span
+                  ><span>{{ tr('ui.equipment.text0353') }}</span
                   ><ElDatePicker
                     v-model="form.holidays"
                     type="dates"
                     value-format="YYYY-MM-DD"
-                    placeholder="选择不开班的日期"
+                    :placeholder="tr('ui.equipment.text0354')"
                 /></label>
+                <label
+                  ><span>{{ tr('daily.workdays') }}</span>
+                  <ElDatePicker v-model="form.workdays" type="dates" value-format="YYYY-MM-DD" />
+                </label>
                 <p>
-                  班次跨午夜时，结束时间计入次日。默认在班次开始时生成任务；提前生成或开始前提醒可提前创建未开始任务。
+                  {{ tr('ui.equipment.text0355') }}
                 </p>
-              </div>
-              <div class="inspection-inline-scroll">
-                <AppBusinessTable
-                  :rows="form.shifts"
-                  :pagination="false"
-                  :fill="false"
-                  :framed="false"
-                  class="business-table inspection-shift-table"
-                  ><!-- @vue-generic {TableColumnRow2} -->
-                  <ElTableColumn :min-width="210"
-                    ><template #header><div class="table-header-label">班次名称</div></template
-                    ><template #default="{ row: s, $index: tableRowIndex }"
-                      ><ElInput v-model="s.name" placeholder="例如白班" /></template></ElTableColumn
-                  ><!-- @vue-generic {TableColumnRow2} -->
-                  <ElTableColumn :min-width="150"
-                    ><template #header><div class="table-header-label">开始时间</div></template
-                    ><template #default="{ row: s, $index: tableRowIndex }"
-                      ><ElInput v-model="s.start" type="time" /></template></ElTableColumn
-                  ><!-- @vue-generic {TableColumnRow2} -->
-                  <ElTableColumn :min-width="150"
-                    ><template #header><div class="table-header-label">结束时间</div></template
-                    ><template #default="{ row: s, $index: tableRowIndex }"
-                      ><ElInput v-model="s.end" type="time" /></template></ElTableColumn
-                  ><!-- @vue-generic {TableColumnRow2} -->
-                  <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-                    ><template #header><div class="table-header-label">操作</div></template
-                    ><template #default="{ row: s, $index: tableRowIndex }">
-                      <ElButton
-                        class="inspection-text-button danger"
-                        @click="form.shifts = form.shifts.filter((i) => i.id !== s.id)"
-                        type="danger"
-                        link
-                      >
-                        删除
-                      </ElButton>
-                    </template></ElTableColumn
-                  ></AppBusinessTable
-                >
               </div>
             </div>
           </section>
-          <section v-if="daily && form.personMode === '按照排班表'" class="inspection-form-card">
+          <section
+            v-if="daily && dailyHasRoster"
+            v-show="dailyEditorTab === 'arrangements'"
+            class="inspection-form-card"
+          >
             <div class="inspection-section-tools">
-              <h3>人员排班</h3>
+              <h3>{{ tr('ui.equipment.text0360') }}</h3>
               <ElButton
                 @click="
                   form.roster.push({
                     key: uuid(),
                     date: form.startDate,
-                    shiftId: form.shifts[0]?.id || '',
+                    shiftId: dailyRosterSlots[0]?.id || '',
                     users: [],
                   })
                 "
-                ><AppIcon name="Plus" /> 新增排班</ElButton
-              ><ElButton @click="rosterInput?.open()">导入排班</ElButton
+                ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0361') }}</ElButton
+              ><ElButton @click="rosterInput?.open()">{{ tr('ui.equipment.text0362') }}</ElButton
               ><ElButton
                 @click="
                   downloadCsv('排班导入模板', [
                     ['日期', '班次', '人员账号'],
-                    [form.startDate, form.shifts[0]?.name || '白班', auth.user?.account || 'admin'],
+                    [
+                      form.startDate,
+                      dailyRosterSlots[0]?.name || '白班',
+                      auth.user?.account || 'admin',
+                    ],
                   ])
                 "
-                >下载模板</ElButton
+                >{{ tr('ui.equipment.text0363') }}</ElButton
               >
             </div>
             <AppFilePicker ref="rosterInput" accept=".csv" hidden @select="importRoster" />
@@ -1337,7 +1728,10 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 class="business-table inspection-roster-table"
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn :min-width="150"
-                  ><template #header><div class="table-header-label">日期</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0364') }}
+                    </div></template
                   ><template #default="{ row: r, $index: tableRowIndex }"
                     ><ElDatePicker
                       v-model="r.date"
@@ -1345,25 +1739,40 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                       value-format="YYYY-MM-DD" /></template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn :min-width="150"
-                  ><template #header><div class="table-header-label">班次</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0365') }}
+                    </div></template
                   ><template #default="{ row: r, $index: tableRowIndex }">
                     <ElSelect v-model="r.shiftId"
-                      ><ElOption v-for="s in form.shifts" :key="s.id" :value="s.id" :label="s.name"
+                      ><ElOption
+                        v-for="s in dailyRosterSlots"
+                        :key="s.id"
+                        :value="s.id"
+                        :label="s.name"
                     /></ElSelect> </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn :min-width="150"
-                  ><template #header><div class="table-header-label">排班人员</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0366') }}
+                    </div></template
                   ><template #default="{ row: r, $index: tableRowIndex }">
-                    <ElSelect v-model="r.users" multiple filterable
-                      ><ElOption
-                        v-for="u in choices.users"
-                        :key="u.id"
-                        :value="u.id"
-                        :label="u.name + ' · ' + u.department"
-                    /></ElSelect> </template></ElTableColumn
+                    <PagedChoiceField
+                      v-model="r.users"
+                      multiple
+                      :options="choices.users"
+                      :load-rows="selector.users"
+                      :title="tr('ui.equipment.text0335')"
+                      :placeholder="tr('ui.equipment.text0336')"
+                      @select="rememberPeople"
+                    /> </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
                 <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-                  ><template #header><div class="table-header-label">操作</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0145') }}
+                    </div></template
                   ><template #default="{ row: r, $index: tableRowIndex }">
                     <ElButton
                       class="inspection-text-button danger"
@@ -1371,32 +1780,39 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                       type="danger"
                       link
                     >
-                      删除
+                      {{ tr('ui.equipment.text0146') }}
                     </ElButton>
                   </template></ElTableColumn
                 ><template #empty
-                  ><div v-if="!form.roster.length">暂无排班，可新增或导入</div></template
+                  ><div v-if="!form.roster.length">{{ tr('ui.equipment.text0367') }}</div></template
                 ></AppBusinessTable
               >
             </div>
           </section>
-          <section class="inspection-form-card">
+          <section v-show="!daily || dailyEditorTab === 'equipment'" class="inspection-form-card">
             <div class="inspection-section-tools">
               <h3>
-                {{ daily ? '计划设备' : '巡检路线' }} <span>{{ form.details.length }} 台</span>
+                {{ daily ? tr('ui.equipment.text0368') : tr('ui.equipment.text0369') }}
+                <span>{{ form.details.length }} {{ tr('ui.equipment.text0370') }}</span>
               </h3>
               <ElButton type="primary" @click="equipmentPicker"
-                ><AppIcon name="Plus" /> 添加设备</ElButton
-              ><ElButton @click="matchProjects">匹配检查项目</ElButton
-              ><ElButton @click="importInput?.open()">导入设备</ElButton
-              ><ElDropdown :disabled="!selectedDetails.length" @command="detailCommand"
+                ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0371') }}</ElButton
+              ><ElButton @click="matchProjects">{{ tr('ui.equipment.text0372') }}</ElButton>
+              <!-- <ElButton @click="importInput?.open()">导入设备</ElButton> -->
+              <ElDropdown :disabled="!selectedDetails.length" @command="detailCommand"
                 ><ElButton :disabled="!selectedDetails.length"
-                  >批量操作<AppIcon name="Down" /></ElButton
+                  >{{ tr('ui.equipment.text0373') }}<AppIcon name="Down" /></ElButton
                 ><template #dropdown
                   ><ElDropdownMenu
-                    ><ElDropdownItem v-if="daily" command="owners">设置负责人</ElDropdownItem
-                    ><ElDropdownItem command="reviewers">设置审核人</ElDropdownItem
-                    ><ElDropdownItem divided command="delete">删除</ElDropdownItem></ElDropdownMenu
+                    ><ElDropdownItem v-if="daily" command="owners">{{
+                      tr('ui.equipment.text0374')
+                    }}</ElDropdownItem
+                    ><ElDropdownItem command="reviewers">{{
+                      tr('ui.equipment.text0375')
+                    }}</ElDropdownItem
+                    ><ElDropdownItem divided command="delete">{{
+                      tr('ui.equipment.text0146')
+                    }}</ElDropdownItem></ElDropdownMenu
                   ></template
                 ></ElDropdown
               >
@@ -1417,78 +1833,106 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 class="business-table inspection-detail-table"
                 ><!-- @vue-generic {TableColumnRow4} -->
                 <ElTableColumn :min-width="55" :width="52"
-                  ><template #header><div class="table-header-label">序号</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0376') }}
+                    </div></template
                   ><template #default="{ row: d, $index: index }">{{
                     index + 1
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow4} -->
                 <ElTableColumn :min-width="150" :width="170" class-name="detail-code"
-                  ><template #header><div class="table-header-label">设备编号</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0078') }}
+                    </div></template
                   ><template #default="{ row: d, $index: index }">{{
                     eqOf(d)?.code
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow4} -->
                 <ElTableColumn :min-width="210" :width="190" class-name="detail-name"
-                  ><template #header><div class="table-header-label">设备名称</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0081') }}
+                    </div></template
                   ><template #default="{ row: d, $index: index }">{{
                     eqOf(d)?.name
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow4} -->
                 <ElTableColumn :min-width="150" :width="160"
-                  ><template #header><div class="table-header-label">所属部门</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0098') }}
+                    </div></template
                   ><template #default="{ row: d, $index: index }">{{
                     eqOf(d)?.department
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow4} -->
                 <ElTableColumn :min-width="150" :width="150"
-                  ><template #header><div class="table-header-label">规格型号</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0091') }}
+                    </div></template
                   ><template #default="{ row: d, $index: index }">{{
                     eqOf(d)?.model
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow4} -->
                 <ElTableColumn :min-width="150" :width="190"
-                  ><template #header><div class="table-header-label">位置</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0108') }}
+                    </div></template
                   ><template #default="{ row: d, $index: index }">{{
                     eqOf(d)?.functionLocation || ''
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow4} -->
                 <ElTableColumn :min-width="210" :width="260"
-                  ><template #header><div class="table-header-label">检查项目</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0377') }}
+                    </div></template
                   ><template #default="{ row: d, $index: index }">
-                    <ElButton class="inspection-project-picker" @click="pickProjects(d)"
-                      >{{
-                        d.projectRefs.length
-                          ? d.projectRefs.length + ' 个检查项目'
-                          : '请选择检查项目'
-                      }}<span>选择 <AppIcon name="Right" /></span
-                    ></ElButton> </template></ElTableColumn
+                    <DialogChoiceInput
+                      :model-value="
+                        d.projectRefs.length ? d.projectRefs.length + ' 个检查项目' : ''
+                      "
+                      :placeholder="tr('ui.equipment.text0378')"
+                      :title="tr('ui.equipment.text0379')"
+                      @open="pickProjects(d)"
+                    /> </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow4} -->
                 <ElTableColumn v-if="daily" :min-width="150" :width="220"
-                  ><template #header><div class="table-header-label">负责人</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0102') }}
+                    </div></template
                   ><template #default="{ row: d, $index: index }">
-                    <ElSelect
+                    <PagedChoiceField
                       v-model="d.owners"
                       multiple
-                      filterable
-                      placeholder="沿用计划负责人"
-                      :disabled="form.personMode !== '指定负责人'"
-                      ><ElOption
-                        v-for="u in choices.users"
-                        :key="u.id"
-                        :value="u.id"
-                        :label="u.name"
-                    /></ElSelect> </template></ElTableColumn
+                      :options="choices.users"
+                      :load-rows="selector.users"
+                      :title="tr('ui.equipment.text0335')"
+                      :placeholder="tr('ui.equipment.text0380')"
+                      :disabled="false"
+                      @select="rememberPeople"
+                    /> </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow4} -->
                 <ElTableColumn :min-width="150" :width="220"
-                  ><template #header><div class="table-header-label">审核人</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0337') }}
+                    </div></template
                   ><template #default="{ row: d, $index: index }">
-                    <ElSelect v-model="d.reviewers" multiple filterable placeholder="沿用计划审核人"
-                      ><ElOption
-                        v-for="u in choices.users"
-                        :key="u.id"
-                        :value="u.id"
-                        :label="u.name"
-                    /></ElSelect> </template></ElTableColumn
+                    <PagedChoiceField
+                      v-model="d.reviewers"
+                      multiple
+                      :options="choices.users"
+                      :load-rows="selector.users"
+                      :title="tr('ui.equipment.text0335')"
+                      :placeholder="tr('ui.equipment.text0381')"
+                      @select="rememberPeople"
+                    /> </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow4} -->
                 <ElTableColumn
                   class-name="list-action-column"
@@ -1496,7 +1940,10 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   :width="170"
                   :min-width="156"
                   :resizable="false"
-                  ><template #header><div class="table-header-label">操作</div></template
+                  ><template #header
+                    ><div class="table-header-label">
+                      {{ tr('ui.equipment.text0145') }}
+                    </div></template
                   ><template #default="{ row: d, $index: index }">
                     <div class="inspection-row-actions">
                       <ElButton
@@ -1507,7 +1954,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                         type="primary"
                         link
                       >
-                        上移</ElButton
+                        {{ tr('ui.equipment.text0382') }}</ElButton
                       ><ElButton
                         v-if="!daily"
                         class="inspection-text-button"
@@ -1516,33 +1963,57 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                         type="primary"
                         link
                       >
-                        下移</ElButton
+                        {{ tr('ui.equipment.text0383') }}</ElButton
                       ><ElButton
                         class="inspection-text-button danger"
                         @click="form.details = form.details.filter((i) => i.key !== d.key)"
                         type="danger"
                         link
                       >
-                        删除
+                        {{ tr('ui.equipment.text0146') }}
                       </ElButton>
                     </div>
                   </template></ElTableColumn
                 ><template #empty
                   ><div v-if="!form.details.length">
-                    请添加设备，系统将匹配设备关联的检查项目
+                    {{ tr('ui.equipment.text0384') }}
                   </div></template
                 ></AppBusinessTable
               >
             </div>
           </section>
         </template>
+        <DailyArrangementEditor
+          v-if="daily && !loading"
+          v-show="dailyEditorTab === 'arrangements'"
+          v-model="form"
+          :choices="choices"
+          :errors="dailyErrors"
+          :project-options="dailyProjectOptions"
+          :can-create-team="can('新增')"
+          :can-edit-team="can('编辑')"
+          @people="rememberPeople"
+        />
+        <BusinessFields
+          v-if="!standard"
+          v-show="!daily || dailyEditorTab === 'basic'"
+          ref="extension"
+          v-model="form"
+          @initialize="extensionInitializationClean = !unsaved.dirty.value"
+          @ready="extensionInitializationClean && unsaved.markSaved()"
+          :object="daily ? 'inspection_daily_plan' : 'inspection_periodic_plan'"
+          :is-new="!form.id"
+          :errors="extensionErrors"
+        />
       </div>
       <AppFormFooter
         ><template #hint>{{
-          standard ? '项目名称、方法及基准为必填项' : '保存时检查到期任务，后续由后台自动生成'
+          standard ? tr('ui.equipment.text0385') : tr('ui.equipment.text0386')
         }}</template
-        ><ElButton :disabled="busy" @click="list">取消</ElButton
-        ><ElButton type="primary" :loading="busy" @click="save">保存</ElButton></AppFormFooter
+        ><ElButton :disabled="busy" @click="list">{{ tr('ui.equipment.text0157') }}</ElButton
+        ><ElButton type="primary" :loading="busy" @click="save">{{
+          tr('ui.equipment.text0159')
+        }}</ElButton></AppFormFooter
       >
     </template>
     <FilterConditionPopover
@@ -1554,16 +2025,21 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       @confirm="confirmFilter"
       :fields="filterFields"
     />
-    <AppDialog v-model="equipmentOpen" title="选择设备" width="1000px"
+    <AppDialog v-model="equipmentOpen" :title="tr('ui.equipment.text0220')" width="1000px"
       ><div class="inspection-picker-toolbar">
+        <ElButton text @click="equipmentSelectedOnly = !equipmentSelectedOnly"
+          >{{
+            equipmentSelectedOnly ? tr('ui.equipment.text0387') : tr('ui.equipment.text0388')
+          }}（{{ pickedEquipment.length }}）</ElButton
+        >
         <ElInput
           v-model="equipmentSearch"
-          placeholder="搜索设备编号、名称、型号"
+          :placeholder="tr('ui.equipment.text0389')"
           clearable
         /><TreeSelect
           v-model="equipmentCategory"
           :nodes="choices.categories.map((c) => ({ ...c, parentId: c.parentId || '' }))"
-          placeholder="设备类别"
+          :placeholder="tr('ui.equipment.text0390')"
         />
       </div>
       <div class="inspection-picker-scroll">
@@ -1574,62 +2050,93 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           selection-align="center"
           selectable
           :can-select-row="(e) => !form.details.some((d) => d.equipmentId === e.id)"
-          :rows="equipmentOptions"
+          :rows="equipmentVisible"
+          :loading="equipmentLoading"
+          :error="equipmentError"
+          @retry="loadEquipmentPage"
           :pagination="false"
           :fill="false"
           :framed="false"
           class="business-table inspection-picker-table"
           ><!-- @vue-generic {TableColumnRow5} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">设备编号</div></template
+            ><template #header
+              ><div class="table-header-label">{{ tr('ui.equipment.text0078') }}</div></template
             ><template #default="{ row: e, $index: tableRowIndex }">{{
               e.code
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow5} -->
           <ElTableColumn :min-width="210"
-            ><template #header><div class="table-header-label">设备名称</div></template
+            ><template #header
+              ><div class="table-header-label">{{ tr('ui.equipment.text0081') }}</div></template
             ><template #default="{ row: e, $index: tableRowIndex }">{{
               e.name
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow5} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">规格型号</div></template
+            ><template #header
+              ><div class="table-header-label">{{ tr('ui.equipment.text0091') }}</div></template
             ><template #default="{ row: e, $index: tableRowIndex }">{{
               e.model
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow5} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">所属部门</div></template
+            ><template #header
+              ><div class="table-header-label">{{ tr('ui.equipment.text0098') }}</div></template
             ><template #default="{ row: e, $index: tableRowIndex }">{{
               e.department
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow5} -->
           <ElTableColumn :min-width="150"
-            ><template #header><div class="table-header-label">类别</div></template
+            ><template #header
+              ><div class="table-header-label">{{ tr('ui.equipment.text0083') }}</div></template
             ><template #default="{ row: e, $index: tableRowIndex }">{{
               e.category
             }}</template></ElTableColumn
           ></AppBusinessTable
         >
       </div>
+      <div v-if="!equipmentSelectedOnly" class="equipment-selector-pagination">
+        <span
+          >{{ tr('ui.equipment.text0309') }} {{ equipmentTotal }}
+          {{ tr('ui.equipment.text0296') }}</span
+        ><AppPagination
+          v-model:page="equipmentPage"
+          v-model:page-size="equipmentSize"
+          :total="equipmentTotal"
+        />
+      </div>
       <template #footer
         ><div class="inspection-dialog-actions">
-          <ElButton @click="equipmentOpen = false">取消</ElButton
+          <ElButton @click="equipmentOpen = false">{{ tr('ui.equipment.text0157') }}</ElButton
           ><ElButton type="primary" @click="addEquipment"
-            >添加（{{ pickedEquipment.length }}）</ElButton
+            >{{ tr('ui.equipment.text0391') }}{{ pickedEquipment.length }}）</ElButton
           >
         </div></template
       ></AppDialog
     >
-    <AppDialog v-model="projectOpen" title="选择检查项目" width="1120px"
+    <AppDialog v-model="projectOpen" :title="tr('ui.equipment.text0379')" width="1120px"
       ><div class="inspection-picker-toolbar">
-        <ElCheckbox v-model="showAllStandards">查看所有标准</ElCheckbox
-        ><ElInput v-model="projectSearch" placeholder="搜索项目名称、检查方法" clearable /><span
-          >已选 {{ projectRefs.length }} 项</span
+        <ElCheckbox v-model="showAllStandards">{{ tr('ui.equipment.text0392') }}</ElCheckbox
+        ><ElInput
+          v-model="projectSearch"
+          :placeholder="tr('ui.equipment.text0393')"
+          clearable
+        /><span
+          >{{ tr('ui.equipment.text0295') }} {{ projectRefs.length }}
+          {{ tr('ui.equipment.text0394') }}</span
         >
       </div>
       <div class="inspection-project-dialog">
         <aside>
+          <ListSearchInput v-model="standardSearch" :placeholder="tr('ui.equipment.text0395')" />
+          <p v-if="standardLoading">{{ tr('ui.equipment.text0396') }}</p>
+          <p v-else-if="standardError">
+            {{ standardError
+            }}<ElButton link type="primary" @click="reloadStandards">{{
+              tr('ui.equipment.text0299')
+            }}</ElButton>
+          </p>
           <ElButton
             v-for="st in projectStandards"
             :key="st.id"
@@ -1638,7 +2145,20 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             ><strong>{{ st.name }}</strong
             ><span>{{ st.code }}</span></ElButton
           >
-          <p v-if="!projectStandards.length">无关联标准，可勾选“查看所有标准”</p>
+          <p v-if="!standardLoading && !standardError && !projectStandards.length">
+            {{ tr('ui.equipment.text0397') }}
+          </p>
+          <div class="standard-picker-page">
+            <span
+              >{{ tr('ui.equipment.text0309') }} {{ standardTotal }}
+              {{ tr('ui.equipment.text0296') }}</span
+            ><AppPagination
+              v-model:page="standardPage"
+              :page-size="standardSize"
+              :total="standardTotal"
+              :show-sizes="false"
+            />
+          </div>
         </aside>
         <div class="inspection-picker-scroll">
           <AppBusinessTable
@@ -1657,58 +2177,68 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             class="business-table inspection-picker-table"
             ><!-- @vue-generic {TableColumnRow6} -->
             <ElTableColumn :min-width="210"
-              ><template #header><div class="table-header-label">项目名称</div></template
+              ><template #header
+                ><div class="table-header-label">{{ tr('ui.equipment.text0398') }}</div></template
               ><template #default="{ row: i, $index: tableRowIndex }">{{
                 i.name
               }}</template></ElTableColumn
             ><!-- @vue-generic {TableColumnRow6} -->
             <ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">方法及基准</div></template
+              ><template #header
+                ><div class="table-header-label">{{ tr('ui.equipment.text0399') }}</div></template
               ><template #default="{ row: i, $index: tableRowIndex }">{{
                 i.content
               }}</template></ElTableColumn
             ><!-- @vue-generic {TableColumnRow6} -->
             <ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">巡检类型</div></template
+              ><template #header
+                ><div class="table-header-label">{{ tr('ui.equipment.text0325') }}</div></template
               ><template #default="{ row: i, $index: tableRowIndex }">{{
                 types.find((t) => t.id === i.typeId)?.name
               }}</template></ElTableColumn
             ><!-- @vue-generic {TableColumnRow6} -->
             <ElTableColumn :min-width="150"
-              ><template #header><div class="table-header-label">结果类型</div></template
+              ><template #header
+                ><div class="table-header-label">{{ tr('ui.equipment.text0400') }}</div></template
               ><template #default="{ row: i, $index: tableRowIndex }">{{
                 i.valueType
               }}</template></ElTableColumn
             ><template #empty
-              ><div v-if="!projectItems.length">此标准无匹配的检查项目</div></template
+              ><div v-if="!projectItems.length">{{ tr('ui.equipment.text0401') }}</div></template
             ></AppBusinessTable
           >
         </div>
       </div>
       <template #footer
         ><div class="inspection-dialog-actions">
-          <ElButton @click="projectOpen = false">取消</ElButton
-          ><ElButton type="primary" @click="applyProjects">确定</ElButton>
+          <ElButton @click="projectOpen = false">{{ tr('ui.equipment.text0157') }}</ElButton
+          ><ElButton type="primary" @click="applyProjects">{{
+            tr('ui.equipment.text0402')
+          }}</ElButton>
         </div></template
       ></AppDialog
     >
     <AppDialog
       v-model="detailBatchOpen"
-      :title="detailBatch === 'owners' ? '设置负责人' : '设置审核人'"
-      ><ElSelect v-model="batchUsers" multiple filterable placeholder="留空沿用计划设置"
-        ><ElOption
-          v-for="u in choices.users"
-          :key="u.id"
-          :value="u.id"
-          :label="u.name + ' · ' + u.department" /></ElSelect
-      ><template #footer
+      :title="detailBatch === 'owners' ? tr('ui.equipment.text0374') : tr('ui.equipment.text0375')"
+      ><PagedChoiceField
+        v-model="batchUsers"
+        multiple
+        :options="choices.users"
+        :load-rows="selector.users"
+        :title="tr('ui.equipment.text0335')"
+        :placeholder="tr('ui.equipment.text0403')"
+        @select="rememberPeople"
+      /><template #footer
         ><div class="inspection-dialog-actions">
-          <ElButton @click="detailBatchOpen = false">取消</ElButton
-          ><ElButton type="primary" @click="applyDetailBatch">确定</ElButton>
+          <ElButton @click="detailBatchOpen = false">{{ tr('ui.equipment.text0157') }}</ElButton
+          ><ElButton type="primary" @click="applyDetailBatch">{{
+            tr('ui.equipment.text0402')
+          }}</ElButton>
         </div></template
       ></AppDialog
     >
-    <AppDialog v-model="typeOpen" title="巡检类型" width="760px" :busy="busy">
+    <AppDialog v-model="typeOpen" :title="tr('ui.equipment.text0325')" width="760px" :busy="busy">
       <div class="inspection-type-list">
         <AppBusinessTable
           :rows="types"
@@ -1719,25 +2249,29 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           :row-class="(t, tableRowIndex) => ({ 'is-editing': typeForm.id === t.id })"
           ><!-- @vue-generic {TableColumnRow7} -->
           <ElTableColumn :min-width="210"
-            ><template #header><div class="table-header-label">名称</div></template
+            ><template #header
+              ><div class="table-header-label">{{ tr('ui.equipment.text0404') }}</div></template
             ><template #default="{ row: t, $index: tableRowIndex }">{{
               t.name
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow7} -->
           <ElTableColumn :min-width="150" :width="100"
-            ><template #header><div class="table-header-label">周期</div></template
+            ><template #header
+              ><div class="table-header-label">{{ tr('ui.equipment.text0405') }}</div></template
             ><template #default="{ row: t, $index: tableRowIndex }"
               >{{ t.period }} {{ t.unit }}</template
             ></ElTableColumn
           ><!-- @vue-generic {TableColumnRow7} -->
           <ElTableColumn :min-width="150" :width="90"
-            ><template #header><div class="table-header-label">排序</div></template
+            ><template #header
+              ><div class="table-header-label">{{ tr('ui.equipment.text0406') }}</div></template
             ><template #default="{ row: t, $index: tableRowIndex }">{{
               t.sortOrder ?? 0
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow7} -->
           <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-            ><template #header><div class="table-header-label">操作</div></template
+            ><template #header
+              ><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
             ><template #default="{ row: t, $index: tableRowIndex }">
               <div class="inspection-row-actions">
                 <ElButton
@@ -1749,7 +2283,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   type="primary"
                   link
                 >
-                  编辑
+                  {{ tr('ui.equipment.text0207') }}
                 </ElButton>
                 <ElButton
                   class="inspection-text-button danger"
@@ -1760,51 +2294,56 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   type="danger"
                   link
                 >
-                  删除
+                  {{ tr('ui.equipment.text0146') }}
                 </ElButton>
               </div>
             </template></ElTableColumn
           ><template #empty
-            ><div v-if="!types.length">暂无巡检类型</div></template
+            ><div v-if="!types.length">{{ tr('ui.equipment.text0407') }}</div></template
           ></AppBusinessTable
         >
       </div>
       <div class="inspection-type-form">
         <label
-          ><span class="required">类型名称</span
+          ><span class="required">{{ tr('ui.equipment.text0408') }}</span
           ><ElInput
             v-model="typeForm.name"
-            aria-label="巡检类型名称"
-            placeholder="输入类型名称"
+            :aria-label="tr('ui.equipment.text0409')"
+            :placeholder="tr('ui.equipment.text0410')"
             maxlength="150"
             :disabled="busy"
         /></label>
         <label
-          ><span class="required">巡检周期</span>
+          ><span class="required">{{ tr('ui.equipment.text0326') }}</span>
           <div class="inspection-type-period">
             <ElInputNumber
               v-model="typeForm.period"
-              aria-label="巡检周期数值"
+              :aria-label="tr('ui.equipment.text0411')"
               :min="1"
               :precision="0"
               controls-position="right"
               :disabled="busy"
             />
-            <ElSelect v-model="typeForm.unit" aria-label="巡检周期单位" :disabled="busy"
+            <ElSelect
+              v-model="typeForm.unit"
+              :aria-label="tr('ui.equipment.text0412')"
+              :disabled="busy"
               ><ElOption v-for="u in ['日', '周', '月', '年']" :key="u" :value="u" :label="u"
             /></ElSelect></div
         ></label>
         <label
-          ><span>排序</span
+          ><span>{{ tr('ui.equipment.text0406') }}</span
           ><ElInputNumber
             v-model="typeForm.sortOrder"
-            aria-label="巡检类型排序"
+            :aria-label="tr('ui.equipment.text0413')"
             :min="0"
             :max="999999"
             :precision="0"
             controls-position="right"
             :disabled="busy"
-          /><small class="inspection-type-sort-hint">数值越小越靠前</small></label
+          /><small class="inspection-type-sort-hint">{{
+            tr('ui.equipment.text0414')
+          }}</small></label
         >
       </div>
       <template #footer
@@ -1814,14 +2353,14 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             @click="
               typeForm.id ? (typeForm = { ...emptyInspection(), unit: '日' }) : (typeOpen = false)
             "
-            >{{ typeForm.id ? '取消编辑' : '关闭' }}</ElButton
+            >{{ typeForm.id ? tr('ui.equipment.text0415') : tr('ui.equipment.text0076') }}</ElButton
           >
           <ElButton
             v-if="auth.can('inspectionType', typeForm.id ? '编辑' : '新增')"
             type="primary"
             :loading="busy"
             @click="saveType"
-            >{{ typeForm.id ? '保存' : '新增' }}</ElButton
+            >{{ typeForm.id ? tr('ui.equipment.text0159') : tr('ui.equipment.text0149') }}</ElButton
           >
         </div></template
       >
@@ -1832,6 +2371,62 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       :busy="busy"
       @submit="batchReview"
     />
+    <AppDialog v-model="eventOpen" :title="tr('daily.launchEvent')" :busy="busy"
+      ><ElSelect v-model="eventArrangement" @change="eventKey = uuid()"
+        ><ElOption
+          v-for="a in eventPlan?.arrangements.filter((a) => a.frequency === 'event' && a.enabled) ||
+          []"
+          :key="a.id"
+          :value="a.id"
+          :label="a.name" /></ElSelect
+      ><PagedChoiceField
+        v-model="eventEquipmentIds"
+        multiple
+        :options="eventEquipmentOptions"
+        :load-rows="eventEquipmentPage"
+        :title="tr('daily.equipment')"
+        @update:model-value="eventKey = uuid()"
+      /><ElDatePicker
+        v-model="eventAt"
+        type="datetime"
+        value-format="YYYY-MM-DDTHH:mm:ss"
+        @change="eventKey = uuid()"
+      />
+      <p v-if="eventError" class="inspection-error">{{ eventError }}</p>
+      <template #footer
+        ><ElButton @click="eventOpen = false">{{ tr('daily.cancel') }}</ElButton
+        ><ElButton type="primary" :loading="busy" @click="triggerManualEvent">{{
+          tr('daily.launchEvent')
+        }}</ElButton></template
+      ></AppDialog
+    >
+    <AppDialog v-model="exemptionOpen" :title="tr('daily.rangeExemption')" :busy="busy"
+      ><p>{{ tr('daily.exemptionHelp') }}</p>
+      <PagedChoiceField
+        v-model="exemptionEquipment"
+        multiple
+        :options="exemptionOptions"
+        :load-rows="exemptionPage"
+        :title="tr('daily.equipment')"
+      /><ElDatePicker
+        v-model="exemptionRange"
+        type="datetimerange"
+        value-format="YYYY-MM-DDTHH:mm:ss"
+      /><ElInput
+        v-model="exemptionReason"
+        type="textarea"
+        :rows="3"
+        maxlength="1000"
+        :placeholder="tr('daily.reason')"
+      />
+      <p v-if="exemptionError" class="inspection-error">{{ exemptionError }}</p>
+      <template #footer
+        ><ElButton @click="exemptionOpen = false">{{ tr('daily.cancel') }}</ElButton
+        ><ElButton type="primary" :loading="busy" @click="approveExemption">{{
+          tr('daily.exempt')
+        }}</ElButton></template
+      ></AppDialog
+    >
   </section>
 </template>
 <style src="../styles/inspection.css"></style>
@@ -1850,5 +2445,35 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   min-width: 0;
   min-height: 0;
   gap: 8px;
+}
+</style>
+
+<style scoped>
+.standard-picker-page {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 12px;
+}
+</style>
+
+<style scoped>
+.project-picker-standards :deep(.list-search-input),
+.inspection-project-dialog aside :deep(.list-search-input) {
+  width: 100%;
+  min-width: 0;
+}
+.standard-picker-page :deep(.el-pagination) {
+  flex-wrap: wrap;
+}
+</style>
+
+<style scoped>
+.equipment-selector-pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
 }
 </style>

@@ -28,8 +28,8 @@ public class InventoryUsageRepository {
   }
 
   public List<Map<String, Object>> lockTask(long tenantId, Object task, String table) {
-    if (!(Set.of("eam_repair_order", "eam_maintenance_task", "eam_inspection_task")
-        .contains(table))) throw new IllegalArgumentException("未知任务关联类型");
+    if (!(Set.of("eam_repair_order", "v_maintenance_task", "v_inspection_task").contains(table)))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0008");
     return db.queryForList(
         "SELECT id FROM " + table + " WHERE tenant_id=? AND id=? FOR UPDATE", tenantId, task);
   }
@@ -44,7 +44,7 @@ public class InventoryUsageRepository {
 
   public Map<String, Object> findMaintenanceEquipment(long tenantId, Object task) {
     return db.queryForMap(
-        "SELECT equipment_id FROM eam_maintenance_task WHERE tenant_id=? AND id=?", tenantId, task);
+        "SELECT equipment_id FROM v_maintenance_task WHERE tenant_id=? AND id=?", tenantId, task);
   }
 
   public List<Map<String, Object>> findEquipment(long tenantId, Object equipmentId) {
@@ -117,8 +117,8 @@ public class InventoryUsageRepository {
             + " c.id=a.cost_layer_id) currency,i.company_id,COALESCE(ol.department_id,CASE"
             + " r.task_kind WHEN '维修' THEN (SELECT t.department_org_id FROM eam_repair_order t"
             + " WHERE t.tenant_id=r.tenant_id AND t.id=r.task_id) WHEN '保养' THEN (SELECT"
-            + " t.department_id FROM eam_maintenance_task t WHERE t.tenant_id=r.tenant_id AND"
-            + " t.id=r.task_id) WHEN '点巡检' THEN (SELECT t.department_id FROM eam_inspection_task t"
+            + " t.department_id FROM v_maintenance_task t WHERE t.tenant_id=r.tenant_id AND"
+            + " t.id=r.task_id) WHEN '点巡检' THEN (SELECT t.department_id FROM v_inspection_task t"
             + " WHERE t.tenant_id=r.tenant_id AND t.id=r.task_id) END)"
             + " department_id,s.material_id,m.usage_type,m.name"
             + " material_name,rl.requisition_id,COALESCE(ol.task_kind,r.task_kind)"
@@ -150,7 +150,8 @@ public class InventoryUsageRepository {
             Integer.class,
             tenant,
             allocation);
-    if (missing != null && missing > 0) throw new IllegalArgumentException("历史使用成本缺失，请先核对原出库分配");
+    if (missing != null && missing > 0)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0009");
     return db.queryForObject(
         "SELECT COALESCE(SUM(cost_amount),0) FROM inv_usage WHERE tenant_id=? AND allocation_id=?",
         java.math.BigDecimal.class,
@@ -293,7 +294,7 @@ public class InventoryUsageRepository {
       Object payload,
       String table) {
     if (!(Set.of("eam_maintenance_event", "eam_inspection_event").contains(table)))
-      throw new IllegalArgumentException("未知任务关联类型");
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0008");
     return db.update(
         "INSERT INTO "
             + table

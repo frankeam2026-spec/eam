@@ -1,0 +1,102 @@
+[
+  {
+    "locale": "zh-CN",
+    "templateSheets": [
+      "设备数据",
+      "填写说明",
+      "可选数据"
+    ],
+    "printPages": 1,
+    "customTitlePreserved": true,
+    "stableImportColumns": true
+  },
+  {
+    "locale": "zh-TW",
+    "templateSheets": [
+      "設備數據",
+      "填寫說明",
+      "可選數據"
+    ],
+    "printPages": 1,
+    "customTitlePreserved": true,
+    "stableImportColumns": true
+  },
+  {
+    "locale": "en-US",
+    "templateSheets": [
+      "Equipment Data",
+      "Instructions",
+      "Allowed Values"
+    ],
+    "printPages": 1,
+    "customTitlePreserved": true,
+    "stableImportColumns": true
+  },
+  {
+    "export": "/equipment/export?fields=code,name",
+    "header": "\"Equipment Code\",\"Equipment Name\""
+  },
+  {
+    "export": "/maintenance/tasks/export?fields=code,planName",
+    "header": "\"Task Number\",\"Plan Name\",\"Equipment Name\",\"Equipment Code\",\"Maintenance type\",\"Status\",\"Department\",\"Responsible Person\",\"Planned start time\",\"Planned end time\",\"actual start time\",\"actual end time\",\"Generation time\""
+  },
+  {
+    "export": "/inspection/daily-tasks/export?fields=code,planName",
+    "header": "\"Task Number\",\"Plan Name\",\"shift\",\"Shift date\",\"Inspection type\",\"Review method\",\"Task status\",\"Equipment Name\",\"Number of devices\",\"Department\",\"Executor\",\"actual executor\",\"reviewer\",\"Plan time\",\"Deadline\",\"Number of items to be inspected\",\"Number of items inspected\",\"Number of missed items\",\"Number of abnormal items\",\"Number of devices skipped\",\"Start Time\",\"completion time\",\"reviewer\",\"review time\",\"Overdue days\",\"Execution seconds\",\"Generation time\""
+  },
+  {
+    "validationReport": "en-US",
+    "state": "INVALID",
+    "systemIssues": [
+      {
+        "row": 3,
+        "field": "department",
+        "label": "Department",
+        "value": "",
+        "reason": "The department to which it belongs does not exist, has been deactivated, the path is not unique, or does not have the right to use it.",
+        "suggestion": "Copy the full path from the optional data of the latest template and confirm the company and authorization"
+      },
+      {
+        "row": 3,
+        "field": "useState",
+        "label": "Usage Status",
+        "value": "",
+        "reason": "The associated data does not exist, has been disabled, the path is not unique, or you have no right to use it.",
+        "suggestion": "Follow the instructions for filling in the template and make corrections. Optional options are subject to the latest template."
+      },
+      {
+        "row": 3,
+        "field": "category",
+        "label": "Device category",
+        "value": "",
+        "reason": "The associated data does not exist, has been disabled, the path is not unique, or you have no right to use it.",
+        "suggestion": "Copy the full path from the optional data of the latest template and confirm the company and authorization"
+      },
+      {
+        "row": 3,
+        "field": "unit",
+        "label": "Unit",
+        "value": "",
+        "reason": "The associated data does not exist, has been disabled, the path is not unique, or you have no right to use it.",
+        "suggestion": "Follow the instructions for filling in the template and make corrections. Optional options are subject to the latest template."
+      },
+      {
+        "row": 3,
+        "field": "functionLocation",
+        "label": "Location",
+        "value": "",
+        "reason": "The associated data does not exist, has been disabled, the path is not unique, or you have no right to use it.",
+        "suggestion": "Copy the full path from the optional data of the latest template and confirm the company and authorization"
+      },
+      {
+        "row": 3,
+        "field": "state",
+        "label": "Equipment Status",
+        "value": "",
+        "reason": "Please select a valid device status: 带病运行、正常、故障",
+        "suggestion": "Follow the instructions for filling in the template and make corrections. Optional options are subject to the latest template."
+      }
+    ],
+    "equipmentAdded": 0
+  }
+]
