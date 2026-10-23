@@ -66,6 +66,7 @@ defineExpose({
       <AppFormField :label="tr('ui.equipment.text1172')" prop="phone" :error="errors.phone"
         ><ElInput v-model="form.phone" :placeholder="tr('ui.equipment.text1604')"
       /></AppFormField>
+      <AppFormField :label="tr('notify.email')" prop="email" :error="errors.email"><ElInput v-model="form.email" type="email" /></AppFormField>
       <AppFormField :label="tr('ui.equipment.text1170')" prop="orgId" :error="errors.orgId" class="user-form-wide"
         ><ElTreeSelect
           v-model="form.orgId"

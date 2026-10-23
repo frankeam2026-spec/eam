@@ -3,6 +3,7 @@
 import { ref, computed, watch, nextTick, inject } from 'vue';
 import { ElAlert, ElButton, ElForm, ElTag, formContextKey, type FormItemRule } from 'element-plus';
 import AppFormField from '../common/AppFormField.vue';
+import DepartmentText from '../common/DepartmentText.vue';
 import BusinessFieldInput from './BusinessFieldInput.vue';
 import {
   businessApi,
@@ -154,6 +155,13 @@ function display(f: BusinessField) {
   if (f.type === 'NUMBER') return Number(v).toFixed(2);
   return Array.isArray(v) ? v.join('、') : String(v).replace('T', ' ');
 }
+function departmentValues(field: BusinessField) {
+  const value = values.value[field.id];
+  const ids = Array.isArray(value) ? value.map(String) : value ? [String(value)] : [];
+  const captions = (display(field) || '').split('、');
+  const names = labels(field.id);
+  return ids.map((id, index) => ({ id, name: names[id] || captions[index] || '' }));
+}
 defineExpose({ validate, reload, prepare, loading, fields });
 </script>
 <template>
@@ -194,7 +202,7 @@ defineExpose({ validate, reload, prepare, loading, fields });
                 localErrors[f.id]
           "
         >
-          <span v-if="readonly" class="business-field-value">{{ display(f) }}</span>
+          <span v-if="readonly" class="business-field-value"><template v-if="f.type === 'DEPARTMENT' || f.source === 'department'"><template v-for="(department, index) in departmentValues(f)" :key="department.id"><span v-if="index">、</span><DepartmentText :value="department.name" :department-id="department.id" /></template></template><template v-else>{{ display(f) }}</template></span>
           <div v-else class="business-field-control">
             <BusinessFieldInput
               :model-value="values[f.id]"
@@ -212,7 +220,7 @@ defineExpose({ validate, reload, prepare, loading, fields });
         <dl>
           <template v-for="f in retained" :key="f.id"
             ><dt>{{ f.name }} <ElTag v-if="!f.enabled" size="small" type="info">{{ tr('ui.equipment.text0262') }}</ElTag></dt>
-            <dd>{{ display(f) }}</dd></template
+            <dd><template v-if="f.type === 'DEPARTMENT' || f.source === 'department'"><template v-for="(department, index) in departmentValues(f)" :key="department.id"><span v-if="index">、</span><DepartmentText :value="department.name" :department-id="department.id" /></template></template><template v-else>{{ display(f) }}</template></dd></template
           >
         </dl>
       </details>

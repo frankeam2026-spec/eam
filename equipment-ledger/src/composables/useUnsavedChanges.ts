@@ -1,13 +1,15 @@
-import { tr } from '../i18n';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
-import { ElMessageBox } from 'element-plus';
+import { confirmUnsavedChanges } from '../components/common/AppUnsavedChangesConfirm';
 
 /** Protect persisted forms and task drafts without treating their initial load as an edit. */
 export function useUnsavedChanges(
   source: () => unknown,
   active: () => boolean,
   busy: () => boolean = () => false,
+  options: {
+    localOnly?: boolean;
+  } = {},
 ) {
   const baseline = ref<string>();
   function snapshot(value: unknown): string {
@@ -28,23 +30,9 @@ export function useUnsavedChanges(
     if (busy()) return false;
     if (!dirty.value) return true;
     if (pending) return (await pending) && !busy();
-    pending = ElMessageBox.confirm(
-      '内容尚未保存。废弃将离开；保存将保留当前编辑内容并留在本页。',
-      '离开当前页面？',
-      {
-        get confirmButtonText() { return tr('ui.equipment.text0159'); },
-        get cancelButtonText() { return tr('ui.equipment.text1619'); },
-        type: 'warning',
-        closeOnClickModal: false,
-        distinguishCancelAndClose: true,
-        autofocus: false,
-        customClass: 'eam-unsaved-confirmation',
-        confirmButtonClass: 'unsaved-continue-button',
-      },
-    )
-      .then(() => false)
-      .catch((action) => {
-        if (action !== 'cancel') return false;
+    pending = confirmUnsavedChanges()
+      .then((discard) => {
+        if (!discard) return false;
         // Discard is explicit consent. Mark this edit acknowledged so a caller's
         // permitLeave followed by the route guard does not ask a second time.
         markSaved();
@@ -53,22 +41,21 @@ export function useUnsavedChanges(
       .finally(() => {
         pending = undefined;
       });
-    requestAnimationFrame(() =>
-      document
-        .querySelector<HTMLButtonElement>('.eam-unsaved-confirmation .unsaved-continue-button')
-        ?.focus(),
-    );
     return (await pending) && !busy();
   }
-  onBeforeRouteLeave(permitLeave);
-  onBeforeRouteUpdate(permitLeave);
+  if (!options.localOnly) {
+    onBeforeRouteLeave(permitLeave);
+    onBeforeRouteUpdate(permitLeave);
+  }
   function unload(event: BeforeUnloadEvent) {
     if (dirty.value || busy()) {
       event.preventDefault();
       event.returnValue = '';
     }
   }
-  onMounted(() => window.addEventListener('beforeunload', unload));
-  onUnmounted(() => window.removeEventListener('beforeunload', unload));
+  if (!options.localOnly) {
+    onMounted(() => window.addEventListener('beforeunload', unload));
+    onUnmounted(() => window.removeEventListener('beforeunload', unload));
+  }
   return { dirty, markSaved, permitLeave };
 }

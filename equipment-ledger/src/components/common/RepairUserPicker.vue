@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import DepartmentText from './DepartmentText.vue';
+
 import { tr } from '../../i18n';
 
 import { ElTableColumn } from 'element-plus';
@@ -97,9 +99,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         <ElTableColumn :min-width="150"
           ><template #header
             ><div class="table-header-label">{{ tr('ui.equipment.text1320') }}</div></template
-          ><template #default="{ row: user, $index: tableRowIndex }">{{
-            user.department
-          }}</template></ElTableColumn
+          ><template #default="{ row: user, $index: tableRowIndex }"><DepartmentText :value="user.department" /></template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="150"
           ><template #header

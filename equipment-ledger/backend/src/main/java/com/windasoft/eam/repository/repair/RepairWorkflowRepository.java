@@ -15,6 +15,8 @@ import org.springframework.stereotype.Repository;
 /** Owns workflow persistence, including legacy allocations needed for historical compatibility. */
 @Repository
 public class RepairWorkflowRepository {
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.repository.system.NotificationRepository notifications;
   private final RepairRelationsRepository collaborators;
   private final RepairWorkflowMapper mapper;
   private final RepairOrderMapper orders;
@@ -153,6 +155,7 @@ public class RepairWorkflowRepository {
         id,
         com.windasoft.eam.common.NotificationMessages.key(kind),
         com.windasoft.eam.common.NotificationMessages.arguments(kind, title));
+    if (notifications != null) notifications.captureSource("eam_repair_inbox", tenant, id);
   }
 
   public void closeTodos(long tenant, long orderId) {

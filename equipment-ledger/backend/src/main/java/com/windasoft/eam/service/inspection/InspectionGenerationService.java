@@ -15,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class InspectionGenerationService {
   @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.repository.system.NotificationRepository notificationPolicies;
+  @org.springframework.beans.factory.annotation.Autowired
   private DailyArrangementService arrangements;
 
   @org.springframework.beans.factory.annotation.Autowired
@@ -79,13 +81,7 @@ public class InspectionGenerationService {
   }
 
   boolean rest(Map<String, Object> plan, LocalDate date) {
-    return strings(plan.get("holidays")).contains(date.toString())
-        || ids(plan.get("restDays"))
-            .contains(
-                (long)
-                    (text(plan, "restCycle").equals("按月")
-                        ? date.getDayOfMonth()
-                        : date.getDayOfWeek().getValue()));
+    return DailyInspectionSchedule.rest(plan, date);
   }
 
   int createTask(
@@ -123,13 +119,14 @@ public class InspectionGenerationService {
       else if (p.get("_arrangement") instanceof Map<?, ?>) {
         var a = (Map<String, Object>) p.get("_arrangement");
         owners.addAll(
-            arrangements.owners(
+            arrangements.ownersAt(
                 tenant,
                 p,
                 a,
                 detail,
                 LocalDate.parse(text(p, "_businessDate")),
-                text(p, "_rosterShift")));
+                text(p, "_rosterShift"),
+                due));
       } else owners.addAll(effectiveOwners(tenant, p, detail, due.toLocalDate(), shiftId));
       reviewers.addAll(ids(detail.get("reviewers")));
       equipmentList.add(
@@ -169,7 +166,9 @@ public class InspectionGenerationService {
     snap.put("planCode", plan.get("code"));
     if (kind.equals("periodic")) {
       snap.put("typeId", text(p, "typeId"));
-      snap.put("typeName", projectSource.raw("types", tenant, number(p.get("typeId")), false).get("name"));
+      snap.put(
+          "typeName",
+          projectSource.raw("types", tenant, number(p.get("typeId")), false).get("name"));
     } else {
       snap.remove("typeId");
       snap.remove("typeName");
@@ -189,7 +188,12 @@ public class InspectionGenerationService {
     snap.put(
         "department",
         Objects.toString(repository.findOrganizationName(tenant, plan.get("department_id")), ""));
-    snap.put("personMode", kind.equals("periodic") ? "指定负责人" : text(p, "personMode"));
+    boolean open =
+        p.get("_arrangement") instanceof Map<?, ?>
+            && arrangements.open((Map<String, Object>) p.get("_arrangement"), details.getFirst());
+    snap.put(
+        "personMode",
+        open ? "现场直接点检" : (kind.equals("periodic") ? "指定负责人" : text(p, "personMode")));
     Map<String, Object> exemption = Map.of();
     if (p.containsKey("_arrangement")) {
       var periods =
@@ -217,6 +221,12 @@ public class InspectionGenerationService {
     }
     var org = repository.findOrganizationParent(tenant, plan.get("department_id"));
     Long company = permissions.companyOfOrganization(tenant, nullable(plan.get("department_id")));
+    Object taskDepartment = plan.get("department_id");
+    if (open) {
+      var eq = projectSource.equipment(tenant, equipmentId);
+      company = nullable(eq.get("company_org_id"));
+      taskDepartment = eq.get("department_org_id");
+    }
     if (!exemption.isEmpty()) status = "已免检";
     repository.insertTask(
         task,
@@ -228,7 +238,7 @@ public class InspectionGenerationService {
         equipmentId,
         shiftId,
         company,
-        plan.get("department_id"),
+        taskDepartment,
         due,
         expires,
         status,
@@ -237,7 +247,10 @@ public class InspectionGenerationService {
       var a = (Map<String, Object>) p.get("_arrangement");
       dailyStorage.taskMetadata(tenant, task, a, text(p, "_businessDate"), text(p, "_eventKey"));
       if (!exemption.isEmpty()) dailyStorage.scheduledExemption(tenant, task, exemption);
-      if (exemption.isEmpty() && owners.isEmpty())
+      if (exemption.isEmpty()
+          && owners.isEmpty()
+          && !open
+          && nullable(a.get("followUpUserId")) != null)
         journal.notify(
             tenant,
             task,
@@ -286,7 +299,8 @@ public class InspectionGenerationService {
     int count = 0;
     if (yes(p.get("enabled"))) {
       if (text(plan, "kind").equals("periodic-plans")) {
-        var selectedType = views.definition(projectSource.raw("types", tenant, number(p.get("typeId")), true));
+        var selectedType =
+            views.definition(projectSource.raw("types", tenant, number(p.get("typeId")), true));
         if (!yes(selectedType.get("enabled"))) return 0;
       }
       var schedule = repository.lockSchedule(tenant, planId);
@@ -319,7 +333,9 @@ public class InspectionGenerationService {
             if (!rows(p.get("arrangements")).isEmpty()) {
               for (var a : rows(p.get("arrangements")))
                 for (var occurrence : DailyInspectionSchedule.on(p, a, date)) {
-                  if (!readyForGeneration(occurrence.start(), p)) {
+                  if (!readyForGeneration(occurrence.start(), p)
+                      || (text(a, "personMode").equals("open")
+                          && occurrence.start().isAfter(now()))) {
                     allStarted = false;
                     continue;
                   }
@@ -407,8 +423,9 @@ public class InspectionGenerationService {
             require(
                 ++count <= 100000,
                 com.windasoft.eam.common.MessageContext.text("daily.error.previewLimit"));
-            var people = arrangements.owners(tenant, plan, a, detail, date, o.rosterShiftId());
-            if (people.isEmpty()) unstaffed++;
+            var people =
+                arrangements.ownersAt(tenant, plan, a, detail, date, o.rosterShiftId(), o.start());
+            if (people.isEmpty() && !arrangements.open(a, detail)) unstaffed++;
             if (result.size() < 500)
               result.add(
                   Map.of(
@@ -440,88 +457,10 @@ public class InspectionGenerationService {
         end.toString());
   }
 
+  /** Retained endpoint fails explicitly for old clients; tasks now require a shift. */
   public Map<String, Object> manualEvent(
       long tenant, Map<String, Object> plan, Map<String, Object> body) {
-    var p = decode(plan.get("payload"));
-    require(
-        yes(p.get("enabled")),
-        com.windasoft.eam.common.MessageContext.text("daily.error.disabled"));
-    var a =
-        dailyStorage.load(tenant, number(plan.get("id"))).stream()
-            .filter(
-                v ->
-                    text(v, "id").equals(text(body, "arrangementId"))
-                        && text(v, "frequency").equals("event")
-                        && yes(v.get("enabled")))
-            .findFirst()
-            .orElseThrow(
-                () ->
-                    new IllegalArgumentException(
-                        com.windasoft.eam.common.MessageContext.text(
-                            "daily.error.eventUnavailable")));
-    String key = text(body, "idempotencyKey");
-    require(
-        key.matches("[a-zA-Z0-9-]{16,36}"),
-        com.windasoft.eam.common.MessageContext.text("daily.error.key"));
-    LocalDateTime at = LocalDateTime.parse(text(body, "eventAt"));
-    require(
-        !at.isAfter(now())
-            && !at.toLocalDate().isBefore(LocalDate.parse(text(p, "startDate")))
-            && !at.toLocalDate().isAfter(LocalDate.parse(text(p, "endDate"))),
-        com.windasoft.eam.common.MessageContext.text("daily.error.eventDate"));
-    var chosen =
-        arrangements.details(p, a).stream()
-            .filter(
-                d ->
-                    yes(body.get("_supervisor"))
-                        || arrangements
-                            .owners(tenant, p, a, d, at.toLocalDate(), "")
-                            .contains(number(body.get("_actorId"))))
-            .toList();
-    var requested = new HashSet<>(ids(body.get("equipmentIds")));
-    require(
-        !requested.isEmpty()
-            && chosen.stream()
-                .map(d -> number(d.get("equipmentId")))
-                .toList()
-                .containsAll(requested),
-        com.windasoft.eam.common.MessageContext.text("daily.error.noEligibleEquipment"));
-    chosen = chosen.stream().filter(d -> requested.contains(number(d.get("equipmentId")))).toList();
-    var prior = dailyStorage.manualTasks(tenant, number(a.get("id")), key);
-    if (!prior.isEmpty()) {
-      require(
-          prior.stream()
-              .map(t -> number(t.get("equipment_id")))
-              .collect(java.util.stream.Collectors.toSet())
-              .equals(requested),
-          com.windasoft.eam.common.MessageContext.text("daily.error.eventConflict"));
-      for (var old : prior)
-        require(
-            dateTime(old.get("due_at")).equals(at),
-            com.windasoft.eam.common.MessageContext.text("daily.error.eventConflict"));
-      return Map.of(
-          "count", prior.size(), "taskIds", prior.stream().map(t -> text(t, "id")).toList());
-    }
-    var o =
-        new DailyInspectionSchedule.Occurrence(
-            text(a, "id") + ":" + key,
-            text(a, "name"),
-            at.toLocalDate(),
-            at,
-            at.plusMinutes(number(a.get("windowMinutes"))),
-            "");
-    int count = 0;
-    for (var detail : chosen)
-      count +=
-          createTask(
-              tenant, plan, adjust(p, a, o, key), List.of(detail), at, o.key(), o.name(), o.end());
-    return Map.of(
-        "count",
-        count,
-        "taskIds",
-        dailyStorage.manualTasks(tenant, number(a.get("id")), key).stream()
-            .map(t -> text(t, "id"))
-            .toList());
+    throw new com.windasoft.eam.common.LocalizedArgumentException("daily.error.shiftOnly");
   }
 
   void maintainTasks(long tenant, long planId) {
@@ -545,7 +484,8 @@ public class InspectionGenerationService {
         if (next.equals("过期作废")) journal.closeTodos(tenant, id);
         state = next;
       }
-      if (text(task, "kind").equals("daily")
+      boolean newReminders=notificationPolicies!=null && notificationPolicies.replacesLegacy(tenant,text(task,"kind"),planId);
+      if (!newReminders && text(task, "kind").equals("daily")
           && task.get("follow_up_user_id") != null
           && now().isAfter(expires)
           && Set.of("待执行", "已过期", "执行中", "挂起", "审核不通过").contains(state))
@@ -577,7 +517,7 @@ public class InspectionGenerationService {
             text(snap, "equipmentName"),
             false,
             true);
-      if (Set.of("待执行", "执行中", "挂起", "已过期").contains(state)
+      if (!newReminders && Set.of("待执行", "执行中", "挂起", "已过期").contains(state)
           && number(snap.get("expireRemindHours")) > 0
           && !now()
               .isBefore(shiftDuration(expires, snap, "expireRemindHours", "expireRemindUnit", -1)))
@@ -609,5 +549,82 @@ public class InspectionGenerationService {
       throw new com.windasoft.eam.common.LocalizedArgumentException(
           "server.inspection.message0012");
     }
+  }
+
+  public int refreshAssignments(long tenant, long planId, long actor) {
+    return pendingAssignments(tenant, planId, actor, null, true);
+  }
+
+  public int assignmentImpact(long tenant, long planId, Map<String, Object> draft) {
+    return pendingAssignments(tenant, planId, 0, draft, false);
+  }
+
+  private int pendingAssignments(
+      long tenant, long planId, long actor, Map<String, Object> draft, boolean apply) {
+    var locked = repository.lockPlan(tenant, planId);
+    if (locked.isEmpty()) return 0;
+    var p = draft == null ? decode(locked.getFirst().get("payload")) : draft;
+    var current =
+        draft == null ? dailyStorage.load(tenant, planId) : rows(draft.get("arrangements"));
+    int changed = 0;
+    for (var task : repository.lockOpenPlanTasks(tenant, planId)) {
+      if (!Set.of("未开始", "待执行", "已过期").contains(text(task, "status"))
+          || task.get("owner_id") != null) continue;
+      var result = decode(task.get("result"));
+      if (!text(result, "startedAt").isBlank()
+          || repository.listTaskEvents(tenant, number(task.get("id"))).stream()
+              .anyMatch(e -> text(e, "action").equals("转派"))) continue;
+      var a =
+          current.stream()
+              .filter(x -> text(x, "id").equals(text(task, "arrangement_id")))
+              .findFirst()
+              .orElse(null);
+      if (a == null || !yes(a.get("enabled"))) continue;
+      var detail =
+          arrangements.details(p, a).stream()
+              .filter(d -> number(d.get("equipmentId")) == number(task.get("equipment_id")))
+              .findFirst()
+              .orElse(null);
+      if (detail == null) continue;
+      var at = dateTime(task.get("due_at"));
+      String slot = "";
+      if (Set.of("shift", "slots").contains(text(a, "frequency"))) {
+        String key = text(task, "shift_id"), prefix = text(a, "id") + ":";
+        if (!key.startsWith(prefix)) continue;
+        slot = key.substring(prefix.length());
+        if (rows(a.get("slots")).stream().noneMatch(x -> key.equals(prefix + text(x, "id"))))
+          continue;
+      }
+      var users =
+          arrangements.ownersAt(
+              tenant, p, a, detail, LocalDate.parse(text(task, "business_date")), slot, at);
+      String mode = arrangements.open(a, detail) ? "现场直接点检" : "指定负责人";
+      var old = decode(task.get("snapshot"));
+      Long follow = nullable(a.get("followUpUserId"));
+      if (new HashSet<>(ids(old.get("owners"))).equals(new HashSet<>(users))
+          && text(old, "personMode").equals(mode)
+          && Objects.equals(nullable(task.get("follow_up_user_id")), follow)) continue;
+      if (apply) {
+        dailyStorage.reassignPending(tenant, number(task.get("id")), users, mode, follow);
+        journal.closeTodos(tenant, number(task.get("id")));
+        journal.event(
+            tenant,
+            number(task.get("id")),
+            "调整执行人员",
+            actor,
+            "",
+            Map.of(
+                "原人员",
+                ids(old.get("owners")),
+                "新人员",
+                users,
+                "原方式",
+                text(old, "personMode"),
+                "新方式",
+                mode));
+      }
+      changed++;
+    }
+    return changed;
   }
 }

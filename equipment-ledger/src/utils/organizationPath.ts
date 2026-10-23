@@ -2,7 +2,8 @@ type OrganizationNode = { id: string; name: string; parentId?: string };
 /** 兼容旧快照分隔符，仅将完整组织路径统一为展示格式。 */
 export function formatOrganizationPath(value: string | undefined): string {
   return (value || '')
-    .split(/\s*[·>]\s*/)
+    .split(/\s*[·•>]\s*/)
+    .map((part) => part.trim())
     .filter(Boolean)
     .join(' > ');
 }

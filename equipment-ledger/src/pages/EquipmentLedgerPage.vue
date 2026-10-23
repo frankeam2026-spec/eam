@@ -1,4 +1,7 @@
-<script setup lang="ts">import { tr, enumLabel } from '../i18n';
+<script setup lang="ts">
+import { isDepartmentCustomColumn } from '../businessConfig';
+import DepartmentValuesText from '../components/common/DepartmentValuesText.vue';
+import { tr, enumLabel } from '../i18n';
 
 import {
   businessApi,
@@ -21,7 +24,9 @@ import AppBusinessTable from '../components/common/AppBusinessTable.vue';
 import AppIcon from '../components/common/AppIcon.vue';
 import { formatNumber } from '../utils/number';
 import { normalizeLocationPath } from '../utils/locationPath';
-import { formatOrganizationPath } from '../utils/organizationPath';
+import DepartmentText from '../components/common/DepartmentText.vue';
+import { EQUIPMENT_PAGE_SIZES, useEquipmentPageSize } from '../composables/equipment/useEquipmentPageSize';
+import 'element-plus/es/components/tooltip/style/css';
 import { useUnsavedChanges } from '../composables/useUnsavedChanges';
 import FilterConditionPopover from '../components/common/FilterConditionPopover.vue';
 import { useConditionPopover } from '../composables/useConditionPopover';
@@ -234,7 +239,14 @@ const resizeOrigin = ref<{ key: keyof Equipment; x: number; width: number } | nu
 
 const page = ref(1);
 
-const pageSize = ref(10);
+const pageSize = useEquipmentPageSize(() =>
+  auth.user ? `${auth.user.tenantId}-${auth.user.id}` : '',
+);
+const listLoading = ref(false);
+const listError = ref('');
+const hasAppliedFilters = computed(() =>
+  !!appliedQuery.value.keyword.trim() || equipmentAdvanced.value.length > 0 || !!equipmentTreeSelection.value,
+);
 
 const selectedRows = ref<Equipment[]>([]);
 const selected = computed<string[]>({
@@ -255,31 +267,47 @@ const isNew = ref(false);
 const equipmentSaving = ref(false);
 
 const equipmentUploading = ref(false);
+const equipmentRelationSaving = ref(false);
+const equipmentRelationDirty = ref(false);
 
-const { markSaved: markEquipmentSaved, dirty: equipmentDirty } = useUnsavedChanges(
-  () => editing.value,
+const { markSaved: markEquipmentDetailsSaved, dirty: equipmentDetailsDirty } = useUnsavedChanges(
+  () => {
+    if (!editing.value) return null;
+    const { rowVersion, children, relatedSpares, ...details } = editing.value;
+    return details;
+  },
   () => drawer.value && !!editing.value,
-  () => equipmentSaving.value || equipmentUploading.value,
+  () => equipmentSaving.value || equipmentUploading.value || equipmentRelationSaving.value,
+  { localOnly: true },
 );
+const { markSaved: markEquipmentNavigationSaved, dirty: equipmentDirty } = useUnsavedChanges(
+  () => ({ detailsDirty: equipmentDetailsDirty.value, relationDirty: equipmentRelationDirty.value }),
+  () => drawer.value && !!editing.value,
+  () => equipmentSaving.value || equipmentUploading.value || equipmentRelationSaving.value,
+);
+function markEquipmentSaved() {
+  markEquipmentDetailsSaved();
+  markEquipmentNavigationSaved();
+}
 
 function closeEquipment() {
-  if (equipmentSaving.value || equipmentUploading.value) return;
+  if (equipmentSaving.value || equipmentUploading.value || equipmentRelationSaving.value) return;
   router.push({ name: 'equipment' });
 }
 
 const baseColumns: Column[] = [
   // { key: 'imageFileId', label: '图片', width: 72, resizable: false },
-  { key: 'code', get label() { return tr('ui.equipment.text0078'); }, width: 190, required: true },
-  { key: 'name', get label() { return tr('ui.equipment.text0081'); }, width: 150, required: true },
+  { key: 'code', get label() { return tr('ui.equipment.text0078'); }, width: 176, required: true },
+  { key: 'name', get label() { return tr('ui.equipment.text0081'); }, width: 220, required: true },
   { key: 'state', get label() { return tr('ui.equipment.text0111'); }, width: 100, align: 'center' },
-  { key: 'useState', get label() { return tr('ui.equipment.text0112'); }, width: 100, align: 'center' },
   { key: 'assetNo', get label() { return tr('ui.equipment.text0085'); }, width: 132 },
   { key: 'category', get label() { return tr('ui.equipment.text1082'); }, width: 124 },
-  { key: 'department', get label() { return tr('ui.equipment.text0098'); }, width: 142 },
-  { key: 'functionLocation', get label() { return tr('ui.equipment.text0108'); }, width: 150 },
-  { key: 'model', get label() { return tr('ui.equipment.text0091'); }, width: 138 },
+  { key: 'department', get label() { return tr('ui.equipment.text0098'); }, width: 200 },
+  { key: 'functionLocation', get label() { return tr('ui.equipment.text0108'); }, width: 220 },
+   { key: 'useState', get label() { return tr('ui.equipment.text0112'); }, width: 100, align: 'center' },
+  { key: 'model', get label() { return tr('ui.equipment.text0091'); }, width: 180 },
   { key: 'serial', get label() { return tr('ui.equipment.text1666'); }, width: 140 },
-  { key: 'owner', get label() { return tr('ui.equipment.text1667'); }, width: 92 },
+  { key: 'owner', get label() { return tr('ui.equipment.text1667'); }, width: 156 },
   { key: 'brand', get label() { return tr('ui.equipment.text0093'); }, width: 116 },
   { key: 'source', get label() { return tr('ui.equipment.text0117'); }, width: 100 },
   { key: 'unit', get label() { return tr('ui.equipment.text0095'); }, width: 80 },
@@ -355,7 +383,11 @@ const equipmentFilterFields = computed<FilterField[]>(() =>
     .concat(customFilters(customDefinitions.value, 'equipment')),
 );
 
-const defaultEquipmentColumns = columns.value.slice(0, 12).map((c) => c.key);
+const defaultEquipmentColumns = ['code', 'name', 'state', 'useState', 'model', 'department', 'functionLocation', 'owner'];
+function restoreEquipmentColumns() {
+  visibleKeys.value = [...defaultEquipmentColumns];
+  columnWidths.value = {};
+}
 
 function loadEquipmentColumns(): string[] {
   try {
@@ -415,7 +447,10 @@ function equipmentParams() {
 }
 
 const selectedColumns = computed(() =>
-  columns.value.filter((c) => visibleKeys.value.includes(c.key)),
+  visibleKeys.value.flatMap(key => {
+    const column = columns.value.find(c => c.key === key);
+    return column ? [column] : [];
+  }),
 );
 
 let equipmentLoadRevision = 0;
@@ -436,8 +471,13 @@ async function refreshEquipment() {
   const revision = ++equipmentLoadRevision;
   if (!apiMode.value || !can('equipment')) {
     rows.value = [];
+    serverTotal.value = 0;
+    listLoading.value = false;
+    listError.value = '';
     return;
   }
+  listLoading.value = true;
+  listError.value = '';
   try {
     const result = await api.listEquipment({
       ...equipmentParams(),
@@ -451,8 +491,11 @@ async function refreshEquipment() {
   } catch (error) {
     if (revision !== equipmentLoadRevision) return;
     rows.value = [];
+    serverTotal.value = 0;
     selected.value = [];
-    notify(error instanceof Error ? error.message : tr('ui.equipment.text1669'), 'error');
+    listError.value = error instanceof Error ? error.message : tr('ui.equipment.text1669');
+  } finally {
+    if (revision === equipmentLoadRevision) listLoading.value = false;
   }
 }
 
@@ -489,6 +532,12 @@ function columnWidth(key: string) {
     columnWidths.value[key] || column?.width || 100,
   );
 }
+function fixedColumnWidth(key: string) {
+  if (key === 'imageFileId') return 72;
+  return columnWidths.value[key] || ['code', 'state', 'useState'].includes(key)
+    ? columnWidth(key)
+    : undefined;
+}
 
 function resizeMove(event: PointerEvent) {
   if (!resizeOrigin.value) return;
@@ -513,9 +562,7 @@ function toggleColumn(key: string) {
   if (c?.required) return;
   visibleKeys.value = visibleKeys.value.includes(key)
     ? visibleKeys.value.filter((k) => k !== key)
-    : columns.value
-        .filter((x) => visibleKeys.value.includes(x.key) || x.key === key)
-        .map((x) => x.key);
+    : [...visibleKeys.value, key];
 }
 
 function create() {
@@ -634,6 +681,7 @@ async function save() {
       const result = await api.saveEquipment(
         { ...f, customFields: equipmentEditor.value?.prepareCustomFields() ?? f.customFields },
         isNew.value,
+        true,
       );
       if (isNew.value) rows.value.unshift(result.data);
       else rows.value = rows.value.map((x) => (x.id === result.data.id ? result.data : x));
@@ -746,7 +794,7 @@ watch(columnWidths, (v) => localStorage.setItem('eam-column-widths', JSON.string
   deep: true,
 });
 watch(filtered, () => {
-  if (page.value > pageCount.value) page.value = pageCount.value;
+  if (!listError.value && page.value > pageCount.value) page.value = pageCount.value;
 });
 let editRouteRevision = 0;
 watch(
@@ -862,10 +910,10 @@ const {
         <ElDropdown
           v-if="can('equipment', '编辑') || can('equipment', '删除')"
           trigger="click"
-          :disabled="!selected.length"
+          :disabled="!selected.length || listLoading || !!listError"
           @command="openBatch"
         >
-          <ElButton :disabled="!selected.length"
+          <ElButton :disabled="!selected.length || listLoading || !!listError"
             >{{ tr('ui.equipment.text0373') }}<span v-if="selected.length" class="count-pill">{{ selected.length }}</span
             ><AppIcon name="Down"
           /></ElButton>
@@ -938,6 +986,10 @@ const {
             selection-fixed="left"
             selection-align="center"
             :rows="pageRows"
+            :loading="listLoading"
+            :error="listError"
+            :filtered="hasAppliedFilters"
+            @retry="refreshEquipment"
             :pagination="false"
             :fill="true"
             :framed="false"
@@ -954,8 +1006,8 @@ const {
               :label="col.label"
               :align="col.align ?? 'left'"
               v-for="col in selectedColumns"
-              :min-width="col.key === 'imageFileId' ? 72 : col.key === 'code' ? 190 : 150"
-              :width="col.key === 'imageFileId' ? 72 : columnWidth(col.key)"
+              :min-width="col.key === 'imageFileId' ? 72 : columnWidth(col.key)"
+              :width="fixedColumnWidth(col.key)"
               :resizable="col.resizable ?? true"
               :sortable="col.key === 'imageFileId' || col.sortable === false ? false : 'custom'"
               show-overflow-tooltip
@@ -973,9 +1025,7 @@ const {
                 ><template v-else-if="col.key === 'imageFileId'">
                   <EquipmentImage :file-id="row.imageFileId" :name="row.name" /> </template
                 ><template v-else-if="col.key === 'department'"
-                  ><span :title="formatOrganizationPath(row.departmentPath || row.department)">{{
-                    formatOrganizationPath(row.departmentPath || row.department)
-                  }}</span></template
+                  ><DepartmentText :value="row.departmentPath || row.department" :department-id="row.departmentOrgId" /></template
                 ><template v-else-if="col.key === 'name'"
                   ><span class="equipment-name-text">{{ row.name }}</span></template
                 ><template v-else-if="col.key === 'state' || col.key === 'useState'"
@@ -991,7 +1041,7 @@ const {
                   ></template
                 ><template v-else-if="col.key === 'amount'"
                   ><span class="amount">{{ formatAmount(row.amount) }}</span></template
-                ><template v-else>{{ cell(row, col.key) }}</template>
+                ><template v-else-if="isDepartmentCustomColumn(customDefinitions, col.key)"><DepartmentValuesText :value="String(cell(row, col.key))" :ids="row.customFields?.[col.key.slice(7)]" /></template><template v-else>{{ cell(row, col.key) }}</template>
               </template></ElTableColumn
             >
             <!-- @vue-generic {Equipment} -->
@@ -1029,28 +1079,41 @@ const {
                 >
               </template></ElTableColumn
             ><template #empty>
-              <div v-if="pageRows.length === 0">
+              <div v-if="pageRows.length === 0" class="ledger-empty" :role="listError ? 'alert' : 'status'">
+                <template v-if="listLoading">{{ tr('ui.equipment.text0162') }}</template>
+                <template v-else-if="listError">
+                  <b>{{ tr('equipment.list.loadFailed') }}</b>
+                  <span>{{ listError }}</span>
+                  <ElButton type="primary" link @click="refreshEquipment">{{ tr('ui.equipment.text0299') }}</ElButton>
+                </template>
+                <template v-else>
                 <div class="empty-icon">
                   <AppIcon name="Search" />
                 </div>
-                <b>{{ rows.length ? tr('ui.equipment.text1675') : tr('ui.equipment.text0701') }}</b
+                <b>{{ hasAppliedFilters ? tr('ui.equipment.text1675') : tr('ui.equipment.text0701') }}</b
                 ><span>{{
-                  rows.length ? tr('ui.equipment.text1676') : tr('ui.equipment.text1677')
+                  hasAppliedFilters ? tr('ui.equipment.text1676') : can('equipment', '新增') ? tr('ui.equipment.text1677') : tr('equipment.list.emptyAuthorized')
                 }}</span
-                ><ElButton type="primary" link v-if="rows.length" @click="reset"
-                  >{{ tr('ui.equipment.text1678') }}</ElButton
+                ><ElButton type="primary" link v-if="appliedQuery.keyword.trim() || equipmentAdvanced.length" @click="reset"
+                  >{{ tr('equipment.list.clearQuery') }}</ElButton
                 >
+                <ElButton type="primary" link v-if="equipmentTreeSelection" @click="selectEquipmentTree(null)">{{ tr('equipment.list.allAuthorized') }}</ElButton>
+                </template>
               </div>
             </template>
           </AppBusinessTable>
         </div>
         <footer class="table-footer">
           <div class="result-count">
+            <template v-if="listLoading">{{ tr('ui.equipment.text0162') }}</template>
+            <template v-else-if="listError">{{ tr('equipment.list.loadFailed') }}</template>
+            <template v-else>
             {{ tr('ui.equipment.text0309') }} <b>{{ serverTotal }}</b> {{ tr('ui.equipment.text0296') }}<span v-if="selected.length" class="selected-label"
               >{{ tr('ui.equipment.text0295') }} {{ selected.length }} {{ tr('ui.equipment.text0296') }}</span
             >
+            </template>
           </div>
-          <AppPagination v-model:page="page" v-model:page-size="pageSize" :total="serverTotal" />
+          <AppPagination v-if="!listError" v-model:page="page" v-model:page-size="pageSize" :total="serverTotal" :page-sizes="EQUIPMENT_PAGE_SIZES" />
           <ListToolbarIcons
             mode="footer"
             :can-export="can('equipment', '导出')"
@@ -1060,7 +1123,7 @@ const {
             ><template #columns>
               <div class="popover-head">
                 <b>{{ tr('ui.equipment.text1679') }}</b
-                ><ElButton native-type="button" @click="visibleKeys = [...defaultEquipmentColumns]">
+                ><ElButton native-type="button" @click="restoreEquipmentColumns">
                   {{ tr('ui.equipment.text0553') }}
                 </ElButton>
               </div>
@@ -1153,7 +1216,13 @@ const {
     v-model="editing"
     v-model:open="drawer"
     :is-new="isNew"
+    :dirty="equipmentDetailsDirty"
+    :can-view-archive="can('equipment', '查看')"
     :busy="equipmentSaving || equipmentUploading"
+    @relation-busy="equipmentRelationSaving = $event"
+    @relation-dirty="equipmentRelationDirty = $event"
+    @relation-saved="(record) => { rows = rows.map(row => row.id === record.id ? record : row); }"
+    @history="editing && router.push({ name: 'equipment-history', params: { id: editing.id } })"
     @custom-initialize="customInitializationClean = !equipmentDirty"
     @custom-ready="
       () => {
@@ -1194,6 +1263,28 @@ const {
   display: flex;
   margin-right: 0;
   min-height: 30px;
+}
+.ledger-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.equipment-department {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.equipment-department:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 .equipment-column-option small {
   margin-left: 6px;

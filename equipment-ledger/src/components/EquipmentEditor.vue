@@ -1,18 +1,17 @@
-<script setup lang="ts">import { tr, enumLabel } from '../i18n';
+<script setup lang="ts">
+import { tr, enumLabel } from '../i18n';
 
 import PagedChoiceField from './common/PagedChoiceField.vue';
 import type { SelectorRow } from '../selectors';
 import BusinessFields from './business/BusinessFields.vue';
 const customPanel = ref<InstanceType<typeof BusinessFields>>();
 import 'element-plus/es/components/upload/style/css';
-import EquipmentPickerDialog from './common/EquipmentPickerDialog.vue';
-import MaterialPicker from './common/MaterialPicker.vue';
-import type { InventoryMaster } from '../inventory';
 import AppFormField from './common/AppFormField.vue';
 import AppAttachments from './common/AppAttachments.vue';
 import AppBusinessTable from './common/AppBusinessTable.vue';
 import AppIcon from './common/AppIcon.vue';
 import AppDecimalInput from './common/AppDecimalInput.vue';
+import EquipmentRelationsEditor from './equipment/EquipmentRelationsEditor.vue';
 import AppBackButton from './common/AppBackButton.vue';
 import AppFormFooter from './common/AppFormFooter.vue';
 import { computed, ref, watch, nextTick } from 'vue';
@@ -31,8 +30,6 @@ import {
   type UploadRequestOptions,
 } from 'element-plus';
 import {
-  equipmentChildCandidates,
-  equipmentBomMaterials,
   uploadEquipmentFile,
   equipmentBatchOptions,
   equipmentOwnerCandidates,
@@ -43,14 +40,22 @@ import { useBaseDataStore } from '../stores/baseData';
 import { EQUIPMENT_STATES } from '../config/equipment';
 import TreeSelect from './TreeSelect.vue';
 import { locationPath } from '../utils/locationPath';
-import { organizationPath } from '../utils/organizationPath';
-import BooleanSwitch from './BooleanSwitch.vue';
+import { formatOrganizationPath, organizationPath } from '../utils/organizationPath';
 const editing = defineModel<EquipmentRecord | null>({ required: true });
 const drawer = defineModel<boolean>('open', { required: true });
-const props = defineProps<{ isNew: boolean; busy: boolean }>();
+const props = defineProps<{
+  isNew: boolean;
+  busy: boolean;
+  dirty: boolean;
+  canViewArchive?: boolean;
+}>();
 const emit = defineEmits<{
   save: [];
   close: [];
+  history: [];
+  'relation-saved': [EquipmentRecord];
+  'relation-busy': [boolean];
+  'relation-dirty': [boolean];
   uploading: [boolean];
   'custom-initialize': [];
   'custom-ready': [];
@@ -149,22 +154,6 @@ const formRules = computed(() => ({
       [{ required: true, message, trigger: ['blur', 'change'] }],
     ]),
   ),
-  ...Object.fromEntries(
-    (editing.value?.relatedSpares || []).map((row, index) => [
-      'relatedSpares.' + index + '.quantity',
-      row.legacy
-        ? []
-        : [
-            {
-              validator: (_rule: unknown, value: string, callback: (error?: Error) => void) => {
-                const message = bomQuantityError(value);
-                callback(message ? new Error(message) : undefined);
-              },
-              trigger: 'blur',
-            },
-          ],
-    ]),
-  ),
 }));
 async function showErrors(errors: Record<string, string>) {
   fieldErrors.value = errors;
@@ -175,26 +164,12 @@ async function showErrors(errors: Record<string, string>) {
   first?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   first?.querySelector<HTMLElement>('input,button')?.focus({ preventScroll: true });
 }
-function bomQuantityError(value: string) {
-  if (!String(value ?? '').trim()) return tr('ui.validation.message9');
-  if (!/^\d+(\.\d+)?$/.test(String(value))) return tr('ui.validation.message10');
-  if (Number(value) <= 0) return '数量须大于0';
-  if (!/^\d+(\.\d{1,2})?$/.test(String(value))) return tr('ui.validation.message11');
-  if (!Number.isFinite(Number(value)) || String(value).split('.')[0]!.length > 16)
-    return '数量超出范围';
-  return '';
-}
 function validate() {
   const errors = Object.fromEntries(
     requiredFields.value
       .filter(([key]) => !String(editing.value?.[key] ?? '').trim())
       .map(([key, message]) => [key, message]),
   );
-  editing.value?.relatedSpares?.forEach((row, index) => {
-    if (row.legacy) return;
-    const message = bomQuantityError(row.quantity);
-    if (message) errors['relatedSpares.' + index + '.quantity'] = message;
-  });
   const customValid = customPanel.value?.validate() ?? false;
   void showErrors(errors);
   return [...Object.values(errors), ...(!customValid ? [tr('ui.validation.message12')] : [])];
@@ -204,10 +179,6 @@ watch(
   () => {
     for (const [key] of requiredFields.value)
       if (String(editing.value?.[key] ?? '').trim()) delete fieldErrors.value[key];
-    editing.value?.relatedSpares?.forEach((row, i) => {
-      if (!bomQuantityError(row.quantity))
-        delete fieldErrors.value['relatedSpares.' + i + '.quantity'];
-    });
   },
   { deep: true },
 );
@@ -282,7 +253,7 @@ const departmentNodes = computed(() => {
     nodes.push({
       id: 'legacy-department',
       value: 'legacy-department',
-      name: editing.value.department,
+      name: formatOrganizationPath(editing.value.department),
       type: '部门',
       parentId: '',
       disabled: true,
@@ -314,57 +285,6 @@ const departmentId = computed({
     }
   },
 });
-const childPicker = ref(false),
-  bomPicker = ref(false);
-function addChild() {
-  if (!editing.value?.departmentOrgId) {
-    void showErrors({ departmentOrgId: tr('ui.validation.message13') });
-    return;
-  }
-  childPicker.value = true;
-}
-function selectChildren(rows: EquipmentRecord[]) {
-  if (!editing.value) return;
-  const existing = new Set((editing.value.children || []).map((x) => x.equipmentId));
-  editing.value.children = [
-    ...(editing.value.children || []),
-    ...rows
-      .filter((r) => r.id !== editing.value?.id && !existing.has(r.id))
-      .map((r) => ({
-        equipmentId: r.id,
-        code: r.code,
-        name: r.name,
-        model: r.model,
-        brand: r.brand,
-      })),
-  ];
-}
-function selectMaterials(rows: InventoryMaster[]) {
-  if (!editing.value) return;
-  const existing = new Set((editing.value.relatedSpares || []).map((x) => x.materialId));
-  editing.value.relatedSpares = [
-    ...(editing.value.relatedSpares || []),
-    ...rows
-      .filter((r) => !existing.has(r.id))
-      .map((r) => ({
-        materialId: r.id,
-        code: r.code,
-        name: r.name,
-        specification: r.model || '',
-        unit: r.unit || '',
-        quantity: '1.00',
-      })),
-  ];
-}
-function loadChildren(q: string, page: number, size: number) {
-  return equipmentChildCandidates(
-    props.isNew ? '' : editing.value?.id || '',
-    editing.value?.departmentOrgId || '',
-    q,
-    page,
-    size,
-  );
-}
 const uploading = ref(false);
 let uploadCount = 0;
 let documentUploads: Promise<unknown> = Promise.resolve();
@@ -411,7 +331,7 @@ function uploadDocument({ file }: UploadRequestOptions) {
           remark: '',
         },
       ];
-      ElMessage.success(tr('ui.equipment.text0072'));
+      ElMessage.success(tr('equipment.editor.uploadPending'));
       return stored;
     })
     .finally(endUpload);
@@ -472,8 +392,35 @@ function uploadImage(file: File) {
   return request;
 }
 type EquipmentDocument = NonNullable<EquipmentRecord['documents']>[number];
-type EquipmentChild = NonNullable<EquipmentRecord['children']>[number];
-type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
+const relationKind = ref<'bom' | 'children' | null>(null);
+const relationEditor = ref<InstanceType<typeof EquipmentRelationsEditor>>();
+const persisted = ref<EquipmentRecord | null>(null);
+watch(
+  () => [drawer.value, editing.value?.id],
+  () => {
+    if (drawer.value) {
+      persisted.value = editing.value
+        ? structuredClone(JSON.parse(JSON.stringify(editing.value)))
+        : null;
+      relationKind.value = null;
+    }
+  },
+  { immediate: true },
+);
+function openRelations(kind: 'bom' | 'children') {
+  if (!props.isNew && !props.busy) relationKind.value = kind;
+}
+async function closeRelations() {
+  if (await relationEditor.value?.permitLeave()) relationKind.value = null;
+}
+function relationSaved(record: EquipmentRecord) {
+  if (!editing.value || !relationKind.value) return;
+  persisted.value = record;
+  editing.value.rowVersion = record.rowVersion;
+  if (relationKind.value === 'bom') editing.value.relatedSpares = record.relatedSpares;
+  else editing.value.children = record.children;
+  emit('relation-saved', record);
+}
 </script>
 <template>
   <Transition name="fade"
@@ -482,35 +429,50 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
         class="drawer equipment-editor"
         role="dialog"
         aria-modal="true"
-        :aria-label="isNew ? tr('ui.equipment.text0073') : tr('ui.equipment.text0074')"
+        :aria-label="
+          relationKind === 'bom'
+            ? tr('equipment.editor.maintainBom')
+            : relationKind === 'children'
+              ? tr('equipment.editor.maintainChildren')
+              : isNew
+                ? tr('ui.equipment.text0073')
+                : tr('ui.equipment.text0074')
+        "
       >
         <header class="drawer-head editor-head">
           <div class="editor-title">
-            <AppBackButton :label="tr('ui.equipment.text0075')" :disabled="busy" @click="emit('close')" />
-            <div class="editor-heading-line">
-              <span>{{ tr('ui.equipment.text0002') }}</span><i>/</i>
-              <h2>{{ isNew ? tr('ui.equipment.text0073') : tr('ui.equipment.text0074') }}</h2>
+            <AppBackButton
+              :label="relationKind ? tr('equipment.editor.backEdit') : tr('ui.equipment.text0075')"
+              :disabled="busy"
+              @click="relationKind ? closeRelations() : emit('close')"
+            />
+            <div class="editor-identity">
+              <h2>
+                {{
+                  relationKind === 'bom'
+                    ? tr('equipment.editor.maintainBom')
+                    : relationKind === 'children'
+                      ? tr('equipment.editor.maintainChildren')
+                      : isNew
+                        ? tr('ui.equipment.text0073')
+                        : tr('ui.equipment.text0074')
+                }}
+              </h2>
+              <span class="editor-object-name"
+                >{{ editing?.name }}<span v-if="!isNew"> / {{ editing?.code }}</span></span
+              >
             </div>
-            <span v-if="!isNew" class="drawer-code">{{ editing?.code }}</span>
           </div>
-          <ElButton
-            text
-            class="close-btn"
-            :aria-label="tr('ui.equipment.text0076')"
-            :disabled="busy"
-            @click="emit('close')"
-          >
-            <AppIcon name="Close" />
-          </ElButton>
         </header>
         <ElForm
           class="drawer-body editor-body equipment-form"
           v-if="editing"
+          v-show="!relationKind"
           :disabled="busy"
           :model="editing"
           :rules="formRules"
           :validate-on-rule-change="false"
-          label-width="76px"
+          label-position="top"
           @submit.prevent
         >
           <div class="editor-layout">
@@ -527,7 +489,9 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                         :error="fieldErrors.code"
                         ><ElInput
                           v-model="editing.code"
-                          :placeholder="isNew ? tr('ui.equipment.text0080') : tr('ui.equipment.text0079')"
+                          :placeholder="
+                            isNew ? tr('ui.equipment.text0080') : tr('ui.equipment.text0079')
+                          "
                           maxlength="32" /></AppFormField
                       ><AppFormField
                         data-field="name"
@@ -553,27 +517,40 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                       /></AppFormField>
                       <label class="editor-field"
                         ><span>{{ tr('ui.equipment.text0085') }}</span
-                        ><ElInput v-model="editing.assetNo" :placeholder="tr('ui.equipment.text0086')" /></label
+                        ><ElInput
+                          v-model="editing.assetNo"
+                          :placeholder="tr('ui.equipment.text0086')" /></label
                       ><label class="editor-field"
                         ><span>{{ tr('ui.equipment.text0087') }}</span
-                        ><ElInput v-model="editing.serial" :placeholder="tr('ui.equipment.text0088')" /></label
+                        ><ElInput
+                          v-model="editing.serial"
+                          :placeholder="tr('ui.equipment.text0088')" /></label
                       ><label class="editor-field"
                         ><span>{{ tr('ui.equipment.text0089') }}</span
-                        ><ElInput v-model="editing.tagCode" :placeholder="tr('ui.equipment.text0090')"
+                        ><ElInput
+                          v-model="editing.tagCode"
+                          :placeholder="tr('ui.equipment.text0090')"
                       /></label>
                       <label class="editor-field"
                         ><span>{{ tr('ui.equipment.text0091') }}</span
-                        ><ElInput v-model="editing.model" :placeholder="tr('ui.equipment.text0092')" /></label
+                        ><ElInput
+                          v-model="editing.model"
+                          :placeholder="tr('ui.equipment.text0092')" /></label
                       ><label class="editor-field"
                         ><span>{{ tr('ui.equipment.text0093') }}</span
-                        ><ElInput v-model="editing.brand" :placeholder="tr('ui.equipment.text0094')" /></label
+                        ><ElInput
+                          v-model="editing.brand"
+                          :placeholder="tr('ui.equipment.text0094')" /></label
                       ><AppFormField
                         data-field="unitId"
                         prop="unitId"
                         :label="tr('ui.equipment.text0095')"
                         :error="fieldErrors.unitId"
                         required
-                        ><ElSelect v-model="unitValue" :placeholder="tr('ui.equipment.text0096')" clearable
+                        ><ElSelect
+                          v-model="unitValue"
+                          :placeholder="tr('ui.equipment.text0096')"
+                          clearable
                           ><ElOption
                             v-for="item in unitData.filter((x) => x.status === '启用')"
                             :key="item.id"
@@ -595,9 +572,6 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                         ><TreeSelect
                           v-model="departmentId"
                           :nodes="departmentNodes"
-                          show-full-path-in-dropdown
-                          show-full-path
-                          path-value
                           :placeholder="tr('ui.equipment.text0099')"
                         />
                         <small
@@ -632,7 +606,9 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                           @select="rememberOwners"
                         />
                         <small v-if="!ownerValue.length && editing.owner"
-                          >{{ tr('ui.equipment.text0105') }}{{ editing.owner }}{{ tr('ui.equipment.text0106') }}<ElButton
+                          >{{ tr('ui.equipment.text0105') }}{{ editing.owner
+                          }}{{ tr('ui.equipment.text0106')
+                          }}<ElButton
                             type="primary"
                             link
                             native-type="button"
@@ -659,7 +635,7 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                     </div>
                   </section>
                   <section class="editor-field-group">
-                    <h4>{{ tr('ui.equipment.text0110') }}</h4>
+                    <h4>{{ tr('equipment.editor.operation') }}</h4>
                     <div class="editor-grid">
                       <AppFormField
                         data-field="state"
@@ -667,7 +643,10 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                         :label="tr('ui.equipment.text0111')"
                         :error="fieldErrors.state"
                         required
-                        ><ElSelect v-model="editing.state" :placeholder="tr('ui.equipment.text0096')" clearable
+                        ><ElSelect
+                          v-model="editing.state"
+                          :placeholder="tr('ui.equipment.text0096')"
+                          clearable
                           ><ElOption
                             v-for="state in EQUIPMENT_STATES"
                             :key="state"
@@ -679,7 +658,10 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                         :label="tr('ui.equipment.text0112')"
                         :error="fieldErrors.useStateId"
                         required
-                        ><ElSelect v-model="useStateValue" :placeholder="tr('ui.equipment.text0096')" clearable
+                        ><ElSelect
+                          v-model="useStateValue"
+                          :placeholder="tr('ui.equipment.text0096')"
+                          clearable
                           ><ElOption
                             v-for="item in useStateData.filter((x) => x.status === '启用')"
                             :key="item.id"
@@ -687,16 +669,29 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                             :value="item.id" /></ElSelect></AppFormField
                       ><label class="editor-field"
                         ><span>{{ tr('ui.equipment.text0113') }}</span
-                        ><ElSelect v-model="editing.level" :placeholder="tr('ui.equipment.text0096')" clearable
-                          ><ElOption :label="tr('ui.equipment.text0114')" value="关键设备" /><ElOption
+                        ><ElSelect
+                          v-model="editing.level"
+                          :placeholder="tr('ui.equipment.text0096')"
+                          clearable
+                          ><ElOption
+                            :label="tr('ui.equipment.text0114')"
+                            value="关键设备" /><ElOption
                             :label="tr('ui.equipment.text0115')"
                             value="主要设备" /><ElOption
                             :label="tr('ui.equipment.text0116')"
                             value="一般设备" /></ElSelect
                       ></label>
+                    </div>
+                  </section>
+                  <section class="editor-field-group">
+                    <h4>{{ tr('equipment.editor.purchase') }}</h4>
+                    <div class="editor-grid">
                       <label class="editor-field"
                         ><span>{{ tr('ui.equipment.text0117') }}</span
-                        ><ElSelect v-model="sourceValue" :placeholder="tr('ui.equipment.text0096')" clearable
+                        ><ElSelect
+                          v-model="sourceValue"
+                          :placeholder="tr('ui.equipment.text0096')"
+                          clearable
                           ><ElOption
                             v-for="item in sourceData.filter((x) => x.status === '启用')"
                             :key="item.id"
@@ -709,7 +704,9 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                           :placeholder="tr('ui.equipment.text0119')" /></label
                       ><label class="editor-field"
                         ><span>{{ tr('ui.equipment.text0120') }}</span
-                        ><AppDecimalInput v-model="editing.amount" :placeholder="tr('ui.equipment.text0121')"
+                        ><AppDecimalInput
+                          v-model="editing.amount"
+                          :placeholder="tr('ui.equipment.text0121')"
                       /></label>
                       <label class="editor-field"
                         ><span>{{ tr('ui.equipment.text0122') }}</span
@@ -808,8 +805,6 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                 @ready="emit('custom-ready')"
                 @update:model-value="Object.assign(editing, $event)"
               />
-            </div>
-            <aside class="editor-side-column">
               <section class="form-section relation-section">
                 <div class="relation-title">
                   <h3><i></i>{{ tr('ui.equipment.text0133') }}</h3>
@@ -837,12 +832,20 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                     class="business-table relation-table"
                     ><!-- @vue-generic {EquipmentDocument} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0136') }}</div></template
+                      ><template #header
+                        ><div class="table-header-label">
+                          {{ tr('ui.equipment.text0136') }}
+                        </div></template
                       ><template #default="{ row: doc, $index: index }"
-                        ><ElInput v-model="doc.code" :placeholder="tr('ui.equipment.text0137')" /></template></ElTableColumn
+                        ><ElInput
+                          v-model="doc.code"
+                          :placeholder="tr('ui.equipment.text0137')" /></template></ElTableColumn
                     ><!-- @vue-generic {EquipmentDocument} -->
                     <ElTableColumn :min-width="210"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0138') }}</div></template
+                      ><template #header
+                        ><div class="table-header-label">
+                          {{ tr('ui.equipment.text0138') }}
+                        </div></template
                       ><template #default="{ row: doc, $index: index }">
                         <ElInput v-model="doc.name" :placeholder="tr('ui.equipment.text0138')" /><a
                           v-if="doc.id"
@@ -854,12 +857,20 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                       </template></ElTableColumn
                     ><!-- @vue-generic {EquipmentDocument} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0141') }}</div></template
+                      ><template #header
+                        ><div class="table-header-label">
+                          {{ tr('ui.equipment.text0141') }}
+                        </div></template
                       ><template #default="{ row: doc, $index: index }"
-                        ><ElInput v-model="doc.type" :placeholder="tr('ui.equipment.text0142')" /></template></ElTableColumn
+                        ><ElInput
+                          v-model="doc.type"
+                          :placeholder="tr('ui.equipment.text0142')" /></template></ElTableColumn
                     ><!-- @vue-generic {EquipmentDocument} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0143') }}</div></template
+                      ><template #header
+                        ><div class="table-header-label">
+                          {{ tr('ui.equipment.text0143') }}
+                        </div></template
                       ><template #default="{ row: doc, $index: index }">
                         <ElSelect v-model="doc.security"
                           ><ElOption
@@ -870,7 +881,10 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                         /></ElSelect> </template></ElTableColumn
                     ><!-- @vue-generic {EquipmentDocument} -->
                     <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0144') }}</div></template
+                      ><template #header
+                        ><div class="table-header-label">
+                          {{ tr('ui.equipment.text0144') }}
+                        </div></template
                       ><template #default="{ row: doc, $index: index }"
                         ><ElInputNumber
                           v-model="doc.quantity"
@@ -879,7 +893,10 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                           controls-position="right" /></template></ElTableColumn
                     ><!-- @vue-generic {EquipmentDocument} -->
                     <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
+                      ><template #header
+                        ><div class="table-header-label">
+                          {{ tr('ui.equipment.text0145') }}
+                        </div></template
                       ><template #default="{ row: doc, $index: index }">
                         <ElButton
                           type="danger"
@@ -891,175 +908,204 @@ type EquipmentBom = NonNullable<EquipmentRecord['relatedSpares']>[number];
                         </ElButton>
                       </template></ElTableColumn
                     ><template #empty
-                      ><div v-if="!editing.documents?.length">{{ tr('ui.equipment.text0147') }}</div></template
+                      ><div v-if="!editing.documents?.length">
+                        {{ tr('ui.equipment.text0147') }}
+                      </div></template
                     ></AppBusinessTable
                   >
                 </div>
               </section>
-              <section class="form-section relation-section">
-                <div class="relation-title">
-                  <h3><i></i>{{ tr('ui.equipment.text0148') }}</h3>
-                  <ElButton class="relation-add" @click="addChild">
-                    <AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}
-                  </ElButton>
-                </div>
-                <div class="relation-table-wrap">
-                  <AppBusinessTable
-                    :rows="editing.children"
-                    :pagination="false"
-                    :fill="false"
-                    :framed="false"
-                    class="business-table relation-table"
-                    ><!-- @vue-generic {EquipmentChild} -->
-                    <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0078') }}</div></template
-                      ><template #default="{ row: child, $index: index }">{{
-                        child.code
-                      }}</template></ElTableColumn
-                    ><!-- @vue-generic {EquipmentChild} -->
-                    <ElTableColumn :min-width="210"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0081') }}</div></template
-                      ><template #default="{ row: child, $index: index }"
-                        >{{ child.name
-                        }}<small v-if="child.legacy" class="legacy-relation"
-                          >{{ tr('ui.equipment.text0150') }}</small
-                        ></template
-                      ></ElTableColumn
-                    ><!-- @vue-generic {EquipmentChild} -->
-                    <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0093') }}</div></template
-                      ><template #default="{ row: child, $index: index }">{{
-                        child.brand
-                      }}</template></ElTableColumn
-                    ><!-- @vue-generic {EquipmentChild} -->
-                    <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0091') }}</div></template
-                      ><template #default="{ row: child, $index: index }">{{
-                        child.model
-                      }}</template></ElTableColumn
-                    ><!-- @vue-generic {EquipmentChild} -->
-                    <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
-                      ><template #default="{ row: child, $index: index }">
-                        <ElButton
-                          type="danger"
-                          link
-                          class="relation-delete"
-                          @click="editing?.children?.splice(index, 1)"
-                        >
-                          {{ tr('ui.equipment.text0151') }}
-                        </ElButton>
-                      </template></ElTableColumn
-                    ><template #empty
-                      ><div v-if="!editing.children?.length">{{ tr('ui.equipment.text0152') }}</div></template
-                    ></AppBusinessTable
-                  >
-                </div>
+            </div>
+            <aside class="editor-side-column editor-related-summary">
+              <h3>{{ tr('equipment.editor.related') }}</h3>
+              <section class="related-summary-item">
+                <strong
+                  >{{ tr('ui.equipment.text0153') }} ·
+                  {{ persisted?.relatedSpares?.length || 0 }}</strong
+                >
+                <p>{{ tr('equipment.editor.bomHint') }}</p>
+                <ElButton
+                  link
+                  type="primary"
+                  :disabled="isNew || busy"
+                  @click="openRelations('bom')"
+                  >{{ tr('equipment.editor.maintainBom') }}</ElButton
+                >
               </section>
-              <section class="form-section relation-section">
-                <div class="relation-title">
-                  <h3><i></i>{{ tr('ui.equipment.text0153') }}</h3>
-                  <ElButton class="relation-add" @click="bomPicker = true">
-                    <AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}
-                  </ElButton>
-                </div>
-                <div class="relation-table-wrap">
-                  <AppBusinessTable
-                    :rows="editing.relatedSpares"
-                    :pagination="false"
-                    :fill="false"
-                    :framed="false"
-                    class="business-table relation-table"
-                    ><!-- @vue-generic {EquipmentBom} -->
-                    <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0154') }}</div></template
-                      ><template #default="{ row: part, $index: index }">{{
-                        part.code
-                      }}</template></ElTableColumn
-                    ><!-- @vue-generic {EquipmentBom} -->
-                    <ElTableColumn :min-width="210"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0155') }}</div></template
-                      ><template #default="{ row: part, $index: index }"
-                        >{{ part.name
-                        }}<small v-if="part.legacy" class="legacy-relation"
-                          >{{ tr('ui.equipment.text0150') }}</small
-                        ></template
-                      ></ElTableColumn
-                    ><!-- @vue-generic {EquipmentBom} -->
-                    <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0091') }}</div></template
-                      ><template #default="{ row: part, $index: index }">{{
-                        part.specification
-                      }}</template></ElTableColumn
-                    ><!-- @vue-generic {EquipmentBom} -->
-                    <ElTableColumn :min-width="100"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0095') }}</div></template
-                      ><template #default="{ row: part }">{{ part.unit }}</template></ElTableColumn
-                    ><!-- @vue-generic {EquipmentBom} -->
-                    <ElTableColumn :min-width="150"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0144') }}</div></template
-                      ><template #default="{ row: part, $index: index }"
-                        ><span v-if="part.legacy">{{ part.quantity }}</span
-                        ><AppFormField
-                          v-else
-                          :data-field="'relatedSpares.' + index + '.quantity'"
-                          :prop="'relatedSpares.' + index + '.quantity'"
-                          :error="fieldErrors['relatedSpares.' + index + '.quantity']"
-                          label=""
-                          :label-width="0"
-                          ><AppDecimalInput
-                            v-model="part.quantity" /></AppFormField></template></ElTableColumn
-                    ><!-- @vue-generic {EquipmentBom} -->
-                    <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-                      ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
-                      ><template #default="{ row: part, $index: index }">
-                        <ElButton
-                          type="danger"
-                          link
-                          class="relation-delete"
-                          @click="editing?.relatedSpares?.splice(index, 1)"
-                        >
-                          {{ tr('ui.equipment.text0151') }}
-                        </ElButton>
-                      </template></ElTableColumn
-                    ><template #empty
-                      ><div v-if="!editing.relatedSpares?.length">{{ tr('ui.equipment.text0156') }}</div></template
-                    ></AppBusinessTable
-                  >
-                </div>
+              <section class="related-summary-item">
+                <strong
+                  >{{ tr('ui.equipment.text0148') }} ·
+                  {{ persisted?.children?.length || 0 }}</strong
+                >
+                <p>{{ tr('equipment.editor.childrenHint') }}</p>
+                <ElButton
+                  link
+                  type="primary"
+                  :disabled="isNew || busy"
+                  @click="openRelations('children')"
+                  >{{ tr('equipment.editor.maintainChildren') }}</ElButton
+                >
               </section>
+              <section v-if="canViewArchive" class="related-summary-item">
+                <strong>{{ tr('equipment.editor.archive') }}</strong>
+                <p>{{ tr('equipment.editor.archiveHint') }}</p>
+                <ElButton link type="primary" :disabled="isNew || busy" @click="emit('history')">{{
+                  tr('equipment.editor.viewArchive')
+                }}</ElButton>
+              </section>
+              <p v-if="isNew" class="related-save-first">{{ tr('equipment.editor.saveFirst') }}</p>
             </aside>
           </div>
         </ElForm>
-        <AppFormFooter>
-          <ElButton :disabled="busy" @click="emit('close')">{{ tr('ui.equipment.text0157') }}</ElButton
+        <EquipmentRelationsEditor
+          v-if="relationKind && persisted"
+          ref="relationEditor"
+          :key="relationKind"
+          :record="persisted"
+          :kind="relationKind"
+          :core-dirty="dirty"
+          @saved="relationSaved"
+          @busy="emit('relation-busy', $event)"
+          @dirty="emit('relation-dirty', $event)"
+          @close="closeRelations"
+        />
+        <AppFormFooter v-if="!relationKind">
+          <template #hint>{{
+            dirty ? tr('equipment.editor.unsaved') : tr('equipment.editor.noChanges')
+          }}</template>
+          <ElButton :disabled="busy" @click="emit('close')">{{
+            tr('ui.equipment.text0157')
+          }}</ElButton
           ><ElButton type="primary" :loading="busy" @click="emit('save')">
-            {{ busy ? tr('ui.equipment.text0158') : tr('ui.equipment.text0159') }}
+            {{ busy ? tr('ui.equipment.text0158') : tr('equipment.editor.saveDetails') }}
           </ElButton>
         </AppFormFooter>
       </section>
     </div></Transition
   >
-  <EquipmentPickerDialog
-    v-model="childPicker"
-    multiple
-    :load-rows="loadChildren"
-    :excluded-ids="(editing?.children || []).map((x) => x.equipmentId || '')"
-    @select-multiple="selectChildren"
-  />
-  <MaterialPicker
-    v-model="bomPicker"
-    :load-rows="equipmentBomMaterials"
-    :disabled-ids="(editing?.relatedSpares || []).map((x) => x.materialId || '')"
-    @select="selectMaterials"
-  />
 </template>
 
 <style scoped>
+.equipment-editor .editor-head {
+  min-height: 68px;
+  height: auto;
+  padding: 12px 16px;
+}
+.editor-identity {
+  min-width: 0;
+}
+.editor-object-name {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.equipment-editor .editor-body {
+  padding: 16px;
+}
+.equipment-editor .editor-layout {
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 16px;
+  max-width: none;
+}
+.equipment-editor .editor-main-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  container-type: inline-size;
+}
+.equipment-editor .editor-main-column .form-section {
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.equipment-editor .editor-related-summary {
+  position: sticky;
+  top: 0;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  gap: 0;
+}
+.editor-related-summary h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+.related-summary-item {
+  padding: 16px 0;
+}
+.related-summary-item + .related-summary-item {
+  border-top: 1px solid var(--line);
+}
+.related-summary-item p,
+.related-save-first {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin: 6px 0 10px;
+}
+.equipment-editor .editor-field {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-content: start;
+}
+.equipment-editor .editor-field > span {
+  text-align: left;
+}
+.equipment-editor .editor-field-group h4 {
+  font-size: 14px;
+  color: var(--text);
+  border: 0;
+  padding: 0;
+  margin-bottom: 16px;
+}
+.equipment-editor .editor-field-group + .editor-field-group {
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+.equipment-editor :deep(.el-form-item__label) {
+  width: auto;
+  margin-bottom: 8px;
+  line-height: 20px;
+}
+.equipment-editor :deep(.el-form-item__content) {
+  margin-left: 0 !important;
+}
+@media (max-width: 1100px) {
+  .equipment-editor .editor-layout {
+    grid-template-columns: minmax(0, 1fr) 190px;
+  }
+}
+@media (max-width: 900px) {
+  .equipment-editor .editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .equipment-editor .editor-related-summary {
+    position: static;
+  }
+}
+@media (max-width: 600px) {
+  .equipment-editor .editor-span-2 {
+    grid-column: 1 / -1;
+  }
+  .equipment-editor .editor-body {
+    padding: 12px;
+  }
+  .equipment-editor .editor-main-column .form-section {
+    padding: 16px;
+  }
+}
 .editor-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: 24px;
   row-gap: 12px;
+}
+@container (min-width: 1200px) {
+  .editor-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 .editor-form-groups {
   gap: 16px;

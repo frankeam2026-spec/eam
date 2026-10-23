@@ -1,4 +1,6 @@
-<script setup lang="ts">import { tr } from '../i18n';
+<script setup lang="ts">
+import DepartmentText from './common/DepartmentText.vue';
+import { tr } from '../i18n';
 
 import {
   AcceptanceDecision,
@@ -444,7 +446,7 @@ const dialogTitle = computed(
             </div>
             <div>
               <dt>{{ tr('ui.equipment.text0877') }}</dt>
-              <dd>{{ task.department }}</dd>
+              <dd><DepartmentText :value="task.department" :department-id="task.departmentId" /></dd>
             </div>
             <div>
               <dt>{{ tr('ui.equipment.text0878') }}</dt>

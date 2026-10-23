@@ -193,4 +193,38 @@ public class InspectionListService {
     values.attach(object, rows);
     return new PageResult<>(rows, query.page(), query.size(), repository.count(selected));
   }
+
+  @Transactional(readOnly = true)
+  public PageResult<Map<String, Object>> deviceTasks(
+      String equipmentId, String code, int page, int size) {
+    var scope = permissions.inspection("daily", "执行");
+    var query =
+        ListQuery.from(
+            Map.of(
+                "page",
+                Integer.toString(Math.max(1, page)),
+                "size",
+                Integer.toString(Math.max(1, Math.min(100, size)))));
+    com.windasoft.eam.common.inspection.InspectionSupport.require(
+        !equipmentId.isBlank() || !code.isBlank(),
+        com.windasoft.eam.common.MessageContext.text("staff.deviceRequired"));
+    SqlPredicate match = repository.deviceMatch(equipmentId, code);
+    var selected =
+        repository.select(
+            auth.tenantId(),
+            auth.userId(),
+            "daily-tasks",
+            scope,
+            scope,
+            false,
+            null,
+            query,
+            match,
+            null);
+    return new PageResult<>(
+        repository.page(selected, query).stream().map(views::task).toList(),
+        query.page(),
+        query.size(),
+        repository.count(selected));
+  }
 }

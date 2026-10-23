@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { tr } from '../../i18n';
+import DepartmentText from './DepartmentText.vue';
 
 import DialogChoiceInput from './DialogChoiceInput.vue';
 import { computed, onUnmounted, ref, watch } from 'vue';
@@ -191,7 +192,11 @@ function choose(row: SelectorRow) {
         :label="column.label"
         :min-width="column.minWidth || 150"
         show-overflow-tooltip
-      />
+      >
+        <template v-if="column.key === 'department'" #default="{ row }">
+          <DepartmentText :value="row.departmentPath || row.department" :department-id="row.departmentOrgId || row.departmentId" />
+        </template>
+      </ElTableColumn>
       <ElTableColumn v-if="!multiple" :label="tr('ui.equipment.text0145')" fixed="right" width="156"
         ><template #default="{ row }"
           ><ElButton link type="primary" @click="picked = [row.id]">{{

@@ -153,6 +153,8 @@ public class RoleManagementService {
       case "businessConfig" -> Set.of("查看", "编辑", "发布");
       case "personalization", "language" -> Set.of("查看");
       case "workspace" -> Set.of("查看", "团队工作查看");
+      case "notificationPolicy", "notificationChannel" -> Set.of("查看", "编辑");
+      case "notificationDelivery" -> Set.of("查看", "重试");
       case "printTemplate" -> Set.of("查看", "新增", "编辑", "删除");
       case "homeTemplate" -> Set.of("查看", "新增", "编辑", "发布", "停用");
       case "anomaly" -> Set.of("查看", "新增", "消除", "报修", "安排维修", "作废", "导出");
@@ -171,7 +173,9 @@ public class RoleManagementService {
           "inspectionPeriodicPlan" ->
           Set.of("查看", "新增", "编辑", "删除", "导出");
       case "maintenanceTask" -> Set.of("查看", "编辑", "执行", "验收", "删除", "导出");
-      case "inspectionDailyTask", "inspectionPeriodicTask" ->
+      case "inspectionDailyTask" ->
+          Set.of("查看", "执行", "修改结果", "审核", "转派", "免检", "删除", "导出");
+      case "inspectionPeriodicTask" ->
           Set.of("查看", "执行", "审核", "转派", "删除", "导出");
       case "inventoryMaterial" -> Set.of("查看", "新增", "编辑", "删除", "导入", "导出", "查看金额", "编辑参考价");
       case "inventoryWarehouse" -> Set.of("查看", "新增", "编辑", "删除", "导出");
@@ -197,6 +201,7 @@ public class RoleManagementService {
   }
 
   private Set<String> allowedScopes(String menu) {
+    if (menu.startsWith("notification")) return Set.of("all");
     if (menu.equals("printTemplate")) return Set.of("all", "company", "companyTree", "companies");
     if (menu.equals("inventoryMaterial")) return Set.of("all");
     if (menu.startsWith("inventory") && !menu.equals("inventory"))

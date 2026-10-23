@@ -1,4 +1,12 @@
 <script setup lang="ts">
+import DepartmentText from './common/DepartmentText.vue';
+import InspectionTaskSummary from './inspection/InspectionTaskSummary.vue';
+import InspectionTaskMetrics from './inspection/InspectionTaskMetrics.vue';
+import InspectionPlanPreviewDialog from './inspection/InspectionPlanPreviewDialog.vue';
+const planPreviewOpen = ref(false);
+import InspectionTaskDeleteDialog from './inspection/InspectionTaskDeleteDialog.vue';
+const taskDeleteOpen = ref(false);
+
 import { tr } from '../i18n';
 
 import { acceptanceDecisionLabel } from '../config/acceptance';
@@ -54,7 +62,9 @@ const choices = ref<InspectionChoices>({
 function rememberPeople(rows: SelectorRow[]) {
   choices.value.users = mergeOptions(choices.value.users, rows);
 }
-const editing = computed(() => !!task.value?.canExecute && task.value.status === '执行中');
+const amending = ref(false);
+const correcting = computed(() => amending.value && !!task.value?.canAmendResult);
+const editing = computed(() => correcting.value || (!!task.value?.canExecute && task.value.status === '执行中'));
 const label = computed(() => (task.value?.kind === 'daily' ? '日常点检' : '周期巡检'));
 const active = computed(() => task.value?.equipment.find((e) => e.id === activeEquipment.value));
 const equipmentItems = computed(
@@ -94,6 +104,7 @@ async function load() {
     const selected = await resolvePlanning('inspection', response.data);
     if (revision !== loadRevision || requestedId !== String(route.params.id)) return;
     task.value = response.data;
+    amending.value = false;
     choices.value.users = selected.users;
     const listKind = task.value.kind === 'daily' ? 'daily-tasks' : 'periodic-tasks';
     if (route.query.kind !== listKind)
@@ -167,6 +178,7 @@ async function action(name: string, body: Record<string, unknown> = {}) {
       return;
     }
     task.value = result.data;
+    if (name === 'amend-result') amending.value = false;
     if (name === 'scan') {
       draft.value = { ...localDraft, scannedEquipmentIds: task.value.result.scannedEquipmentIds };
       scanCode.value = '';
@@ -195,6 +207,14 @@ async function submit() {
   const surplus = await confirmSurplus('点巡检', String(route.params.id));
   if (surplus === null) return;
   action('submit', { ...draft.value, ...surplus });
+}
+function cancelCorrection() {
+  if (!task.value) return;
+  draft.value = JSON.parse(JSON.stringify(Object.assign(
+    { items: [], attachments: [], skippedEquipmentIds: [] }, task.value.result,
+  )));
+  amending.value = false;
+  unsaved.markSaved();
 }
 function setSkipped(value: boolean) {
   const selected = new Set(draft.value.skippedEquipmentIds || []);
@@ -262,7 +282,7 @@ const reviewItems = computed(
 );
 function eventDetails(details: Record<string, unknown>) {
   return Object.entries(details)
-    .filter(([, v]) => v !== '' && v != null)
+    .filter(([key, v]) => !['修改前', '修改后'].includes(key) && v !== '' && v != null)
     .map(([key, v]) => `${key}：${Array.isArray(v) ? v.join('、') : String(v).replace('T', ' ')}`)
     .join('；');
 }
@@ -311,9 +331,13 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         ><ElButton v-if="task.canExempt" @click="openDialog('exempt')">{{
           tr('daily.exempt')
         }}</ElButton
-        ><ElButton v-if="task.canVoid" type="danger" plain @click="openDialog('delete')">{{
-          tr('ui.equipment.text0146')
-        }}</ElButton>
+        ><ElButton
+          v-if="task.canDelete"
+          type="danger"
+          plain
+          @click="task.kind === 'daily' ? (taskDeleteOpen = true) : openDialog('delete')"
+          >{{ tr('ui.equipment.text0146') }}</ElButton
+        >
       </div>
       <ElButton text :disabled="busy" @click="refresh">{{ tr('ui.equipment.text0424') }}</ElButton>
     </header>
@@ -321,101 +345,25 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
     <template v-if="task"
       ><div class="inspection-task-layout">
         <div class="inspection-task-main">
-          <section
-            v-if="task.kind === 'daily' && task.submissions?.length"
-            class="inspection-form-card"
-          >
-            <h3>{{ tr('daily.submissionHistory') }}</h3>
-            <AppBusinessTable :rows="task.submissions" :pagination="false" :fill="false"
-              ><ElTableColumn
-                prop="submittedAt"
-                :label="tr('daily.submittedAt')"
-                min-width="170" /><ElTableColumn :label="tr('daily.reviewDecision')" min-width="100"
-                ><template #default="{ row }">{{
-                  row.decision ? acceptanceDecisionLabel(row.decision) : ''
-                }}</template></ElTableColumn
-              ><ElTableColumn
-                prop="reviewDescription"
-                :label="tr('daily.reason')"
-                min-width="180"
-                show-overflow-tooltip
-            /></AppBusinessTable>
-          </section>
           <section class="inspection-form-card inspection-task-overview">
-            <p v-if="task.arrangementName">{{ tr('daily.name') }}：{{ task.arrangementName }}</p>
+            <!-- <p v-if="task.arrangementName">{{ tr('daily.name') }}：{{ task.arrangementName }}</p> -->
             <p v-if="task.assignmentMissing" class="inspection-error">
               {{ tr('daily.unstaffedHelp') }}
             </p>
             <p v-if="task.exemptionReason">{{ tr('daily.exempt') }}：{{ task.exemptionReason }}</p>
             <h3 class="inspection-section-title">{{ tr('ui.equipment.text0425') }}</h3>
-            <div class="inspection-task-summary">
-              <div>
-                <span>{{ tr('ui.equipment.text0314') }}</span
-                ><strong>{{ task.planName }}</strong>
-              </div>
-              <div>
-                <span>{{ tr('ui.equipment.text0235') }}</span
-                ><strong>{{ formatDateTime(task.dueAt) }}</strong>
-              </div>
-              <div>
-                <span>{{ tr('ui.equipment.text0426') }}</span
-                ><strong>{{ formatDateTime(task.expiresAt) }}</strong>
-              </div>
-              <div>
-                <span>{{ tr('ui.equipment.text0102') }}</span
-                ><strong>{{
-                  task.owners
-                    .map((id) => choices.users.find((u) => u.id === id)?.name || id)
-                    .join('、') || tr('ui.equipment.text0427')
-                }}</strong>
-              </div>
-              <div>
-                <span>{{ tr('ui.equipment.text0325') }}</span
-                ><strong>{{ task.typeName || tr('ui.equipment.text0428') }}</strong>
-              </div>
-              <div v-if="task.kind === 'daily'">
-                <span>{{ tr('ui.equipment.text0365') }}</span
-                ><strong>{{ task.shiftDate }} · {{ task.shiftName }}</strong>
-              </div>
-              <div>
-                <span>{{ tr('ui.equipment.text0429') }}</span
-                ><strong>{{ task.reviewMode }}</strong>
-              </div>
-              <div>
-                <span>{{ tr('ui.equipment.text0430') }}</span
-                ><strong>{{ task.ownerName || '—' }}</strong>
-              </div>
-              <div>
-                <span>{{ tr('ui.equipment.text0431') }}</span
-                ><strong>{{ formatDateTime(task.result.startedAt) }}</strong>
-              </div>
-              <div>
-                <span>{{ tr('ui.equipment.text0432') }}</span
-                ><strong>{{ formatDateTime(task.result.finishedAt) }}</strong>
-              </div>
-            </div>
-            <div class="inspection-task-metrics">
-              <span
-                >{{ tr('ui.equipment.text0433') }} <b>{{ task.equipmentCount }}</b></span
-              ><span
-                >{{ tr('ui.equipment.text0434') }} <b>{{ task.expected }}</b></span
-              ><span
-                >{{ tr('ui.equipment.text0435') }} <b>{{ task.checked }}</b></span
-              ><span
-                >{{ tr('ui.equipment.text0436') }} <b>{{ task.missing }}</b></span
-              ><span
-                >{{ tr('ui.equipment.text0210') }} <b class="danger">{{ task.abnormal }}</b></span
-              ><span
-                >{{ tr('ui.equipment.text0437') }} <b>{{ task.skipped }}</b></span
-              ><span
-                >{{ tr('ui.equipment.text0438') }}
-                <b
-                  >{{ Math.floor(task.workSeconds / 60) }} {{ tr('ui.equipment.text0439') }}
-                  {{ task.workSeconds % 60 }} {{ tr('ui.equipment.text0440') }}</b
-                ></span
-              ><ElTag v-if="task.overdue" type="warning">{{ tr('ui.equipment.text0441') }}</ElTag>
-            </div>
+            <InspectionTaskSummary
+              :task="task"
+              :users="choices.users"
+              @plan="planPreviewOpen = true"
+            />
             <p v-if="task.remark">{{ task.remark }}</p>
+            <InspectionTaskMetrics
+              :task="task"
+              :results="editing ? draft.items : undefined"
+              :skipped-equipment-ids="editing ? draft.skippedEquipmentIds : undefined"
+            />
+            
           </section>
           <div class="inspection-task-equipment-layout">
             <aside v-if="task.equipment.length > 1" class="inspection-route-panel">
@@ -444,16 +392,18 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                   <h3>{{ active?.name }}</h3>
                   <span>{{ active?.code }} · {{ active?.model || '—' }}</span>
                 </div>
-                <span>{{ active?.department }} · {{ active?.functionLocation || '—' }}</span
+                <span
+                  ><DepartmentText :value="active?.department" /> ·
+                  {{ active?.functionLocation || '—' }}</span
                 ><ElCheckbox
-                  v-if="editing"
+                  v-if="editing && !correcting"
                   :model-value="skipped"
                   @update:model-value="setSkipped(Boolean($event))"
                   >{{ tr('ui.equipment.text0444') }}</ElCheckbox
                 >
               </div>
               <div
-                v-if="editing && task.scanMode !== '无需扫码'"
+                v-if="editing && !correcting && task.scanMode !== '无需扫码'"
                 class="inspection-device-verification"
               >
                 <ElInput
@@ -492,7 +442,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               <p v-else>{{ draft.description || '—' }}</p></label
             ><label v-if="draft.skippedEquipmentIds?.length"
               ><span>{{ tr('ui.equipment.text0452') }}</span
-              ><ElInput v-if="editing" v-model="draft.skipReason" type="textarea" :rows="2" />
+              ><ElInput v-if="editing && !correcting" v-model="draft.skipReason" type="textarea" :rows="2" />
               <p v-else>{{ draft.skipReason || '—' }}</p></label
             ><label
               ><span>{{ tr('ui.equipment.text0222') }}</span
@@ -502,7 +452,10 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
                 :upload-file="inspectionUpload"
             /></label>
           </section>
-          <section v-if="draft.review" class="inspection-form-card">
+          <section
+            v-if="task.reviewMode !== '无需验收' && draft.review"
+            class="inspection-form-card"
+          >
             <h3>{{ tr('ui.equipment.text0453') }}</h3>
             <div class="inspection-task-summary">
               <div>
@@ -551,9 +504,14 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               ></AppBusinessTable
             >
           </section>
-          <TaskAnomalies kind="点巡检" :task-id="String(route.params.id)" :can-record="editing" />
+          <TaskAnomalies
+            v-if="task.kind !== 'daily'"
+            kind="点巡检"
+            :task-id="String(route.params.id)"
+            :can-record="editing"
+          />
           <TaskMaterials
-            v-if="task"
+            v-if="task.kind !== 'daily'"
             :task-id="String(task.id)"
             kind="点巡检"
             :can-work="!!task.canExecute && ['执行中', '挂起'].includes(task.status)"
@@ -562,7 +520,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             ref="extension"
             v-model="task"
             :object="task.kind === 'daily' ? 'inspection_daily_task' : 'inspection_periodic_task'"
-            :readonly="!editing"
+            :readonly="!editing || correcting"
             :errors="extensionErrors"
           />
         </div>
@@ -597,10 +555,19 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           >{{
             task.status === '审核不通过' ? tr('ui.equipment.text0459') : tr('ui.equipment.text0460')
           }}</ElButton
-        ><ElButton v-if="editing" :loading="busy" @click="action('draft', { ...draft })">{{
+        ><ElButton v-if="task.canAmendResult && !amending" type="primary" @click="amending = true">{{
+          tr('ui.equipment.text0459')
+        }}</ElButton
+        ><ElButton v-if="correcting" :disabled="busy" @click="cancelCorrection">{{
+          tr('ui.equipment.text0415')
+        }}</ElButton
+        ><ElButton v-if="correcting" type="primary" :loading="busy" @click="action('amend-result', { ...draft })">{{
           tr('ui.equipment.text0159')
         }}</ElButton
-        ><ElButton v-if="editing" type="primary" :loading="busy" @click="submit">{{
+        ><ElButton v-if="editing && !correcting" :loading="busy" @click="action('draft', { ...draft })">{{
+          tr('ui.equipment.text0159')
+        }}</ElButton
+        ><ElButton v-if="editing && !correcting" type="primary" :loading="busy" @click="submit">{{
           tr('ui.equipment.text0253')
         }}</ElButton
         ><ElButton
@@ -612,6 +579,14 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
       >
     </template>
     <AppLoadState v-else :loading="loading" :error="error" @retry="load" />
+    <InspectionTaskDeleteDialog
+      v-model="taskDeleteOpen"
+      :task="task"
+      @deleted="
+        unsaved.markSaved();
+        back();
+      "
+    />
     <AppDialog v-model="dialogOpen" :title="dialogTitle" :busy="busy"
       ><PagedChoiceField
         v-model="owners"
@@ -638,6 +613,12 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         </div></template
       ></AppDialog
     >
+    <InspectionPlanPreviewDialog
+      v-if="task"
+      v-model="planPreviewOpen"
+      :plan-id="task.planId"
+      :kind="task.kind === 'daily' ? 'daily-plans' : 'periodic-plans'"
+    />
     <InspectionReviewDialog
       v-model="reviewOpen"
       :busy="busy"

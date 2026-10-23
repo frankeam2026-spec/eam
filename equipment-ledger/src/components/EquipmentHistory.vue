@@ -12,7 +12,7 @@ import { useAuthStore } from '../stores/auth';
 import AppBusinessTable from './common/AppBusinessTable.vue';
 import AppIcon from './common/AppIcon.vue';
 import { formatNumber } from '../utils/number';
-import { formatOrganizationPath } from '../utils/organizationPath';
+import DepartmentText from './common/DepartmentText.vue';
 import { normalizeLocationPath } from '../utils/locationPath';
 import AppBackButton from './common/AppBackButton.vue';
 import { computed, nextTick, ref, watch, onBeforeUnmount } from 'vue';
@@ -235,13 +235,12 @@ function time(value: string) {
                   "
                 />
               </dd>
+              <dd v-else-if="key === 'department'"><DepartmentText :value="record.data.departmentPath || record.data.department" :lookup="false" /></dd>
               <dd v-else>
                 {{
                   key === 'amount'
                     ? formatNumber(record.data.amount)
-                    : key === 'department'
-                      ? formatOrganizationPath(record.data.departmentPath || record.data.department)
-                      : key === 'functionLocation'
+                    : key === 'functionLocation'
                         ? normalizeLocationPath(record.data.functionLocation)
                         : (record.data as any)[key] || ''
                 }}

@@ -1,7 +1,9 @@
-<script setup lang="ts">import { tr } from '../../i18n';
+<script setup lang="ts">
+import { tr } from '../../i18n';
 
 import { ElTableColumn } from 'element-plus';
 import AppBusinessTable from './AppBusinessTable.vue';
+import AppFormField from './AppFormField.vue';
 import AppIcon from './AppIcon.vue';
 import AppDecimalInput from './AppDecimalInput.vue';
 import { computed, ref } from 'vue';
@@ -22,7 +24,7 @@ import { inspectionUpload, type InspectionDefinition } from '../../inspection';
 import MaintenanceAttachments from './MaintenanceAttachments.vue';
 import AppDialog from './AppDialog.vue';
 const items = defineModel<MaintenanceItem[]>({ required: true });
-const props = defineProps<{ types: InspectionDefinition[] }>();
+const props = defineProps<{ types: InspectionDefinition[]; errors?: Record<string, string> }>();
 defineEmits<{ addType: [] }>();
 const selected = ref<string[]>([]),
   batchOpen = ref(false),
@@ -88,19 +90,26 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
       <h3>
         {{ tr('ui.equipment.text0377') }} <span>{{ items.length }}</span>
       </h3>
-      <ElButton type="primary" @click="add"><AppIcon name="Plus" /> {{ tr('ui.equipment.text0779') }}</ElButton
+      <ElButton type="primary" @click="add"
+        ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0779') }}</ElButton
       ><ElButton @click="$emit('addType')">{{ tr('ui.equipment.text0325') }}</ElButton
       ><ElDropdown :disabled="!selected.length" @command="openBatch"
-        ><ElButton :disabled="!selected.length">{{ tr('ui.equipment.text0373') }}<AppIcon name="Down" /></ElButton
+        ><ElButton :disabled="!selected.length"
+          >{{ tr('ui.equipment.text0373') }}<AppIcon name="Down" /></ElButton
         ><template #dropdown
           ><ElDropdownMenu
             ><ElDropdownItem command="type">{{ tr('ui.equipment.text1469') }}</ElDropdownItem
             ><ElDropdownItem command="options">{{ tr('ui.equipment.text0777') }}</ElDropdownItem
             ><ElDropdownItem command="normal">{{ tr('ui.equipment.text0778') }}</ElDropdownItem
-            ><ElDropdownItem divided command="delete">{{ tr('ui.equipment.text0146') }}</ElDropdownItem></ElDropdownMenu
+            ><ElDropdownItem divided command="delete">{{
+              tr('ui.equipment.text0146')
+            }}</ElDropdownItem></ElDropdownMenu
           ></template
         ></ElDropdown
-      ><span v-if="selected.length">{{ tr('ui.equipment.text0295') }} {{ selected.length }} {{ tr('ui.equipment.text0394') }}</span>
+      ><span v-if="selected.length"
+        >{{ tr('ui.equipment.text0295') }} {{ selected.length }}
+        {{ tr('ui.equipment.text0394') }}</span
+      >
     </div>
     <div class="inspection-project-scroll">
       <AppBusinessTable
@@ -116,117 +125,206 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         class="business-table inspection-project-table"
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="55" :width="52" class-name="project-sequence" fixed="left"
-          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0376') }}</div></template
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text0376') }}</div></template
           ><template #default="{ row: item, $index: index }">{{
             index + 1
           }}</template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn :min-width="210" :width="200" class-name="project-name" fixed="left"
           ><template #header
-            ><div class="table-header-label">{{ tr('ui.equipment.text0398') }} <b>*</b></div></template
+            ><div class="table-header-label">
+              {{ tr('ui.equipment.text0398') }} <b>*</b>
+            </div></template
           ><template #default="{ row: item, $index: index }"
-            ><ElInput v-model="item.name" :placeholder="tr('ui.equipment.text0398')" /></template></ElTableColumn
+            ><AppFormField
+              label=""
+              :prop="'items.' + index + '.name'"
+              :error="errors?.['items.' + index + '.name']"
+              label-width="0"
+              ><ElInput
+                v-model="item.name"
+                :placeholder="
+                  tr('ui.equipment.text0398')
+                " /></AppFormField></template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
-        <ElTableColumn :min-width="150" :width="130" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0325') }}</div></template
-          ><template #default="{ row: item, $index: index }">
-            <ElSelect v-model="item.typeId"
-              ><ElOption v-for="t in types" :key="t.id" :value="t.id" :label="t.name"
-            /></ElSelect> </template></ElTableColumn
-        ><!-- @vue-generic {TableColumnRow1} -->
-        <ElTableColumn :min-width="150" :width="260" v-if="items.length > 0"
+        <ElTableColumn :min-width="150" :width="130"
           ><template #header
-            ><div class="table-header-label">{{ tr('ui.equipment.text0399') }} <b>*</b></div></template
-          ><template #default="{ row: item, $index: index }">
-            <ElInput
-              v-model="item.content"
-              type="textarea"
-              :autosize="{ minRows: 1, maxRows: 4 }"
-              :placeholder="tr('ui.equipment.text1470')"
-            /> </template></ElTableColumn
-        ><!-- @vue-generic {TableColumnRow1} -->
-        <ElTableColumn :min-width="150" :width="120" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0400') }}</div></template
-          ><template #default="{ row: item, $index: index }">
-            <ElSelect v-model="item.valueType"
-              ><ElOption v-for="v in ['选项', '数值', '文本']" :key="v" :value="v"
-            /></ElSelect> </template></ElTableColumn
-        ><!-- @vue-generic {TableColumnRow1} -->
-        <ElTableColumn :min-width="150" :width="100" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1471') }}</div></template
-          ><template #default="{ row: item, $index: index }">
-            <AppDecimalInput
-              v-if="item.valueType === '数值'"
-              v-model="item.lower"
-              :placeholder="tr('ui.equipment.text0792')"
-            /><span v-else></span> </template></ElTableColumn
-        ><!-- @vue-generic {TableColumnRow1} -->
-        <ElTableColumn :min-width="150" :width="100" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1472') }}</div></template
-          ><template #default="{ row: item, $index: index }">
-            <AppDecimalInput
-              v-if="item.valueType === '数值'"
-              v-model="item.upper"
-              :placeholder="tr('ui.equipment.text0792')"
-            /><span v-else></span> </template></ElTableColumn
-        ><!-- @vue-generic {TableColumnRow1} -->
-        <ElTableColumn :min-width="150" :width="220" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0787') }}</div></template
-          ><template #default="{ row: item, $index: index }">
-            <ElSelect
-              v-if="item.valueType === '选项'"
-              v-model="item.options"
-              multiple
-              filterable
-              allow-create
-              default-first-option
-              :placeholder="tr('ui.equipment.text1473')"
-              @change="
-                item.normalOptions = item.normalOptions.filter((o) => item.options.includes(o))
-              "
-              ><ElOption v-for="o in item.options" :key="o" :value="o" /></ElSelect
-            ><span v-else></span> </template></ElTableColumn
-        ><!-- @vue-generic {TableColumnRow1} -->
-        <ElTableColumn :min-width="150" :width="220" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0789') }}</div></template
-          ><template #default="{ row: item, $index: index }">
-            <ElSelect
-              v-if="item.valueType === '选项'"
-              v-model="item.normalOptions"
-              multiple
-              :placeholder="tr('ui.equipment.text0790')"
-              ><ElOption v-for="o in item.options" :key="o" :value="o" /></ElSelect
-            ><span v-else></span> </template></ElTableColumn
-        ><!-- @vue-generic {TableColumnRow1} -->
-        <ElTableColumn :min-width="150" :width="82" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0794') }}</div></template
+            ><div class="table-header-label">{{ tr('ui.equipment.text0325') }}</div></template
           ><template #default="{ row: item, $index: index }"
-            ><ElSwitch v-model="item.required" /></template></ElTableColumn
+            ><AppFormField
+              label=""
+              :prop="'items.' + index + '.typeId'"
+              :error="errors?.['items.' + index + '.typeId']"
+              label-width="0"
+            >
+              <ElSelect v-model="item.typeId"
+                ><ElOption v-for="t in types" :key="t.id" :value="t.id" :label="t.name"
+              /></ElSelect> </AppFormField></template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
-        <ElTableColumn :min-width="150" :width="100" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text1474') }}</div></template
+        <ElTableColumn :min-width="150" :width="260"
+          ><template #header
+            ><div class="table-header-label">
+              {{ tr('ui.equipment.text0399') }} <b>*</b>
+            </div></template
           ><template #default="{ row: item, $index: index }"
-            ><ElSwitch v-model="item.photoRequired" /></template></ElTableColumn
+            ><AppFormField
+              label=""
+              :prop="'items.' + index + '.content'"
+              :error="errors?.['items.' + index + '.content']"
+              label-width="0"
+            >
+              <ElInput
+                v-model="item.content"
+                type="textarea"
+                :autosize="{ minRows: 1, maxRows: 4 }"
+                :placeholder="tr('ui.equipment.text1470')"
+              /> </AppFormField></template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
-        <ElTableColumn :min-width="150" :width="200" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0130') }}</div></template
-          ><template #default="{ row: item, $index: index }">
-            <ElInput
-              v-model="item.remark"
-              type="textarea"
-              :autosize="{ minRows: 1, maxRows: 4 }"
-            /> </template></ElTableColumn
+        <ElTableColumn :min-width="150" :width="120"
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text0400') }}</div></template
+          ><template #default="{ row: item, $index: index }"
+            ><AppFormField
+              label=""
+              :prop="'items.' + index + '.valueType'"
+              :error="errors?.['items.' + index + '.valueType']"
+              label-width="0"
+            >
+              <ElSelect v-model="item.valueType"
+                ><ElOption v-for="v in ['选项', '数值', '文本']" :key="v" :value="v"
+              /></ElSelect> </AppFormField></template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
-        <ElTableColumn :min-width="150" :width="220" v-if="items.length > 0"
-          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0798') }}</div></template
-          ><template #default="{ row: item, $index: index }">
-            <MaintenanceAttachments
-              v-model="item.references"
-              :upload-file="inspectionUpload"
-            /> </template></ElTableColumn
+        <ElTableColumn :min-width="150" :width="100"
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text1471') }}</div></template
+          ><template #default="{ row: item, $index: index }"
+            ><AppFormField
+              label=""
+              :prop="'items.' + index + '.lower'"
+              :error="errors?.['items.' + index + '.lower']"
+              label-width="0"
+            >
+              <AppDecimalInput
+                v-if="item.valueType === '数值'"
+                v-model="item.lower"
+                :placeholder="tr('ui.equipment.text0792')"
+              /><span v-else></span> </AppFormField></template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150" :width="100"
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text1472') }}</div></template
+          ><template #default="{ row: item, $index: index }"
+            ><AppFormField
+              label=""
+              :prop="'items.' + index + '.upper'"
+              :error="errors?.['items.' + index + '.upper']"
+              label-width="0"
+            >
+              <AppDecimalInput
+                v-if="item.valueType === '数值'"
+                v-model="item.upper"
+                :placeholder="tr('ui.equipment.text0792')"
+              /><span v-else></span> </AppFormField></template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150" :width="220"
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text0787') }}</div></template
+          ><template #default="{ row: item, $index: index }"
+            ><AppFormField
+              label=""
+              :prop="'items.' + index + '.options'"
+              :error="errors?.['items.' + index + '.options']"
+              label-width="0"
+            >
+              <ElSelect
+                v-if="item.valueType === '选项'"
+                v-model="item.options"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                :placeholder="tr('ui.equipment.text1473')"
+                @change="
+                  item.normalOptions = item.normalOptions.filter((o) => item.options.includes(o))
+                "
+                ><ElOption v-for="o in item.options" :key="o" :value="o" /></ElSelect
+              ><span v-else></span> </AppFormField></template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150" :width="220"
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text0789') }}</div></template
+          ><template #default="{ row: item, $index: index }"
+            ><AppFormField
+              label=""
+              :prop="'items.' + index + '.normalOptions'"
+              :error="errors?.['items.' + index + '.normalOptions']"
+              label-width="0"
+            >
+              <ElSelect
+                v-if="item.valueType === '选项'"
+                v-model="item.normalOptions"
+                multiple
+                :placeholder="tr('ui.equipment.text0790')"
+                ><ElOption v-for="o in item.options" :key="o" :value="o" /></ElSelect
+              ><span v-else></span> </AppFormField></template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150" :width="82"
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text0794') }}</div></template
+          ><template #default="{ row: item, $index: index }"
+            ><AppFormField
+              label=""
+              :prop="'items.' + index + '.required'"
+              :error="errors?.['items.' + index + '.required']"
+              label-width="0"
+              ><ElSwitch v-model="item.required" /></AppFormField></template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150" :width="100"
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text1474') }}</div></template
+          ><template #default="{ row: item, $index: index }"
+            ><AppFormField
+              label=""
+              :prop="'items.' + index + '.photoRequired'"
+              :error="errors?.['items.' + index + '.photoRequired']"
+              label-width="0"
+              ><ElSwitch v-model="item.photoRequired" /></AppFormField></template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150" :width="200"
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text0130') }}</div></template
+          ><template #default="{ row: item, $index: index }"
+            ><AppFormField
+              label=""
+              :prop="'items.' + index + '.remark'"
+              :error="errors?.['items.' + index + '.remark']"
+              label-width="0"
+            >
+              <ElInput
+                v-model="item.remark"
+                type="textarea"
+                :autosize="{ minRows: 1, maxRows: 4 }"
+              /> </AppFormField></template></ElTableColumn
+        ><!-- @vue-generic {TableColumnRow1} -->
+        <ElTableColumn :min-width="150" :width="220"
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text0798') }}</div></template
+          ><template #default="{ row: item, $index: index }"
+            ><AppFormField
+              label=""
+              :prop="'items.' + index + '.references'"
+              :error="errors?.['items.' + index + '.references']"
+              label-width="0"
+            >
+              <MaintenanceAttachments
+                v-model="item.references"
+                :upload-file="inspectionUpload"
+              /> </AppFormField></template></ElTableColumn
         ><!-- @vue-generic {TableColumnRow1} -->
         <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-          ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
+          ><template #header
+            ><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
           ><template #default="{ row: item, $index: index }">
             <ElButton
               class="inspection-text-button danger"
@@ -245,7 +343,11 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
     <AppDialog
       v-model="batchOpen"
       :title="
-        batch === 'type' ? tr('ui.equipment.text1469') : batch === 'options' ? tr('ui.equipment.text0777') : tr('ui.equipment.text0778')
+        batch === 'type'
+          ? tr('ui.equipment.text1469')
+          : batch === 'options'
+            ? tr('ui.equipment.text0777')
+            : tr('ui.equipment.text0778')
       "
       ><ElSelect v-if="batch === 'type'" v-model="batchType"
         ><ElOption v-for="t in types" :key="t.id" :value="t.id" :label="t.name" /></ElSelect
@@ -271,6 +373,17 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   </section>
 </template>
 <style scoped>
+.inspection-projects {
+  width: 100%;
+  min-width: 0;
+}
+.inspection-project-table :deep(.app-form-field) {
+  margin: 0;
+  padding-bottom: 18px;
+}
+.inspection-project-table :deep(.el-form-item__content) {
+  min-width: 0;
+}
 .inspection-project-scroll {
   overflow: auto;
   border: 1px solid #e1e6ef;

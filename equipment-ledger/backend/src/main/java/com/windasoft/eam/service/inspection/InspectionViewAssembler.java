@@ -47,6 +47,7 @@ public class InspectionViewAssembler {
   public Map<String, Object> task(Map<String, Object> row) {
     var v = decode(row.get("snapshot"));
     v.put("typeId", Objects.toString(row.get("type_id"), ""));
+    v.put("planId", Objects.toString(row.get("plan_id"), ""));
     v.put("companyId", Objects.toString(row.get("company_id"), ""));
     v.put("departmentId", Objects.toString(row.get("department_id"), ""));
     v.put("id", row.get("id").toString());
@@ -55,7 +56,11 @@ public class InspectionViewAssembler {
     v.put("arrangementName", text(row, "arrangement_name"));
     v.put("businessDate", text(row, "business_date"));
     v.put("followUpUserId", text(row, "follow_up_user_id"));
-    v.put("assignmentMissing", text(row, "kind").equals("daily") && ids(v.get("owners")).isEmpty());
+    v.put(
+        "assignmentMissing",
+        text(row, "kind").equals("daily")
+            && !text(v, "personMode").equals("现场直接点检")
+            && ids(v.get("owners")).isEmpty());
     v.put(
         "canExempt",
         text(row, "kind").equals("daily")
@@ -90,8 +95,10 @@ public class InspectionViewAssembler {
             && !yes(v.get("allowLate"));
     v.put("canExecute", access.execute(row) && !expiredStart);
     v.put("canReview", access.review(row));
+    v.put("canAmendResult", access.canAmendResult(row));
     v.put("canTransfer", access.access(row, "转派"));
     v.put("canVoid", access.access(row, "删除"));
+    v.put("canDelete", access.canDelete(row));
     var items = rows(v.get("items"));
     var answers = rows(result.get("items"));
     v.put("expected", items.size());

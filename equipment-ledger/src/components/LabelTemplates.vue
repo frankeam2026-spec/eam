@@ -1,4 +1,6 @@
-<script setup lang="ts">import { tr } from '../i18n';
+<script setup lang="ts">
+import DepartmentText from './common/DepartmentText.vue';
+import { tr } from '../i18n';
 
 import { ElAlert } from 'element-plus';
 import 'element-plus/es/components/alert/style/css';
@@ -39,7 +41,7 @@ const templates = ref<api.LabelTemplate[]>([]),
   designKey = ref(0);
 const focusDesign = ref(false);
 const page = ref(1),
-  pageSize = ref(24);
+  pageSize = ref(20);
 const list = computed(() =>
   templates.value.filter((t) => [t.name, t.remark].some((v) => v.includes(keyword.value))),
 );
@@ -250,6 +252,7 @@ const printOpen = ref(false),
   equipmentRows = ref<api.EquipmentRecord[]>([]),
   equipmentKeyword = ref(''),
   equipmentPage = ref(1),
+  equipmentSize = ref(20),
   equipmentTotal = ref(0),
   ids = ref<string[]>([]),
   copies = ref(1);
@@ -275,7 +278,7 @@ async function searchEquipment() {
     const r = await api.listEquipment({
       keyword: equipmentKeyword.value,
       page: equipmentPage.value,
-      size: 10,
+      size: equipmentSize.value,
     });
     equipmentRows.value = r.data;
     equipmentTotal.value = r.page.total;
@@ -385,7 +388,6 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           v-model:page="page"
           v-model:page-size="pageSize"
           :total="list.length"
-          :show-sizes="false"
         /></footer
     ></template>
     <template v-else
@@ -555,9 +557,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             ><!-- @vue-generic {TableColumnRow1} -->
             <ElTableColumn :min-width="150"
               ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0098') }}</div></template
-              ><template #default="{ row: e, $index: tableRowIndex }">{{
-                e.department
-              }}</template></ElTableColumn
+              ><template #default="{ row: e, $index: tableRowIndex }"><DepartmentText :value="e.departmentPath || e.department" :department-id="e.departmentOrgId" /></template></ElTableColumn
             ><template #empty
               ><div v-if="!equipmentRows.length">{{ tr('ui.equipment.text0701') }}</div></template
             ></AppBusinessTable
@@ -565,24 +565,12 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         </div>
         <div class="print-picker-pages">
           <span>{{ tr('ui.equipment.text0295') }} {{ ids.length }} {{ tr('ui.equipment.text0702') }} {{ equipmentTotal }} {{ tr('ui.equipment.text0370') }}</span
-          ><ElButton
-            :disabled="equipmentPage === 1"
-            @click="
-              equipmentPage--;
-              searchEquipment();
-            "
-            :aria-label="tr('ui.equipment.text0703')"
-            :title="tr('ui.equipment.text0703')"
-            ><AppIcon name="Left" /></ElButton
-          ><span>{{ equipmentPage }}</span
-          ><ElButton
-            :disabled="equipmentPage * 10 >= equipmentTotal"
-            @click="
-              equipmentPage++;
-              searchEquipment();
-            "
-            ><AppIcon name="Right"
-          /></ElButton>
+          ><AppPagination
+            :page="equipmentPage"
+            v-model:page-size="equipmentSize"
+            :total="equipmentTotal"
+            @update:page="equipmentPage = $event; searchEquipment()"
+          />
         </div>
         <footer>
           <label

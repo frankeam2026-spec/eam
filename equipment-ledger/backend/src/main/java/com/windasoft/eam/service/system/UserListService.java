@@ -93,7 +93,7 @@ public class UserListService {
                         roles.getOrDefault(((Number) row.get("id")).longValue(), List.of()),
                         Integer.parseInt(text(row, "status")) == 1 ? "启用" : "停用",
                         text(row, "department"),
-                        text(row, "roles")))
+                        text(row, "roles"), text(row, "email"), ((Number)row.get("email_version")).intValue()))
             .toList();
     return new PageResult<>(rows, query.page(), query.size(), repository.count(selection));
   }

@@ -3,7 +3,6 @@ package com.windasoft.eam.service.inspection;
 import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 
 import java.time.*;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 /** Pure calendar calculation shared by preview and persisted task generation. */
@@ -21,40 +20,13 @@ public final class DailyInspectionSchedule {
   public static List<Occurrence> on(
       Map<String, Object> plan, Map<String, Object> a, LocalDate date) {
     if (!yes(a.get("enabled"))
-        || date.isBefore(LocalDate.parse(text(a, "anchorDate")))
-        || text(a, "frequency").equals("event")) return List.of();
-    boolean work = strings(plan.get("workdays")).contains(date.toString());
-    boolean rest =
-        strings(plan.get("holidays")).contains(date.toString())
-            || ids(plan.get("restDays"))
-                .contains(
-                    (long)
-                        (text(plan, "restCycle").equals("按月")
-                            ? date.getDayOfMonth()
-                            : date.getDayOfWeek().getValue()));
-    if (rest && !work) return List.of();
-    LocalDate anchor = LocalDate.parse(text(a, "anchorDate"));
-    long n = number(a.get("intervalCount"));
-    boolean matches =
-        switch (text(a, "frequency")) {
-          case "daily" -> ChronoUnit.DAYS.between(anchor, date) % n == 0;
-          case "weekly" ->
-              ChronoUnit.WEEKS.between(
-                              anchor.with(java.time.DayOfWeek.MONDAY),
-                              date.with(java.time.DayOfWeek.MONDAY))
-                          % n
-                      == 0
-                  && ids(a.get("days")).contains((long) date.getDayOfWeek().getValue());
-          case "monthly" ->
-              ChronoUnit.MONTHS.between(YearMonth.from(anchor), YearMonth.from(date)) % n == 0
-                  && ids(a.get("days")).contains((long) date.getDayOfMonth());
-          default -> true;
-        };
-    if (!matches) return List.of();
+        || (!text(plan, "startDate").isBlank() && date.isBefore(LocalDate.parse(text(plan, "startDate"))))
+        || (!text(plan, "endDate").isBlank() && date.isAfter(LocalDate.parse(text(plan, "endDate"))))
+        || !Set.of("shift", "slots").contains(text(a, "frequency"))
+        || rest(plan, date)) return List.of();
     var result = new ArrayList<Occurrence>();
     String prefix = text(a, "id");
-    if (Set.of("shift", "slots").contains(text(a, "frequency"))) {
-      for (var slot : rows(a.get("slots")))
+    for (var slot : rows(a.get("slots")))
         result.add(
             occurrence(
                 prefix + ":" + text(slot, "id"),
@@ -62,27 +34,24 @@ public final class DailyInspectionSchedule {
                 date,
                 text(slot, "start"),
                 text(slot, "end"),
-                text(a, "frequency").equals("shift") ? text(slot, "id") : ""));
-    } else {
-      var range =
-          occurrence(prefix, text(a, "name"), date, text(a, "startTime"), text(a, "endTime"), "");
-      if (text(a, "frequency").equals("interval")) {
-        for (LocalDateTime start = range.start();
-            start.isBefore(range.end());
-            start = start.plusMinutes(n)) {
-          LocalDateTime end = start.plusMinutes(number(a.get("windowMinutes")));
-          if (end.isAfter(range.end())) end = range.end();
-          result.add(
-              new Occurrence(
-                  prefix + ":" + start.toLocalTime(), text(a, "name"), date, start, end, ""));
-        }
-      } else result.add(range);
-    }
+                text(slot, "id")));
     if (a.get("effectiveFrom") != null) {
       LocalDateTime effective = dateTime(a.get("effectiveFrom"));
       return result.stream().filter(o -> o.end().isAfter(effective)).toList();
     }
     return result;
+  }
+
+  /** Rest rules use the shift's start date. An explicit workday overrides rest rules. */
+  public static boolean rest(Map<String, Object> plan, LocalDate date) {
+    if (strings(plan.get("workdays")).contains(date.toString())) return false;
+    boolean weekly = ids(plan.get("weeklyRestDays")).contains((long) date.getDayOfWeek().getValue());
+    boolean monthly = ids(plan.get("monthlyRestDays")).contains((long) date.getDayOfMonth());
+    // Old request clients can still submit the former single-cycle calendar.
+    boolean legacy = !plan.containsKey("weeklyRestDays") && !plan.containsKey("monthlyRestDays")
+        && ids(plan.get("restDays")).contains((long) (text(plan, "restCycle").equals("按月")
+            ? date.getDayOfMonth() : date.getDayOfWeek().getValue()));
+    return weekly || monthly || legacy || strings(plan.get("holidays")).contains(date.toString());
   }
 
   private static Occurrence occurrence(

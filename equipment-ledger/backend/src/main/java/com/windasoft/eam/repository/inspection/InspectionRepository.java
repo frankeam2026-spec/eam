@@ -7,6 +7,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class InspectionRepository {
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.repository.system.NotificationRepository notifications;
   private final JdbcTemplate db;
   private final com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources;
   private final InspectionExecutionStorage executions;
@@ -190,6 +192,12 @@ public class InspectionRepository {
         id);
   }
 
+  public int countUndeletedPlanTasks(long tenantId, long id) {
+    return db.queryForObject(
+        "SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=? AND plan_id=? AND deleted=0",
+        Integer.class, tenantId, id);
+  }
+
   public List<Map<String, Object>> listOtherDefinitionPayloads(long tenantId, long id) {
     return db.queryForList(
         "SELECT kind,payload FROM v_inspection_definition WHERE tenant_id=? AND id<>?",
@@ -323,6 +331,7 @@ public class InspectionRepository {
         com.windasoft.eam.common.NotificationMessages.arguments(kind, title),
         tenantId,
         recordId);
+    if (notifications != null) notifications.captureSource("eam_inspection_inbox", tenantId, recordId);
     return count;
   }
 
@@ -469,6 +478,13 @@ public class InspectionRepository {
         tenantId,
         id,
         code);
+  }
+
+  public int updateEquipmentHistoryResult(long tenantId, Object id, Object code, String summary) {
+    return db.update(
+        "UPDATE eam_equipment_history SET result=? WHERE tenant_id=? AND equipment_id=?"
+            + " AND record_type='INSPECTION' AND record_no=?",
+        summary, tenantId, id, code);
   }
 
   public int insertEquipmentHistory(

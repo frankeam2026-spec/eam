@@ -63,6 +63,13 @@ public class EquipmentWriteRepository {
     return equipment.deleteById(id);
   }
 
+  public int advanceVersion(long tenant, Long id, int version, long user) {
+    return db.update(
+        "UPDATE eam_equipment SET row_version=row_version+1, updated_by=?"
+            + " WHERE tenant_id=? AND id=? AND deleted=0 AND row_version=?",
+        user, tenant, id, version);
+  }
+
   public Equipment find(long tenant, Long id) {
     return media.hydrate(
         equipment.selectOne(

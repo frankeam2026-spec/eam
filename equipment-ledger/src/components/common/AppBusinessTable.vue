@@ -57,7 +57,7 @@ const props = withDefaults(
 const selection = defineModel<Row[]>('selection');
 const selectionIds = defineModel<string[]>('selectionIds');
 const page = defineModel<number>('page', { default: 1 });
-const pageSize = defineModel<number>('pageSize', { default: 10 });
+const pageSize = defineModel<number>('pageSize', { default: 20 });
 const emit = defineEmits<{
   'selection-change': [rows: Row[]];
   'sort-change': [sort: BusinessSort];

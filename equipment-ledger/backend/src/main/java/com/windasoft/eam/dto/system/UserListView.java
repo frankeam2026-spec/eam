@@ -12,4 +12,6 @@ public record UserListView(
     List<String> roleIds,
     String status,
     String department,
-    String roles) {}
+    String roles,
+    String email,
+    Integer emailVersion) {}

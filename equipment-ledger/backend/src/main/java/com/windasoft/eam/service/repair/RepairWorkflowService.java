@@ -165,6 +165,7 @@ public class RepairWorkflowService {
         row.setDispatcherUserId(auth.userId());
         row.setAssigneeUserId(null); // Explicit SQL clears the previous owner (MP skips nulls).
         row.setAssignee(String.join("、", names));
+        if(action.equals("dispatch"))row.setDispatchedAt(LocalDateTime.now());
         row.setStatus("待接单");
         flow.clearOwner(auth.tenantId(), id);
         if (!ids.contains(auth.userId())) todo(row, auth.userId(), "等待接单", true);
@@ -172,6 +173,7 @@ public class RepairWorkflowService {
         label = action.equals("dispatch") ? "派工" : "转派";
       }
       case "claim" -> {
+        row.setClaimedAt(LocalDateTime.now());
         state(row, "待接单");
         if (flow.candidate(auth.tenantId(), id, auth.userId()) == 0) deny();
         row.setAssigneeUserId(auth.userId());

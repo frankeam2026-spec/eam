@@ -1,4 +1,7 @@
-<script setup lang="ts">import { enumLabel } from '../i18n';
+<script setup lang="ts">
+import { isDepartmentCustomColumn } from '../businessConfig';
+import DepartmentValuesText from './common/DepartmentValuesText.vue';
+import { enumLabel } from '../i18n';
 import { tr } from '../i18n';
 
 import DialogChoiceInput from './common/DialogChoiceInput.vue';
@@ -75,7 +78,7 @@ const form = ref(empty()),
 const query = ref(''),
   applied = ref(''),
   page = ref(1),
-  size = ref(10),
+  size = ref(20),
   busy = ref(false),
   loading = ref(false),
   error = ref('');
@@ -100,7 +103,7 @@ const baseFields: Record<string, string> = {
   createdAt: '创建时间',
   confirmedAt: '入库时间',
 };
-const { extensionColumns, extensionFilters, extensionExportColumns, configurationError } =
+const { definitions: customDepartmentDefinitions, extensionColumns, extensionFilters, extensionExportColumns, configurationError } =
   useBusinessColumns('inventory_receipt');
 const fields = computed<Record<string, string>>(() => ({
   ...baseFields,
@@ -492,7 +495,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
                   v-else-if="key === 'status'"
                   :type="row.status === '已入库' ? 'success' : 'warning'"
                   >{{ enumLabel('status',row.status) }}</ElTag
-                ><span v-else>{{ display(row, key) }}</span>
+                ><DepartmentValuesText v-else-if="isDepartmentCustomColumn(customDepartmentDefinitions, key)" :value="String(display(row, key))" :ids="row.customFields?.[key.slice(7)]" /><span v-else>{{ display(row, key) }}</span>
               </template></ElTableColumn
             ><!-- @vue-generic {TableColumnRow1} -->
             <ElTableColumn

@@ -7,6 +7,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class InventoryOperationRepository {
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.repository.system.NotificationRepository notifications;
   private final JdbcTemplate db;
   private final InventoryDocumentStorage documents;
   private final NumberCounterMapper counter;
@@ -359,6 +361,7 @@ public class InventoryOperationRepository {
         com.windasoft.eam.common.NotificationMessages.arguments("待退料入库", value),
         tenantId,
         recordId);
+    if (notifications != null) notifications.captureSource("inv_inbox", tenantId, recordId);
     return count;
   }
 
@@ -625,6 +628,7 @@ public class InventoryOperationRepository {
         com.windasoft.eam.common.NotificationMessages.arguments("待收货", value),
         tenantId,
         recordId);
+    if (notifications != null) notifications.captureSource("inv_inbox", tenantId, recordId);
     return count;
   }
 
@@ -657,6 +661,7 @@ public class InventoryOperationRepository {
         com.windasoft.eam.common.NotificationMessages.arguments("退料已入库", value),
         tenantId,
         recordId);
+    if (notifications != null) notifications.captureSource("inv_inbox", tenantId, recordId);
     return count;
   }
 

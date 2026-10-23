@@ -25,6 +25,28 @@ public class InspectionController {
   @org.springframework.beans.factory.annotation.Autowired
   private com.windasoft.eam.service.inspection.DailyArrangementService arrangements;
 
+  @GetMapping("/daily-device-options")
+  public Object dailyDeviceOptions(
+      @RequestParam(defaultValue = "") String q,
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "20") int size) {
+    return service.dailyDeviceOptions(q, page, size);
+  }
+
+  @GetMapping("/daily-device-tasks")
+  public Object deviceTasks(
+      @RequestParam(defaultValue = "") String equipmentId,
+      @RequestParam(defaultValue = "") String code,
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "20") int size) {
+    return lists.deviceTasks(equipmentId, code, page, size);
+  }
+
+  @PostMapping("/daily-plans/assignment-impact")
+  public Object assignmentImpact(@RequestBody Map<String, Object> body) {
+    return Map.of("data", service.assignmentImpact(body));
+  }
+
   @GetMapping("/daily-event-options")
   public Object eventOptions(
       @RequestParam(defaultValue = "") String q,

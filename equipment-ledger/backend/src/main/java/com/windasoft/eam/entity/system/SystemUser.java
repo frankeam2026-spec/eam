@@ -15,6 +15,8 @@ public class SystemUser {
   private String displayName;
   private String employeeNo;
   private String phone;
+  @TableField(updateStrategy = FieldStrategy.NEVER)
+  private String email;
   private String passwordHash;
   private Long orgId;
   private Integer status;

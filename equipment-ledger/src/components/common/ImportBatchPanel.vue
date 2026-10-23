@@ -69,7 +69,7 @@ const showResults = ref(false);
 const onlyErrors = ref(true);
 const allColumns = ref(false);
 const page = ref(1);
-const size = ref(10);
+const size = ref(20);
 const uploader = ref<UploadInstance>();
 const stateNames: Record<ImportState, string> = {
   VALIDATING: '正在校验',

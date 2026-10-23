@@ -10,6 +10,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class RequisitionRepository {
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.repository.system.NotificationRepository notifications;
   private final JdbcTemplate db;
   private final NumberCounterMapper counter;
 
@@ -105,6 +107,7 @@ public class RequisitionRepository {
         com.windasoft.eam.common.NotificationMessages.arguments("待出库", value),
         tenantId,
         recordId);
+    if (notifications != null) notifications.captureSource("inv_inbox", tenantId, recordId);
     return count;
   }
 
@@ -627,6 +630,7 @@ public class RequisitionRepository {
         com.windasoft.eam.common.NotificationMessages.arguments("出库完成", value),
         tenantId,
         recordId);
+    if (notifications != null) notifications.captureSource("inv_inbox", tenantId, recordId);
     return count;
   }
 
@@ -677,6 +681,7 @@ public class RequisitionRepository {
         com.windasoft.eam.common.NotificationMessages.arguments("需求已关闭", value),
         tenantId,
         recordId);
+    if (notifications != null) notifications.captureSource("inv_inbox", tenantId, recordId);
     return count;
   }
 }

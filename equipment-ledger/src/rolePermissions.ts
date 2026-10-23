@@ -255,7 +255,7 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0015');
         },
-        actions: ['查看', '执行', '审核', '转派', '免检', '删除', '导出'],
+        actions: ['查看', '执行', '修改结果', '审核', '转派', '免检', '删除', '导出'],
         scopes: [
           'all',
           'company',
@@ -447,6 +447,9 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         actions: ['查看'],
         scopes: ['all'],
       },
+      {key:'notificationPolicy',get name(){return tr('notify.policies');},actions:['查看','编辑'],scopes:['all']},
+      {key:'notificationChannel',get name(){return tr('notify.channels');},actions:['查看','编辑'],scopes:['all']},
+      {key:'notificationDelivery',get name(){return tr('notify.deliveries');},actions:['查看','重试'],scopes:['all']},
       {
         key: 'homeTemplate',
         get name() {

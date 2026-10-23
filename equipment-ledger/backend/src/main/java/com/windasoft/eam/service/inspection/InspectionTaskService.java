@@ -221,6 +221,7 @@ public class InspectionTaskService {
     var result =
         row.get("result") == null ? new LinkedHashMap<String, Object>() : decode(row.get("result"));
     String state = text(row, "status"), next = state, label = "";
+    String previousResult = action.equals("amend-result") ? encode(result) : "";
     Long owner = nullable(row.get("owner_id"));
     if (Set.of("start", "draft", "submit", "suspend", "resume", "scan").contains(action)
         && !execute(row)) deny();
@@ -303,6 +304,27 @@ public class InspectionTaskService {
                 true,
                 false);
         }
+      }
+      case "amend-result" -> {
+        if (!taskAccess.canAmendResult(row)) deny();
+        // Correct the recorded results without reopening execution or changing its scope.
+        var correction = new LinkedHashMap<String, Object>(body);
+        correction.put("skippedEquipmentIds", strings(result.get("skippedEquipmentIds")));
+        correction.put("skipReason", text(result, "skipReason"));
+        var values = checkedResults(tenant, snap, correction, true);
+        validation.attachments(tenant, body.get("attachments"), false);
+        result.put("items", values);
+        result.put("description", text(body, "description"));
+        result.put("attachments", rows(body.get("attachments")));
+        for (var eq : rows(snap.get("equipment"))) {
+          if (strings(result.get("skippedEquipmentIds")).contains(text(eq, "id"))) continue;
+          String summary = values.stream()
+              .filter(r -> text(r, "id").startsWith(text(eq, "id") + "/"))
+              .map(r -> text(r, "value"))
+              .collect(java.util.stream.Collectors.joining("、"));
+          repository.updateEquipmentHistoryResult(tenant, number(eq.get("id")), row.get("code"), summary);
+        }
+        label = "修改检查结果";
       }
       case "review" -> {
         require(
@@ -440,11 +462,14 @@ public class InspectionTaskService {
       }
       case "void", "delete" -> {
         if (!access(row, "删除")) deny();
+        if (action.equals("delete") && text(row, "kind").equals("daily"))
+          require(taskAccess.canDelete(row),
+              com.windasoft.eam.common.MessageContext.text("daily.error.deleteState"));
         require(
             !Set.of("已审核", "已完成", "已作废", "过期作废", "已免检").contains(state) || action.equals("delete"),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0039"));
         require(
-            !text(body, "description").isBlank(),
+            !text(body, "description").isBlank() && text(body, "description").length() <= 1000,
             com.windasoft.eam.common.MessageContext.text("ui.equipment.text0461"));
         next = "已作废";
         journal.closeTodos(tenant, id);
@@ -472,6 +497,23 @@ public class InspectionTaskService {
         next, owner, encode(snap), encode(result), action.equals("delete") ? 1 : 0, tenant, id);
     var details = new LinkedHashMap<String, Object>();
     details.put("说明", text(body, "description"));
+    if (action.equals("amend-result")) {
+      details.put("修改前", previousResult);
+      details.put("修改后", encode(result));
+      var previous = decode(previousResult);
+      var changes = new ArrayList<String>();
+      for (var item : rows(snap.get("items"))) {
+        var before = rows(previous.get("items")).stream()
+            .filter(r -> text(r, "id").equals(text(item, "id"))).findFirst().orElse(Map.of());
+        var after = rows(result.get("items")).stream()
+            .filter(r -> text(r, "id").equals(text(item, "id"))).findFirst().orElse(Map.of());
+        if (!before.equals(after)) changes.add(text(item, "name") + "："
+            + text(before, "value") + " → " + text(after, "value"));
+      }
+      if (!Objects.equals(previous.get("attachments"), result.get("attachments")))
+        changes.add("附件已更新");
+      details.put("变更内容", changes);
+    }
     if (action.equals("scan")) details.put("设备编号", text(body, "equipmentCode"));
     if (action.equals("transfer"))
       details.put("负责人", ids(body.get("owners")).stream().map(u -> userName(tenant, u)).toList());

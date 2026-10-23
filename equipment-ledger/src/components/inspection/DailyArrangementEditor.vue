@@ -5,14 +5,12 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
-  ElInputNumber,
   ElOption,
   ElSelect,
   ElSwitch,
   ElTimePicker,
-  ElDatePicker,
-  ElTabs,
-  ElTabPane,
+  ElCollapse,
+  ElCollapseItem,
   ElAlert,
   ElMessage,
   ElTableColumn,
@@ -26,7 +24,9 @@ import {
   type InspectionChoices,
   type OperationTeam,
   type DailyPreview,
+  type DailyArrangement,
 } from '../../inspection';
+import DailyRosterEditor from './DailyRosterEditor.vue';
 import PagedChoiceField from '../common/PagedChoiceField.vue';
 import AppDialog from '../common/AppDialog.vue';
 import AppBusinessTable from '../common/AppBusinessTable.vue';
@@ -50,10 +50,54 @@ const active = ref('0'),
   busy = ref(false),
   teamError = ref('');
 const current = computed(() => form.value.arrangements?.[Number(active.value)]);
+const editorOpen = ref(false);
+const expanded = ref<string[]>([]);
+const timingExpanded = ref<string[]>([]);
+function edit(index: number) {
+  active.value = String(index);
+  expanded.value = [];
+  timingExpanded.value = [];
+  editorOpen.value = true;
+}
+function timeSummary(a: DailyArrangement) {
+  return (
+    a.slots
+      .map(
+        (s) =>
+          `${s.name || tr('daily.slotName')} ${(s.start || '').slice(0, 5)}–${(s.end || '').slice(0, 5)}${s.end <= s.start ? tr('daily.ui.nextDay') : ''}`,
+      )
+      .join('；') || tr('daily.shiftOnly.noShifts')
+  );
+}
+function scopeSummary(a: DailyArrangement) {
+  return tr('daily.ui.scopeSummary', {
+    equipment: a.equipmentIds.length || form.value.details.length,
+    projects: a.projectRefs.length
+      ? tr('daily.ui.projectCount', { count: a.projectRefs.length })
+      : tr('daily.allProjects'),
+  });
+}
+function peopleSummary(a: DailyArrangement) {
+  const defaults = defaultPeopleSummary(a);
+  const count = form.value.details.filter(
+    (d) => d.owners.length && (!a.equipmentIds.length || a.equipmentIds.includes(d.equipmentId)),
+  ).length;
+  return count ? tr('daily.ui.peopleOverrides', { people: defaults, count }) : defaults;
+}
+function defaultPeopleSummary(a: DailyArrangement) {
+  if (a.personMode === 'open') return tr('staff.open');
+  if (a.personMode === 'roster') return tr('daily.mode.roster');
+  if (a.personMode === 'team')
+    return teams.value.find((t) => t.id === a.teamId)?.name || tr('daily.ui.chooseTeam');
+  return (
+    a.owners.map((id) => props.choices.users.find((u) => u.id === id)?.name || id).join('、') ||
+    tr('daily.ui.choosePeople')
+  );
+}
+const hasOverrides = computed(() => form.value.details.some((d) => d.owners.length));
 const path = (key: string) => `arrangements.${active.value}.${key}`;
 const err = (key: string) => props.errors[path(key)] || '';
-const frequencies = ['daily', 'weekly', 'monthly', 'shift', 'slots', 'interval', 'event'] as const;
-const modes = ['specified', 'team', 'roster'] as const;
+const modes = ['open', 'specified', 'team', 'roster'] as const;
 const preview = ref<DailyPreview>(),
   previewOpen = ref(false),
   previewBusy = ref(false),
@@ -66,7 +110,12 @@ watch(
     const match = Object.keys(errors)
       .find((key) => /^arrangements\.\d+\./.test(key))
       ?.match(/^arrangements\.(\d+)\./);
-    if (match && form.value.arrangements[Number(match[1])]) active.value = match[1]!;
+    if (match && form.value.arrangements[Number(match[1])]) {
+      active.value = match[1]!;
+      editorOpen.value = true;
+      expanded.value = ['scope'];
+      timingExpanded.value = ['timing'];
+    }
   },
 );
 const selectedProjects = computed({
@@ -108,19 +157,29 @@ function add() {
   a.owners = [...form.value.owners];
   a.followUpUserId = form.value.owners[0] || '';
   form.value.arrangements.push(a);
-  active.value = String(form.value.arrangements.length - 1);
+  edit(form.value.arrangements.length - 1);
 }
 function remove() {
   form.value.arrangements.splice(Number(active.value), 1);
   active.value = String(Math.max(0, Number(active.value) - 1));
+  editorOpen.value = false;
 }
 function addSlot() {
+  if (current.value) current.value.frequency = 'shift';
   current.value?.slots.push({
     id: crypto.randomUUID().replaceAll('-', ''),
     name: '',
     start: '08:00:00',
     end: '16:00:00',
   });
+}
+function removeSlot(index: number) {
+  const a = current.value;
+  const slot = a?.slots[index];
+  if (!a || !slot) return;
+  a.slots.splice(index, 1);
+  a.regularRoster = (a.regularRoster || []).filter((row) => row.slotId !== slot.id);
+  a.dateRoster = (a.dateRoster || []).filter((row) => row.slotId !== slot.id);
 }
 async function loadTeams() {
   try {
@@ -203,32 +262,67 @@ onMounted(() => {
 });
 </script>
 <template>
-  <section class="inspection-form-card daily-arrangements">
-    <div class="inspection-section-tools">
-      <h3>{{ tr('daily.title') }}</h3>
-      <ElButton @click="add">{{ tr('daily.add') }}</ElButton
-      ><ElSelect v-model="previewDays" class="preview-period"
-        ><ElOption :value="7" :label="tr('daily.sevenDays')" /><ElOption
-          :value="30"
-          :label="tr('daily.thirtyDays')" /></ElSelect
-      ><ElButton :loading="previewBusy" @click="showPreview">{{ tr('daily.preview') }}</ElButton>
+  <section class="daily-arrangements">
+    <div class="inspection-form-card arrangement-list">
+      <div class="inspection-section-tools">
+        <h3>{{ tr('daily.title') }}</h3>
+        <ElButton @click="add">{{ tr('daily.add') }}</ElButton
+        ><ElSelect v-model="previewDays" class="preview-period"
+          ><ElOption :value="7" :label="tr('daily.sevenDays')" /><ElOption
+            :value="30"
+            :label="tr('daily.thirtyDays')" /></ElSelect
+        ><ElButton :loading="previewBusy" @click="showPreview">{{ tr('daily.preview') }}</ElButton>
+      </div>
+      <ElAlert
+        v-if="errors.arrangements"
+        :title="errors.arrangements"
+        type="error"
+        :closable="false"
+      />
+      <p class="daily-help">{{ tr('daily.ui.intro') }}</p>
+      <AppBusinessTable :rows="form.arrangements" :pagination="false" :fill="false">
+        <ElTableColumn :label="tr('daily.name')" min-width="160">
+          <template #default="{ row }"
+            >{{ row.name || tr('daily.unnamed') }} ·
+            {{ tr(row.enabled ? 'daily.enabled' : 'daily.ui.disabled') }}</template
+          >
+        </ElTableColumn>
+        <!-- @vue-generic {DailyArrangement} -->
+        <ElTableColumn :label="tr('daily.ui.what')" min-width="210"
+          ><template #default="{ row }">{{ scopeSummary(row) }}</template></ElTableColumn
+        >
+        <!-- @vue-generic {DailyArrangement} -->
+        <ElTableColumn :label="tr('daily.ui.when')" min-width="300"
+          ><template #default="{ row }">{{ timeSummary(row) }}</template></ElTableColumn
+        >
+        <!-- @vue-generic {DailyArrangement} -->
+        <ElTableColumn :label="tr('daily.ui.who')" min-width="170"
+          ><template #default="{ row }">{{ peopleSummary(row) }}</template></ElTableColumn
+        >
+        <ElTableColumn :label="tr('ui.equipment.text0145')" width="100" fixed="right"
+          ><template #default="{ $index }"
+            ><ElButton link type="primary" @click="edit($index)">{{
+              tr('ui.equipment.text0207')
+            }}</ElButton></template
+          ></ElTableColumn
+        >
+        <template #empty>{{ tr('daily.ui.empty') }}</template>
+      </AppBusinessTable>
     </div>
-    <ElAlert
-      v-if="errors.arrangements"
-      :title="errors.arrangements"
-      type="error"
-      :closable="false"
-    />
-    <p v-if="!form.arrangements.length" class="daily-empty">{{ tr('daily.help') }}</p>
-    <ElTabs v-if="form.arrangements.length" v-model="active" class="arrangement-tabs">
-      <ElTabPane
-        v-for="(a, index) in form.arrangements"
-        :key="index"
-        :name="String(index)"
-        :label="a.name || tr('daily.unnamed')"
-      >
+    <div v-if="editorOpen && current" class="inspection-form-card arrangement-editor">
+      <div class="inspection-section-tools arrangement-editor-heading">
+        <h3>{{ tr('ui.equipment.text0207') }}：{{ current.name || tr('daily.unnamed') }}</h3>
+        <ElButton @click="editorOpen = false">{{ tr('daily.ui.collapse') }}</ElButton>
+      </div>
+      <p class="arrangement-summary" aria-live="polite">
+        {{ scopeSummary(current) }} · {{ timeSummary(current) }} · {{ peopleSummary(current) }}
+      </p>
+      <p class="daily-help">
+        {{ tr('daily.ui.planStartSummary', { date: form.startDate }) }} ·
+        {{ tr(current.allowLate ? 'daily.allowLate' : 'daily.ui.noLate') }}
+      </p>
+      <template v-for="a in [current]" :key="active">
         <ElForm label-width="110px" class="daily-grid" @submit.prevent>
-          <h4 class="daily-group-title full">{{ tr('daily.section.scope') }}</h4>
           <ElFormItem :label="tr('daily.name')" required :error="err('name')"
             ><ElInput v-model="a.name" maxlength="150"
           /></ElFormItem>
@@ -237,104 +331,44 @@ onMounted(() => {
               tr('daily.remove')
             }}</ElButton></ElFormItem
           >
-          <ElFormItem :label="tr('daily.equipment')" :error="err('equipmentIds')"
-            ><PagedChoiceField
-              v-model="a.equipmentIds"
-              multiple
-              :options="equipment"
-              :load-rows="equipmentPage"
-              :title="tr('daily.equipment')"
-              :placeholder="tr('daily.allEquipment')"
-          /></ElFormItem>
-          <ElFormItem :label="tr('daily.projects')" :error="err('projectRefs')"
-            ><PagedChoiceField
-              v-model="selectedProjects"
-              multiple
-              :options="projectOptions.map((p) => ({ id: p.key, name: p.label }))"
-              :load-rows="projectPage"
-              :title="tr('daily.projects')"
-              :placeholder="tr('daily.allProjects')"
-          /></ElFormItem>
-          <h4 class="daily-group-title full">{{ tr('daily.section.time') }}</h4>
-          <ElFormItem :label="tr('daily.field.frequency')" required :error="err('frequency')"
-            ><ElSelect
-              v-model="a.frequency"
-              @change="
-                a.personMode === 'roster' && a.frequency !== 'shift' && (a.personMode = 'specified')
-              "
-              ><ElOption
-                v-for="f in frequencies"
-                :key="f"
-                :value="f"
-                :label="tr('daily.frequency.' + f)" /></ElSelect
-          ></ElFormItem>
-          <ElFormItem :label="tr('daily.anchorDate')" required :error="err('anchorDate')"
-            ><ElDatePicker v-model="a.anchorDate" type="date" value-format="YYYY-MM-DD"
-          /></ElFormItem>
+          <ElCollapse v-model="expanded" class="full"
+            ><ElCollapseItem name="scope" :title="tr('daily.ui.scopeSettings')">
+              <p class="daily-help">{{ scopeSummary(a) }} · {{ tr('daily.ui.scopeHelp') }}</p>
+              <div class="daily-grid">
+                <ElFormItem :label="tr('daily.equipment')" :error="err('equipmentIds')"
+                  ><PagedChoiceField
+                    v-model="a.equipmentIds"
+                    multiple
+                    :options="equipment"
+                    :load-rows="equipmentPage"
+                    :title="tr('daily.equipment')"
+                    :placeholder="tr('daily.allEquipment')"
+                /></ElFormItem>
+                <ElFormItem :label="tr('daily.projects')" :error="err('projectRefs')"
+                  ><PagedChoiceField
+                    v-model="selectedProjects"
+                    multiple
+                    :options="projectOptions.map((p) => ({ id: p.key, name: p.label }))"
+                    :load-rows="projectPage"
+                    :title="tr('daily.projects')"
+                    :placeholder="tr('daily.allProjects')"
+                /></ElFormItem></div></ElCollapseItem
+          ></ElCollapse>
+          <h4 class="daily-group-title full">{{ tr('daily.ui.when') }}</h4>
+          <p class="daily-help full">{{ tr('daily.shiftOnly.help') }}</p>
+          <ElAlert
+            v-if="!['shift', 'slots'].includes(a.frequency)"
+            class="full"
+            :title="tr('daily.shiftOnly.legacy')"
+            type="warning"
+            :closable="false"
+          />
           <ElFormItem
-            v-if="['daily', 'weekly', 'monthly', 'interval'].includes(a.frequency)"
-            :label="
-              tr(
-                a.frequency === 'interval' ? 'daily.intervalMinutes' : 'daily.every.' + a.frequency,
-              )
-            "
-            :error="err('intervalCount')"
-            ><ElInputNumber
-              v-model="a.intervalCount"
-              :min="1"
-              :max="10000"
-              :precision="0"
-              controls-position="right"
-          /></ElFormItem>
-          <ElFormItem
-            v-if="['weekly', 'monthly'].includes(a.frequency)"
-            :label="tr('daily.days')"
-            :error="err('days')"
-            ><ElSelect v-model="a.days" multiple collapse-tags
-              ><ElOption
-                v-for="d in a.frequency === 'weekly' ? 7 : 31"
-                :key="d"
-                :value="d"
-                :label="
-                  a.frequency === 'weekly' ? tr('daily.weekday.' + d) : String(d)
-                " /></ElSelect
-          ></ElFormItem>
-          <ElFormItem
-            v-if="!['shift', 'slots', 'event'].includes(a.frequency)"
-            :label="tr('daily.startTime')"
-            :error="err('startTime')"
-            ><ElTimePicker v-model="a.startTime" value-format="HH:mm:ss"
-          /></ElFormItem>
-          <ElFormItem
-            v-if="!['shift', 'slots', 'event'].includes(a.frequency)"
-            :label="tr('daily.endTime')"
-            ><ElTimePicker v-model="a.endTime" value-format="HH:mm:ss"
-          /></ElFormItem>
-          <ElFormItem
-            v-if="['interval', 'event'].includes(a.frequency)"
-            :label="tr('daily.windowMinutes')"
-            :error="err('windowMinutes')"
-            ><ElInputNumber
-              v-model="a.windowMinutes"
-              :min="1"
-              :max="10080"
-              :precision="0"
-              controls-position="right"
-          /></ElFormItem>
-          <ElFormItem v-if="a.frequency === 'event'" :label="tr('daily.eventType')"
-            ><ElSelect v-model="a.eventType"
-              ><ElOption
-                v-for="e in ['startup', 'shutdown', 'changeover', 'temporary']"
-                :key="e"
-                :value="e"
-                :label="tr('daily.event.' + e)" /></ElSelect
-          ></ElFormItem>
-          <ElFormItem
-            v-if="['shift', 'slots'].includes(a.frequency)"
             class="full"
             :label="tr('daily.slots')"
-            :error="err('slots')"
+            :error="err('slots') || err('frequency')"
             ><div class="slots">
+              <p v-if="!a.slots.length" class="daily-help">{{ tr('daily.shiftOnly.noShifts') }}</p>
               <div v-for="(s, n) in a.slots" :key="s.id" class="slot">
                 <ElInput
                   v-model="s.name"
@@ -344,31 +378,22 @@ onMounted(() => {
                 ><ElTimePicker v-model="s.end" value-format="HH:mm:ss" /><ElButton
                   type="danger"
                   link
-                  @click="a.slots.splice(n, 1)"
+                  @click="removeSlot(n)"
                   >{{ tr('daily.remove') }}</ElButton
                 >
               </div>
               <ElButton @click="addSlot">{{ tr('daily.addSlot') }}</ElButton>
             </div></ElFormItem
           >
-          <h4 class="daily-group-title full">{{ tr('daily.section.people') }}</h4>
+          <h4 class="daily-group-title full">{{ tr('daily.ui.who') }}</h4>
           <ElFormItem :label="tr('daily.personMode')" required :error="err('personMode')"
             ><ElSelect v-model="a.personMode"
               ><ElOption
                 v-for="m in modes"
                 :key="m"
                 :value="m"
-                :disabled="m === 'roster' && a.frequency !== 'shift'"
                 :label="tr('daily.mode.' + m)" /></ElSelect
           ></ElFormItem>
-          <ElFormItem :label="tr('daily.followUp')" required :error="err('followUpUserId')"
-            ><PagedChoiceField
-              v-model="a.followUpUserId"
-              :options="choices.users"
-              :load-rows="selector.users"
-              :title="tr('daily.followUp')"
-              @select="emit('people', $event)"
-          /></ElFormItem>
           <ElFormItem
             v-if="a.personMode === 'specified'"
             :label="tr('daily.operators')"
@@ -399,11 +424,60 @@ onMounted(() => {
               }}</ElButton>
             </div></ElFormItem
           >
-          <ElFormItem :label="tr('daily.allowLate')"><ElSwitch v-model="a.allowLate" /></ElFormItem>
-          <p class="daily-help full">{{ tr('daily.peopleHelp') }}</p>
+          <ElFormItem
+            :label="tr('daily.followUp')"
+            :required="a.personMode !== 'open'"
+            :error="err('followUpUserId')"
+            ><PagedChoiceField
+              v-model="a.followUpUserId"
+              :options="choices.users"
+              :load-rows="selector.users"
+              :title="tr('daily.followUp')"
+              @select="emit('people', $event)"
+          /></ElFormItem>
+          <p v-if="a.personMode === 'open'" class="daily-help full">{{ tr('staff.openHelp') }}</p>
+          <DailyRosterEditor
+            v-if="
+              a.personMode === 'roster' &&
+              ['shift', 'slots'].includes(a.frequency) &&
+              a.slots.length
+            "
+            v-model="form.arrangements[Number(active)]!"
+            class="full"
+            :choices="choices"
+            :start-date="form.startDate"
+            :end-date="form.endDate"
+            :errors="
+              Object.fromEntries(
+                Object.entries(errors).filter(([key]) =>
+                  key.startsWith('arrangements.' + active + '.'),
+                ),
+              )
+            "
+            @people="emit('people', $event)"
+          />
+          <p class="daily-help full">{{ tr('daily.ui.followUpHelp') }}</p>
+          <ElAlert
+            v-if="hasOverrides"
+            class="full"
+            :title="tr('daily.ui.overrideHelp')"
+            type="warning"
+            :closable="false"
+          />
+          <ElCollapse v-model="timingExpanded" class="full"
+            ><ElCollapseItem name="timing" :title="tr('daily.ui.moreSettings')"
+              ><div class="daily-grid">
+                <ElFormItem :label="tr('daily.allowLate')"
+                  ><ElSwitch v-model="a.allowLate"
+                /></ElFormItem>
+              </div>
+              <p class="daily-help">{{ tr('daily.ui.shiftOvernightHelp') }}</p></ElCollapseItem
+            ></ElCollapse
+          >
         </ElForm>
-      </ElTabPane>
-    </ElTabs>
+      </template>
+      <p class="daily-help">{{ tr('daily.ui.saveHint') }}</p>
+    </div>
     <AppDialog
       v-model="teamOpen"
       :title="editingTeam ? tr('daily.team') : tr('daily.newTeam')"
@@ -477,7 +551,7 @@ onMounted(() => {
 }
 .daily-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   column-gap: 24px;
 }
 .daily-grid .full {
@@ -494,11 +568,39 @@ onMounted(() => {
 .daily-grid :deep(.el-form-item__content) {
   min-width: 0;
 }
-.arrangement-tabs :deep(.el-tabs__item) {
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.daily-arrangements {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.arrangement-list,
+.arrangement-editor {
+  min-width: 0;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  background: var(--el-bg-color);
+}
+.arrangement-editor-heading {
+  margin: -16px -16px 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--el-border-color);
+  border-radius: 6px 6px 0 0;
+  background: var(--el-fill-color-light);
+}
+.arrangement-editor-heading h3,
+.arrangement-list .inspection-section-tools h3 {
+  margin: 0 auto 0 0;
+}
+.arrangement-summary {
+  margin: 0 0 8px;
+  padding: 12px;
+  line-height: 1.8;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
+}
+.daily-grid > .el-collapse {
+  margin-bottom: 16px;
 }
 .slots {
   width: 100%;
@@ -507,9 +609,14 @@ onMounted(() => {
 }
 .slot {
   display: grid;
+  max-width: 880px;
   grid-template-columns: minmax(90px, 1fr) minmax(110px, 1fr) auto minmax(110px, 1fr) auto;
   gap: 8px;
   align-items: center;
+}
+.slots > .el-button {
+  justify-self: start;
+  margin-left: 0;
 }
 .preview-period {
   width: 130px;
@@ -546,15 +653,31 @@ onMounted(() => {
 .daily-grid :deep(.el-input-number) {
   width: 100%;
 }
-.arrangement-tabs :deep(.el-tabs__content) {
-  min-width: 0;
-}
 .daily-grid .el-button {
   margin-left: 8px;
+}
+@media (max-width: 1400px) {
+  .daily-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 900px) {
   .daily-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .slot {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+  .slot > .el-input,
+  .slot > .el-button {
+    grid-column: 1 / -1;
+  }
+  .slot > .el-button {
+    justify-self: start;
+  }
+  .slot :deep(.el-date-editor) {
+    min-width: 0;
+    width: 100%;
   }
 }
 </style>

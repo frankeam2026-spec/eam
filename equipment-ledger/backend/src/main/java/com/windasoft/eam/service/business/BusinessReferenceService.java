@@ -93,7 +93,7 @@ public class BusinessReferenceService {
             path.addFirst(node.get("name").toString());
             node = byId.get(Objects.toString(node.get("parentId"), ""));
           }
-          row.put("name", String.join(" · ", path));
+          row.put("name", String.join(" > ", path));
           row.put("enabled", 1);
           rows.add(row);
         }

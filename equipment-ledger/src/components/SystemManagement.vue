@@ -1,4 +1,6 @@
-<script setup lang="ts">import { enumLabel } from '../i18n';
+<script setup lang="ts">
+import DepartmentText from './common/DepartmentText.vue';
+import { enumLabel } from '../i18n';
 import { tr } from '../i18n';
 
 import UserEditDialog from './system/UserEditDialog.vue';
@@ -62,6 +64,8 @@ type User = {
   name: string;
   employeeNo: string;
   phone: string;
+  email?: string;
+  emailVersion?: number;
   orgId: string;
   roleIds: string[];
   status: '启用' | '停用';
@@ -131,7 +135,7 @@ const sysColumnFilterOpen = ref(false),
   sysColumnsOpen = ref(false),
   sysColumnFilters = reactive<Record<string, string>>({}),
   sysPage = ref(1),
-  sysPageSize = ref(10);
+  sysPageSize = ref(20);
 type ListColumn = {
   key: string;
   label: string;
@@ -259,6 +263,8 @@ const userForm = reactive<User>({
   name: '',
   employeeNo: '',
   phone: '',
+  email: '',
+  emailVersion: 0,
   orgId: '',
   roleIds: [],
   status: '启用',
@@ -273,6 +279,7 @@ const {
   'name',
   'employeeNo',
   'phone',
+  'email',
   'orgId',
   'password',
   'status',
@@ -283,6 +290,7 @@ for (const field of [
   'name',
   'employeeNo',
   'phone',
+  'email',
   'orgId',
   'password',
   'status',
@@ -581,6 +589,8 @@ async function openUser(item?: User) {
           name: '',
           employeeNo: '',
           phone: '',
+          email: '',
+          emailVersion: 0,
           password: '',
           orgId: selectedOrg.value || '',
           roleIds: [],
@@ -934,7 +944,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   :type="item.status === '启用' ? 'success' : 'info'"
                   size="small"
                   >{{ enumLabel('status',item.status) }}</ElTag
-                ><span v-else>{{ userCell(item, col.key) }}</span>
+                ><DepartmentText v-else-if="col.key === 'department'" :value="String(userCell(item, col.key))" :department-id="item.orgId" :nodes="orgs" /><span v-else>{{ userCell(item, col.key) }}</span>
               </template></ElTableColumn
             ><!-- @vue-generic {TableColumnRow1} -->
             <ElTableColumn

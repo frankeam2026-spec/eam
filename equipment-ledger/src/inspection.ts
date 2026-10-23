@@ -13,6 +13,16 @@ export type InspectionDetail = {
   reviewers: string[];
   projectRefs: { standardId: string; itemId: string }[];
 };
+export type StaffEntry = {
+  key: string;
+  slotId: string;
+  start: string;
+  end: string;
+  unassigned: boolean;
+  users: string[];
+};
+export type RegularStaff = StaffEntry & { weekday: number };
+export type DateStaff = StaffEntry & { date: string };
 export type DailyArrangement = {
   id: string;
   name: string;
@@ -25,7 +35,9 @@ export type DailyArrangement = {
   windowMinutes: number;
   days: number[];
   slots: { id: string; name: string; start: string; end: string }[];
-  personMode: 'specified' | 'team' | 'roster';
+  personMode: 'open' | 'specified' | 'team' | 'roster';
+  regularRoster: RegularStaff[];
+  dateRoster: DateStaff[];
   owners: string[];
   teamId: string;
   followUpUserId: string;
@@ -55,7 +67,7 @@ export function emptyArrangement(date: string): DailyArrangement {
     id: '',
     name: '',
     enabled: true,
-    frequency: 'daily',
+    frequency: 'shift',
     intervalCount: 1,
     anchorDate: date,
     startTime: '08:00:00',
@@ -63,7 +75,9 @@ export function emptyArrangement(date: string): DailyArrangement {
     windowMinutes: 30,
     days: [],
     slots: [],
-    personMode: 'specified',
+    personMode: 'open',
+    regularRoster: [],
+    dateRoster: [],
     owners: [],
     teamId: '',
     followUpUserId: '',
@@ -102,6 +116,9 @@ export type InspectionDefinition = CustomRecord & {
   advanceHours: number;
   remindHours: number;
   expireRemindHours: number;
+  reminderMode?: string;
+  reminderPolicyId?: string | null;
+  reminderPolicyName?: string;
   advanceUnit: string;
   validUnit: string;
   remindUnit: string;
@@ -114,6 +131,8 @@ export type InspectionDefinition = CustomRecord & {
   skipUnstaffed: boolean;
   restCycle: string;
   restDays: number[];
+  weeklyRestDays: number[];
+  monthlyRestDays: number[];
   holidays: string[];
   useShiftEnd: boolean;
   shifts: { id: string; name: string; start: string; end: string }[];
@@ -151,6 +170,7 @@ export type InspectionTask = CustomRecord & {
   status: string;
   rowVersion: number;
   planName: string;
+  planId: string;
   planCode: string;
   equipmentName: string;
   equipmentCode: string;
@@ -171,9 +191,11 @@ export type InspectionTask = CustomRecord & {
   onlyAbnormal: boolean;
   remark: string;
   canExecute: boolean;
+  canAmendResult?: boolean;
   canReview: boolean;
   canTransfer: boolean;
   canVoid: boolean;
+  canDelete: boolean;
   canExempt: boolean;
   arrangementName: string;
   businessDate: string;
@@ -214,22 +236,17 @@ async function call<T>(path: string, body?: unknown, method = 'GET'): Promise<T>
   });
 }
 export const inspectionApi = {
-  dailyEventOptions: (q: string, page: number, size: number) =>
-    call<{
-      data: {
-        id: string;
-        name: string;
-        planName: string;
-        code: string;
-        planId: string;
-        arrangementId: string;
-        equipmentId: string;
-        rowVersion: number;
-      }[];
-      page: { total: number };
-    }>(
-      '/daily-event-options?' + new URLSearchParams({ q, page: String(page), size: String(size) }),
+  deviceEquipmentOptions: (q: string, page: number, size: number) =>
+    call<{ data: import('./selectors').SelectorRow[]; page: { total: number } }>(
+      '/daily-device-options?' + new URLSearchParams({ q, page: String(page), size: String(size) }),
     ),
+  deviceTasks: (equipmentId: string, code: string, page: number, size: number) =>
+    call<{ data: InspectionTask[]; page: { total: number } }>(
+      '/daily-device-tasks?' +
+        new URLSearchParams({ equipmentId, code, page: String(page), size: String(size) }),
+    ),
+  assignmentImpact: (body: InspectionDefinition) =>
+    call<{ data: { count: number } }>('/daily-plans/assignment-impact', body, 'POST'),
   dailyPreview: (body: InspectionDefinition & { previewDays: number }) =>
     call<{ data: DailyPreview }>('/daily-plans/preview', body, 'POST'),
   dailyExemption: (
@@ -249,21 +266,6 @@ export const inspectionApi = {
   ) => call<{ data: OperationTeam }>('/daily-operation-teams/' + id, body, 'PUT'),
   createOperationTeam: (body: { name: string; departmentId: string; members: string[] }) =>
     call<{ data: OperationTeam }>('/daily-operation-teams', body, 'POST'),
-  dailyEvent: (
-    id: string,
-    body: {
-      arrangementId: string;
-      equipmentIds: string[];
-      eventAt: string;
-      idempotencyKey: string;
-      rowVersion?: number;
-    },
-  ) =>
-    call<{ data: { count: number; taskIds: string[] } }>(
-      '/daily-plans/' + id + '/events',
-      body,
-      'POST',
-    ),
   query: (kind: InspectionKind, params: Record<string, string | number>) =>
     call<{
       data: (InspectionDefinition | InspectionTask)[];
@@ -389,6 +391,8 @@ export function emptyInspection(): InspectionDefinition {
     skipUnstaffed: true,
     restCycle: '按周',
     restDays: [],
+    weeklyRestDays: [],
+    monthlyRestDays: [],
     holidays: [],
     useShiftEnd: false,
     shifts: [{ id: crypto.randomUUID(), name: '白班', start: '08:00:00', end: '20:00:00' }],

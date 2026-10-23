@@ -38,6 +38,9 @@ import * as api from '../api';
 import type { OrganizationRecord } from '../api';
 
 import { organizationTree } from '../utils/organizationTree';
+import DepartmentText from './common/DepartmentText.vue';
+import { useOrganizationDisplayStore } from '../stores/organizationDisplay';
+const organizationDisplay = useOrganizationDisplayStore();
 const props = defineProps<{ apiReady: boolean; grantedActions: Record<string, string[]> }>();
 const can = (action: string) => props.grantedActions.org?.includes(action) === true;
 const orgs = ref<OrganizationRecord[]>([]);
@@ -66,7 +69,7 @@ function ancestors(id: string) {
 const selectedPath = computed(() =>
   ancestors(selectedId.value)
     .map((item) => item.name)
-    .join(' / '),
+    .join(' > '),
 );
 function selectOrg(item: OrganizationRecord) {
   selectedId.value = item.id;
@@ -112,6 +115,7 @@ async function loadOrganizations() {
     if (version !== requestVersion) return;
     const firstLoad = !orgs.value.length;
     orgs.value = Array.isArray(rows) ? rows : [];
+    if (props.apiReady) organizationDisplay.remember(orgs.value);
     if (!orgs.value.some((item) => item.id === selectedId.value))
       selectedId.value = root.value?.id || orgs.value[0]?.id || '';
     if (firstLoad) expandedKeys.value = treeData.value.map((item) => item.id);
@@ -407,7 +411,7 @@ async function removeSelected() {
                 byId.get(selected.parentId)?.name || (selected.parentId ? '' : tr('ui.equipment.text0914'))
               }}</ElDescriptionsItem>
               <ElDescriptionsItem :label="tr('ui.equipment.text0915')"
-                ><span class="organization-path">{{ selectedPath }}</span></ElDescriptionsItem
+                ><DepartmentText class="organization-path" :value="selectedPath" /></ElDescriptionsItem
               >
               <ElDescriptionsItem :label="tr('ui.equipment.text0102')">{{ selected.manager }}</ElDescriptionsItem>
               <ElDescriptionsItem :label="tr('ui.equipment.text0916')">{{ children.length }} {{ tr('ui.equipment.text0917') }}</ElDescriptionsItem>

@@ -124,7 +124,7 @@ public class PermissionService {
           Map.entry("inspectionStandard", Set.of("查看", "新增", "编辑", "删除", "导出")),
           Map.entry("inspectionDailyPlan", Set.of("查看", "新增", "编辑", "删除", "导出")),
           Map.entry("inspectionPeriodicPlan", Set.of("查看", "新增", "编辑", "删除", "导出")),
-          Map.entry("inspectionDailyTask", Set.of("查看", "执行", "审核", "转派", "免检", "删除", "导出")),
+          Map.entry("inspectionDailyTask", Set.of("查看", "执行", "修改结果", "审核", "转派", "免检", "删除", "导出")),
           Map.entry("inspectionPeriodicTask", Set.of("查看", "执行", "审核", "转派", "删除", "导出")));
 
   public static Set<String> legacyTargets(String parent) {

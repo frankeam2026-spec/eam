@@ -61,7 +61,7 @@
   "任务到期开始": "notification.notice060",
   "点巡检开始提醒": "notification.notice061",
   "点巡检即将过期": "notification.notice062",
-  "巡检类型": "notification.notice063",
+  "点巡检类型": "notification.notice063",
   "任务状态": "notification.notice064",
   "已检项数": "notification.notice065",
   "待派工": "notification.notice066",

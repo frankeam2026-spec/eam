@@ -1,8 +1,10 @@
 <script setup lang="ts">import { tr } from '../../i18n';
 
 import DialogChoiceInput from '../common/DialogChoiceInput.vue';
+import DepartmentText from '../common/DepartmentText.vue';
+import { formatOrganizationPath } from '../../utils/organizationPath';
 import { ref, computed, watch } from 'vue';
-import { ElButton, ElInput, ElTag, ElTableColumn, ElMessage } from 'element-plus';
+import { ElButton, ElInput, ElTag, ElTableColumn, ElMessage, ElTooltip } from 'element-plus';
 import AppDialog from '../common/AppDialog.vue';
 import AppBusinessTable from '../common/AppBusinessTable.vue';
 import AppPagination from '../common/AppPagination.vue';
@@ -44,7 +46,8 @@ watch(
 const ids = computed(() =>
   Array.isArray(props.modelValue) ? props.modelValue : props.modelValue ? [props.modelValue] : [],
 );
-const caption = computed(() => ids.value.map((id) => known.value[id] || '已选择').join('、'));
+const fullCaption = computed(() => ids.value.map((id) => props.source === 'department' ? formatOrganizationPath(known.value[id]) : known.value[id] || '已选择').join('、'));
+const caption = computed(() => ids.value.map((id) => props.source === 'department' ? formatOrganizationPath(known.value[id]).split(' > ').at(-1) || '已选择' : known.value[id] || '已选择').join('、'));
 let revision = 0;
 async function load() {
   const r = ++revision;
@@ -102,6 +105,7 @@ function selectSingle(row: Choice) {
 }
 </script>
 <template>
+  <ElTooltip :content="fullCaption" :disabled="source !== 'department' || !fullCaption" :trigger="['hover', 'focus']">
   <DialogChoiceInput
     :model-value="caption"
     :placeholder="placeholder"
@@ -111,6 +115,7 @@ function selectSingle(row: Choice) {
     @open="show"
     @clear="clear"
   />
+  </ElTooltip>
   <AppDialog v-model="open" :title="placeholder" width="760px"
     ><form class="business-picker-search" @submit.prevent="search">
       <ListSearchInput v-model="query" :placeholder="tr('ui.equipment.text1283')" />
@@ -126,7 +131,7 @@ function selectSingle(row: Choice) {
       @row-click="selectSingle"
       highlight-current-row
     >
-      <ElTableColumn :label="tr('ui.equipment.text0404')" prop="name" min-width="250" show-overflow-tooltip /><ElTableColumn
+      <ElTableColumn :label="tr('ui.equipment.text0404')" prop="name" min-width="250" :show-overflow-tooltip="source !== 'department'"><template v-if="source === 'department'" #default="{ row }"><DepartmentText :value="row.name" :department-id="row.id" /></template></ElTableColumn><ElTableColumn
         :label="tr('ui.equipment.text0170')"
         width="100"
         ><template #default="{ row }"

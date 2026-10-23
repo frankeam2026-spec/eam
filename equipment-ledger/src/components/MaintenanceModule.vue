@@ -1,4 +1,10 @@
-<script setup lang="ts">import { tr, enumLabel } from '../i18n';
+<script setup lang="ts">
+import ReminderPolicyField from './common/ReminderPolicyField.vue';
+import { isDepartmentCustomColumn } from '../businessConfig';
+import DepartmentValuesText from './common/DepartmentValuesText.vue';
+
+import DepartmentText from './common/DepartmentText.vue';
+import { tr, enumLabel } from '../i18n';
 
 import DialogChoiceInput from './common/DialogChoiceInput.vue';
 import { useStandardSelectorPage } from '../composables/useStandardSelectorPage';
@@ -117,7 +123,7 @@ const form = ref(emptyDefinition()),
   error = ref(''),
   keyword = ref(''),
   page = ref(1),
-  size = ref(10),
+  size = ref(20),
   filterOpen = ref(false),
   columnsOpen = ref(false),
   columnFilters = ref<Record<string, string>>({}),
@@ -303,7 +309,7 @@ const extensionObject = computed<BusinessObject | undefined>(() =>
       ? 'maintenance_task'
       : undefined,
 );
-const { extensionColumns, extensionFilters, extensionExportColumns, configurationError } =
+const { definitions: customDepartmentDefinitions, extensionColumns, extensionFilters, extensionExportColumns, configurationError } =
   useBusinessColumns(extensionObject);
 const fields = computed<[string, string][]>(() => [
   ...(baseFields.value as [string, string][]),
@@ -1426,7 +1432,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     >{{ cell(row, key!) }}</ElButton
                   >
                   <MaintenanceStatus v-else-if="key === 'status'" :status="cell(row, key!)" />
-                  <span v-else :title="cell(row, key!)">{{ cell(row, key!) }}</span>
+                  <DepartmentText v-else-if="key === 'department'" :value="cell(row, key!)" :department-id="row.departmentId" :nodes="choices.organizations" /><DepartmentValuesText v-else-if="isDepartmentCustomColumn(customDepartmentDefinitions, key!)" :value="cell(row, key!)" :ids="row.customFields?.[key!.slice(7)]" /><span v-else :title="cell(row, key!)">{{ cell(row, key!) }}</span>
                 </template></ElTableColumn
               ><!-- @vue-generic {TableColumnRow1} -->
               <ElTableColumn
@@ -1945,6 +1951,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   :placeholder="tr('ui.equipment.text0812')"
                   @select="rememberPeople"
               /></label>
+              <ReminderPolicyField v-model:mode="form.reminderMode" v-model:id="form.reminderPolicyId" :name="form.reminderPolicyName" kind="maintenance" />
               <label
                 ><span class="required">{{ tr('ui.equipment.text0813') }}</span>
 
@@ -2434,9 +2441,8 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             <span>{{ tr('ui.equipment.text0309') }} {{ standardTotal }} {{ tr('ui.equipment.text0296') }}</span
             ><AppPagination
               v-model:page="standardPage"
-              :page-size="standardSize"
+              v-model:page-size="standardSize"
               :total="standardTotal"
-              :show-sizes="false"
             />
           </div>
         </aside>

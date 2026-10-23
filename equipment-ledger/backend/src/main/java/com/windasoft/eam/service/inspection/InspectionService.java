@@ -19,6 +19,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class InspectionService {
   @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.system.NotificationPolicyService reminderPolicies;
+  @org.springframework.beans.factory.annotation.Autowired
   private com.windasoft.eam.service.common.DefinitionNumberService definitionNumbers;
 
   private final com.windasoft.eam.service.business.BusinessValueService custom;
@@ -183,6 +185,7 @@ public class InspectionService {
     }
     if (kind.endsWith("plans"))
       custom.attach(com.windasoft.eam.service.business.BusinessObjects.inspection(kind), result);
+    if (kind.endsWith("plans") && reminderPolicies != null) reminderPolicies.attachBinding(auth.tenantId(), kind.equals("daily-plans") ? "daily" : "periodic", id, result);
     return result;
   }
 
@@ -375,7 +378,8 @@ public class InspectionService {
         require(
             Set.of("按周", "按月").contains(text(data, "restCycle")),
             com.windasoft.eam.common.MessageContext.text("daily.error.restRule"));
-        for (long day : ids(data.get("restDays")))
+        for (long day : data.containsKey("weeklyRestDays") || data.containsKey("monthlyRestDays")
+            ? List.<Long>of() : ids(data.get("restDays")))
           require(
               day >= 1 && day <= (text(data, "restCycle").equals("按月") ? 31 : 7),
               com.windasoft.eam.common.MessageContext.text("daily.error.restDay"));
@@ -418,7 +422,8 @@ public class InspectionService {
     if (kind.equals("daily-plans"))
       dailyStorage.save(tenant, key, rows(data.get("arrangements")), data.get("workdays"));
     if (kind.endsWith("plans")) {
-      repository.setPlanType(tenant, key, kind.equals("daily-plans") ? null : number(data.get("typeId")));
+      repository.setPlanType(
+          tenant, key, kind.equals("daily-plans") ? null : number(data.get("typeId")));
       var cursors = repository.lockPlanSchedules(tenant, key);
       LocalDateTime next =
           kind.equals("periodic-plans")
@@ -443,6 +448,8 @@ public class InspectionService {
         if (dateTime(cursors.getFirst().get("next_at")).isAfter(revisit))
           repository.revisitSchedule(revisit, tenant, key);
       }
+      if (kind.equals("daily-plans") && existing != null)
+        generation.refreshAssignments(tenant, key, auth.userId());
       generate(tenant, key);
     }
     if (kind.endsWith("plans"))
@@ -451,6 +458,7 @@ public class InspectionService {
           key,
           body,
           id == null);
+    if (kind.endsWith("plans") && reminderPolicies != null) reminderPolicies.saveBinding(tenant, kind.equals("daily-plans") ? "daily" : "periodic", key, body);
     return definition(kind, key);
   }
 
@@ -471,7 +479,9 @@ public class InspectionService {
       custom.remove(com.windasoft.eam.service.business.BusinessObjects.inspection(kind), id);
     if (kind.endsWith("plans"))
       require(
-          repository.countPlanTasks(auth.tenantId(), id) == 0,
+          (kind.equals("daily-plans")
+                  ? repository.countUndeletedPlanTasks(auth.tenantId(), id)
+                  : repository.countPlanTasks(auth.tenantId(), id)) == 0,
           com.windasoft.eam.common.MessageContext.text("server.inspection.message0069"));
     else
       for (var plan : repository.listOtherDefinitionPayloads(auth.tenantId(), id)) {
@@ -500,15 +510,21 @@ public class InspectionService {
     repository.deleteDefinition(auth.tenantId(), id);
   }
 
+  public Object dailyDeviceOptions(String keyword, int page, int size) {
+    return dailyStorage.deviceEquipment(
+        auth.tenantId(),
+        auth.userId(),
+        permissions.inspection("daily", "执行"),
+        keyword,
+        Math.max(1, page),
+        Math.max(1, Math.min(100, size)));
+  }
+
   public Object dailyEventOptions(String keyword, int page, int size) {
     permissions.require("inspectionDailyTask", "查看");
     permissions.require("inspectionDailyTask", "执行");
-    return dailyStorage.eventOptions(
-        auth.tenantId(),
-        auth.userId(),
-        keyword,
-        Math.max(1, page),
-        Math.max(1, Math.min(200, size)));
+    return new com.windasoft.eam.dto.common.PageResult<>(List.of(), Math.max(1, page),
+        Math.max(1, Math.min(200, size)), 0);
   }
 
   @Transactional(readOnly = true)
@@ -537,6 +553,17 @@ public class InspectionService {
         auth.tenantId(), text(data, "id").isBlank() ? null : number(data.get("id")), data);
     return generation.preview(
         auth.tenantId(), data, Math.toIntExact(number(data.getOrDefault("previewDays", 7))));
+  }
+
+  @Transactional
+  public Map<String, Object> assignmentImpact(Map<String, Object> body) {
+    long id = number(body.get("id"));
+    var plan = raw("daily-plans", auth.tenantId(), id, true);
+    if (!scoped(plan, "编辑")) deny();
+    VersionGuard.checkPayload((Number) plan.get("row_version"), body);
+    dailyPreview(body);
+    var draft = decode(encode(body));
+    return Map.of("count", generation.assignmentImpact(auth.tenantId(), id, draft));
   }
 
   @Transactional

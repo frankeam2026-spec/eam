@@ -20,51 +20,6 @@ public class DailyArrangementRepository {
         || "true".equals(Objects.toString(v));
   }
 
-  public com.windasoft.eam.dto.common.PageResult<Map<String, Object>> eventOptions(
-      long tenant, long user, String keyword, int page, int size) {
-    String from =
-        """
-FROM eam_inspection_daily_arrangement a
-JOIN eam_inspection_daily_plan p ON p.tenant_id=a.tenant_id AND p.id=a.plan_id
-JOIN eam_inspection_daily_plan_device d ON d.tenant_id=p.tenant_id AND d.plan_id=p.id
-JOIN eam_equipment e ON e.tenant_id=d.tenant_id AND e.id=d.equipment_id AND e.deleted=0
-WHERE a.tenant_id=? AND a.enabled=1 AND a.frequency='event' AND p.enabled=1
-  AND CURRENT_DATE() BETWEEN p.start_date AND p.end_date
-  AND (NOT EXISTS(SELECT 1 FROM eam_inspection_daily_arrangement_equipment x WHERE x.tenant_id=a.tenant_id AND x.arrangement_id=a.id)
-    OR EXISTS(SELECT 1 FROM eam_inspection_daily_arrangement_equipment x WHERE x.tenant_id=a.tenant_id AND x.arrangement_id=a.id AND x.equipment_id=d.equipment_id))
-  AND (EXISTS(SELECT 1 FROM eam_inspection_daily_plan_device_person dp WHERE dp.tenant_id=d.tenant_id AND dp.plan_id=d.plan_id AND dp.device_key=d.device_key AND dp.role_code='owner' AND dp.user_id=?)
-    OR (NOT EXISTS(SELECT 1 FROM eam_inspection_daily_plan_device_person dp WHERE dp.tenant_id=d.tenant_id AND dp.plan_id=d.plan_id AND dp.device_key=d.device_key AND dp.role_code='owner')
-      AND (EXISTS(SELECT 1 FROM eam_inspection_daily_arrangement_person ap WHERE ap.tenant_id=a.tenant_id AND ap.arrangement_id=a.id AND ap.user_id=? AND a.person_mode='specified')
-        OR EXISTS(SELECT 1 FROM eam_inspection_operation_team_person tp WHERE tp.tenant_id=a.tenant_id AND tp.team_id=a.team_id AND tp.user_id=? AND a.person_mode='team'))))
-  AND LOWER(CONCAT_WS(' ',p.name,p.code,a.name,e.equipment_code,e.name)) LIKE ? ESCAPE '!'
-""";
-    String like =
-        "%"
-            + keyword
-                .toLowerCase(Locale.ROOT)
-                .replace("!", "!!")
-                .replace("%", "!%")
-                .replace("_", "!_")
-            + "%";
-    long total =
-        db.queryForObject("SELECT COUNT(*) " + from, Long.class, tenant, user, user, user, like);
-    var found =
-        db.queryForList(
-            "SELECT CONCAT(a.id,'/',e.id) id,CAST(a.id AS CHAR) arrangementId,CAST(e.id AS CHAR)"
-                + " equipmentId,CONCAT(a.name,' / ',e.name) name,p.name planName,e.equipment_code"
-                + " code,CAST(p.id AS CHAR) planId,p.row_version rowVersion "
-                + from
-                + " ORDER BY p.name,a.sort_no,a.id,e.equipment_code,e.id LIMIT ? OFFSET ?",
-            tenant,
-            user,
-            user,
-            user,
-            like,
-            size,
-            (page - 1) * size);
-    return new com.windasoft.eam.dto.common.PageResult<>(found, page, size, total);
-  }
-
   public List<Map<String, Object>> load(long tenant, long plan) {
     var result =
         db.queryForList(
@@ -83,6 +38,8 @@ WHERE a.tenant_id=? AND a.enabled=1 AND a.frequency='event' AND p.enabled=1
       r.put("teamId", Objects.toString(r.get("teamId"), ""));
       r.put("enabled", flag(r.get("enabled")));
       r.put("allowLate", flag(r.get("allowLate")));
+      r.put("regularRoster", staffing(tenant, id, false));
+      r.put("dateRoster", staffing(tenant, id, true));
       r.put(
           "days",
           db.queryForList(
@@ -167,9 +124,11 @@ WHERE a.tenant_id=? AND a.enabled=1 AND a.frequency='event' AND p.enabled=1
           number(a.get("windowMinutes")),
           text(a, "personMode"),
           text(a, "teamId").isBlank() ? null : number(a.get("teamId")),
-          number(a.get("followUpUserId")),
+          text(a, "followUpUserId").isBlank() ? null : number(a.get("followUpUserId")),
           text(a, "eventType"),
           yes(a.get("allowLate")));
+      saveStaffing(tenant, id, rows(a.get("regularRoster")), false);
+      saveStaffing(tenant, id, rows(a.get("dateRoster")), true);
       for (long d : ids(a.get("days")))
         db.update("INSERT INTO eam_inspection_daily_arrangement_day VALUES(?,?,?)", tenant, id, d);
       int at = 0;
@@ -325,15 +284,6 @@ WHERE a.tenant_id=? AND a.enabled=1 AND a.frequency='event' AND p.enabled=1
         > 0;
   }
 
-  public List<Map<String, Object>> manualTasks(long tenant, long arrangement, String key) {
-    return db.queryForList(
-        "SELECT id,equipment_id,due_at FROM eam_inspection_task WHERE tenant_id=? AND"
-            + " arrangement_id=? AND event_key=? ORDER BY id",
-        tenant,
-        arrangement,
-        key);
-  }
-
   public List<Map<String, Object>> exemptions(long tenant, long plan) {
     return db.queryForList(
         "SELECT id,equipment_id equipmentId,start_at startAt,end_at endAt,reason,approved_by"
@@ -479,5 +429,137 @@ WHERE a.tenant_id=? AND a.enabled=1 AND a.frequency='event' AND p.enabled=1
         actor,
         tenant,
         task);
+  }
+
+  private List<Map<String, Object>> staffing(long tenant, long arrangement, boolean dates) {
+    String table =
+        dates ? "eam_inspection_daily_staff_override" : "eam_inspection_daily_staff_rule";
+    var result =
+        db.queryForList(
+            "SELECT rule_key `key`,slot_key slotId,CAST(start_time AS CHAR) start,CAST(end_time AS"
+                + " CHAR) end,unassigned,"
+                + (dates ? "CAST(work_date AS CHAR) date" : "weekday_no weekday")
+                + " FROM "
+                + table
+                + " WHERE tenant_id=? AND arrangement_id=? ORDER BY "
+                + (dates ? "work_date" : "weekday_no")
+                + ",slot_key,start_time,rule_key",
+            tenant,
+            arrangement);
+    for (var row : result) {
+      row.put("unassigned", flag(row.get("unassigned")));
+      row.put(
+          "users",
+          db.queryForList(
+              "SELECT CAST(user_id AS CHAR) FROM "
+                  + table
+                  + "_person WHERE tenant_id=? AND arrangement_id=? AND rule_key=? ORDER BY"
+                  + " sort_no,user_id",
+              String.class,
+              tenant,
+              arrangement,
+              row.get("key")));
+    }
+    return result;
+  }
+
+  private void saveStaffing(
+      long tenant, long arrangement, List<Map<String, Object>> rows, boolean dates) {
+    String table =
+        dates ? "eam_inspection_daily_staff_override" : "eam_inspection_daily_staff_rule";
+    for (var row : rows) {
+      db.update(
+          "INSERT INTO "
+              + table
+              + "(tenant_id,arrangement_id,rule_key,"
+              + (dates ? "work_date" : "weekday_no")
+              + ",slot_key,start_time,end_time,unassigned) VALUES(?,?,?,?,?,?,?,?)",
+          tenant,
+          arrangement,
+          text(row, "key"),
+          dates ? text(row, "date") : number(row.get("weekday")),
+          text(row, "slotId"),
+          text(row, "start"),
+          text(row, "end"),
+          yes(row.get("unassigned")));
+      int i = 0;
+      for (long user : ids(row.get("users")))
+        db.update(
+            "INSERT INTO "
+                + table
+                + "_person(tenant_id,arrangement_id,rule_key,user_id,sort_no) VALUES(?,?,?,?,?)",
+            tenant,
+            arrangement,
+            text(row, "key"),
+            user,
+            i++);
+    }
+  }
+
+  public void reassignPending(
+      long tenant, long task, List<Long> owners, String mode, Long followUp) {
+    db.update(
+        "DELETE FROM eam_inspection_task_person WHERE tenant_id=? AND task_id=? AND"
+            + " role_code='owner'",
+        tenant,
+        task);
+    int i = 0;
+    for (long user : owners)
+      db.update(
+          "INSERT INTO eam_inspection_task_person VALUES(?,?,'owner',?,?)",
+          tenant,
+          task,
+          user,
+          i++);
+    db.update(
+        "UPDATE eam_inspection_task SET"
+            + " person_mode=?,follow_up_user_id=?,row_version=row_version+1,updated_at=NOW(6) WHERE"
+            + " tenant_id=? AND id=? AND owner_id IS NULL AND status IN ('未开始','待执行','已过期')",
+        mode,
+        followUp,
+        tenant,
+        task);
+  }
+
+  public boolean pendingScheduleTasks(long tenant, long arrangement) {
+    return db.queryForObject(
+            "SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=? AND arrangement_id=? AND"
+                + " deleted=0 AND owner_id IS NULL AND status IN ('未开始','待执行') AND"
+                + " expires_at>=NOW()",
+            Long.class,
+            tenant,
+            arrangement)
+        > 0;
+  }
+
+  public com.windasoft.eam.dto.common.PageResult<Map<String, Object>> deviceEquipment(
+      long tenant,
+      long user,
+      com.windasoft.eam.dto.system.PermissionScope scope,
+      String keyword,
+      int page,
+      int size) {
+    var predicate =
+        com.windasoft.eam.repository.common.SqlScopes.scope(
+                scope, "e.company_org_id", "e.department_org_id", "e.owner_user_id", user)
+            .and(
+                com.windasoft.eam.repository.common.SqlPredicate.of(
+                    "e.tenant_id=? AND e.deleted=0", tenant))
+            .and(
+                com.windasoft.eam.repository.common.SqlListFilters.contains(
+                    "CONCAT_WS(' ',e.equipment_code,e.name)", keyword));
+    String from = " FROM eam_equipment e WHERE " + predicate.sql();
+    long count =
+        db.queryForObject("SELECT COUNT(*)" + from, Long.class, predicate.arguments().toArray());
+    var args = new ArrayList<>(predicate.arguments());
+    args.add(size);
+    args.add((page - 1) * size);
+    var data =
+        db.queryForList(
+            "SELECT CAST(e.id AS CHAR) id,e.name,e.equipment_code code"
+                + from
+                + " ORDER BY e.equipment_code,e.id LIMIT ? OFFSET ?",
+            args.toArray());
+    return new com.windasoft.eam.dto.common.PageResult<>(data, page, size, count);
   }
 }

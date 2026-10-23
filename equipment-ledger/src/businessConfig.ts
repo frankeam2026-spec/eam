@@ -253,6 +253,9 @@ export function customColumns(fields: BusinessField[]) {
       sortable: !isMultiple(f) && f.type !== 'LONG_TEXT',
     }));
 }
+export function isDepartmentCustomColumn(fields: BusinessField[], key: string) {
+  return key.startsWith('custom:') && fields.some((field) => field.id === key.slice(7) && (field.type === 'DEPARTMENT' || field.source === 'department'));
+}
 export function customFilters(fields: BusinessField[], object: BusinessObject): FilterField[] {
   return fields
     .filter((f) => f.filterable)

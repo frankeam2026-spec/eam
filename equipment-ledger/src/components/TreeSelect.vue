@@ -1,7 +1,7 @@
 <script setup lang="ts">import { tr } from '../i18n';
 
 import { computed } from 'vue';
-import { ElTreeSelect } from 'element-plus';
+import { ElTreeSelect, ElTooltip } from 'element-plus';
 export type TreeSelectNode = {
   id: string;
   name: string;
@@ -55,7 +55,7 @@ const options = computed(() => {
           id: node.id,
           label: node.name,
           disabled: node.disabled,
-          path: names.join(' · '),
+          path: names.join(' > '),
           displayPath: names.join(' > '),
           output: node.value ?? (props.pathValue ? names.join(' · ') : node.name),
           children: branch(node.id, names, next),
@@ -82,6 +82,7 @@ function change(id: string | undefined) {
 }
 </script>
 <template>
+  <ElTooltip :content="flatOptions.find((node) => node.id === selectedId)?.displayPath || ''" :disabled="!selectedId" :trigger="['hover', 'focus']" :show-after="200">
   <ElTreeSelect
     class="tree-select"
     :model-value="selectedId"
@@ -93,7 +94,7 @@ function change(id: string | undefined) {
     }"
     node-key="id"
     :title="
-      showFullPath ? flatOptions.find((node) => node.id === selectedId)?.displayPath : undefined
+      flatOptions.find((node) => node.id === selectedId)?.displayPath
     "
     :placeholder="placeholder"
     :disabled="disabled"
@@ -106,11 +107,12 @@ function change(id: string | undefined) {
     @update:model-value="change"
   >
     <template #default="{ data }">
-      <span :title="showFullPathInDropdown ? data.displayPath : undefined">
+      <span :title="data.displayPath">
         {{ showFullPathInDropdown ? data.displayPath : pathValue ? data.path : data.label }}
       </span>
     </template>
   </ElTreeSelect>
+  </ElTooltip>
 </template>
 <style scoped>
 .tree-select {

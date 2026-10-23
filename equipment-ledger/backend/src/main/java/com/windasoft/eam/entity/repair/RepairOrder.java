@@ -52,6 +52,8 @@ public class RepairOrder {
   private String repairAction;
   private Integer downtimeMinutes;
   private LocalDateTime reportedAt;
+  private LocalDateTime dispatchedAt;
+  private LocalDateTime claimedAt;
   private LocalDateTime completedAt;
   private String acceptanceComment;
 

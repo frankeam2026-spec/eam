@@ -19,6 +19,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class MaintenanceService {
   @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.system.NotificationPolicyService reminderPolicies;
+  @org.springframework.beans.factory.annotation.Autowired
   private com.windasoft.eam.service.common.DefinitionNumberService definitionNumbers;
 
   private final MaintenanceViewAssembler assembler;
@@ -164,6 +166,7 @@ public class MaintenanceService {
                     return d;
                   })
               .toList());
+    if (kind.equals("plans") && reminderPolicies != null) reminderPolicies.attachBinding(auth.tenantId(), "maintenance", id, v);
     return v;
   }
 
@@ -479,6 +482,7 @@ public class MaintenanceService {
       generate(tenant, key);
     }
     if (kind.equals("plans")) custom.save("maintenance_plan", key, body, id == null);
+    if (kind.equals("plans") && reminderPolicies != null) reminderPolicies.saveBinding(tenant, "maintenance", key, body);
     return definition(kind, key);
   }
 

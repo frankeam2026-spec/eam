@@ -45,7 +45,7 @@ public class WorkInboxService {
         && !Set.of("repair", "maintenance", "inspection", "inventory", "anomaly", "repairPlan")
             .contains(module))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0033");
-    if (!id.isBlank() && !id.matches("[0-9]{1,20}"))
+    if (!id.isBlank() && !id.matches("(?:n:)?[0-9]{1,19}"))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0034");
     return repository.read(auth.tenantId(), auth.userId(), module, id);
   }

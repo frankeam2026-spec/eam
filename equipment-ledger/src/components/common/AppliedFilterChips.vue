@@ -32,10 +32,10 @@ const emit = defineEmits<{
           link
           class="condition-chip-edit"
           @click="emit('edit', condition, $event.currentTarget as HTMLElement)"
-          >{{ conditionLabel(condition, fields) }}</ElButton
+          >{{ conditionLabel(condition, fields, true) }}</ElButton
         >
       </ElTooltip>
-      <template v-else>{{ conditionLabel(condition, fields) }}</template>
+      <ElTooltip v-else :content="conditionLabel(condition, fields)" :trigger="['hover', 'focus']"><span tabindex="0">{{ conditionLabel(condition, fields, true) }}</span></ElTooltip>
     </ElTag>
     <ElButton v-if="conditions.length" link type="primary" @click="emit('change', [])"
       >{{ tr('ui.equipment.text1356') }}</ElButton

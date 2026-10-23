@@ -1,4 +1,9 @@
-<script setup lang="ts">import { tr, enumLabel } from '../i18n';
+<script setup lang="ts">
+import { isDepartmentCustomColumn } from '../businessConfig';
+import DepartmentValuesText from './common/DepartmentValuesText.vue';
+
+import DepartmentText from './common/DepartmentText.vue';
+import { tr, enumLabel } from '../i18n';
 
 import DialogChoiceInput from './common/DialogChoiceInput.vue';
 import {
@@ -124,7 +129,7 @@ function applyAdvanced(conditions: FilterCondition[]) {
 }
 
 const page = ref(1),
-  pageSize = ref(10),
+  pageSize = ref(20),
   drawer = ref(false),
   detailMode = ref(false),
   active = ref<WorkOrder | null>(null),
@@ -659,7 +664,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 type="primary"
                 link
                 >{{ row.equipmentName }}</ElButton
-              ><MaintenanceStatus v-else-if="col.key === 'status'" :status="row.status" /><span
+              ><MaintenanceStatus v-else-if="col.key === 'status'" :status="row.status" /><DepartmentText v-else-if="col.key === 'department'" :value="row.department" /><DepartmentValuesText v-else-if="isDepartmentCustomColumn(customDefinitions, col.key)" :value="listCell(row, col.key)" :ids="row.customFields?.[col.key.slice(7)]" /><span
                 v-else
                 >{{ listCell(row, col.key) }}</span
               >
@@ -767,10 +772,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     :placeholder="tr('ui.equipment.text1060')" /></label
                 ><label
                   ><span>{{ tr('ui.equipment.text0098') }}</span
-                  ><ElInput
-                    v-model="active.department"
-                    readonly
-                    :placeholder="tr('ui.equipment.text1060')" /></label
+                  ><DepartmentText :value="active.department" /></label
                 ><label
                   ><span>{{ tr('ui.equipment.text1040') }}<i>*</i></span
                   ><TreeSelect
@@ -999,9 +1001,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               ><!-- @vue-generic {TableColumnRow2} -->
               <ElTableColumn :min-width="150"
                 ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0098') }}</div></template
-                ><template #default="{ row: item, $index: tableRowIndex }">{{
-                  item.department || ''
-                }}</template></ElTableColumn
+                ><template #default="{ row: item, $index: tableRowIndex }"><DepartmentText :value="item.department" /></template></ElTableColumn
               ><!-- @vue-generic {TableColumnRow2} -->
               <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
                 ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template

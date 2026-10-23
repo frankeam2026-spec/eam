@@ -1,4 +1,5 @@
 <script setup lang="ts">import { tr } from '../i18n';
+import DepartmentText from '../components/common/DepartmentText.vue';
 
 import 'element-plus/es/components/card/style/css';
 import 'element-plus/es/components/descriptions/style/css';
@@ -177,7 +178,7 @@ onMounted(() => {
             <ElDescriptionsItem :label="tr('ui.equipment.text1168')">{{ auth.currentUser }}</ElDescriptionsItem>
             <ElDescriptionsItem :label="tr('ui.equipment.text1570')">{{ auth.user?.account }}</ElDescriptionsItem>
             <ElDescriptionsItem :label="tr('ui.equipment.text0487')">{{ auth.currentCompany }}</ElDescriptionsItem>
-            <ElDescriptionsItem :label="tr('ui.equipment.text0098')">{{ auth.currentDepartment }}</ElDescriptionsItem>
+            <ElDescriptionsItem :label="tr('ui.equipment.text0098')"><DepartmentText :value="auth.currentDepartment" :department-id="auth.user?.orgId" /></ElDescriptionsItem>
             <ElDescriptionsItem :label="tr('ui.equipment.text1171')" :span="2">
               <div class="profile-roles">
                 <ElTag v-for="role in roles" :key="role">{{ role }}</ElTag>

@@ -170,8 +170,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               @update:model-value="update(item.id, { value: $event })"
             />
             <span v-if="item.valueType === '数值'" class="numeric-interval"
-              >{{ formatNumber(item.lower) || '−∞' }} ～
-              {{ formatNumber(item.upper) || '+∞' }}</span
+              >({{ formatNumber(item.lower) || '−∞' }}~{{ formatNumber(item.upper) || '+∞' }})</span
             >
           </div>
           <!-- <small

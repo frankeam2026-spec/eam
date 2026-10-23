@@ -1,5 +1,14 @@
-<script setup lang="ts">import { enumLabel } from '../i18n';
+<script setup lang="ts">
+import { isDepartmentCustomColumn } from '../businessConfig';
+import DepartmentValuesText from './common/DepartmentValuesText.vue';
+function departmentCustomIds(fields: unknown, key: string) {
+  return fields && typeof fields === 'object' ? Reflect.get(fields, key.slice(7)) : undefined;
+}
+
+import DepartmentText from './common/DepartmentText.vue';
+import { enumLabel } from '../i18n';
 import { tr } from '../i18n';
+import { normalizePageSize } from '../utils/pagination';
 
 import DialogChoiceInput from './common/DialogChoiceInput.vue';
 import PagedChoiceField from './common/PagedChoiceField.vue';
@@ -220,7 +229,7 @@ const guard = useUnsavedChanges(
 const q = ref(String(route.query.q || '')),
   conditions = ref<FilterCondition[]>([]),
   page = ref(1),
-  size = ref(10),
+  size = ref(20),
   columnsOpen = ref(false),
   drawerOpen = ref(false);
 const warehouse = computed(() =>
@@ -294,7 +303,7 @@ const documentFields: Record<string, string> = {
   confirmedAt: '出库时间',
   createdAt: '创建时间',
 };
-const { extensionColumns, extensionFilters, extensionExportColumns, configurationError } =
+const { definitions: customDepartmentDefinitions, extensionColumns, extensionFilters, extensionExportColumns, configurationError } =
   useBusinessColumns(() => (pending.value ? undefined : 'inventory_outbound'));
 const fields = computed(() =>
   pending.value
@@ -876,7 +885,7 @@ watch(
         );
 
         page.value = Number(route.query.page || 1);
-        size.value = Number(route.query.size || 10);
+        size.value = normalizePageSize(route.query.size);
       } catch {
         conditions.value = [];
       }
@@ -1002,7 +1011,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   "
                   >{{ r.code }}</ElButton
                 ><ElTag v-else-if="key === 'status'" :type="tone(r.status)">{{ enumLabel('status', r.status) }}</ElTag
-                ><span v-else>{{ display(r, key) }}</span>
+                ><DepartmentValuesText v-else-if="isDepartmentCustomColumn(customDepartmentDefinitions, key)" :value="String(display(r, key))" :ids="departmentCustomIds(r.customFields, key)" /><span v-else>{{ display(r, key) }}</span>
               </template></ElTableColumn
             ><!-- @vue-generic {TableColumnRow1} -->
             <ElTableColumn
@@ -1179,10 +1188,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                       }))
                     "
                     :placeholder="tr('ui.equipment.text0563')"
-                  /><span v-else>{{
-                    form.departmentName ||
-                    choices.departments.find((d) => d.id === form.departmentId)?.name
-                  }}</span></label
+                  /><DepartmentText v-else :value="String(form.departmentName || '')" :department-id="form.departmentId" :nodes="choices.departments.map((d) => ({ ...d, id: String(d.id), name: String(d.name), parentId: String(d.parentId || '') }))" /></label
                 ><label
                   ><span>{{ tr('ui.equipment.text0564') }} <i v-if="writable" class="outbound-required">*</i></span>
                   <PagedChoiceField

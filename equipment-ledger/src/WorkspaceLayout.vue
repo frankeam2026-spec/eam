@@ -1,6 +1,7 @@
 <script setup lang="ts">import { tr } from './i18n';
 
 import { canUseBaseTab } from './utils/baseDataAccess';
+import { visibleNotificationTabs } from './utils/notificationAccess';
 import { ElButton, ElInput, ElMenu, ElSubMenu, ElMenuItem, ElIcon } from 'element-plus';
 import 'element-plus/es/components/menu/style/css';
 import 'element-plus/es/components/menu-item/style/css';
@@ -70,6 +71,7 @@ function can(menu: string, action = '查看') {
 }
 
 function canMenu(item: MenuItem) {
+  if (item.page === 'notification-policies') return visibleNotificationTabs(can).length > 0;
   const experienceMenus: Record<string, string> = {
     anomalies: 'anomaly',
     'repair-plans': 'repairPlan',
@@ -213,6 +215,7 @@ const navGroups: MenuGroup[] = [
     icon: 'Settings',
     items: [
       { get label() { return tr('ui.equipment.text0032'); }, icon: 'Settings', page: 'business-config' },
+      {get label(){return tr('notify.policies');},icon:'Settings',page:'notification-policies'},
       { get label() { return tr('ui.equipment.text0033'); }, icon: 'Settings', page: 'personalization' },
       { get label(){ return tr('language.manager.menu'); }, icon:'Settings',page:'languages' },
       { get label() { return tr('ui.equipment.text0034'); }, icon: 'Grid', page: 'home-templates' },

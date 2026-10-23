@@ -1,4 +1,9 @@
-<script setup lang="ts">import { tr } from '../../i18n';
+<script setup lang="ts">
+import DeviceInspectionDialog from '../inspection/DeviceInspectionDialog.vue';
+import { useAuthStore } from '../../stores/auth';
+const inspectionAuth = useAuthStore();
+const inspectionOpen = ref(false);
+import { tr } from '../../i18n';
 
 import { computed, ref, watch, onBeforeUnmount, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
@@ -7,6 +12,7 @@ import 'element-plus/es/components/image/style/css';
 import 'element-plus/es/components/skeleton/style/css';
 import type { EquipmentRecord } from '../../api';
 import { formatOrganizationPath } from '../../utils/organizationPath';
+import DepartmentText from './DepartmentText.vue';
 import { normalizeLocationPath } from '../../utils/locationPath';
 import {
   equipmentOverviewApi,
@@ -43,10 +49,34 @@ onBeforeUnmount(() => {
   attentionRevision++;
 });
 const kinds: { key: Exclude<AttentionKind, 'all'>; label: string; icon: string }[] = [
-  { key: 'repair', get label() { return tr('ui.equipment.text1374'); }, icon: 'Tool' },
-  { key: 'maintenance', get label() { return tr('ui.equipment.text1375'); }, icon: 'Clock' },
-  { key: 'inspection', get label() { return tr('ui.equipment.text1376'); }, icon: 'Check' },
-  { key: 'anomaly', get label() { return tr('ui.equipment.text1377'); }, icon: 'Warning' },
+  {
+    key: 'repair',
+    get label() {
+      return tr('ui.equipment.text1374');
+    },
+    icon: 'Tool',
+  },
+  {
+    key: 'maintenance',
+    get label() {
+      return tr('ui.equipment.text1375');
+    },
+    icon: 'Clock',
+  },
+  {
+    key: 'inspection',
+    get label() {
+      return tr('ui.equipment.text1376');
+    },
+    icon: 'Check',
+  },
+  {
+    key: 'anomaly',
+    get label() {
+      return tr('ui.equipment.text1377');
+    },
+    icon: 'Warning',
+  },
 ];
 const coverUrl = computed(() => {
   const id = props.equipment.images?.[0]?.id || props.equipment.imageFileId;
@@ -72,14 +102,30 @@ const metadata = computed(() => [
   ['负责人', owners.value],
 ]);
 const related = computed(() => [
-  { key: 'children', get label() { return tr('ui.equipment.text0148'); }, icon: 'Organization', rows: props.equipment.children || [] },
+  {
+    key: 'children',
+    get label() {
+      return tr('ui.equipment.text0148');
+    },
+    icon: 'Organization',
+    rows: props.equipment.children || [],
+  },
   {
     key: 'relatedSpares',
-    get label() { return tr('ui.equipment.text0153'); },
+    get label() {
+      return tr('ui.equipment.text0153');
+    },
     icon: 'Warehouse',
     rows: props.equipment.relatedSpares || [],
   },
-  { key: 'documents', get label() { return tr('ui.equipment.text1378'); }, icon: 'Document', rows: props.equipment.documents || [] },
+  {
+    key: 'documents',
+    get label() {
+      return tr('ui.equipment.text1378');
+    },
+    icon: 'Document',
+    rows: props.equipment.documents || [],
+  },
 ]);
 const eventsReady = ref(false);
 watch(
@@ -100,7 +146,8 @@ async function loadOverview() {
     const result = await equipmentOverviewApi.overview(props.equipment.id);
     if (seq === revision) overview.value = result;
   } catch (e) {
-    if (seq === revision) error.value = e instanceof Error ? e.message : tr('ui.equipment.text1379');
+    if (seq === revision)
+      error.value = e instanceof Error ? e.message : tr('ui.equipment.text1379');
   } finally {
     if (seq === revision) loading.value = false;
   }
@@ -175,7 +222,14 @@ watch(
       <dl class="equipment-key-facts">
         <div v-for="[label, value] in metadata" :key="label">
           <dt>{{ label }}</dt>
-          <dd :title="value || ''">{{ value || tr('ui.equipment.text1382') }}</dd>
+          <dd v-if="label === '所属部门'">
+            <DepartmentText
+              :value="value"
+              :department-id="equipment.departmentOrgId"
+              :empty="tr('ui.equipment.text1382')"
+            />
+          </dd>
+          <dd v-else :title="value || ''">{{ value || tr('ui.equipment.text1382') }}</dd>
         </div>
       </dl>
       <figure class="equipment-qr-content" :aria-label="tr('ui.equipment.text1383')">
@@ -186,10 +240,17 @@ watch(
         <!-- <figcaption>{{ equipment.code }}</figcaption> -->
       </figure>
     </section>
-    <section class="equipment-attention-strip" :aria-label="tr('ui.equipment.text1384')" :aria-busy="loading">
+    <section
+      class="equipment-attention-strip"
+      :aria-label="tr('ui.equipment.text1384')"
+      :aria-busy="loading"
+    >
       <template v-if="loading"><ElSkeleton :rows="1" animated /></template>
       <div v-else-if="error" class="equipment-inline-error" role="alert">
-        {{ error }}<ElButton link type="primary" @click="loadOverview">{{ tr('ui.equipment.text0299') }}</ElButton>
+        {{ error
+        }}<ElButton link type="primary" @click="loadOverview">{{
+          tr('ui.equipment.text0299')
+        }}</ElButton>
       </div>
       <template v-for="item in overview ? kinds : []" :key="item.key">
         <ElButton
@@ -210,18 +271,22 @@ watch(
         </div>
       </template>
     </section>
+    <DeviceInspectionDialog v-model="inspectionOpen" :equipment-id="equipment.id" />
     <div class="equipment-overview-columns">
       <div class="equipment-main-column">
         <section class="equipment-panel current-attention" :aria-busy="attentionLoading">
           <header class="equipment-panel-heading">
             <h3>
-              <AppIcon name="Todo" />{{ tr('ui.equipment.text1386') }}<span
-                v-if="!attentionLoading && accessible"
-                class="panel-count"
-                >{{ total }}</span
-              >
+              <AppIcon name="Todo" />{{ tr('ui.equipment.text1386')
+              }}<span v-if="!attentionLoading && accessible" class="panel-count">{{ total }}</span>
             </h3>
             <div class="equipment-panel-actions">
+              <ElButton
+                v-if="inspectionAuth.can('inspectionDailyTask', '执行')"
+                type="primary"
+                @click="inspectionOpen = true"
+                >{{ tr('staff.deviceInspect') }}</ElButton
+              >
               <ElSelect
                 :model-value="state.kind"
                 :aria-label="tr('ui.equipment.text1387')"
@@ -242,10 +307,15 @@ watch(
             </div>
           </header>
           <div v-if="attentionError" class="equipment-inline-error" role="alert">
-            {{ attentionError }}<ElButton link type="primary" @click="loadAttention">{{ tr('ui.equipment.text0299') }}</ElButton>
+            {{ attentionError
+            }}<ElButton link type="primary" @click="loadAttention">{{
+              tr('ui.equipment.text0299')
+            }}</ElButton>
           </div>
           <ElSkeleton v-else-if="attentionLoading" :rows="2" animated />
-          <p v-else-if="!accessible" class="equipment-panel-empty">{{ tr('ui.equipment.text1389') }}</p>
+          <p v-else-if="!accessible" class="equipment-panel-empty">
+            {{ tr('ui.equipment.text1389') }}
+          </p>
           <template v-else>
             <AppBusinessTable
               v-if="items.length"
@@ -255,7 +325,10 @@ watch(
               :framed="false"
               class="attention-table"
             >
-              <ElTableColumn :label="tr('ui.equipment.text1390')" :min-width="210" show-overflow-tooltip
+              <ElTableColumn
+                :label="tr('ui.equipment.text1390')"
+                :min-width="210"
+                show-overflow-tooltip
                 ><template #default="{ row }"
                   ><div class="attention-identity">
                     <span class="attention-type" :class="row.kind">{{
@@ -285,7 +358,9 @@ watch(
                   ><span :class="{ 'overdue-time': row.overdue }">{{
                     row.deadline ? formatDateTime(row.deadline) : ''
                   }}</span
-                  ><span v-if="row.overdue" class="overdue-label">{{ tr('ui.equipment.text1392') }}</span></template
+                  ><span v-if="row.overdue" class="overdue-label">{{
+                    tr('ui.equipment.text1392')
+                  }}</span></template
                 ></ElTableColumn
               >
               <ElTableColumn
@@ -312,7 +387,9 @@ watch(
               }}
             </p>
             <footer v-if="state.expanded && total" class="equipment-attention-footer">
-              <span>{{ tr('ui.equipment.text0309') }} {{ total }} {{ tr('ui.equipment.text0296') }}</span
+              <span
+                >{{ tr('ui.equipment.text0309') }} {{ total }}
+                {{ tr('ui.equipment.text0296') }}</span
               ><AppPagination
                 v-model:page="state.page"
                 v-model:page-size="state.size"
@@ -331,9 +408,8 @@ watch(
         <section class="equipment-panel installed-panel">
           <header class="equipment-panel-heading">
             <h3>
-              <AppIcon name="Warehouse" />{{ tr('ui.equipment.text0166') }}<span v-if="overview" class="panel-count">{{
-                overview.installedTotal
-              }}</span>
+              <AppIcon name="Warehouse" />{{ tr('ui.equipment.text0166')
+              }}<span v-if="overview" class="panel-count">{{ overview.installedTotal }}</span>
             </h3>
             <ElButton link type="primary" @click="emit('navigate', '备件')"
               >{{ tr('ui.equipment.text0892') }}<AppIcon name="Right"
@@ -348,7 +424,10 @@ watch(
             :fill="false"
             :framed="false"
           >
-            <ElTableColumn :label="tr('ui.equipment.text0515')" :min-width="160" show-overflow-tooltip
+            <ElTableColumn
+              :label="tr('ui.equipment.text0515')"
+              :min-width="160"
+              show-overflow-tooltip
               ><template #default="{ row }"
                 ><div class="installed-name" :title="row.name">{{ row.name }}</div>
                 <div class="attention-summary">{{ row.code }}</div></template

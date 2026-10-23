@@ -28,5 +28,11 @@ export function useInspectionList() {
   function invalidate() {
     revision++;
   }
-  return { rows, total, organizations, refresh, invalidate };
+  function reset() {
+    invalidate();
+    rows.value = [];
+    total.value = 0;
+    organizations.value = [];
+  }
+  return { rows, total, organizations, refresh, invalidate, reset };
 }

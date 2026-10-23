@@ -147,6 +147,8 @@ export type SystemUserRecord = {
   name: string;
   employeeNo: string;
   phone: string;
+  email?: string;
+  emailVersion?: number;
   orgId: string;
   roleIds: string[];
   status: '启用' | '停用';
@@ -219,7 +221,7 @@ export async function listEquipment(params: Record<string, string | number | und
     page: { number: number; size: number; total: number };
   }>(`/equipment?${search}`);
 }
-export async function saveEquipment(form: EquipmentRecord, isNew: boolean) {
+export async function saveEquipment(form: EquipmentRecord, isNew: boolean, detailsOnly = false) {
   const body = {
     customFields: form.customFields,
     customSchemaVersion: form.customSchemaVersion,
@@ -275,8 +277,19 @@ export async function saveEquipment(form: EquipmentRecord, isNew: boolean) {
       ? '/equipment'
       : '/equipment/' +
           form.id +
-          (isNew ? '' : '?rowVersion=' + requiredRowVersion(form.rowVersion)),
+          (detailsOnly ? '/details' : '') + '?rowVersion=' + requiredRowVersion(form.rowVersion),
     { method: isNew ? 'POST' : 'PUT', body: JSON.stringify(body) },
+  );
+}
+export async function saveEquipmentRelations(
+  id: string,
+  kind: 'children' | 'bom',
+  rowVersion: number | undefined,
+  rows: EquipmentRecord['children'] | EquipmentRecord['relatedSpares'],
+) {
+  return request<{ data: EquipmentRecord }>(
+    `/equipment/${id}/${kind}?rowVersion=${requiredRowVersion(rowVersion)}`,
+    { method: 'PUT', body: JSON.stringify({ rows }) },
   );
 }
 export async function deleteEquipment(id: string) {
@@ -436,6 +449,8 @@ export async function saveSystemUser(item: Partial<SystemUserRecord>, isNew: boo
     name: item.name,
     employeeNo: item.employeeNo,
     phone: item.phone,
+    email: item.email,
+    emailVersion: item.emailVersion,
     orgId: item.orgId,
     roleIds: item.roleIds || [],
     status: item.status === '停用' ? 0 : 1,
@@ -691,6 +706,8 @@ export type WorkflowDetail = {
   results: { id: string; name: string; resolved: boolean }[];
 };
 export type InboxItem = {
+  planName?: string;
+  shiftName?: string;
   owner?: string;
   due?: string;
   module?: string;

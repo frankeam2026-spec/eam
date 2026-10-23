@@ -49,7 +49,7 @@ const binRows = ref<InventoryMaster[]>([]),
   binCode = ref(''),
   binRemark = ref(''),
   binPage = ref(1),
-  binPageSize = ref(10),
+  binPageSize = ref(20),
   binTotal = ref(0),
   binBusy = ref(false),
   binEditing = ref<InventoryMaster>();
@@ -101,7 +101,7 @@ async function saveBin() {
   }
 }
 const page = ref(1),
-  size = ref(10),
+  size = ref(20),
   query = ref(''),
   applied = ref('');
 const loading = ref(false),

@@ -17,7 +17,7 @@ export function useStandardSelectorPage<T extends { id: string }>(
     total = ref(0),
     loading = ref(false),
     error = ref('');
-  const size = 5;
+  const size = ref(20);
   let revision = 0;
   async function load() {
     if (!open.value) return;
@@ -29,7 +29,7 @@ export function useStandardSelectorPage<T extends { id: string }>(
       const result = await planningSelectors(module).standards<T>(
         search.value,
         page.value,
-        size,
+        size.value,
         all.value ? '' : equipmentId.value,
       );
       if (seq !== revision) return;
@@ -47,7 +47,7 @@ export function useStandardSelectorPage<T extends { id: string }>(
       if (seq === revision) loading.value = false;
     }
   }
-  watch([open, all, equipmentId, search], () => {
+  watch([open, all, equipmentId, search, size], () => {
     if (!open.value) {
       revision++;
       loading.value = false;

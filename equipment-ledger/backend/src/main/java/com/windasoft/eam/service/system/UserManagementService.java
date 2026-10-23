@@ -70,6 +70,10 @@ public class UserManagementService {
     permissions.checkUser("user", "编辑", x);
     setPassword(x, f.password(), false);
     repository.updateUser(x);
+    if(f.email()!=null) {
+      if(f.emailVersion()==null)throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0018");
+      com.windasoft.eam.common.VersionGuard.updated(repository.updateEmail(auth.tenantId(),id,f.email().trim(),f.emailVersion()));
+    }
     if (f.password() != null && !f.password().isBlank() || x.getStatus() == 0) revokeSessions(id);
     repository.deleteUserRoles(auth.tenantId(), id);
     saveRoleLinks(id, f.roleIds());
@@ -135,6 +139,7 @@ public class UserManagementService {
     x.setDisplayName(f.name().trim());
     x.setEmployeeNo(f.employeeNo() == null ? "" : f.employeeNo().trim());
     x.setPhone(f.phone() == null ? "" : f.phone().trim());
+    if(f.email()!=null)x.setEmail(f.email().trim());
     x.setOrgId(f.orgId());
     x.setStatus(f.status() == null ? 1 : f.status());
   }
@@ -203,7 +208,7 @@ public class UserManagementService {
             .map(UserRoleLink::getRoleId)
             .map(String::valueOf)
             .toList();
-    return Map.of(
+    var result = new LinkedHashMap<String,Object>(Map.of(
         "id",
         String.valueOf(x.getId()),
         "account",
@@ -219,6 +224,10 @@ public class UserManagementService {
         "roleIds",
         ids,
         "status",
-        x.getStatus() == 1 ? "启用" : "停用");
+        x.getStatus() == 1 ? "启用" : "停用"));
+    var emailProfile=repository.emailProfile(auth.tenantId(),x.getId());
+    result.put("email", Objects.toString(emailProfile.get("email"),Objects.toString(x.getEmail(),"")));
+    result.put("emailVersion", emailProfile.getOrDefault("email_version",0));
+    return result;
   }
 }

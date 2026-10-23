@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { ElPagination } from 'element-plus';
+import { PAGE_SIZES } from '../../utils/pagination';
 const props = withDefaults(
   defineProps<{
     page: number;
@@ -9,7 +10,7 @@ const props = withDefaults(
     pageSizes?: number[];
     showSizes?: boolean;
   }>(),
-  { pageSizes: () => [10, 20, 50], showSizes: true },
+  { pageSizes: () => [...PAGE_SIZES], showSizes: true },
 );
 const emit = defineEmits<{ 'update:page': [value: number]; 'update:pageSize': [value: number] }>();
 const current = computed(() =>

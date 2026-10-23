@@ -1,4 +1,5 @@
 <script setup lang="ts">import { tr } from '../../i18n';
+import DepartmentText from './DepartmentText.vue';
 
 import AppIcon from './AppIcon.vue';
 import { ElDropdown, ElDropdownMenu, ElDropdownItem, ElButton } from 'element-plus';
@@ -18,7 +19,7 @@ function command(value: string) {
       ><span class="account-avatar">{{ auth.currentUser.slice(0, 1) }}</span
       ><span class="account-name"
         ><b>{{ auth.currentUser }}</b
-        ><small>{{ auth.currentDepartment || tr('ui.equipment.text1599') }}</small></span
+        ><small><DepartmentText :value="auth.currentDepartment" :department-id="auth.user?.orgId" :empty="tr('ui.equipment.text1599')" /></small></span
       ><AppIcon name="Down"
     /></ElButton>
     <template #dropdown

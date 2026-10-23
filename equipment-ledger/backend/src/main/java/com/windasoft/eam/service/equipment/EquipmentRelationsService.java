@@ -211,6 +211,18 @@ public class EquipmentRelationsService {
   }
 
   public void save(Equipment parent, JsonNode children, JsonNode bom) {
+    save(parent, children, bom, true, true);
+  }
+
+  public void saveChildren(Equipment parent, JsonNode children) {
+    save(parent, children, null, true, false);
+  }
+
+  public void saveBom(Equipment parent, JsonNode bom) {
+    save(parent, null, bom, false, true);
+  }
+
+  private void save(Equipment parent, JsonNode children, JsonNode bom, boolean replaceChildren, boolean replaceBom) {
     var childNodes = nodes(children);
     var bomNodes = nodes(bom);
     var childIds = new HashSet<Long>();
@@ -284,15 +296,19 @@ public class EquipmentRelationsService {
       m.put("quantity", qty);
       materials.add(m);
     }
-    legacySelection(parent.getId(), "child", childNodes);
-    legacySelection(parent.getId(), "bom", bomNodes);
-    repository.clearChildren(auth.tenantId(), parent.getId());
-    for (int i = 0; i < links.size(); i++)
-      repository.addChild(auth.tenantId(), parent.getId(), links.get(i).getId(), i);
-    repository.clearBom(auth.tenantId(), parent.getId());
-    for (int i = 0; i < materials.size(); i++) {
-      var m = materials.get(i);
-      repository.addBom(auth.tenantId(), parent.getId(), m, i);
+    if (replaceChildren) {
+      legacySelection(parent.getId(), "child", childNodes);
+      repository.clearChildren(auth.tenantId(), parent.getId());
+      for (int i = 0; i < links.size(); i++)
+        repository.addChild(auth.tenantId(), parent.getId(), links.get(i).getId(), i);
+    }
+    if (replaceBom) {
+      legacySelection(parent.getId(), "bom", bomNodes);
+      repository.clearBom(auth.tenantId(), parent.getId());
+      for (int i = 0; i < materials.size(); i++) {
+        var m = materials.get(i);
+        repository.addBom(auth.tenantId(), parent.getId(), m, i);
+      }
     }
   }
 

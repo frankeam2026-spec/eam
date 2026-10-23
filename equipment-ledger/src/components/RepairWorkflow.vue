@@ -1,4 +1,6 @@
-<script setup lang="ts">import { enumLabel } from '../i18n';
+<script setup lang="ts">
+import DepartmentText from './common/DepartmentText.vue';
+import { enumLabel } from '../i18n';
 import { tr } from '../i18n';
 
 import { useBusinessExtension } from '../composables/useBusinessExtension';
@@ -488,7 +490,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
             <small>{{ tr('ui.equipment.text1047') }}</small><span>{{ order.reportedAt.replace('T', ' ') }}</span>
           </div>
           <div>
-            <small>{{ tr('ui.equipment.text0098') }}</small><span>{{ order.department }}</span>
+            <small>{{ tr('ui.equipment.text0098') }}</small><span><DepartmentText :value="order.department" /></span>
           </div>
           <div>
             <small>{{ tr('ui.equipment.text1042') }}</small><span>{{ order.severity }}</span>

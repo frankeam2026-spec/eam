@@ -128,6 +128,15 @@ public class EquipmentCommandService {
 
   @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
   public EquipmentView update(Long id, EquipmentForm form, int rowVersion) {
+    return updateInternal(id, form, rowVersion, true);
+  }
+
+  @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+  public EquipmentView updateDetails(Long id, EquipmentForm form, int rowVersion) {
+    return updateInternal(id, form, rowVersion, false);
+  }
+
+  private EquipmentView updateInternal(Long id, EquipmentForm form, int rowVersion, boolean replaceRelations) {
     validateState(form.state());
     var old = require(id);
     relations.enter(
@@ -148,7 +157,7 @@ public class EquipmentCommandService {
     e.setUpdatedBy(auth.userId());
     VersionGuard.updated(repository.update(e));
     saveOwners(e);
-    relations.save(e, form.children(), form.relatedSpares());
+    if (replaceRelations) relations.save(e, form.children(), form.relatedSpares());
     custom.save(
         "equipment",
         e.getId(),
@@ -156,6 +165,19 @@ public class EquipmentCommandService {
         form.customSchemaVersion(),
         String.valueOf(e.getCategoryId()),
         false);
+    return toView(require(id));
+  }
+
+  @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+  public EquipmentView updateRelations(Long id, JsonNode rows, int rowVersion, boolean children) {
+    var parent = require(id);
+    relations.enter(java.util.Collections.singletonList(parent.getCompanyOrgId()));
+    parent = require(id);
+    permissions.checkEquipment(parent, "编辑");
+    VersionGuard.check(parent.getRowVersion(), rowVersion);
+    VersionGuard.updated(repository.advanceVersion(auth.tenantId(), id, rowVersion, auth.userId()));
+    if (children) relations.saveChildren(parent, rows);
+    else relations.saveBom(parent, rows);
     return toView(require(id));
   }
 

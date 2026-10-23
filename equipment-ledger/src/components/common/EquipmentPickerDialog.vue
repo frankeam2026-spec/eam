@@ -1,4 +1,6 @@
-<script setup lang="ts">import { tr } from '../../i18n';
+<script setup lang="ts">
+import DepartmentText from './DepartmentText.vue';
+import { tr } from '../../i18n';
 
 import { ElButton } from 'element-plus';
 import { ref, watch } from 'vue';
@@ -27,7 +29,7 @@ const emit = defineEmits<{
 }>();
 const rows = ref<EquipmentRecord[]>([]),
   page = ref(1),
-  size = ref(10),
+  size = ref(20),
   total = ref(0),
   q = ref(''),
   applied = ref(''),
@@ -76,7 +78,7 @@ const columns = [
   { prop: 'code' as const, get label() { return tr('ui.equipment.text0078'); }, minWidth: 160, overflowTooltip: true },
   { prop: 'name' as const, get label() { return tr('ui.equipment.text0081'); }, minWidth: 160, overflowTooltip: true },
   { prop: 'model' as const, get label() { return tr('ui.equipment.text0091'); }, minWidth: 160, overflowTooltip: true },
-  { prop: 'department' as const, get label() { return tr('ui.equipment.text0098'); }, minWidth: 150, overflowTooltip: true },
+  { prop: 'department' as const, get label() { return tr('ui.equipment.text0098'); }, minWidth: 150 },
 ];
 </script>
 <template>
@@ -106,7 +108,7 @@ const columns = [
         :loading="loading"
         :error="error"
         @retry="load"
-        ><template v-if="!multiple" #actions="{ row }"
+        ><template #department="{ row }"><DepartmentText :value="row.departmentPath || row.department" :department-id="row.departmentOrgId" /></template><template v-if="!multiple" #actions="{ row }"
           ><ElButton
             link
             type="primary"

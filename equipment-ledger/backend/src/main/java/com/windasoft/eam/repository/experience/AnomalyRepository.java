@@ -9,6 +9,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class AnomalyRepository {
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.repository.system.NotificationRepository notifications;
   private final JdbcTemplate db;
   private final com.windasoft.eam.repository.common.AttachmentRelationsRepository attachments;
   private final EquipmentMapper equipment;
@@ -122,6 +124,7 @@ public class AnomalyRepository {
         com.windasoft.eam.common.NotificationMessages.arguments(label, value),
         tenantId,
         recordId);
+    if (notifications != null) notifications.captureSource("eam_experience_inbox", tenantId, recordId);
     return count;
   }
 
@@ -444,6 +447,7 @@ public class AnomalyRepository {
         com.windasoft.eam.common.NotificationMessages.arguments("生成失败", value),
         tenantId,
         recordId);
+    if (notifications != null) notifications.captureSource("eam_experience_inbox", tenantId, recordId);
     return count;
   }
 

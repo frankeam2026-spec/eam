@@ -17,7 +17,7 @@ import {
 import { formatDateTime } from '../../utils/dateTime';
 const props = defineProps<{ equipmentId: string; full?: boolean }>();
 const state = defineModel<EventState>('state', {
-  default: () => ({ kind: '', sort: 'desc', page: 1, size: 10 }),
+  default: () => ({ kind: '', sort: 'desc', page: 1, size: 20 }),
 });
 const emit = defineEmits<{ all: []; ready: [] }>();
 const router = useRouter();

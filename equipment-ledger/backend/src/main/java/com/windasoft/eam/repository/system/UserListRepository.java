@@ -65,7 +65,7 @@ public class UserListRepository {
 
   public List<Map<String, Object>> page(Selection selected, ListQuery query) {
     return lists.rows(
-        "t.id,t.account,t.display_name,t.employee_no,t.phone,t.org_id,t.status,o.name department,"
+        "t.id,t.account,t.display_name,t.employee_no,t.phone,t.email,t.email_version,t.org_id,t.status,o.name department,"
             + selected.roles()
             + " roles",
         selected.from(),

@@ -16,6 +16,9 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class SystemManagementRepository {
+  public Map<String,Object> emailProfile(long tenant,long user) {return db.queryForMap("SELECT email,email_version FROM eam_sys_user WHERE tenant_id=? AND id=?",tenant,user);}
+  public int updateEmail(long tenant,long user,String email,int expectedVersion) {return db.update("UPDATE eam_sys_user SET email=?,email_version=email_version+1 WHERE tenant_id=? AND id=? AND email_version=? AND deleted=0",email,tenant,user,expectedVersion);}
+
   private final RoleRelationsRepository relations;
   private final OrgUnitMapper orgs;
   private final SystemUserMapper users;

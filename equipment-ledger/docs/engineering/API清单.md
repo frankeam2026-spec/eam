@@ -13,12 +13,17 @@
 
 列表新查询契约：`data`＋`page:{number,size,total}`；错误保留 `code,message,fieldErrors`。400字段错误定位控件，401统一登录失效，403拒绝，409保留草稿；导出叠加导出授权。二进制导出通过公共文件请求读取错误。
 
+设备编辑保存边界（2026-10-21）：`PUT /equipment/{id}/details` 只更新核心资料、图片、文件与扩展字段；`PUT /equipment/{id}/children` 和 `/bom` 分别只替换对应关系，请求体为 `{rows:[...]}`。三者均要求父设备编辑权限与 `rowVersion`，关系接口沿用库存互斥→公司锁顺序、ID/租户/权限校验及既有子设备与BOM规则；原整体更新接口保留兼容。
+
 ## 当前 HTTP 入口
 
 | 模块 | 方法 | 路径 | Controller | 处理方法 |
 |---|---|---|---|---|
 | equipment | POST | /api/v1/equipment | EquipmentController | create |
 | equipment | PUT | /api/v1/equipment/{id} | EquipmentController | update |
+| equipment | PUT | /api/v1/equipment/{id}/details | EquipmentController | updateDetails |
+| equipment | PUT | /api/v1/equipment/{id}/children | EquipmentController | updateChildren |
+| equipment | PUT | /api/v1/equipment/{id}/bom | EquipmentController | updateBom |
 | equipment | DELETE | /api/v1/equipment/{id} | EquipmentController | delete |
 | equipment | POST | /api/v1/equipment/batch | EquipmentController | batch |
 | equipment | POST | /api/v1/equipment/files | EquipmentFileController | upload |
@@ -241,3 +246,35 @@
 | POST /api/v1/system/languages/{locale}/restore | language.查看；恢复内置 | rowVersion，不匹配409 |
 
 错误仍为 code/message/fieldErrors；自定义字段及业务内容不自动翻译。语言包 JSON 是交换协议，核心业务字段仍使用明确建模。
+
+
+## 2026-10-23 日常点检人员与排班
+
+- GET `/api/v1/inspection/daily-device-options`：执行权限范围内的设备分页选择，参数q/page/size；权限、过滤、计数与分页均在SQL执行。
+- GET `/api/v1/inspection/daily-device-tasks`：按equipmentId或精确设备编号code查询当前任务，参数page/size；不创建任务。设备点检入口与设备概览共用。
+- POST `/api/v1/inspection/daily-plans/assignment-impact`：提交现有计划草稿、关联ID和rowVersion，校验编辑权限与版本后返回将受影响的未开始任务数量；不修改任务。
+- 既有日常计划保存／详情／预览增加安排级regularRoster/dateRoster；personMode新增open，followUpUserId在open模式下可选。常规与日期人员分别落关系表，不保存为payload。
+- 既有任务start/submit继续使用rowVersion、行锁、候选及开放范围检查，开始确定实际点检人；不增加独立认领步骤。
+- 完整字段、迁移、兼容性和验证边界见[日常点检人员与排班](../features/日常点检人员与排班-20261023.md)。
+
+## 2026-10-23 日常点检班次与删除补充
+
+- 日常计划保存及预览仅接受shift（历史slots等价规范化），班次数可为0；weeklyRestDays与monthlyRestDays可同时设置。日历数组为关系表查询投影，不是JSON核心存储。
+- 既有`POST /api/v1/inspection/tasks/{id}/delete`保留权限、锁及rowVersion，日常任务增加尚未执行的状态限制，description必填。任务返回canDelete供列表和详情使用。
+- `DELETE /api/v1/inspection/daily-plans/{id}`只由deleted=0的任务阻止删除；已删除任务历史继续保留，免检保护不变。
+- 人工事件选项入口返回空集合，原创建事件入口明确拒绝；前端入口已移除。详细边界和证据见[班次与任务删除记录](../features/日常点检班次与任务删除-20261023.md)。
+
+
+## 统一提醒策略与通知渠道（2026-10-23）
+
+- `GET /api/v1/notifications/policies`：提醒策略查看，按业务类型、关键字、分页查询；`GET /policies/{id}`读取规则和固定人员；`POST /policies`编辑权限，校验关联、租户、版本、场景、人员有效性及启用规则。
+- `GET /notifications/policies/choices`：对应计划/维修查看权限或策略查看权限，只返回本业务启用策略；支持SQL搜索分页。`GET /notifications/users`：策略查看权限，只选择当前租户有效用户。
+- `GET /notifications/defaults`、`PUT /notifications/defaults/{kind}`：默认绑定查看/编辑，独立版本防覆盖；启用策略须与业务类型一致。
+- `GET/PUT /notifications/channels`：渠道查看/编辑，密码不回显，空密码保留原加密凭据；`POST /notifications/channels/test-email`使用已保存配置，仅对明确的测试邮箱发送。
+- `GET /notifications/deliveries`：发送记录查看，默认近7个自然日，SQL按日期（from/to含当天）、业务类型（businessKind）、接收用户（recipientId）、渠道、状态、关键词筛选、计数与分页。默认隐藏DISABLED/NOT_INTEGRATED，showInactive=true或明确选择对应状态时显示；`POST /notifications/deliveries/{id}/retry`：重试权限及当前尝试次数校验，只重试可恢复失败，不重发UNKNOWN或未接入App。
+- `GET /notifications/deliveries/recipients`：发送记录查看权限，当前租户历史接收人分页选择，含已停用的历史接收人。
+- `GET/PUT /notifications/deliveries/retention`：查看复用发送记录查看权限，保存需通知渠道编辑权限及rowVersion，成功和异常保留天数均为1至3650天。默认90/180天；定时清理保留站内消息与渠道防重凭据，不清理待发送、发送中和自动重试记录。
+- 三类计划详情/保存增加`reminderMode`（DEFAULT/POLICY/OFF）、`reminderPolicyId`；复用原计划权限、关联校验及行版本，同事务保存。正常维修实际派工/接单及保养提交时间落明确列；特殊流程不做提醒。
+- 公共站内提醒沿用`work-inbox`查询与未读汇总，新增消息ID前缀`n:`；标记已读始终按当前租户和接收人限制，查看业务详情仍走原接口权限。
+
+- 用户邮箱沿用`/api/v1/system/users`创建、编辑接口，返回`email`和`emailVersion`；编辑包含邮箱时必须携带对应版本，使用CAS并在冲突时回滚整个用户保存。未携带邮箱的旧请求兼容，其他用户字段并发保护不在本轮扩展范围。

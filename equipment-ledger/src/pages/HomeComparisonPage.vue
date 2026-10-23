@@ -1,4 +1,6 @@
-<script setup lang="ts">import { tr } from '../i18n';
+<script setup lang="ts">
+import DepartmentText from '../components/common/DepartmentText.vue';
+import { tr } from '../i18n';
 
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
@@ -401,7 +403,7 @@ onUnmounted(() => {
         <div>
           <div class="heading-eyebrow">{{ todayLabel }}</div>
           <h1>{{ auth.currentUser }}{{ tr('ui.equipment.text1704') }}</h1>
-          <p>{{ [auth.currentCompany, auth.currentDepartment].filter(Boolean).join(' · ') }}</p>
+          <p><DepartmentText :value="auth.currentDepartment" :department-id="auth.user?.orgId" /></p>
         </div>
         <div class="heading-actions">
           <ElSelect

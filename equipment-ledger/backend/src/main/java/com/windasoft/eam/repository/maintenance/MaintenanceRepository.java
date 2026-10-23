@@ -7,6 +7,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class MaintenanceRepository {
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.repository.system.NotificationRepository notifications;
   private final MaintenanceDefinitionStorage definitions;
   private final JdbcTemplate db;
   private final com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources;
@@ -378,6 +380,7 @@ public class MaintenanceRepository {
         com.windasoft.eam.common.NotificationMessages.arguments(kind, title),
         tenantId,
         recordId);
+    if (notifications != null) notifications.captureSource("eam_maintenance_inbox", tenantId, recordId);
     return count;
   }
 
@@ -427,8 +430,9 @@ public class MaintenanceRepository {
     executions.save(tenantId, id, payload4);
     return db.update(
         "UPDATE eam_maintenance_task SET"
-            + " status=?,owner_id=?,snapshot=?,row_version=row_version+1,updated_at=NOW() WHERE"
+            + " submitted_at=IF(?='待验收' AND status<>'待验收',NOW(6),submitted_at),status=?,owner_id=?,snapshot=?,row_version=row_version+1,updated_at=NOW() WHERE"
             + " tenant_id=? AND id=?",
+        next,
         next,
         owner,
         executions.historicalSnapshot(payload),

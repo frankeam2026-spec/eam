@@ -1,10 +1,35 @@
 <script setup lang="ts">
+import ReminderPolicyField from './common/ReminderPolicyField.vue';
+import { isDepartmentCustomColumn } from '../businessConfig';
+import DepartmentValuesText from './common/DepartmentValuesText.vue';
+
+import DepartmentText from './common/DepartmentText.vue';
+
 import { tr } from '../i18n';
 
+import InspectionPlanPreviewDialog from './inspection/InspectionPlanPreviewDialog.vue';
+const planPreviewOpen = ref(false),
+  previewPlanId = ref('');
+function previewTaskPlan(row: InspectionTask) {
+  previewPlanId.value = row.planId;
+  planPreviewOpen.value = true;
+}
+import InspectionTaskDeleteDialog from './inspection/InspectionTaskDeleteDialog.vue';
+const taskDeleteOpen = ref(false),
+  taskToDelete = ref<InspectionTask>();
+function confirmTaskDelete(row: InspectionTask) {
+  taskToDelete.value = row;
+  taskDeleteOpen.value = true;
+}
+async function taskDeleted(id: string) {
+  selected.value = selected.value.filter((value) => value !== id);
+  await load();
+}
 import DailyArrangementEditor from './inspection/DailyArrangementEditor.vue';
 import { ApiError } from '../api';
 const dailyErrors = ref<Record<string, string>>({});
 const dailyEditorTab = ref('basic');
+const dailyDeviceOverrides = ref(false);
 const reminderSettings = [
   { key: 'advanceHours', unit: 'advanceUnit', label: 'ui.equipment.text0328' },
   { key: 'remindHours', unit: 'remindUnit', label: 'ui.equipment.text0330' },
@@ -64,6 +89,7 @@ import {
   ElDatePicker,
   ElSwitch,
   ElCheckbox,
+  ElTag,
   ElCollapse,
   ElCollapseItem,
   ElForm,
@@ -84,7 +110,6 @@ import {
   inspectionStates,
   emptyInspection,
   emptyArrangement,
-  type DailyArrangement,
   csvRows,
   downloadCsv,
   type InspectionKind,
@@ -92,7 +117,6 @@ import {
   type InspectionTask,
   type InspectionDetail,
   type InspectionChoices,
-  localTime,
 } from '../inspection';
 import type { MaintenanceItem } from '../maintenance';
 import { useAuthStore } from '../stores/auth';
@@ -103,7 +127,8 @@ import AppDialog from './common/AppDialog.vue';
 import ListSearchInput from './common/ListSearchInput.vue';
 import ListToolbarIcons from './ListToolbarIcons.vue';
 import MaintenanceStatus from './common/MaintenanceStatus.vue';
-import InspectionProjectEditor from './common/InspectionProjectEditor.vue';
+import InspectionStandardEditor from './inspection/InspectionStandardEditor.vue';
+const standardEditor = ref<InstanceType<typeof InspectionStandardEditor>>();
 import InspectionReviewDialog from './common/InspectionReviewDialog.vue';
 import TreeSelect from './TreeSelect.vue';
 import FilterConditionPopover from './common/FilterConditionPopover.vue';
@@ -137,25 +162,26 @@ const loading = ref(false),
   search = ref(''),
   queue = ref('全部'),
   page = ref(1),
-  size = ref(10),
+  size = ref(20),
   filterOpen = ref(false),
   columnsOpen = ref(false),
   advancedOpen = ref(false);
 const columnFilters = ref<Record<string, string>>({}),
   conditions = ref<FilterCondition[]>([]),
   selected = ref<string[]>([]),
-  sortKey = ref(''),
-  sortAsc = ref(true);
+  sortKey = ref(kind.value === 'daily-tasks' ? 'dueAt' : ''),
+  sortAsc = ref(kind.value !== 'daily-tasks');
 const baseFields = computed<[string, string][]>(() =>
   isTasks.value
     ? [
         ['code', '任务编号'],
         ['planName', '计划名称'],
         ['equipmentName', '设备名称'],
-        ...(!daily.value ? [['typeName', '巡检类型'] as [string, string]] : []),
+        ...(!daily.value ? [['typeName', '点巡检类型'] as [string, string]] : []),
         ...(daily.value
           ? ([
               ['arrangementName', '检查安排'],
+              ['shiftName', tr('daily.slots')],
               ['businessDate', '应检日期'],
             ] as [string, string][])
           : []),
@@ -163,7 +189,7 @@ const baseFields = computed<[string, string][]>(() =>
         ['dueAt', '计划开始时间'],
         ['expiresAt', '计划结束时间'],
         ['ownerNames', '负责人'],
-        ['ownerName', '实际点检人'],
+        ['ownerName', daily.value ? tr('inspection.ui.inspector') : '实际点检人'],
         ['equipmentCount', '应检设备'],
         ['expected', '应检项目'],
         ['checked', '已检项目'],
@@ -189,7 +215,7 @@ const baseFields = computed<[string, string][]>(() =>
         ...(standard.value
           ? []
           : ([
-              ...(!daily.value ? [['typeName', '巡检类型']] : []),
+              ...(!daily.value ? [['typeName', '点巡检类型']] : []),
               ['startDate', '开始日期'],
               ['endDate', '结束日期'],
               ...(daily.value
@@ -214,8 +240,13 @@ const extensionObject = computed<BusinessObject | undefined>(() =>
         ? 'inspection_periodic_task'
         : 'inspection_periodic_plan',
 );
-const { extensionColumns, extensionFilters, extensionExportColumns, configurationError } =
-  useBusinessColumns(extensionObject);
+const {
+  definitions: customDepartmentDefinitions,
+  extensionColumns,
+  extensionFilters,
+  extensionExportColumns,
+  configurationError,
+} = useBusinessColumns(extensionObject);
 const fields = computed<[string, string][]>(() => [
   ...(baseFields.value as [string, string][]),
   ...extensionColumns.value.map((c) => [c.key, c.label] as [string, string]),
@@ -226,7 +257,24 @@ const {
   restore: restoreColumnPreferences,
   persistWidths: persistTableWidths,
 } = useColumnPreferences('eam-inspection', kind, () =>
-  fields.value.slice(0, isTasks.value ? 10 : fields.value.length).map(([key]) => key),
+  fields.value
+    .slice(0, isTasks.value ? (daily.value ? 11 : 10) : fields.value.length)
+    .map(([key]) => key),
+);
+// Add the new default column once without replacing a user's other column preferences.
+watch(
+  kind,
+  () => {
+    if (kind.value !== 'daily-tasks') return;
+    const key = 'eam-inspection-daily-tasks-shift-column-v1';
+    if (localStorage.getItem(key)) return;
+    if (!visibleColumns.value.includes('shiftName')) {
+      const index = visibleColumns.value.indexOf('arrangementName');
+      visibleColumns.value.splice(index < 0 ? 2 : index + 1, 0, 'shiftName');
+    }
+    localStorage.setItem(key, '1');
+  },
+  { immediate: true, flush: 'post' },
 );
 const shownFields = computed(() =>
   fields.value.filter(([key]) => visibleColumns.value.includes(key)),
@@ -401,7 +449,7 @@ async function load() {
         const a = emptyArrangement(form.value.startDate);
         a.name = tr('daily.defaultName');
         a.owners = [...form.value.owners];
-        a.followUpUserId = auth.user?.id || '';
+        a.followUpUserId = '';
         form.value.arrangements = [a];
       }
       selectedDetails.value = [];
@@ -418,7 +466,18 @@ async function load() {
 watch(
   () => route.fullPath,
   () => {
+    // Vue reuses this page across inspection resources. Clear the previous resource
+    // before rendering the new columns, and reject any outstanding old response.
+    loadVersion++;
+    serverList.reset();
+    records.value = [];
+    listTotal.value = 0;
+    taskOrganizations.value = [];
+    choices.value.organizations = [];
+    loading.value = true;
     restoreColumnPreferences();
+    sortKey.value = kind.value === 'daily-tasks' ? 'dueAt' : '';
+    sortAsc.value = kind.value !== 'daily-tasks';
     keyword.value = '';
     search.value = '';
     queue.value = '全部';
@@ -428,6 +487,7 @@ watch(
     page.value = 1;
     load();
   },
+  { flush: 'sync' },
 );
 watch(
   [page, size, search, queue, columnFilters, conditions, sortKey, sortAsc, organizationFilter],
@@ -454,14 +514,19 @@ function list() {
 }
 async function save() {
   if (busy.value) return;
-  if (!standard.value && !prepareExtension(form.value)) {
-    dailyEditorTab.value = 'basic';
-    return;
-  }
   busy.value = true;
   error.value = '';
   dailyErrors.value = {};
   try {
+    if (standard.value && !(await standardEditor.value?.validate())) return;
+    if (!standard.value && !prepareExtension(form.value)) {
+      dailyEditorTab.value = 'basic';
+      return;
+    }
+    if (daily.value && form.value.id) {
+      const impact = (await inspectionApi.assignmentImpact(form.value)).data.count;
+      if (impact && !(await confirmAction(tr('staff.impactConfirm', { count: impact })))) return;
+    }
     await inspectionApi.save(kind.value, form.value);
     unsaved.markSaved();
     ElMessage.success(tr('ui.equipment.text0194'));
@@ -469,6 +534,7 @@ async function save() {
     list();
     window.dispatchEvent(new Event('work-inbox-changed'));
   } catch (e) {
+    if (standard.value && (await standardEditor.value?.capture(e))) return;
     if (extensionError(e)) {
       dailyEditorTab.value = 'basic';
       return;
@@ -480,8 +546,10 @@ async function save() {
         firstField.startsWith('arrangements') || firstField.startsWith('roster')
           ? 'arrangements'
           : firstField.startsWith('details')
-            ? 'equipment'
-            : ['restDays', 'holidays', 'workdays'].includes(firstField)
+            ? 'basic'
+            : ['restDays', 'weeklyRestDays', 'monthlyRestDays', 'holidays', 'workdays'].includes(
+                  firstField,
+                )
               ? 'calendar'
               : 'basic';
       error.value = Object.values(e.fieldErrors)[0] || e.message;
@@ -493,6 +561,7 @@ async function save() {
   }
 }
 function open(row?: InspectionDefinition | InspectionTask) {
+  dailyDeviceOverrides.value = false;
   dailyEditorTab.value = 'basic';
   if (isTasks.value) {
     router.push({ name: 'inspection-task', params: { id: row!.id }, query: { kind: kind.value } });
@@ -502,92 +571,6 @@ function open(row?: InspectionDefinition | InspectionTask) {
     name: row ? 'inspection-edit' : 'inspection-new',
     params: { kind: kind.value, ...(row ? { id: row.id } : {}) },
   });
-}
-const eventOpen = ref(false),
-  eventPlan = ref<{ id: string; rowVersion?: number; arrangements: DailyArrangement[] }>(),
-  eventArrangement = ref(''),
-  eventAt = ref(''),
-  eventKey = ref(''),
-  eventError = ref('');
-const eventChoice = ref('');
-const eventEquipmentIds = ref<string[]>([]),
-  eventEquipmentOptions = ref<SelectorRow[]>([]);
-function eventEquipmentPage(q: string, page: number, size: number) {
-  const rows = eventEquipmentOptions.value.filter((e) =>
-    `${e.code} ${e.name}`.toLowerCase().includes(q.toLowerCase()),
-  );
-  return Promise.resolve({
-    data: rows.slice((page - 1) * size, page * size),
-    page: { total: rows.length },
-  });
-}
-function chooseEvent(rows: SelectorRow[]) {
-  const row = rows[0] as SelectorRow & {
-    planId: string;
-    arrangementId: string;
-    equipmentId: string;
-    rowVersion: number;
-  };
-  if (!row) return;
-  eventPlan.value = {
-    id: row.planId,
-    rowVersion: row.rowVersion,
-    arrangements: [
-      {
-        ...emptyArrangement(form.value.startDate),
-        id: row.arrangementId,
-        name: row.name,
-        frequency: 'event',
-      },
-    ],
-  };
-  eventArrangement.value = row.arrangementId;
-  eventEquipmentIds.value = [row.equipmentId];
-  eventEquipmentOptions.value = [{ id: row.equipmentId, name: row.name, code: row.code }];
-  eventAt.value = localTime();
-  eventKey.value = uuid();
-  eventError.value = '';
-  eventOpen.value = true;
-}
-async function openManualEvent(row: InspectionDefinition | InspectionTask) {
-  eventError.value = '';
-  try {
-    eventPlan.value = (await inspectionApi.get('daily-plans', row.id)).data;
-    eventArrangement.value =
-      eventPlan.value.arrangements.find((a) => a.frequency === 'event' && a.enabled)?.id || '';
-    if (!eventArrangement.value) {
-      ElMessage.warning(tr('daily.noEvent'));
-      return;
-    }
-    eventEquipmentOptions.value = (await resolvePlanning('inspection', eventPlan.value)).equipment;
-    eventEquipmentIds.value = eventEquipmentOptions.value.map((e) => e.id);
-    eventAt.value = localTime();
-    eventKey.value = crypto.randomUUID();
-    eventOpen.value = true;
-  } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : tr('common.error.requestFailed'));
-  }
-}
-async function triggerManualEvent() {
-  if (!eventPlan.value) return;
-  busy.value = true;
-  eventError.value = '';
-  try {
-    const result = await inspectionApi.dailyEvent(eventPlan.value.id, {
-      arrangementId: eventArrangement.value,
-      equipmentIds: eventEquipmentIds.value,
-      eventAt: eventAt.value,
-      idempotencyKey: eventKey.value,
-      rowVersion: eventPlan.value.rowVersion,
-    });
-    eventOpen.value = false;
-    ElMessage.success(tr('daily.eventCreated', { count: result.data.count }));
-    window.dispatchEvent(new Event('work-inbox-changed'));
-  } catch (e) {
-    eventError.value = e instanceof Error ? e.message : tr('common.error.requestFailed');
-  } finally {
-    busy.value = false;
-  }
 }
 const exemptionOpen = ref(false),
   exemptionPlan = ref<InspectionDefinition>(),
@@ -642,9 +625,6 @@ async function approveExemption() {
 }
 function planMoreActions(row: InspectionDefinition | InspectionTask) {
   return [
-    ...(daily.value && can('编辑')
-      ? [{ label: tr('daily.launchEvent'), run: () => openManualEvent(row) }]
-      : []),
     ...(daily.value && auth.can('inspectionDailyTask', '免检')
       ? [{ label: tr('daily.rangeExemption'), run: () => openExemption(row) }]
       : []),
@@ -1128,15 +1108,6 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         :records="records"
       />
       <div class="task-list-content">
-        <div v-if="isTasks" class="inspection-queue">
-          <ElButton
-            v-for="q in ['全部', '我的待执行', '我的待审核']"
-            :key="q"
-            :class="{ active: queue === q }"
-            @click="queue = q"
-            >{{ q }}</ElButton
-          >
-        </div>
         <AppListToolbar class="inspection-toolbar">
           <div class="inspection-toolbar-actions">
             <ElButton v-if="!isTasks && can('新增')" type="primary" @click="open()"
@@ -1144,20 +1115,25 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             ><ElButton v-if="isTasks" :disabled="!selected.length" @click="openBatchReview">{{
               tr('ui.equipment.text0294')
             }}</ElButton
-            ><PagedChoiceField
-              v-if="isTasks && daily && can('执行')"
-              v-model="eventChoice"
-              :options="[]"
-              :load-rows="inspectionApi.dailyEventOptions"
-              :title="tr('daily.launchEvent')"
-              :placeholder="tr('daily.launchEvent')"
-              @select="chooseEvent"
-            /><span v-if="selected.length"
+            ><span v-if="selected.length"
               >{{ tr('ui.equipment.text0295') }} {{ selected.length }}
               {{ tr('ui.equipment.text0296') }}</span
             >
           </div>
           <form class="inspection-search" @submit.prevent="search = keyword.trim()">
+            <ElSelect
+              v-if="isTasks"
+              v-model="queue"
+              class="inspection-queue-filter"
+              :aria-label="tr('ui.equipment.text0203')"
+            >
+              <ElOption
+                v-for="q in ['全部', '我的待执行', '我的待审核']"
+                :key="q"
+                :value="q"
+                :label="q === '全部' ? tr('ui.equipment.text1388') : q"
+              />
+            </ElSelect>
             <ListToolbarIcons
               v-if="!isTasks"
               mode="filter"
@@ -1190,14 +1166,17 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         <div class="inspection-list-card">
           <div class="inspection-list-scroll">
             <AppBusinessTable
+              :key="kind"
               v-model:selection-ids="selected"
               :selection-width="48"
               selection-fixed="left"
               selection-align="center"
               :selectable="isTasks"
               :sortable="true"
+              :default-sort="kind === 'daily-tasks' ? { prop: 'dueAt', order: 'descending' } : undefined"
               @sort-change="onTableSort"
               :rows="pageRows"
+              :loading="loading"
               :pagination="false"
               :fill="true"
               :framed="false"
@@ -1249,6 +1228,12 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     type="primary"
                     link
                     >{{ value(r, key) }}</ElButton
+                  ><ElButton
+                    v-else-if="isTasks && key === 'planName' && (r as InspectionTask).planId"
+                    link
+                    type="primary"
+                    @click="previewTaskPlan(r as InspectionTask)"
+                    >{{ value(r, key) }}</ElButton
                   ><MaintenanceStatus
                     v-else-if="key === 'status'"
                     :status="String(value(r, key))"
@@ -1257,7 +1242,16 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     class="inspection-enabled"
                     :class="{ disabled: !(r as InspectionDefinition).enabled }"
                     >{{ value(r, key) }}</span
-                  ><span v-else :title="String(value(r, key))">{{
+                  ><DepartmentText
+                    v-else-if="key === 'departmentName'"
+                    :value="String(value(r, key))"
+                    :department-id="r.departmentId"
+                    :nodes="choices.organizations"
+                  /><DepartmentValuesText
+                    v-else-if="isDepartmentCustomColumn(customDepartmentDefinitions, key)"
+                    :value="String(value(r, key))"
+                    :ids="r.customFields?.[key.slice(7)]"
+                  /><span v-else :title="String(value(r, key))">{{
                     String(value(r, key)).replace('T', ' ') || ''
                   }}</span>
                 </template></ElTableColumn
@@ -1296,6 +1290,12 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                               ? tr('ui.equipment.text0307')
                               : tr('ui.equipment.text0206')
                         }}</ElButton
+                      ><ElButton
+                        v-if="daily && (r as InspectionTask).canDelete"
+                        type="danger"
+                        link
+                        @click="confirmTaskDelete(r as InspectionTask)"
+                        >{{ tr('ui.equipment.text0146') }}</ElButton
                       ></template
                     ><template v-else
                       ><ElButton
@@ -1385,20 +1385,28 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         }}</ElButton>
       </header>
       <ElTabs v-if="daily" v-model="dailyEditorTab" class="daily-plan-tabs">
-        <ElTabPane name="basic" :label="tr('ui.equipment.text1641')" />
-        <ElTabPane
-          name="equipment"
-          :label="tr('ui.equipment.text0368') + ' (' + form.details.length + ')'"
-        />
+        <ElTabPane name="basic" :label="tr('daily.ui.what') + ' (' + form.details.length + ')'" />
         <ElTabPane
           name="arrangements"
-          :label="tr('daily.title') + ' (' + form.arrangements.length + ')'"
+          :label="tr('daily.ui.whenWho') + ' (' + form.arrangements.length + ')'"
         />
-        <ElTabPane name="calendar" :label="tr('daily.calendar')" />
+        <ElTabPane name="calendar" :label="tr('daily.ui.calendar')" />
       </ElTabs>
       <div class="inspection-editor-scroll" :class="{ 'daily-plan-editor': daily }">
+        <p v-if="daily" class="daily-flow-help">{{ tr('daily.ui.flowHelp') }}</p>
         <p v-if="error" class="inspection-error">{{ error }}</p>
-        <section v-show="!daily || dailyEditorTab === 'basic'" class="inspection-form-card">
+        <InspectionStandardEditor
+          v-if="standard"
+          ref="standardEditor"
+          v-model="form"
+          :types="types"
+          :choices="choices"
+          :departments="departmentNodes"
+          :categories="toTree(choices.categories)"
+          @equipment="rememberEquipment"
+          @add-type="newType"
+        />
+        <section v-else v-show="!daily || dailyEditorTab === 'basic'" class="inspection-form-card">
           <div class="inspection-form-grid">
             <label
               ><span>{{
@@ -1420,44 +1428,10 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 :nodes="departmentNodes"
                 :placeholder="tr('ui.equipment.text0315')"
             /></label>
-            <template v-if="standard"
-              ><label class="wide"
-                ><span>{{ tr('ui.equipment.text0316') }}</span
-                ><ElInput
-                  v-model="form.requirement"
-                  type="textarea"
-                  :rows="2"
-                  :placeholder="tr('ui.equipment.text0317')" /></label
-              ><label class="wide"
-                ><span>{{ tr('ui.equipment.text0318') }}</span
-                ><ElTreeSelect
-                  v-model="form.categoryIds"
-                  :data="toTree(choices.categories)"
-                  multiple
-                  check-strictly
-                  filterable
-                  clearable
-                  :placeholder="tr('ui.equipment.text0319')" /></label
-              ><label class="wide"
-                ><span>{{ tr('ui.equipment.text0320') }}</span
-                ><PagedChoiceField
-                  v-model="form.equipmentIds"
-                  multiple
-                  :options="choices.equipment"
-                  :load-rows="selector.equipment"
-                  :columns="[
-                    { key: 'code', label: '设备编码' },
-                    { key: 'name', label: '设备名称' },
-                    { key: 'model', label: '规格型号' },
-                    { key: 'department', label: '所属部门' },
-                  ]"
-                  :title="tr('ui.equipment.text0220')"
-                  :placeholder="tr('ui.equipment.text0321')"
-                  @select="rememberEquipment" /></label
-            ></template>
-            <template v-else
+            <template v-if="!standard"
               ><label class="span-two"
-                ><span><b>*</b>{{ tr(daily ? 'daily.plan.validity' : 'ui.equipment.text0322') }}</span
+                ><span
+                  ><b>*</b>{{ tr(daily ? 'daily.plan.validity' : 'ui.equipment.text0322') }}</span
                 ><ElDatePicker
                   v-model="dateRange"
                   type="daterange"
@@ -1511,28 +1485,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   :min="0"
                   :max-years="1"
               /></label>
-              <label v-if="!daily"
-                ><span>{{ tr('ui.equipment.text0329') }}</span>
-                <DurationInput
-                  v-model="form.validHours"
-                  v-model:unit="form.validUnit"
-                  :min="1"
-                  :max-years="10" /></label
-              ><label v-if="!daily"
-                ><span>{{ tr('ui.equipment.text0330') }}</span>
-                <DurationInput
-                  v-model="form.remindHours"
-                  v-model:unit="form.remindUnit"
-                  :min="0"
-                  :max-years="1" /></label
-              ><label v-if="!daily"
-                ><span>{{ tr('ui.equipment.text0331') }}</span>
-                <DurationInput
-                  v-model="form.expireRemindHours"
-                  v-model:unit="form.expireRemindUnit"
-                  :min="0"
-                  :max-years="1"
-              /></label>
+              <ReminderPolicyField v-model:mode="form.reminderMode" v-model:id="form.reminderPolicyId" :name="form.reminderPolicyName" :kind="daily?'daily':'periodic'" />
               <label
                 ><span>{{ tr('ui.equipment.text0333') }}</span
                 ><ElSelect v-model="form.reviewMode"
@@ -1600,196 +1553,66 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             /></label>
           </div>
         </section>
-        <section
-          v-if="daily"
-          v-show="dailyEditorTab === 'basic'"
-          class="inspection-form-card daily-reminder-settings"
-        >
-          <ElCollapse>
-            <ElCollapseItem name="reminders" :title="tr('daily.plan.reminders')">
-              <ElForm label-width="110px" class="inspection-reminder-grid">
-                <ElFormItem
-                  v-for="setting in reminderSettings"
-                  :key="setting.key"
-                  :label="tr(setting.label)"
-                >
-                  <DurationInput
-                    v-model="form[setting.key]"
-                    v-model:unit="form[setting.unit]"
-                    :min="0"
-                    :max-years="1"
-                  />
-                </ElFormItem>
-              </ElForm>
-            </ElCollapseItem>
-          </ElCollapse>
-        </section>
-        <InspectionProjectEditor
-          v-if="standard"
-          v-model="form.items"
-          :types="types"
-          @add-type="newType"
-        />
-        <template v-else>
+        <template v-if="!standard">
           <section v-if="daily" v-show="dailyEditorTab === 'calendar'" class="inspection-form-card">
             <div class="inspection-section-tools">
               <h3>{{ tr('daily.calendar') }}</h3>
             </div>
             <div class="inspection-calendar-grid daily-calendar">
-              <div class="inspection-calendar-fields">
-                <label
-                  ><span>{{ tr('ui.equipment.text0340') }}</span
-                  ><ElRadioGroup v-model="form.restCycle" @change="form.restDays = []"
-                    ><ElRadioButton value="按周">{{ tr('ui.equipment.text0341') }}</ElRadioButton
-                    ><ElRadioButton value="按月">{{
-                      tr('ui.equipment.text0342')
-                    }}</ElRadioButton></ElRadioGroup
-                  ></label
-                ><label
-                  ><span>{{ tr('ui.equipment.text0343') }}</span
-                  ><ElSelect
-                    v-model="form.restDays"
+              <ElForm class="inspection-calendar-fields" label-position="top" @submit.prevent>
+                <ElFormItem
+                  :label="tr('daily.shiftOnly.weeklyRest')"
+                  :error="dailyErrors.weeklyRestDays"
+                >
+                  <ElSelect
+                    v-model="form.weeklyRestDays"
                     multiple
+                    clearable
                     :placeholder="tr('ui.equipment.text0344')"
-                    ><ElOption
-                      v-for="d in form.restCycle === '按周' ? 7 : 31"
+                  >
+                    <ElOption
+                      v-for="d in 7"
                       :key="d"
                       :value="d"
-                      :label="
-                        form.restCycle === '按周'
-                          ? [
-                              tr('ui.equipment.text0345'),
-                              tr('ui.equipment.text0346'),
-                              tr('ui.equipment.text0347'),
-                              tr('ui.equipment.text0348'),
-                              tr('ui.equipment.text0349'),
-                              tr('ui.equipment.text0350'),
-                              tr('ui.equipment.text0351'),
-                            ][d - 1]
-                          : d + tr('ui.equipment.text0352')
-                      " /></ElSelect></label
-                ><label
-                  ><span>{{ tr('ui.equipment.text0353') }}</span
-                  ><ElDatePicker
+                      :label="tr('daily.weekday.' + d)"
+                    />
+                  </ElSelect>
+                </ElFormItem>
+                <ElFormItem
+                  :label="tr('daily.shiftOnly.monthlyRest')"
+                  :error="dailyErrors.monthlyRestDays"
+                >
+                  <ElSelect
+                    v-model="form.monthlyRestDays"
+                    multiple
+                    clearable
+                    :placeholder="tr('ui.equipment.text0344')"
+                  >
+                    <ElOption
+                      v-for="d in 31"
+                      :key="d"
+                      :value="d"
+                      :label="d + tr('ui.equipment.text0352')"
+                    />
+                  </ElSelect>
+                </ElFormItem>
+                <ElFormItem :label="tr('ui.equipment.text0353')" :error="dailyErrors.holidays">
+                  <ElDatePicker
                     v-model="form.holidays"
                     type="dates"
                     value-format="YYYY-MM-DD"
                     :placeholder="tr('ui.equipment.text0354')"
-                /></label>
-                <label
-                  ><span>{{ tr('daily.workdays') }}</span>
+                /></ElFormItem>
+                <ElFormItem :label="tr('daily.workdays')" :error="dailyErrors.workdays">
                   <ElDatePicker v-model="form.workdays" type="dates" value-format="YYYY-MM-DD" />
-                </label>
+                </ElFormItem>
                 <p>
-                  {{ tr('ui.equipment.text0355') }}
+                  {{ tr('daily.shiftOnly.calendarHelp') }}
                 </p>
-              </div>
+              </ElForm>
             </div>
           </section>
-          <section
-            v-if="daily && dailyHasRoster"
-            v-show="dailyEditorTab === 'arrangements'"
-            class="inspection-form-card"
-          >
-            <div class="inspection-section-tools">
-              <h3>{{ tr('ui.equipment.text0360') }}</h3>
-              <ElButton
-                @click="
-                  form.roster.push({
-                    key: uuid(),
-                    date: form.startDate,
-                    shiftId: dailyRosterSlots[0]?.id || '',
-                    users: [],
-                  })
-                "
-                ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0361') }}</ElButton
-              ><ElButton @click="rosterInput?.open()">{{ tr('ui.equipment.text0362') }}</ElButton
-              ><ElButton
-                @click="
-                  downloadCsv('排班导入模板', [
-                    ['日期', '班次', '人员账号'],
-                    [
-                      form.startDate,
-                      dailyRosterSlots[0]?.name || '白班',
-                      auth.user?.account || 'admin',
-                    ],
-                  ])
-                "
-                >{{ tr('ui.equipment.text0363') }}</ElButton
-              >
-            </div>
-            <AppFilePicker ref="rosterInput" accept=".csv" hidden @select="importRoster" />
-            <div class="inspection-inline-scroll">
-              <AppBusinessTable
-                :rows="form.roster"
-                :pagination="false"
-                :fill="false"
-                :framed="false"
-                class="business-table inspection-roster-table"
-                ><!-- @vue-generic {TableColumnRow3} -->
-                <ElTableColumn :min-width="150"
-                  ><template #header
-                    ><div class="table-header-label">
-                      {{ tr('ui.equipment.text0364') }}
-                    </div></template
-                  ><template #default="{ row: r, $index: tableRowIndex }"
-                    ><ElDatePicker
-                      v-model="r.date"
-                      type="date"
-                      value-format="YYYY-MM-DD" /></template></ElTableColumn
-                ><!-- @vue-generic {TableColumnRow3} -->
-                <ElTableColumn :min-width="150"
-                  ><template #header
-                    ><div class="table-header-label">
-                      {{ tr('ui.equipment.text0365') }}
-                    </div></template
-                  ><template #default="{ row: r, $index: tableRowIndex }">
-                    <ElSelect v-model="r.shiftId"
-                      ><ElOption
-                        v-for="s in dailyRosterSlots"
-                        :key="s.id"
-                        :value="s.id"
-                        :label="s.name"
-                    /></ElSelect> </template></ElTableColumn
-                ><!-- @vue-generic {TableColumnRow3} -->
-                <ElTableColumn :min-width="150"
-                  ><template #header
-                    ><div class="table-header-label">
-                      {{ tr('ui.equipment.text0366') }}
-                    </div></template
-                  ><template #default="{ row: r, $index: tableRowIndex }">
-                    <PagedChoiceField
-                      v-model="r.users"
-                      multiple
-                      :options="choices.users"
-                      :load-rows="selector.users"
-                      :title="tr('ui.equipment.text0335')"
-                      :placeholder="tr('ui.equipment.text0336')"
-                      @select="rememberPeople"
-                    /> </template></ElTableColumn
-                ><!-- @vue-generic {TableColumnRow3} -->
-                <ElTableColumn fixed="right" :width="170" :min-width="156" :resizable="false"
-                  ><template #header
-                    ><div class="table-header-label">
-                      {{ tr('ui.equipment.text0145') }}
-                    </div></template
-                  ><template #default="{ row: r, $index: tableRowIndex }">
-                    <ElButton
-                      class="inspection-text-button danger"
-                      @click="form.roster = form.roster.filter((i) => i.key !== r.key)"
-                      type="danger"
-                      link
-                    >
-                      {{ tr('ui.equipment.text0146') }}
-                    </ElButton>
-                  </template></ElTableColumn
-                ><template #empty
-                  ><div v-if="!form.roster.length">{{ tr('ui.equipment.text0367') }}</div></template
-                ></AppBusinessTable
-              >
-            </div>
-          </section>
-          <section v-show="!daily || dailyEditorTab === 'equipment'" class="inspection-form-card">
+          <section v-show="!daily || dailyEditorTab === 'basic'" class="inspection-form-card">
             <div class="inspection-section-tools">
               <h3>
                 {{ daily ? tr('ui.equipment.text0368') : tr('ui.equipment.text0369') }}
@@ -1798,6 +1621,11 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               <ElButton type="primary" @click="equipmentPicker"
                 ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0371') }}</ElButton
               ><ElButton @click="matchProjects">{{ tr('ui.equipment.text0372') }}</ElButton>
+              <ElSwitch
+                v-if="daily"
+                v-model="dailyDeviceOverrides"
+                :active-text="tr('daily.ui.deviceExceptions')"
+              />
               <!-- <ElButton @click="importInput?.open()">导入设备</ElButton> -->
               <ElDropdown :disabled="!selectedDetails.length" @command="detailCommand"
                 ><ElButton :disabled="!selectedDetails.length"
@@ -1817,6 +1645,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 ></ElDropdown
               >
             </div>
+            <p v-if="daily" class="daily-flow-help">{{ tr('daily.ui.equipmentHelp') }}</p>
             <AppFilePicker ref="importInput" accept=".csv" hidden @select="importEquipment" />
             <div class="inspection-inline-scroll">
               <AppBusinessTable
@@ -1864,9 +1693,8 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     ><div class="table-header-label">
                       {{ tr('ui.equipment.text0098') }}
                     </div></template
-                  ><template #default="{ row: d, $index: index }">{{
-                    eqOf(d)?.department
-                  }}</template></ElTableColumn
+                  ><template #default="{ row: d, $index: index }"
+                    ><DepartmentText :value="eqOf(d)?.department" /></template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow4} -->
                 <ElTableColumn :min-width="150" :width="150"
                   ><template #header
@@ -1901,7 +1729,12 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                       @open="pickProjects(d)"
                     /> </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow4} -->
-                <ElTableColumn v-if="daily" :min-width="150" :width="220"
+                <ElTableColumn
+                  v-if="
+                    daily && (dailyDeviceOverrides || form.details.some((d) => d.owners.length))
+                  "
+                  :min-width="150"
+                  :width="220"
                   ><template #header
                     ><div class="table-header-label">
                       {{ tr('ui.equipment.text0102') }}
@@ -1918,7 +1751,14 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                       @select="rememberPeople"
                     /> </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow4} -->
-                <ElTableColumn :min-width="150" :width="220"
+                <ElTableColumn
+                  v-if="
+                    !daily ||
+                    form.reviewMode !== '无需验收' ||
+                    form.details.some((d) => d.reviewers.length)
+                  "
+                  :min-width="150"
+                  :width="220"
                   ><template #header
                     ><div class="table-header-label">
                       {{ tr('ui.equipment.text0337') }}
@@ -1983,6 +1823,31 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             </div>
           </section>
         </template>
+        <section
+          v-if="daily"
+          v-show="dailyEditorTab === 'basic'"
+          class="inspection-form-card daily-reminder-settings"
+        >
+          <ElCollapse>
+            <ElCollapseItem name="reminders" :title="tr('daily.plan.reminders')">
+              <ElForm label-width="110px" class="inspection-reminder-grid">
+                <ElFormItem
+                  v-for="setting in reminderSettings.filter(s=>s.key!=='expireRemindHours')"
+                  :key="setting.key"
+                  :label="tr(setting.label)"
+                >
+                  <DurationInput
+                    v-model="form[setting.key]"
+                    v-model:unit="form[setting.unit]"
+                    :min="0"
+                    :max-years="1"
+                  />
+                </ElFormItem>
+              <ReminderPolicyField v-model:mode="form.reminderMode" v-model:id="form.reminderPolicyId" :name="form.reminderPolicyName" kind="daily" />
+              </ElForm>
+            </ElCollapseItem>
+          </ElCollapse>
+        </section>
         <DailyArrangementEditor
           v-if="daily && !loading"
           v-show="dailyEditorTab === 'arrangements'"
@@ -1994,28 +1859,36 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           :can-edit-team="can('编辑')"
           @people="rememberPeople"
         />
-        <BusinessFields
-          v-if="!standard"
-          v-show="!daily || dailyEditorTab === 'basic'"
-          ref="extension"
-          v-model="form"
-          @initialize="extensionInitializationClean = !unsaved.dirty.value"
-          @ready="extensionInitializationClean && unsaved.markSaved()"
-          :object="daily ? 'inspection_daily_plan' : 'inspection_periodic_plan'"
-          :is-new="!form.id"
-          :errors="extensionErrors"
-        />
+        <div v-if="!standard" v-show="!daily || dailyEditorTab === 'basic'">
+          <BusinessFields
+            ref="extension"
+            v-model="form"
+            @initialize="extensionInitializationClean = !unsaved.dirty.value"
+            @ready="extensionInitializationClean && unsaved.markSaved()"
+            :object="daily ? 'inspection_daily_plan' : 'inspection_periodic_plan'"
+            :is-new="!form.id"
+            :errors="extensionErrors"
+          />
+        </div>
       </div>
       <AppFormFooter
-        ><template #hint>{{
-          standard ? tr('ui.equipment.text0385') : tr('ui.equipment.text0386')
-        }}</template
+        ><template v-if="!standard" #hint>{{ tr('ui.equipment.text0386') }}</template
         ><ElButton :disabled="busy" @click="list">{{ tr('ui.equipment.text0157') }}</ElButton
         ><ElButton type="primary" :loading="busy" @click="save">{{
           tr('ui.equipment.text0159')
         }}</ElButton></AppFormFooter
       >
     </template>
+    <InspectionPlanPreviewDialog
+      v-model="planPreviewOpen"
+      :plan-id="previewPlanId"
+      :kind="daily ? 'daily-plans' : 'periodic-plans'"
+    />
+    <InspectionTaskDeleteDialog
+      v-model="taskDeleteOpen"
+      :task="taskToDelete"
+      @deleted="taskDeleted"
+    />
     <FilterConditionPopover
       :anchor="filterAnchor"
       :field-key="editingFilter"
@@ -2083,9 +1956,8 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           <ElTableColumn :min-width="150"
             ><template #header
               ><div class="table-header-label">{{ tr('ui.equipment.text0098') }}</div></template
-            ><template #default="{ row: e, $index: tableRowIndex }">{{
-              e.department
-            }}</template></ElTableColumn
+            ><template #default="{ row: e, $index: tableRowIndex }"
+              ><DepartmentText :value="e.department" /></template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow5} -->
           <ElTableColumn :min-width="150"
             ><template #header
@@ -2154,9 +2026,8 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               {{ tr('ui.equipment.text0296') }}</span
             ><AppPagination
               v-model:page="standardPage"
-              :page-size="standardSize"
+              v-model:page-size="standardSize"
               :total="standardTotal"
-              :show-sizes="false"
             />
           </div>
         </aside>
@@ -2371,35 +2242,6 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       :busy="busy"
       @submit="batchReview"
     />
-    <AppDialog v-model="eventOpen" :title="tr('daily.launchEvent')" :busy="busy"
-      ><ElSelect v-model="eventArrangement" @change="eventKey = uuid()"
-        ><ElOption
-          v-for="a in eventPlan?.arrangements.filter((a) => a.frequency === 'event' && a.enabled) ||
-          []"
-          :key="a.id"
-          :value="a.id"
-          :label="a.name" /></ElSelect
-      ><PagedChoiceField
-        v-model="eventEquipmentIds"
-        multiple
-        :options="eventEquipmentOptions"
-        :load-rows="eventEquipmentPage"
-        :title="tr('daily.equipment')"
-        @update:model-value="eventKey = uuid()"
-      /><ElDatePicker
-        v-model="eventAt"
-        type="datetime"
-        value-format="YYYY-MM-DDTHH:mm:ss"
-        @change="eventKey = uuid()"
-      />
-      <p v-if="eventError" class="inspection-error">{{ eventError }}</p>
-      <template #footer
-        ><ElButton @click="eventOpen = false">{{ tr('daily.cancel') }}</ElButton
-        ><ElButton type="primary" :loading="busy" @click="triggerManualEvent">{{
-          tr('daily.launchEvent')
-        }}</ElButton></template
-      ></AppDialog
-    >
     <AppDialog v-model="exemptionOpen" :title="tr('daily.rangeExemption')" :busy="busy"
       ><p>{{ tr('daily.exemptionHelp') }}</p>
       <PagedChoiceField

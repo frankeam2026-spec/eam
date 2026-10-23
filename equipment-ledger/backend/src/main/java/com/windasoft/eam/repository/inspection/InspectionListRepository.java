@@ -21,6 +21,10 @@ public class InspectionListRepository {
 
   public record Selection(String kind, String from, SqlPredicate predicate, String order) {}
 
+  static String taskPlanDepartment() {
+    return "COALESCE(dp.department_id,pp.department_id)";
+  }
+
   static String j(String source, String key) {
     return "JSON_UNQUOTE(JSON_EXTRACT(t." + source + ",'$." + key + "'))";
   }
@@ -171,6 +175,8 @@ public class InspectionListRepository {
             + " t LEFT JOIN eam_org_unit o ON o.id=t.department_id AND o.tenant_id=t.tenant_id"
             + (task
                 ? " LEFT JOIN eam_sys_user u ON u.id=t.owner_id AND u.tenant_id=t.tenant_id"
+                    + " LEFT JOIN eam_inspection_daily_plan dp ON t.kind='daily' AND dp.tenant_id=t.tenant_id AND dp.id=t.plan_id"
+                    + " LEFT JOIN eam_inspection_periodic_plan pp ON t.kind='periodic' AND pp.tenant_id=t.tenant_id AND pp.id=t.plan_id"
                 : "");
     var predicate = SqlPredicate.of("t.tenant_id=? AND t.kind=?", tenant, task ? taskKind : kind);
     if (task) predicate = predicate.and(SqlPredicate.of("t.deleted=0"));
@@ -195,7 +201,15 @@ public class InspectionListRepository {
                     + " AND p.task_id=t.id AND p.role_code='reviewer' AND p.user_id=?)",
                 user)
             : SqlPredicate.of("1=0");
-    var anyone = task ? SqlPredicate.of("t.person_mode='任何人可点检'") : SqlPredicate.of("1=0");
+    var anyone =
+        task
+            ? SqlPredicate.of("t.person_mode='任何人可点检'")
+                .or(
+                    SqlPredicate.of("t.person_mode='现场直接点检'")
+                        .and(
+                            SqlScopes.scope(
+                                scope, "t.company_id", "t.department_id", "t.owner_id", user)))
+            : SqlPredicate.of("1=0");
     if (task && !export)
       access =
           access
@@ -205,7 +219,7 @@ public class InspectionListRepository {
               .or(SqlPredicate.of("t.owner_id=? OR t.follow_up_user_id=?", user, user));
     predicate = predicate.and(access);
     if (organizationIds != null)
-      predicate = predicate.and(SqlScopes.in("t.department_id", organizationIds));
+      predicate = predicate.and(SqlScopes.in(task ? taskPlanDepartment() : "t.department_id", organizationIds));
     if (task && !Set.of("全部", "all", "").contains(query.queue())) {
       if (query.queue().equals("我的待执行"))
         predicate =
@@ -288,8 +302,22 @@ public class InspectionListRepository {
   public Set<Long> taskOrganizationIds(Selection selection) {
     var ids = new HashSet<Long>();
     for (var row :
-        lists.distinct("t.company_id,t.department_id", selection.from(), selection.predicate()))
+        lists.distinct(taskPlanDepartment() + " AS plan_department_id", selection.from(), selection.predicate()))
       for (Object value : row.values()) if (value instanceof Number n) ids.add(n.longValue());
     return ids;
+  }
+
+  public SqlPredicate deviceMatch(String equipmentId, String code) {
+    var device =
+        equipmentId.isBlank()
+            ? SqlPredicate.of(
+                "EXISTS(SELECT 1 FROM eam_equipment de WHERE de.tenant_id=t.tenant_id AND"
+                    + " de.id=t.equipment_id AND de.deleted=0 AND de.equipment_code=?)",
+                code)
+            : SqlPredicate.of("t.equipment_id=?", equipmentId);
+    return device.and(
+        SqlPredicate.of(
+            "t.due_at<=NOW() AND t.status NOT IN ('已作废','过期作废','已免检') AND (t.expires_at>=NOW() OR"
+                + " t.status IN ('待执行','执行中','挂起','已过期','审核不通过'))"));
   }
 }

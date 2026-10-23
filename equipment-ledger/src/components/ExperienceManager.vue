@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { normalizePageSize } from '../utils/pagination';
 import { currentLocale } from '../i18n';import { tr, enumLabel } from '../i18n';
 
 import DialogChoiceInput from './common/DialogChoiceInput.vue';
@@ -55,7 +56,7 @@ const menu = computed(() =>
 const rows = ref<Row[]>([]),
   total = ref(0),
   page = ref(1),
-  size = ref(10),
+  size = ref(20),
   search = ref(''),
   query = ref(''),
   detail = ref<Row>(),
@@ -219,7 +220,7 @@ function preparePreferences(key: string) {
           );
           hidden.value = Array.isArray(p.hiddenColumns) ? p.hiddenColumns : [];
           page.value = Math.max(1, Number(p.page) || 1);
-          size.value = [10, 20, 50, 100].includes(Number(p.size)) ? Number(p.size) : 10;
+          size.value = normalizePageSize(p.size);
           personal.value = p.personal !== false;
         })
         .catch(() => {}),

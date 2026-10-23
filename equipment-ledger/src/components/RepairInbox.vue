@@ -1,4 +1,5 @@
 <script setup lang="ts">import { tr } from '../i18n';
+import { normalizePageSize } from '../utils/pagination';
 
 import AppListToolbar from './common/AppListToolbar.vue';
 import AppListTabs from './common/AppListTabs.vue';
@@ -43,17 +44,19 @@ const rows = ref<InboxItem[]>([]),
   query = ref(String(route.query.q || '')),
   readState = ref(route.query.read === 'unread' ? 'unread' : 'all'),
   page = ref(Math.max(1, Number(route.query.page) || 1)),
-  size = ref([10, 20, 50, 100].includes(Number(route.query.size)) ? Number(route.query.size) : 10),
+  size = ref(normalizePageSize(route.query.size)),
   total = ref(0),
   loading = ref(false),
   error = ref('');
 const columnsOpen = ref(false),
-  columns = ref(['orderNo', 'equipmentName', 'kind', 'status', 'owner', 'due', 'time']);
+  columns = ref(['orderNo', 'planName', 'shiftName', 'equipmentName', 'kind', 'status', 'owner', 'due', 'time']);
 const labels: Record<string, string> = {
   get title(){return tr('ui.common.dynamic51');},
   module: '模块',
   orderNo: '任务编号',
   equipmentName: '设备名称',
+  get planName(){return tr('ui.equipment.text0314');},
+  get shiftName(){return tr('daily.slots');},
   kind: '待办事项',
   status: '业务状态',
   time: '到达时间',
@@ -61,8 +64,13 @@ const labels: Record<string, string> = {
   due: '计划时间',
 };
 const projected = computed(() => ['active', 'created', 'team', 'today'].includes(tab.value));
+const availableLabels = computed(() => Object.fromEntries(
+  Object.entries(labels).filter(([key]) =>
+    !['planName', 'shiftName'].includes(key) || (module.value === 'inspection' && !projected.value),
+  ),
+));
 const displayColumns = computed(() =>
-  columns.value.filter((c) => projected.value || !['owner', 'due'].includes(c)),
+  columns.value.filter((c) => c in availableLabels.value && (projected.value || !['owner', 'due'].includes(c))),
 );
 const moduleGroups = computed(() =>
   projected.value
@@ -209,7 +217,7 @@ watch(
     readState.value = values.read === 'unread' ? 'unread' : 'all';
     const requestedPage = Number(values.page);
     page.value = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-    size.value = [10, 20, 50, 100].includes(Number(values.size)) ? Number(values.size) : 10;
+    size.value = normalizePageSize(values.size);
     await nextTick();
     if (revision !== routeRevision) return;
     applyingRoute = false;
@@ -237,7 +245,7 @@ watch(
         ...(query.value ? { q: query.value } : {}),
         ...(readState.value === 'unread' ? { read: 'unread' } : {}),
         ...(page.value > 1 ? { page: String(page.value) } : {}),
-        ...(size.value !== 10 ? { size: String(size.value) } : {}),
+        ...(size.value !== 20 ? { size: String(size.value) } : {}),
       },
     });
   },
@@ -602,7 +610,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               ><template #columns
                 ><ElCheckboxGroup v-model="columns"
                   ><ElCheckbox
-                    v-for="(label, key) in labels"
+                    v-for="(label, key) in availableLabels"
                     :key="key"
                     :disabled="key === 'orderNo'"
                     :value="key"

@@ -34,6 +34,10 @@ public class DailyArrangementService {
   }
 
   public void validate(long tenant, Long planId, Map<String, Object> plan) {
+    for (String field : List.of("weeklyRestDays", "monthlyRestDays")) {
+      int max = field.equals("weeklyRestDays") ? 7 : 31;
+      check(ids(plan.get(field)).stream().allMatch(day -> day >= 1 && day <= max), field, "restDay");
+    }
     var groups = rows(plan.get("arrangements"));
     check(!groups.isEmpty() && groups.size() <= 30, "arrangements", "arrangements");
     var equipment =
@@ -43,6 +47,8 @@ public class DailyArrangementService {
         repository.activePeople(tenant).stream()
             .map(u -> number(u.get("id")))
             .collect(java.util.stream.Collectors.toSet());
+    var previous =
+        planId == null ? List.<Map<String, Object>>of() : repository.load(tenant, planId);
     var keys = new HashSet<Long>();
     for (int i = 0; i < groups.size(); i++) {
       var a = groups.get(i);
@@ -55,45 +61,13 @@ public class DailyArrangementService {
       check(!text(a, "name").isBlank() && text(a, "name").length() <= 150, path + "name", "name");
       a.put("effectiveFrom", now().toString());
       String f = text(a, "frequency");
-      check(
-          Set.of("daily", "weekly", "monthly", "shift", "slots", "interval", "event").contains(f),
-          path + "frequency",
-          "frequency");
-      check(
-          number(a.get("intervalCount")) >= 1 && number(a.get("intervalCount")) <= 10000,
-          path + "intervalCount",
-          "interval");
-      check(
-          number(a.get("windowMinutes")) >= 1 && number(a.get("windowMinutes")) <= 10080,
-          path + "windowMinutes",
-          "window");
-      LocalDate anchor;
-      try {
-        anchor = LocalDate.parse(text(a, "anchorDate"));
-      } catch (Exception ex) {
-        throw new FieldValidationException(path + "anchorDate", MessageRef.of("daily.error.date"));
-      }
-      check(
-          !anchor.isBefore(LocalDate.parse(text(plan, "startDate")))
-              && !anchor.isAfter(LocalDate.parse(text(plan, "endDate"))),
-          path + "anchorDate",
-          "date");
-      try {
-        LocalTime.parse(text(a, "startTime"));
-        LocalTime.parse(text(a, "endTime"));
-      } catch (Exception ex) {
-        throw new FieldValidationException(path + "startTime", MessageRef.of("daily.error.time"));
-      }
-      if (Set.of("weekly", "monthly").contains(f))
-        check(
-            !ids(a.get("days")).isEmpty()
-                && ids(a.get("days")).stream()
-                    .allMatch(d -> d >= 1 && d <= (f.equals("weekly") ? 7 : 31)),
-            path + "days",
-            "days");
+      check(Set.of("shift", "slots").contains(f), path + "frequency", "shiftOnly");
+      a.put("frequency", "shift");
+      // Existing column remains a compatibility mirror, never an independent timing rule.
+      a.put("anchorDate", text(plan, "startDate"));
       if (Set.of("shift", "slots").contains(f)) {
         var slots = rows(a.get("slots"));
-        check(!slots.isEmpty() && slots.size() <= 24, path + "slots", "slots");
+        check(slots.size() <= 24, path + "slots", "slots");
         var seen = new HashSet<String>();
         for (var slot : slots) {
           if (text(slot, "id").isBlank()) slot.put("id", Long.toString(IdWorker.getId()));
@@ -113,8 +87,15 @@ public class DailyArrangementService {
         }
       }
       String mode = text(a, "personMode");
-      check(Set.of("specified", "team", "roster").contains(mode), path + "personMode", "people");
-      check(activeIds.contains(number(a.get("followUpUserId"))), path + "followUpUserId", "people");
+      check(
+          Set.of("open", "specified", "team", "roster").contains(mode),
+          path + "personMode",
+          "people");
+      check(
+          (mode.equals("open") && text(a, "followUpUserId").isBlank())
+              || activeIds.contains(number(a.get("followUpUserId"))),
+          path + "followUpUserId",
+          "people");
       if (mode.equals("specified"))
         check(!ids(a.get("owners")).isEmpty(), path + "owners", "people");
       check(activeIds.containsAll(ids(a.get("owners"))), path + "owners", "people");
@@ -124,13 +105,44 @@ public class DailyArrangementService {
                 && !repository.teamMembers(tenant, number(a.get("teamId"))).isEmpty(),
             path + "teamId",
             "people");
-      if (mode.equals("roster")) check(f.equals("shift"), path + "personMode", "roster");
+      var prior =
+          previous.stream()
+              .filter(x -> text(x, "id").equals(text(a, "id")))
+              .findFirst()
+              .orElse(Map.of());
+      if (!a.containsKey("regularRoster"))
+        a.put("regularRoster", prior.getOrDefault("regularRoster", List.of()));
+      if (!a.containsKey("dateRoster"))
+        a.put("dateRoster", prior.getOrDefault("dateRoster", List.of()));
+      if (!prior.isEmpty() && repository.pendingScheduleTasks(tenant, id)) {
+        boolean changed =
+            List.of(
+                    "intervalCount",
+                    "startTime",
+                    "endTime",
+                    "windowMinutes")
+                .stream()
+                .anyMatch(
+                    field ->
+                        !Objects.toString(a.get(field), "")
+                            .equals(Objects.toString(prior.get(field), "")));
+        var beforeSlots = rows(prior.get("slots"));
+        var afterSlots = rows(a.get("slots"));
+        changed |=
+            beforeSlots.size() != afterSlots.size()
+                || beforeSlots.stream()
+                    .anyMatch(
+                        old ->
+                            afterSlots.stream()
+                                .noneMatch(
+                                    next ->
+                                        text(old, "id").equals(text(next, "id"))
+                                            && text(old, "start").equals(text(next, "start"))
+                                            && text(old, "end").equals(text(next, "end"))));
+        check(!changed, path + "slots", "scheduleInUse");
+      }
+      validateStaffing(a, plan, path, activeIds);
       check(equipment.containsAll(ids(a.get("equipmentIds"))), path + "equipmentIds", "equipment");
-      if (f.equals("event"))
-        check(
-            Set.of("startup", "shutdown", "changeover", "temporary").contains(text(a, "eventType")),
-            path + "eventType",
-            "frequency");
       var details = details(plan, a);
       check(!details.isEmpty(), path + "equipmentIds", "equipment");
       check(
@@ -154,23 +166,6 @@ public class DailyArrangementService {
       } catch (Exception ex) {
         throw new FieldValidationException("workdays", MessageRef.of("daily.error.date"));
       }
-    // The roster references a shift belonging to a specific arrangement, never an unrelated tenant
-    // user pool.
-    var slotIds =
-        groups.stream()
-            .filter(a -> text(a, "frequency").equals("shift"))
-            .flatMap(a -> rows(a.get("slots")).stream())
-            .map(s -> text(s, "id"))
-            .toList();
-    for (var r : rows(plan.get("roster"))) {
-      check(slotIds.contains(text(r, "shiftId")), "roster", "roster");
-      try {
-        LocalDate.parse(text(r, "date"));
-      } catch (Exception ex) {
-        throw new FieldValidationException("roster", MessageRef.of("daily.error.date"));
-      }
-      validation.users(tenant, r.get("users"), true);
-    }
     plan.put("onlyAbnormal", false);
     plan.put("skipUnstaffed", false);
     plan.put("personMode", "指定负责人");
@@ -208,6 +203,18 @@ public class DailyArrangementService {
       Map<String, Object> detail,
       LocalDate date,
       String shift) {
+    return ownersAt(
+        tenant, plan, a, detail, date, shift, date.atTime(LocalTime.parse(text(a, "startTime"))));
+  }
+
+  public List<Long> ownersAt(
+      long tenant,
+      Map<String, Object> plan,
+      Map<String, Object> a,
+      Map<String, Object> detail,
+      LocalDate date,
+      String shift,
+      LocalDateTime at) {
     List<Long> candidates;
     if (!ids(detail.get("owners")).isEmpty()) candidates = ids(detail.get("owners"));
     else
@@ -218,15 +225,8 @@ public class DailyArrangementService {
                         plan.computeIfAbsent("_teams", ignored -> new HashMap<Long, List<Long>>()))
                     .computeIfAbsent(
                         number(a.get("teamId")), id -> repository.teamMembers(tenant, id));
-            case "roster" ->
-                rows(plan.get("roster")).stream()
-                    .filter(
-                        r ->
-                            text(r, "date").equals(date.toString())
-                                && text(r, "shiftId").equals(shift))
-                    .flatMap(r -> ids(r.get("users")).stream())
-                    .distinct()
-                    .toList();
+            case "open" -> List.of();
+            case "roster" -> DailyStaffing.resolve(a, date, shift, at);
             default -> ids(a.get("owners"));
           };
     var active =
@@ -316,5 +316,77 @@ public class DailyArrangementService {
         strings(body.get("members")),
         "rowVersion",
         number(row.get("row_version")) + 1);
+  }
+
+  public boolean open(Map<String, Object> a, Map<String, Object> detail) {
+    return text(a, "personMode").equals("open") && ids(detail.get("owners")).isEmpty();
+  }
+
+  private void validateStaffing(
+      Map<String, Object> a, Map<String, Object> plan, String path, Set<Long> activeIds) {
+    for (String property : List.of("regularRoster", "dateRoster")) {
+      var entries = rows(a.get(property));
+      check(entries.size() <= 3000, path + property, "staffLimit");
+      var keys = new HashSet<String>();
+      for (int i = 0; i < entries.size(); i++) {
+        var r = entries.get(i);
+        String field = path + property + "." + i;
+        if (text(r, "key").isBlank()) r.put("key", UUID.randomUUID().toString().replace("-", ""));
+        check(
+            text(r, "key").matches("[a-zA-Z0-9-]{1,32}") && keys.add(text(r, "key")),
+            field,
+            "staffConflict");
+        String slot = text(r, "slotId");
+        boolean slots = Set.of("shift", "slots").contains(text(a, "frequency"));
+        check(
+            slots
+                ? rows(a.get("slots")).stream().anyMatch(x -> text(x, "id").equals(slot))
+                : slot.isBlank(),
+            field,
+            "staffSlot");
+        r.putIfAbsent("start", "00:00:00");
+        r.putIfAbsent("end", "00:00:00");
+        if (!slot.isBlank()) {
+          r.put("start", "00:00:00");
+          r.put("end", "00:00:00");
+        }
+        try {
+          LocalTime.parse(text(r, "start"));
+          LocalTime.parse(text(r, "end"));
+        } catch (Exception e) {
+          check(false, field, "time");
+        }
+        if (property.equals("dateRoster")) {
+          try {
+            var date = LocalDate.parse(text(r, "date"));
+            check(
+                !date.isBefore(LocalDate.parse(text(plan, "startDate")))
+                    && !date.isAfter(LocalDate.parse(text(plan, "endDate"))),
+                field,
+                "date");
+          } catch (java.time.format.DateTimeParseException e) {
+            check(false, field, "date");
+          }
+        } else check(number(r.get("weekday")) >= 0 && number(r.get("weekday")) <= 7, field, "days");
+        check(
+            yes(r.get("unassigned"))
+                ? ids(r.get("users")).isEmpty()
+                : !ids(r.get("users")).isEmpty(),
+            field,
+            "staffPeople");
+        check(activeIds.containsAll(ids(r.get("users"))), field, "people");
+        for (int j = 0; j < i; j++) {
+          var other = entries.get(j);
+          boolean same =
+              property.equals("dateRoster")
+                  ? text(r, "date").equals(text(other, "date"))
+                  : number(r.get("weekday")) == number(other.get("weekday"));
+          check(
+              !DailyStaffing.conflict(r, other, property.equals("dateRoster")),
+              field,
+              "staffConflict");
+        }
+      }
+    }
   }
 }

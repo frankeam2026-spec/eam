@@ -40,25 +40,10 @@
   font-weight: 400;
   margin-left: 6px;
 }
-.inspection-queue {
-  display: flex;
-  gap: 24px;
-  border-bottom: 1px solid #dfe5ee;
-  flex: none;
-}
-.inspection-queue button {
-  background: none;
-  border: 0;
-  padding: 8px 2px 12px;
-  color: #263246;
-  font: inherit;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-}
-.inspection-queue button.active {
-  color: var(--brand);
-  border-bottom-color: var(--brand);
-  font-weight: 700;
+.inspection-search .inspection-queue-filter {
+  width: 150px;
+  max-width: 100%;
+  flex: 0 0 150px;
 }
 .inspection-list-card {
   flex: 1;
@@ -169,7 +154,7 @@
 .inspection-editor-scroll {
   overflow: auto;
   flex: 1;
-  padding: 16px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -507,18 +492,6 @@
   font-weight: 500;
   overflow-wrap: anywhere;
 }
-.inspection-task-metrics {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  flex-wrap: wrap;
-  padding: 14px 0;
-  margin-top: 12px;
-  border-top: 1px solid #e8edf3;
-}
-.inspection-task-metrics b {
-  margin-left: 4px;
-}
 .inspection-task-equipment-layout {
   display: flex;
   gap: 12px;
@@ -758,18 +731,6 @@
   width: 78px;
   color: #263246;
 }
-.inspection-task-page .inspection-task-metrics {
-  gap: 8px 20px;
-  margin-top: 16px;
-  padding: 12px 0 0;
-}
-.inspection-task-page .inspection-task-metrics b {
-  color: var(--brand);
-  font-size: 15px;
-}
-.inspection-task-page .inspection-task-metrics b.danger {
-  color: #c13d46;
-}
 .inspection-task-page .inspection-equipment-heading {
   margin-bottom: 12px;
   padding-bottom: 12px;
@@ -843,6 +804,13 @@
 .inspection-editor .daily-calendar .inspection-calendar-fields > p {
   grid-column: 1 / -1;
 }
+.inspection-editor .daily-calendar .el-form-item {
+  margin-bottom: 0;
+}
+.inspection-editor .daily-calendar :is(.el-select, .el-date-editor) {
+  width: 100%;
+  min-width: 0;
+}
 @media (max-width: 1050px) {
   .inspection-editor .daily-calendar .inspection-calendar-fields {
     grid-template-columns: minmax(0, 1fr);
@@ -888,4 +856,10 @@
 }
 .inspection-reminder-grid .el-form-item {
   margin-bottom: 0;
+}
+.daily-flow-help {
+  margin: 0 0 12px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.7;
 }

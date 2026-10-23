@@ -1,4 +1,5 @@
 import { request, type InstalledSpare } from './api';
+import { normalizePageSize } from './utils/pagination';
 
 export type AttentionKind = 'all' | 'repair' | 'maintenance' | 'inspection' | 'anomaly';
 export type EventKind = '' | 'repair' | 'maintenance' | 'inspection' | 'anomaly' | 'spare';
@@ -78,13 +79,13 @@ export function archiveState(input?: Partial<ArchiveState>): ArchiveState {
           : 'all',
       expanded: attention?.expanded === true,
       page: positive(attention?.page, 1),
-      size: [10, 20, 50].includes(attention?.size ?? 0) ? attention!.size : 10,
+      size: normalizePageSize(attention?.size),
     },
     events: {
       kind: events && ['', ...Object.keys(eventLabels)].includes(events.kind) ? events.kind : '',
       sort: events?.sort === 'asc' ? 'asc' : 'desc',
       page: positive(events?.page, 1),
-      size: [10, 20, 50].includes(events?.size ?? 0) ? events!.size : 10,
+      size: normalizePageSize(events?.size),
     },
     scroll: Object.fromEntries(
       Object.entries(input?.scroll || {}).filter(

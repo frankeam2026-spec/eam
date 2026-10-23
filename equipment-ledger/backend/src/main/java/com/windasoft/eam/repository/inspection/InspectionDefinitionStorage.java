@@ -1,5 +1,8 @@
 package com.windasoft.eam.repository.inspection;
 
+import static com.windasoft.eam.common.inspection.InspectionSupport.ids;
+import static com.windasoft.eam.common.inspection.InspectionSupport.text;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
@@ -434,13 +437,16 @@ public class InspectionDefinitionStorage {
           tenant,
           id);
     int at = 0;
-    for (Object day : values(data.get("restDays")))
-      db.update(
-          "INSERT INTO eam_inspection_daily_rest_day VALUES(?,?,?,?)",
-          tenant,
-          id,
-          at++,
-          Integer.parseInt(day.toString()));
+    for (String cycle : List.of("weekly", "monthly")) {
+      String field = cycle.equals("weekly") ? "weeklyRestDays" : "monthlyRestDays";
+      Object days = data.get(field);
+      if (!data.containsKey("weeklyRestDays") && !data.containsKey("monthlyRestDays"))
+        days = text(data, "restCycle").equals("按月") == cycle.equals("monthly")
+            ? data.get("restDays") : List.of();
+      for (long day : new LinkedHashSet<>(ids(days)))
+        db.update("INSERT INTO eam_inspection_daily_rest_day(tenant_id,plan_id,sort_no,day_no,cycle_code) VALUES(?,?,?,?,?)",
+            tenant, id, at++, day, cycle);
+    }
     at = 0;
     for (Object day : values(data.get("holidays")))
       db.update(

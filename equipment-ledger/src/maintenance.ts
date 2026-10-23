@@ -75,6 +75,9 @@ export type MaintenanceDefinition = CustomRecord & {
   calculation: string;
   advanceDays: number;
   remindDays: number;
+  reminderMode?: string;
+  reminderPolicyId?: string | null;
+  reminderPolicyName?: string;
   autoFill: string;
   scanStart: boolean;
   reviewMode: string;

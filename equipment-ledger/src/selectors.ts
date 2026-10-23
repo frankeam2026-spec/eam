@@ -7,6 +7,9 @@ export type SelectorRow = {
   category?: string;
   categoryId?: string;
   department?: string;
+  departmentPath?: string;
+  departmentOrgId?: string;
+  departmentId?: string;
   functionLocation?: string;
   account?: string;
   companyId?: string;

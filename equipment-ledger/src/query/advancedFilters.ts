@@ -1,4 +1,5 @@
 import { tr } from '../i18n';
+import { formatOrganizationPath } from '../utils/organizationPath';
 import type { TreeSelectNode } from '../components/TreeSelect.vue';
 export type FilterCondition = {
   field: string;
@@ -43,7 +44,7 @@ export function filterTreeOptions(field: FilterField): FilterTreeOption[] {
         const names = [...path, node.name];
         return {
           id: node.id,
-          label: field.pathValue ? names.join(' · ') : node.name,
+          label: field.pathValue ? names.join(' > ') : node.name,
           output: node.value ?? (field.pathValue ? names.join(' · ') : node.name),
           disabled: !!node.disabled || node.status === '停用',
           children: branch(node.id, names, new Set([...visited, node.id])),
@@ -110,7 +111,7 @@ export function filterError(field: FilterField, condition: FilterCondition): str
     return field.type === 'number' ? '最小值不能大于最大值' : '开始时间不能晚于结束时间';
   return '';
 }
-export function conditionLabel(condition: FilterCondition, fields: FilterField[]) {
+export function conditionLabel(condition: FilterCondition, fields: FilterField[], compactDepartment = false) {
   const field = fields.find((item) => item.key === condition.field);
   const label = field?.label ?? condition.field;
   if (field?.type === 'tree' && condition.selectedNodeIds) {
@@ -125,7 +126,14 @@ export function conditionLabel(condition: FilterCondition, fields: FilterField[]
     return `${label}：${lower && upper ? `${lower} 至 ${upper}` : lower ? `≥ ${lower}` : `≤ ${upper}`}`;
   }
   const prefix: Record<string, string> = { contains: '包含 ', empty: '为空', notEmpty: '不为空' };
-  return `${label}：${prefix[condition.operator] ?? ''}${condition.values.map((v) => condition.valueLabels?.[v] ?? field?.optionLabels?.[v] ?? v).join('、') + (field?.businessSource?.department ? '（含下级）' : '')}`;
+  const department = field?.businessSource?.department || field?.businessSource?.source === 'department';
+  const values = condition.values.map((v) => {
+    const name = condition.valueLabels?.[v] ?? field?.optionLabels?.[v] ?? v;
+    if (!department) return name;
+    const path = formatOrganizationPath(name);
+    return compactDepartment ? path.split(' > ').at(-1) || '' : path;
+  });
+  return `${label}：${prefix[condition.operator] ?? ''}${values.join('、') + (field?.businessSource?.department ? '（含下级）' : '')}`;
 }
 
 /** Filters already-authorized collections used by the local list modules. */

@@ -1,13 +1,17 @@
 import { currentLocale } from '../i18n';
 import { inventoryMenu } from '../inventory';
 import { maintenanceMenu, inspectionMenu } from '../rolePermissions';
-import { createRouter, createWebHashHistory } from 'vue-router';
+import { createRouter, createWebHashHistory, type RouteLocation } from 'vue-router';
 import { pinia } from '../stores';
 import { useAuthStore } from '../stores/auth';
 import { BASE_TABS } from '../stores/baseData';
 import { canUseBaseTab } from '../utils/baseDataAccess';
+import { visibleNotificationTabs } from '../utils/notificationAccess';
 
 export type AppPage =
+  | 'notification-policies'
+  | 'notification-channels'
+  | 'notification-deliveries'
   | 'anomalies'
   | 'repair-plans'
   | 'home-templates'
@@ -315,6 +319,15 @@ export const router = createRouter({
             grantedActions: useAuthStore(pinia).grantedActions,
           }),
         },
+        {
+          path: 'notification-policies', name: 'notification-policies',
+          component: () => import('../pages/NotificationSettingsPage.vue'),
+          meta: { page: 'notification-policies', menu: 'notificationPolicy' },
+        },
+        ...(['channels','deliveries'] as const).map((view)=>({
+          path:'notification-'+view,name:'notification-'+view,
+          redirect: (to: RouteLocation) => ({ name: 'notification-policies', query: { ...to.query, tab: view } }),
+        })),
         ...(['users', 'roles'] as const).map((page, index) => ({
           path: page,
           name: page,
@@ -340,6 +353,11 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore(pinia);
   await auth.load();
   if (auth.authState !== 'ready') return true;
+  if (to.name === 'notification-policies') {
+    const tabs = visibleNotificationTabs(auth.can);
+    if (tabs.some((tab) => tab.key === to.query.tab)) return true;
+    if (tabs.length) return { name: 'notification-policies', query: { ...to.query, tab: tabs[0]!.key } };
+  }
   if (
     to.name === 'inventory-operation-detail' &&
     to.params.kind === 'returns' &&
