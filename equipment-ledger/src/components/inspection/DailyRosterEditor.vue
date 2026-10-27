@@ -37,6 +37,7 @@ import {
 import { planningSelectors, type SelectorRow } from '../../selectors';
 import PagedChoiceField from '../common/PagedChoiceField.vue';
 import AppBusinessTable from '../common/AppBusinessTable.vue';
+import AppHelpTip from '../common/AppHelpTip.vue';
 import AppDialog from '../common/AppDialog.vue';
 const a = defineModel<DailyArrangement>({ required: true });
 const props = defineProps<{
@@ -234,8 +235,7 @@ function undo() {
 }
 </script>
 <template>
-  <section class="daily-staffing">
-    <p class="staff-help">{{ tr('staff.help') }}</p>
+  <section class="content daily-staffing">
     <ElAlert
       v-for="[key, error] in errorRows"
       :key="key"
@@ -243,15 +243,17 @@ function undo() {
       type="error"
       :closable="false"
     />
-    <ElRadioGroup v-model="section"
-      ><ElRadioButton value="regular">{{ tr('staff.regular') }}</ElRadioButton
-      ><ElRadioButton value="dates">{{ tr('staff.dates') }}</ElRadioButton></ElRadioGroup
-    >
+    <div class="staff-section-heading">
+      <ElRadioGroup v-model="section"
+        ><ElRadioButton value="regular">{{ tr('staff.regular') }}</ElRadioButton
+        ><ElRadioButton value="dates">{{ tr('staff.dates') }}</ElRadioButton></ElRadioGroup
+      ><AppHelpTip :content="tr('staff.help')" />
+    </div>
     <template v-if="section === 'regular'">
       <div class="staff-tools">
         <ElButton type="primary" @click="initializeRegular">{{ tr('staff.useShifts') }}</ElButton>
         <ElButton @click="addRule">{{ tr('staff.addRule') }}</ElButton
-        ><span>{{ tr('staff.ruleHelp') }}</span>
+        ><AppHelpTip :content="tr('staff.ruleHelp')" />
       </div>
       <AppBusinessTable
         :rows="a.regularRoster || []"
@@ -329,8 +331,8 @@ function undo() {
         <ElButton type="primary" @click="openBatch">{{ tr('staff.batch') }}</ElButton
         ><ElButton v-if="mode === 'week'" @click="copyWeek">{{ tr('staff.copyWeek') }}</ElButton
         ><ElButton :disabled="!history" @click="undo">{{ tr('staff.undo') }}</ElButton>
+        <AppHelpTip :content="tr('staff.dateHelp')" />
       </div>
-      <p class="staff-help">{{ tr('staff.dateHelp') }}</p>
       <ElAlert v-if="message" :title="message" type="warning" :closable="false" />
       <AppBusinessTable
         v-model:selection-ids="selectedDates"
@@ -439,6 +441,11 @@ function undo() {
   margin: 12px 0;
   min-width: 0;
 }
+.staff-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .staff-tools {
   display: flex;
   align-items: center;
@@ -448,12 +455,6 @@ function undo() {
 }
 .staff-tools :deep(.el-date-editor) {
   max-width: 180px;
-}
-.staff-help {
-  color: var(--el-text-color-regular);
-  font-size: 13px;
-  line-height: 1.7;
-  margin: 10px 0;
 }
 .staff-cell {
   display: grid;

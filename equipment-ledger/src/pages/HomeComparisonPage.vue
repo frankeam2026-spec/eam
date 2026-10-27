@@ -388,7 +388,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="overview-page" :aria-busy="loading || busy">
+  <section class="content overview-page" :aria-busy="loading || busy">
     <ElForm
       ref="form"
       class="overview-scroll"
@@ -824,7 +824,7 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 20px 24px 28px;
+  padding: 8px;
 }
 .template-select {
   width: 170px;

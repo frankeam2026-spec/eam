@@ -61,7 +61,7 @@ const rules: FormRules = {
     {
       validator: (_rule, value: string, callback) => {
         if (!value) return callback(new Error(tr('ui.equipment.text1178')));
-        if (value.length < 12 || new TextEncoder().encode(value).length > 72)
+        if (value.length < 6 || new TextEncoder().encode(value).length > 72)
           return callback(new Error(tr('ui.equipment.text1744')));
         if (value === password.currentPassword)
           return callback(new Error(tr('ui.equipment.text1745')));
@@ -161,7 +161,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="personal-settings-page">
+  <section class="content personal-settings-page">
     <header class="settings-heading">
       <AppBackButton :disabled="busy" @click="back" />
       <h1>{{ tr('ui.equipment.text1600') }}</h1>

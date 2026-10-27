@@ -454,7 +454,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
 </script>
 <template>
   <section
-    class="experience-page"
+    class="content experience-page"
     :class="{ 'anomaly-list-page': resource === 'anomalies' && !route.params.id }"
   >
     <template v-if="!route.params.id"
@@ -894,8 +894,8 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
 .experience-page {
   display: flex;
   flex-direction: column;
-  padding: 0px 8px;
-  gap: 12px;
+  /* padding: 0px 8px; */
+  /* gap: 12px; */
   height: calc(100vh - 56px);
   min-height: 0;
   background: var(--canvas);

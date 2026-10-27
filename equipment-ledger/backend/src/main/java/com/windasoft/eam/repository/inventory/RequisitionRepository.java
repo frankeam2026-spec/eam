@@ -10,6 +10,16 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class RequisitionRepository {
+  public void workflowStatus(long tenant,long id,String state,String gate) {
+    db.update("UPDATE inv_requisition SET status=?,approval_gate=?,row_version=row_version+1 WHERE tenant_id=? AND id=? AND deleted=0",state,gate,tenant,id);
+  }
+  public Map<String,Object> workflowValues(long tenant,long id) {
+    var rows=db.queryForList("SELECT r.applicant_id AS applicantId,CASE WHEN o.org_type='部门' THEN u.org_id ELSE NULL END AS applicantDepartmentId,r.company_id AS companyId,r.warehouse_id AS warehouseId,r.task_kind AS taskKind FROM inv_requisition r JOIN eam_sys_user u ON u.tenant_id=r.tenant_id AND u.id=r.applicant_id LEFT JOIN eam_org_unit o ON o.tenant_id=u.tenant_id AND o.id=u.org_id WHERE r.tenant_id=? AND r.id=? AND r.deleted=0",tenant,id);
+    if(rows.isEmpty()) throw new IllegalArgumentException("领料申请不存在");
+    var values=rows.getFirst();
+    values.put("lines",db.queryForList("SELECT l.material_id AS materialId,m.code,l.quantity FROM inv_requisition_line l JOIN inv_material m ON m.tenant_id=l.tenant_id AND m.id=l.material_id WHERE l.tenant_id=? AND l.requisition_id=? ORDER BY l.line_no,l.id",tenant,id));
+    return values;
+  }
   @org.springframework.beans.factory.annotation.Autowired
   private com.windasoft.eam.repository.system.NotificationRepository notifications;
   private final JdbcTemplate db;
@@ -114,7 +124,7 @@ public class RequisitionRepository {
   public int completeWarehouseTodos(long tenantId, Object requestId) {
     return db.update(
         "UPDATE inv_inbox SET done=1 WHERE tenant_id=? AND document_id=? AND"
-            + " route_kind='requisitions' AND is_todo=1",
+            + " route_kind='requisitions' AND kind='待出库' AND is_todo=1",
         tenantId,
         requestId);
   }

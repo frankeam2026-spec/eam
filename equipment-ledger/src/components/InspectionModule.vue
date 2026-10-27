@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ReminderPolicyField from './common/ReminderPolicyField.vue';
+import AppHelpTip from './common/AppHelpTip.vue';
 import { isDepartmentCustomColumn } from '../businessConfig';
 import DepartmentValuesText from './common/DepartmentValuesText.vue';
 
@@ -216,8 +217,8 @@ const baseFields = computed<[string, string][]>(() =>
           ? []
           : ([
               ...(!daily.value ? [['typeName', '点巡检类型']] : []),
-              ['startDate', '开始日期'],
-              ['endDate', '结束日期'],
+              ['startDate', tr(daily.value ? 'component.el.datepicker.startDate' : 'component.el.datepicker.startTime')],
+              ['endDate', tr(daily.value ? 'component.el.datepicker.endDate' : 'component.el.datepicker.endTime')],
               ...(daily.value
                 ? [['arrangementCount', tr('daily.arrangementCount')]]
                 : [
@@ -307,7 +308,7 @@ const filterFields = computed<FilterField[]>(() =>
         : key === 'enabled'
           ? { options: ['启用', '停用'] }
           : {}),
-      dateOnly: key.endsWith('Date'),
+      dateOnly: key.endsWith('Date') && kind.value !== 'periodic-plans',
     }))
     .concat(extensionFilters.value),
 );
@@ -347,6 +348,8 @@ function value(row: InspectionDefinition | InspectionTask, key: string): string 
   if (key === 'shiftCount') return r.shifts?.length || 0;
   if (key === 'periodLabel') return `${r.period} ${r.unit}`;
   if (key.endsWith('At')) return formatDateTime(r[key], '');
+  if (kind.value === 'periodic-plans' && (key === 'startDate' || key === 'endDate'))
+    return formatDateTime(r[key], '').slice(0, 16);
   return r[key] ?? '';
 }
 const organizationFilter = ref('');
@@ -427,6 +430,12 @@ async function load() {
     if (editing.value) {
       const id = loadedId;
       form.value = loaded;
+      if (!daily.value && !standard.value) {
+        form.value.startDate = form.value.startDate.length === 10
+          ? `${form.value.startDate}T00:00:00` : form.value.startDate;
+        form.value.endDate = form.value.endDate.length === 10
+          ? `${form.value.endDate}T23:59:59` : form.value.endDate;
+      }
       if (route.query.copy) {
         form.value.id = '';
         delete form.value.rowVersion;
@@ -705,11 +714,12 @@ function typeChange() {
   if (t) {
     form.value.period = t.period;
     form.value.unit = t.unit;
-    if (!daily.value) {
-      form.value.validHours = t.unit === '年' ? t.period * 12 : t.period;
-      form.value.validUnit = t.unit === '年' ? '月' : t.unit;
-    }
+    if (!daily.value) periodChange();
   }
+}
+function periodChange() {
+  form.value.validHours = form.value.unit === '年' ? form.value.period * 12 : form.value.period;
+  form.value.validUnit = form.value.unit === '年' ? '月' : form.value.unit;
 }
 function toTree(nodes: { id: string; name: string; parentId?: string }[]): any[] {
   const build = (parent: string): any[] =>
@@ -1098,7 +1108,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   );
 </script>
 <template>
-  <section class="inspection-page" :class="{ 'inspection-editor': editing }">
+  <section class="content inspection-page" :class="{ 'inspection-editor': editing }">
     <div v-if="!editing" class="task-list-layout" :class="{ 'with-organizations': isTasks }">
       <TaskOrganizationFilter
         v-if="isTasks"
@@ -1222,7 +1232,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     /></div></template
                 ><template #default="{ row: r, $index: tableRowIndex }">
                   <ElButton
-                    v-if="key === 'code'"
+                    v-if="key === (kind === 'daily-plans' ? 'name' : 'code')"
                     class="inspection-text-button"
                     @click="open(r)"
                     type="primary"
@@ -1385,7 +1395,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         }}</ElButton>
       </header>
       <ElTabs v-if="daily" v-model="dailyEditorTab" class="daily-plan-tabs">
-        <ElTabPane name="basic" :label="tr('daily.ui.what') + ' (' + form.details.length + ')'" />
+        <ElTabPane name="basic" :label="tr('ui.equipment.text0077') + ' (' + form.details.length + ')'" />
         <ElTabPane
           name="arrangements"
           :label="tr('daily.ui.whenWho') + ' (' + form.arrangements.length + ')'"
@@ -1393,7 +1403,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         <ElTabPane name="calendar" :label="tr('daily.ui.calendar')" />
       </ElTabs>
       <div class="inspection-editor-scroll" :class="{ 'daily-plan-editor': daily }">
-        <p v-if="daily" class="daily-flow-help">{{ tr('daily.ui.flowHelp') }}</p>
+        <p v-if="daily && dailyEditorTab === 'basic'" class="daily-flow-help">{{ tr('daily.ui.flowHelp') }}</p>
         <p v-if="error" class="inspection-error">{{ error }}</p>
         <InspectionStandardEditor
           v-if="standard"
@@ -1406,8 +1416,9 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           @equipment="rememberEquipment"
           @add-type="newType"
         />
-        <section v-else v-show="!daily || dailyEditorTab === 'basic'" class="inspection-form-card">
+        <section v-else v-show="!daily || dailyEditorTab === 'basic'" class="inspection-form-card" :class="{ 'periodic-plan-card': !daily && !standard }">
           <div class="inspection-form-grid">
+            <h3 v-if="!daily && !standard" class="wide periodic-section-title">{{ tr('ui.equipment.text0077') }}</h3>
             <label
               ><span>{{
                 standard ? tr('ui.equipment.text0310') : tr('ui.equipment.text0311')
@@ -1431,13 +1442,14 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             <template v-if="!standard"
               ><label class="span-two"
                 ><span
-                  ><b>*</b>{{ tr(daily ? 'daily.plan.validity' : 'ui.equipment.text0322') }}</span
+                  ><b>*</b>{{ tr(daily ? 'daily.plan.validity' : 'output.inspection.label3206') }}</span
                 ><ElDatePicker
                   v-model="dateRange"
-                  type="daterange"
-                  value-format="YYYY-MM-DD"
-                  start-placeholder="开始日期"
-                  end-placeholder="结束日期"
+                  :type="daily ? 'daterange' : 'datetimerange'"
+                  :format="daily ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:mm:ss'"
+                  :value-format="daily ? 'YYYY-MM-DD' : 'YYYY-MM-DDTHH:mm:ss'"
+                  :start-placeholder="tr(daily ? 'component.el.datepicker.startDate' : 'component.el.datepicker.startTime')"
+                  :end-placeholder="tr(daily ? 'component.el.datepicker.endDate' : 'component.el.datepicker.endTime')"
                   range-separator="至" /></label
               ><label
                 ><span>{{ tr('ui.equipment.text0216') }}</span
@@ -1457,6 +1469,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   {{ tr('ui.equipment.text0324') }}
                 </div></label
               >
+              <h3 v-if="!daily" class="wide periodic-section-title">{{ tr('inspection.periodic.schedule') }}</h3>
               <label v-if="!daily"
                 ><span><b>*</b>{{ tr('ui.equipment.text0325') }}</span
                 ><ElSelect v-model="form.typeId" @change="typeChange"
@@ -1468,15 +1481,9 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     :disabled="!t.enabled" /></ElSelect
               ></label>
               <template v-if="!daily"
-                ><label
-                  ><span>{{ tr('ui.equipment.text0326') }}</span>
-                  <ElInput :model-value="`${form.period} ${form.unit}`" readonly /></label
-                ><label
-                  ><span><b>*</b>{{ tr('ui.equipment.text0327') }}</span
-                  ><ElDatePicker
-                    v-model="form.nextAt"
-                    type="datetime"
-                    value-format="YYYY-MM-DDTHH:mm:ss" /></label></template
+                ><label class="periodic-cycle-field"
+                  ><span>{{ tr('ui.equipment.text0326') }}<AppHelpTip :content="tr('inspection.periodic.cycleHelp')" /></span>
+                  <div class="inspection-number-unit"><ElInputNumber v-model="form.period" :min="1" :max="10000" :precision="0" controls-position="right" :aria-label="tr('inspection.periodic.cycleValue')" @change="periodChange" /><ElSelect v-model="form.unit" :aria-label="tr('inspection.periodic.cycleUnit')" @change="periodChange"><ElOption v-for="unit in ['日','周','月','年']" :key="unit" :value="unit" :label="unit" /></ElSelect></div></label></template
               ><label v-if="!daily"
                 ><span>{{ tr('ui.equipment.text0328') }}</span>
                 <DurationInput
@@ -1485,7 +1492,23 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   :min="0"
                   :max-years="1"
               /></label>
-              <ReminderPolicyField v-model:mode="form.reminderMode" v-model:id="form.reminderPolicyId" :name="form.reminderPolicyName" :kind="daily?'daily':'periodic'" />
+              <ReminderPolicyField v-if="daily" v-model:mode="form.reminderMode" v-model:id="form.reminderPolicyId" :name="form.reminderPolicyName" kind="daily" />
+              <h3 v-if="!daily" class="wide periodic-section-title">{{ tr('inspection.periodic.execution') }}</h3>
+              <label v-if="!daily"
+                ><span>{{
+                  form.personMode === '按照排班表'
+                    ? tr('ui.equipment.text0334')
+                    : tr('ui.equipment.text0102')
+                }}</span
+                ><PagedChoiceField
+                  v-model="form.owners"
+                  multiple
+                  :options="choices.users"
+                  :load-rows="selector.users"
+                  :title="tr('ui.equipment.text0335')"
+                  :placeholder="tr('ui.equipment.text0336')"
+                  @select="rememberPeople" /></label
+              >
               <label
                 ><span>{{ tr('ui.equipment.text0333') }}</span
                 ><ElSelect v-model="form.reviewMode"
@@ -1504,21 +1527,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     :key="v"
                     :value="v" /></ElSelect
               ></label> -->
-              <label class="span-two" v-if="!daily"
-                ><span>{{
-                  form.personMode === '按照排班表'
-                    ? tr('ui.equipment.text0334')
-                    : tr('ui.equipment.text0102')
-                }}</span
-                ><PagedChoiceField
-                  v-model="form.owners"
-                  multiple
-                  :options="choices.users"
-                  :load-rows="selector.users"
-                  :title="tr('ui.equipment.text0335')"
-                  :placeholder="tr('ui.equipment.text0336')"
-                  @select="rememberPeople" /></label
-              ><label v-if="form.reviewMode !== '无需验收'" class="span-two"
+              <label v-if="form.reviewMode !== '无需验收'" :class="{ 'span-two': daily }"
                 ><span><b>*</b>{{ tr('ui.equipment.text0337') }}</span
                 ><PagedChoiceField
                   v-model="form.reviewers"
@@ -1544,7 +1553,9 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 /></label>
               </div> -->
             </template>
-            <label class="wide"
+            <h3 v-if="!daily && !standard" class="wide periodic-section-title">{{ tr('daily.plan.reminders') }}</h3>
+            <ReminderPolicyField v-if="!daily && !standard" v-model:mode="form.reminderMode" v-model:id="form.reminderPolicyId" :name="form.reminderPolicyName" kind="periodic" />
+            <label :class="!daily && !standard ? 'span-two periodic-remark' : 'wide'"
               ><span>{{ tr('ui.equipment.text0177') }}</span
               ><ElInput v-model="form.remark" type="textarea" :rows="2" /></label
             ><label v-if="standard"
@@ -2286,7 +2297,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   flex: 1;
   min-width: 0;
   min-height: 0;
-  gap: 8px;
+  /* gap: 8px; */
 }
 </style>
 

@@ -351,7 +351,7 @@ const tableColumnRows2 = () => binRows.value;
 type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
 </script>
 <template>
-  <section class="inventory-master-page">
+  <section class="content inventory-master-page">
     <AppListToolbar class="master-toolbar">
       <ElButton v-if="auth.can(inventoryMenu(kind), '新增')" type="primary" @click="edit()"
         ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}</ElButton
@@ -685,10 +685,9 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
 <style scoped>
 .inventory-master-page {
   height: calc(100dvh - 54px);
-  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* gap: 8px; */
   color: var(--text);
   font-size: 13px;
   min-height: 0;

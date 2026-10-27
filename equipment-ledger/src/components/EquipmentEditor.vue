@@ -472,7 +472,8 @@ function relationSaved(record: EquipmentRecord) {
           :model="editing"
           :rules="formRules"
           :validate-on-rule-change="false"
-          label-position="top"
+          label-position="left"
+          label-width="108px"
           @submit.prevent
         >
           <div class="editor-layout">
@@ -1002,7 +1003,7 @@ function relationSaved(record: EquipmentRecord) {
   overflow-wrap: anywhere;
 }
 .equipment-editor .editor-body {
-  padding: 16px;
+  padding: 8px;
 }
 .equipment-editor .editor-layout {
   grid-template-columns: minmax(0, 1fr) 220px;
@@ -1047,12 +1048,19 @@ function relationSaved(record: EquipmentRecord) {
   margin: 6px 0 10px;
 }
 .equipment-editor .editor-field {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  align-content: start;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
 }
 .equipment-editor .editor-field > span {
   text-align: left;
+}
+.equipment-editor .editor-field.editor-textarea {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.equipment-editor .editor-textarea > span {
+  padding-top: 0;
 }
 .equipment-editor .editor-field-group h4 {
   font-size: 14px;
@@ -1064,14 +1072,6 @@ function relationSaved(record: EquipmentRecord) {
 .equipment-editor .editor-field-group + .editor-field-group {
   border-top: 1px solid var(--line);
   padding-top: 20px;
-}
-.equipment-editor :deep(.el-form-item__label) {
-  width: auto;
-  margin-bottom: 8px;
-  line-height: 20px;
-}
-.equipment-editor :deep(.el-form-item__content) {
-  margin-left: 0 !important;
 }
 @media (max-width: 1100px) {
   .equipment-editor .editor-layout {
@@ -1146,13 +1146,14 @@ function relationSaved(record: EquipmentRecord) {
 }
 .equipment-form :deep(.app-form-field .el-form-item__label) {
   font-size: 13px;
+  margin-bottom: 0;
 }
 .equipment-form :deep(.app-form-field .el-form-item__content) {
   min-width: 0;
 }
 .image-upload-row {
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
+  grid-template-columns: 96px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
   font-size: 13px;
@@ -1161,11 +1162,6 @@ function relationSaved(record: EquipmentRecord) {
   width: auto;
   line-height: 20px;
   padding-top: 8px;
-}
-@media (max-width: 600px) {
-  .image-upload-row {
-    grid-template-columns: 70px minmax(0, 1fr);
-  }
 }
 .owner-field :deep(.el-select__input),
 .owner-field :deep(.el-select__input:focus) {

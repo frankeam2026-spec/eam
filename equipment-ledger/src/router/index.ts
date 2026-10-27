@@ -9,6 +9,7 @@ import { canUseBaseTab } from '../utils/baseDataAccess';
 import { visibleNotificationTabs } from '../utils/notificationAccess';
 
 export type AppPage =
+  | 'workflows'
   | 'notification-policies'
   | 'notification-channels'
   | 'notification-deliveries'
@@ -41,6 +42,7 @@ export const router = createRouter({
       path: '/',
       component: () => import('../WorkspaceLayout.vue'),
       children: [
+        {path:'workflows',name:'workflows',component:()=>import('../pages/WorkflowPage.vue'),meta:{page:'workflows',menu:'workflow'}},
         {
           path: 'home/analytics/:key',
           alias: '/home2/analytics/:key',

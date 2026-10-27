@@ -310,7 +310,7 @@ async function removeSelected() {
 </script>
 
 <template>
-  <section class="organization-management">
+  <section class="content organization-management">
     <AppListToolbar>
       <ElButton
         v-if="can('新增')"
@@ -508,7 +508,6 @@ async function removeSelected() {
 .organization-management {
   height: calc(100dvh - 54px);
   min-height: 0;
-  padding: 8px 16px 16px;
   display: flex;
   flex-direction: column;
   overflow: hidden;

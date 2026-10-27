@@ -16,7 +16,7 @@ import { maintenanceMenu, inspectionMenu } from './rolePermissions';
 import RepairNotificationBell from './components/common/RepairNotificationBell.vue';
 import HelpMenu from './components/common/HelpMenu.vue';
 import UserAccountMenu from './components/common/UserAccountMenu.vue';
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch, provide } from 'vue';
 import { ElMessage } from 'element-plus';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
@@ -26,6 +26,7 @@ import { useBaseDataStore, BASE_TABS } from './stores/baseData';
 import type { AppPage } from './router';
 import * as api from './api';
 import LoginScreen from './components/LoginScreen.vue';
+import { rememberLogin } from './utils/loginMemory';
 
 const auth = useAuthStore();
 
@@ -40,10 +41,13 @@ const compactQuery = window.matchMedia('(max-width:1060px)');
 const compactViewport = ref(compactQuery.matches);
 
 const compactExpanded = ref(false);
+const workflowFocus = ref(false);
+provide('workflowFocus', workflowFocus);
 
 const collapsed = computed({
-  get: () => (compactViewport.value ? !compactExpanded.value : desktopCollapsed.value),
+  get: () => workflowFocus.value || (compactViewport.value ? !compactExpanded.value : desktopCollapsed.value),
   set: (value: boolean) => {
+    workflowFocus.value = false;
     if (compactViewport.value) compactExpanded.value = !value;
     else desktopCollapsed.value = value;
   },
@@ -73,6 +77,7 @@ function can(menu: string, action = '查看') {
 function canMenu(item: MenuItem) {
   if (item.page === 'notification-policies') return visibleNotificationTabs(can).length > 0;
   const experienceMenus: Record<string, string> = {
+    workflows:'workflow',
     anomalies: 'anomaly',
     'repair-plans': 'repairPlan',
     'home-templates': 'homeTemplate',
@@ -215,6 +220,7 @@ const navGroups: MenuGroup[] = [
     icon: 'Settings',
     items: [
       { get label() { return tr('ui.equipment.text0032'); }, icon: 'Settings', page: 'business-config' },
+      {label:'审批流程',icon:'Settings',page:'workflows'},
       {get label(){return tr('notify.policies');},icon:'Settings',page:'notification-policies'},
       { get label() { return tr('ui.equipment.text0033'); }, icon: 'Settings', page: 'personalization' },
       { get label(){ return tr('language.manager.menu'); }, icon:'Settings',page:'languages' },
@@ -365,9 +371,11 @@ async function initialize() {
   if (auth.authState === 'ready') await connectBackend();
 }
 
-async function signIn(tenantId: string, account: string, password: string) {
+async function signIn(tenantId: string, account: string, password: string, remember: boolean) {
   try {
     await api.login(tenantId, account, password);
+    void rememberLogin(tenantId, account, password, remember);
+    await router.replace({ name: 'home2' });
     await initialize();
   } catch (error) {
     authState.value = 'login';

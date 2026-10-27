@@ -57,6 +57,19 @@ public final class InspectionSupport {
         : LocalDateTime.parse(value.toString().replace(' ', 'T'));
   }
 
+  /** Old periodic clients send dates; their end date includes the whole day. */
+  public static LocalDateTime periodicBoundary(Object value, boolean end) {
+    String text = Objects.toString(value, "").trim();
+    if (text.length() == 10) {
+      LocalDate day = LocalDate.parse(text);
+      return day.atTime(end ? LocalTime.of(23, 59, 59) : LocalTime.MIDNIGHT);
+    }
+    LocalDateTime result = dateTime(text);
+    require(result.getNano() == 0,
+        com.windasoft.eam.common.MessageContext.text("server.inspection.message0017", "planTime"));
+    return result;
+  }
+
   public static Long nullable(Object value) {
     return value == null ? null : number(value);
   }

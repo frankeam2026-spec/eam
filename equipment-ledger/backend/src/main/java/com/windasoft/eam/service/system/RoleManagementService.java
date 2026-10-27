@@ -151,6 +151,7 @@ public class RoleManagementService {
   private Set<String> allowedActions(String menu) {
     return switch (menu) {
       case "businessConfig" -> Set.of("查看", "编辑", "发布");
+      case "workflow" -> Set.of("查看", "编辑", "发布", "停用","脚本配置","脚本发布","脚本试算");
       case "personalization", "language" -> Set.of("查看");
       case "workspace" -> Set.of("查看", "团队工作查看");
       case "notificationPolicy", "notificationChannel" -> Set.of("查看", "编辑");
@@ -201,6 +202,7 @@ public class RoleManagementService {
   }
 
   private Set<String> allowedScopes(String menu) {
+    if (menu.equals("workflow")) return Set.of("all", "company", "companyTree", "companies");
     if (menu.startsWith("notification")) return Set.of("all");
     if (menu.equals("printTemplate")) return Set.of("all", "company", "companyTree", "companies");
     if (menu.equals("inventoryMaterial")) return Set.of("all");

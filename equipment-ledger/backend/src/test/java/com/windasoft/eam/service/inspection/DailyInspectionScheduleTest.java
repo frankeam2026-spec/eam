@@ -66,10 +66,10 @@ class DailyInspectionScheduleTest {
     assertTrue(DailyInspectionSchedule.on(plan, arrangement(), LocalDate.of(2026, 10, 26)).isEmpty());
   }
 
-  @Test void disabledBeforeAnchorAndFinishedWindowsNeverGenerate() {
+  @Test void legacyArrangementSwitchIsIgnoredButPlanDatesAndFinishedWindowsStillApply() {
     var a = arrangement();
     a.put("enabled", false);
-    assertTrue(DailyInspectionSchedule.on(Map.of(), a, LocalDate.of(2026, 10, 23)).isEmpty());
+    assertEquals(3, DailyInspectionSchedule.on(Map.of(), a, LocalDate.of(2026, 10, 23)).size());
     a.put("enabled", true);
     assertTrue(DailyInspectionSchedule.on(Map.of("startDate", "2026-01-01"), a, LocalDate.of(2025, 12, 31)).isEmpty());
     a.put("effectiveFrom", "2026-10-23T16:00:00");

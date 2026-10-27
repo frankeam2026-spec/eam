@@ -251,7 +251,7 @@ async function cancel() {
 onMounted(load);
 </script>
 <template>
-  <section class="business-config-page">
+  <section class="content business-config-page">
     <AppLoadState v-if="loading || error" :loading="loading" :error="error" @retry="load" />
     <template v-else
       ><div class="business-config-fields">
@@ -469,7 +469,6 @@ onMounted(load);
   flex-direction: column;
   min-height: 0;
   height: calc(100dvh - 54px);
-  padding-bottom: 0;
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -478,7 +477,7 @@ onMounted(load);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  gap: 12px;
+  /* gap: 12px; */
 }
 .business-object-select {
   width: 180px;

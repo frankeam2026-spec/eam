@@ -307,19 +307,21 @@ public class InspectionGenerationService {
       LocalDateTime next = dateTime(schedule.get("next_at")),
           anchor = dateTime(schedule.get("anchor_at"));
       long index = number(schedule.get("cycle_index"));
-      LocalDate start = LocalDate.parse(text(p, "startDate")),
-          end = LocalDate.parse(text(p, "endDate"));
       var details = rows(p.get("details"));
       if (text(plan, "kind").equals("periodic-plans")) {
+        LocalDateTime start = periodicBoundary(p.get("startDate"), false),
+            end = periodicBoundary(p.get("endDate"), true);
         for (int n = 0;
-            n < 100 && readyForGeneration(next, p) && !next.toLocalDate().isAfter(end);
+            n < 100 && readyForGeneration(next, p) && !next.isAfter(end);
             n++) {
-          if (!next.toLocalDate().isBefore(start))
+          if (!next.isBefore(start))
             count += createTask(tenant, plan, p, details, next, "", "", null);
           index++;
           next = advance(anchor, index, number(p.get("period")), text(p, "unit"));
         }
       } else {
+        LocalDate start = LocalDate.parse(text(p, "startDate")),
+            end = LocalDate.parse(text(p, "endDate"));
         LocalDateTime deadline = generationDeadline(p);
         for (int n = 0;
             n < 100
@@ -579,7 +581,7 @@ public class InspectionGenerationService {
               .filter(x -> text(x, "id").equals(text(task, "arrangement_id")))
               .findFirst()
               .orElse(null);
-      if (a == null || !yes(a.get("enabled"))) continue;
+      if (a == null) continue;
       var detail =
           arrangements.details(p, a).stream()
               .filter(d -> number(d.get("equipmentId")) == number(task.get("equipment_id")))

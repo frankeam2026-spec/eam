@@ -19,8 +19,7 @@ public final class DailyInspectionSchedule {
 
   public static List<Occurrence> on(
       Map<String, Object> plan, Map<String, Object> a, LocalDate date) {
-    if (!yes(a.get("enabled"))
-        || (!text(plan, "startDate").isBlank() && date.isBefore(LocalDate.parse(text(plan, "startDate"))))
+    if ((!text(plan, "startDate").isBlank() && date.isBefore(LocalDate.parse(text(plan, "startDate"))))
         || (!text(plan, "endDate").isBlank() && date.isAfter(LocalDate.parse(text(plan, "endDate"))))
         || !Set.of("shift", "slots").contains(text(a, "frequency"))
         || rest(plan, date)) return List.of();

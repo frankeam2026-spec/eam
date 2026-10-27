@@ -106,7 +106,7 @@ public class UserManagementService {
       requireUserOrganization(f.orgId());
       if (requireOrg(f.orgId()).getStatus() != 1)
         throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0040");
-    } else if (f.password() == null || f.password().length() < 12 || f.password().length() > 72)
+    } else if (f.password() == null || f.password().length() < 6 || f.password().length() > 72)
       throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text1179");
     var users = new LinkedHashSet<>(f.ids()).stream().map(this::requireUser).toList();
     for (var user : users) {
@@ -150,7 +150,7 @@ public class UserManagementService {
         throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0041");
       return;
     }
-    if (password.length() < 12 || password.length() > 72)
+    if (password.length() < 6 || password.length() > 72)
       throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text1179");
     user.setPasswordHash(passwords.encode(password));
   }

@@ -300,7 +300,7 @@ onMounted(load);
 .settings-body {
   flex: 1;
   overflow: auto;
-  padding: 16px;
+  padding: 8px;
 }
 .settings-card {
   background: #fff;

@@ -321,7 +321,7 @@ const tableColumnRows1 = () => equipmentRows.value;
 type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 <template>
-  <section class="print-template-page" :class="{ 'is-focused': editor && focusDesign }">
+  <section class="content print-template-page" :class="{ 'is-focused': editor && focusDesign }">
     <template v-if="!editor"
       ><AppListToolbar class="template-list-toolbar">
         <ElButton v-if="can('新增')" class="" @click="create" type="primary"
@@ -607,8 +607,8 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 16px;
-  background: #e9eef5;
+  padding: 8px;
+  /* background: #e9eef5; */
   border-radius: 8px;
 }
 .template-cards {
@@ -737,7 +737,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   color: var(--text);
   font-size: 13px;
   background: var(--canvas);
-  padding: 0px 8px;
+  /* padding: 0px 8px; */
 }
 .print-page-head {
   height: 46px;

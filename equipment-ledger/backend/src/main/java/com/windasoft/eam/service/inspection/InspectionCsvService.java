@@ -125,6 +125,10 @@ public class InspectionCsvService {
     }
     if(kind.equals("daily-plans"))labels.put("arrangementCount",com.windasoft.eam.common.MessageContext.text("daily.arrangementCount"));
     if (kind.startsWith("daily-")) labels.remove("typeName");
+    if (kind.equals("periodic-plans")) {
+      labels.put("startDate", com.windasoft.eam.common.MessageContext.text("component.el.datepicker.startTime"));
+      labels.put("endDate", com.windasoft.eam.common.MessageContext.text("component.el.datepicker.endTime"));
+    }
     String object = BusinessObjects.inspection(kind);
     if (object != null)
       for (var field :

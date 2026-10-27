@@ -51,6 +51,10 @@ public class PermissionService {
             .map(UserRoleLink::getRoleId)
             .toList();
     Map<String, Set<String>> result = new LinkedHashMap<>();
+    if(repository.approvalParticipation(auth.tenantId(),auth.userId())) {
+      result.put("inventoryRequisition",new HashSet<>(Set.of("查看")));
+      result.put("workspace",new HashSet<>(Set.of("查看")));
+    }
     if (repository.hasWorkflow()
         && repository.personalRepairAccess(auth.tenantId(), auth.userId())) {
       result.put("repair", new HashSet<>(Set.of("查看")));

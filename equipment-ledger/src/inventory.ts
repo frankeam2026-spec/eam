@@ -176,6 +176,7 @@ export type RequisitionLine = {
   unit?: string;
 };
 export type Requisition = {
+  workflow?: import('./workflow').WorkflowRound[];
   id: string;
   code: string;
   warehouseId: string;

@@ -281,7 +281,7 @@ const tableColumnRows1 = () => pageRows.value;
 type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 <template>
-  <section class="locations-page">
+  <section class="content locations-page">
     <aside class="location-company-panel">
       <div class="company-panel-heading">{{ tr('ui.equipment.text0561') }}</div>
       <ElInput v-model="companySearch" :placeholder="tr('ui.equipment.text0720')" clearable />
@@ -497,7 +497,6 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   flex: 1;
   min-height: 0;
   gap: 12px;
-  padding: 12px;
   font-size: 13px;
   color: #263246;
   box-sizing: border-box;

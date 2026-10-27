@@ -326,7 +326,7 @@ const tableColumnRows1 = () => rows.value;
 type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 <template>
-  <section class="inventory-queries">
+  <section class="content inventory-queries">
     <AppListTabs
       :active="kind"
       :items="Object.entries(titles).map(([key, label]) => ({ key, label }))"
@@ -450,8 +450,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   height: calc(100dvh - 54px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  /* gap: 8px; */
   min-height: 0;
   color: var(--text);
   font-size: 13px;

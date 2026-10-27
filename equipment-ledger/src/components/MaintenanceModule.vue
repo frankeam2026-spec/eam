@@ -1268,7 +1268,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   );
 </script>
 <template>
-  <section class="maintenance-page">
+  <section class="content maintenance-page">
     <div
       v-if="!editing"
       class="task-list-layout"
@@ -2666,7 +2666,6 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
 }
 .maintenance-page {
   height: calc(100vh - 54px);
-  padding: 0 8px;
   display: flex;
   flex-direction: column;
   min-width: 0;

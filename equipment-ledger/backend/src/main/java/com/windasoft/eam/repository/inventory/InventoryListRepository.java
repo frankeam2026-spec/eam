@@ -256,7 +256,8 @@ public class InventoryListRepository {
     fields.put("remainingQuantity", f(remaining, NUMBER));
     fields.put("createdAt", f("t.created_at", DATETIME));
     var access = SqlScopes.in("t.warehouse_id", warehouses);
-    if (own) access = access.or(SqlPredicate.of("t.applicant_id=?", user));
+    if (own) access = access.or(SqlPredicate.of("t.applicant_id=?", user))
+        .or(SqlPredicate.of("EXISTS(SELECT 1 FROM wf_instance wi JOIN wf_approval wa ON wa.tenant_id=wi.tenant_id AND wa.instance_id=wi.id WHERE wi.tenant_id=t.tenant_id AND wi.business_type='requisition' AND wi.business_id=t.id AND wa.user_id=?)",user));
     var predicate = SqlPredicate.of("t.tenant_id=? AND t.deleted=0", tenant).and(access);
     var clean = query;
     try {

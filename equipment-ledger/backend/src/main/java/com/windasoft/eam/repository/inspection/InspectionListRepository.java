@@ -128,7 +128,9 @@ public class InspectionListRepository {
       for (String key : List.of("typeName", "personMode", "remark"))
         fields.put(key, f(j(source, key), TEXT));
       for (String key : List.of("startDate", "endDate"))
-        fields.put(key, f("CAST(" + j(source, key) + " AS DATE)", DATE));
+        fields.put(key, kind.equals("periodic-plans")
+            ? f("CAST(" + j(source, key) + " AS DATETIME)", DATETIME)
+            : f("CAST(" + j(source, key) + " AS DATE)", DATE));
       fields.put("itemCount", f("COALESCE(JSON_LENGTH(t.payload,'$.items'),0)", NUMBER));
       fields.put("equipmentCount", f("COALESCE(JSON_LENGTH(t.payload,'$.details'),0)", NUMBER));
       if (kind.equals("daily-plans"))

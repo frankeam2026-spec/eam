@@ -71,7 +71,7 @@ onMounted(() => {
 watch([page, size], load);
 </script>
 <template>
-  <section class="analysis-detail">
+  <section class="content analysis-detail">
     <header>
       <ElButton
         :aria-label="tr('ui.equipment.text1687')"

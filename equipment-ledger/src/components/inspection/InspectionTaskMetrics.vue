@@ -77,7 +77,7 @@ const metrics = computed(() => [
 ]);
 </script>
 <template>
-  <section class="inspection-metrics" :aria-label="tr('inspection.metrics.title')">
+  <section class="content inspection-metrics" :aria-label="tr('inspection.metrics.title')">
     <dl class="inspection-metrics-values">
       <div
         v-for="metric in metrics"
@@ -123,7 +123,6 @@ const metrics = computed(() => [
 <style scoped>
 .inspection-metrics {
   margin-top: 16px;
-  padding: 16px;
   border-radius: 6px;
   background: var(--el-fill-color-light);
   color: var(--el-text-color-primary);

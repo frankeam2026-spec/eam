@@ -460,7 +460,7 @@ const tableColumnRows3 = () => form.value.movements;
 type TableColumnRow3 = NonNullable<ReturnType<typeof tableColumnRows3>>[number];
 </script>
 <template>
-  <section class="operation-page">
+  <section class="content operation-page">
     <p v-if="error" role="alert" class="error">
       {{ error }} <ElButton text @click="load">{{ tr('ui.equipment.text0299') }}</ElButton>
     </p>
@@ -899,8 +899,7 @@ footer > span {
   height: calc(100dvh - 54px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  /* gap: 8px; */
   min-height: 0;
   color: var(--text);
   font-size: 13px;

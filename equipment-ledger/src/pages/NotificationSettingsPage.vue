@@ -22,7 +22,7 @@ function select(tab: string) {
 </script>
 
 <template>
-  <section class="notification-settings-page">
+  <section class="content notification-settings-page">
     <AppListTabs v-if="active" :active="active" :items="items" @select="select" />
     <NotificationAdmin v-if="active" :view="active" />
   </section>
@@ -34,7 +34,6 @@ function select(tab: string) {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 12px;
 }
 .notification-settings-page :deep(.notification-page) {
   flex: 1;

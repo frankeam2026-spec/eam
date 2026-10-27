@@ -195,7 +195,7 @@ const batchRules: FormRules<typeof userBatch> = {
   orgId: [{ required: true, get message() { return tr('ui.equipment.text0315'); }, trigger: 'change' }],
   password: [
     { required: true, get message() { return tr('ui.equipment.text1178'); }, trigger: 'blur' },
-    { min: 12, max: 72, get message() { return tr('ui.equipment.text1179'); }, trigger: 'blur' },
+    { min: 6, max: 72, get message() { return tr('ui.equipment.text1179'); }, trigger: 'blur' },
   ],
   confirmPassword: [
     { required: true, get message() { return tr('ui.equipment.text1180'); }, trigger: 'blur' },
@@ -333,7 +333,7 @@ const userRules: FormRules<User> = {
     {
       validator: (_rule, value, done) => {
         if (!String(value || '').trim() && !editing.value) done(new Error(tr('ui.equipment.text1188')));
-        else if (value && (value.length < 12 || value.length > 72))
+        else if (value && (value.length < 6 || value.length > 72))
           done(new Error(tr('ui.equipment.text1179')));
         else done();
       },
@@ -1331,7 +1331,6 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 16px 18px 12px;
 }
 .sys-actions,
 .sys-filters {

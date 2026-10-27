@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import { reactive } from 'vue';
-import { ElButton } from 'element-plus';
+import { ElButton, ElFormItem, ElTimePicker } from 'element-plus';
 import DailyArrangementEditor from '../components/inspection/DailyArrangementEditor.vue';
 import { emptyInspection, emptyArrangement, inspectionApi } from '../inspection';
 
@@ -67,6 +67,16 @@ async function editor() {
 }
 
 describe('daily arrangement editing', () => {
+  it('does not expose an arrangement enable switch or a second enabled status', async () => {
+    const { wrapper, click } = await editor();
+    expect(wrapper.find('.arrangement-list').text()).not.toContain('已停用');
+    expect(wrapper.find('.arrangement-list').text()).not.toContain('启用');
+    await click('编辑');
+    expect(
+      wrapper.findAllComponents(ElFormItem).some((item) => item.props('label') === '启用'),
+    ).toBe(false);
+    expect(wrapper.find('.arrangement-editor-heading').text()).toContain('移除');
+  });
   it('summarizes overnight shifts and makes missing shifts explicit', async () => {
     const { wrapper } = await editor();
     expect(wrapper.find('.arrangement-editor').exists()).toBe(false);
@@ -85,7 +95,7 @@ describe('daily arrangement editing', () => {
     expect(model.arrangements[0]!.name).toBe('夜班润滑检查');
     expect(model.details[0]!.owners).toEqual(['override']);
     await click('编辑');
-    expect(wrapper.find('.arrangement-summary').text()).toContain('次日');
+    expect(wrapper.findAllComponents(ElTimePicker).some(picker => picker.props('modelValue') === '08:00:00')).toBe(true);
     expect(wrapper.find<HTMLInputElement>('.arrangement-editor input').element.value).toBe(
       '夜班润滑检查',
     );
@@ -111,5 +121,19 @@ describe('daily arrangement editing', () => {
     expect(wrapper.find('.arrangement-editor').text()).toContain('新增班次');
     expect(wrapper.find('.arrangement-editor').text()).not.toContain('每日多时间段');
     expect(wrapper.find('.arrangement-editor').text()).not.toContain('固定时间间隔');
+  });
+  it('keeps adding shifts beside the schedule heading and writes inline table edits back to the same draft', async () => {
+    const { model, wrapper, click } = await editor();
+    await click('编辑');
+    const header = wrapper.findAll('.daily-group-heading').find(section => section.text().includes('新增班次'))!;
+    expect(header.exists()).toBe(true);
+    await click('新增班次');
+    expect(model.arrangements[0]!.slots).toHaveLength(2);
+    const names = wrapper.findAll('.slots input[placeholder="班次名称"]');
+    await names[1]!.setValue('白班');
+    expect(model.arrangements[0]!.slots[1]!.name).toBe('白班');
+    expect(wrapper.find('.arrangement-summary').exists()).toBe(false);
+    expect(wrapper.find('.arrangement-editor').text()).not.toContain('每台设备按当天班次生成任务');
+    expect(wrapper.findAll('.app-help-tip').length).toBeGreaterThan(0);
   });
 });

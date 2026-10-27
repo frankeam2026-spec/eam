@@ -400,7 +400,7 @@ const tableColumnRows2 = () => form.value.lines;
 type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
 </script>
 <template>
-  <section class="receipts">
+  <section class="content receipts">
     <p v-if="error" class="error" role="alert">
       {{ error }} <ElButton text @click="load">{{ tr('ui.equipment.text0299') }}</ElButton>
     </p>
@@ -794,10 +794,9 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
   flex-direction: column;
   height: calc(100dvh - 54px);
   min-height: 0;
-  padding: 12px;
   font-size: 13px;
   color: var(--text);
-  gap: 8px;
+  /* gap: 8px; */
 }
 header,
 .detail-heading,

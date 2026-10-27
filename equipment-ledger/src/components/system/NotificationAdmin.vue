@@ -309,7 +309,7 @@ const userColumns = computed(() => [
 ]);
 </script>
 <template>
-  <section class="notification-page">
+  <section class="content notification-page">
     <ElAlert v-if="error" :title="error" type="error" :closable="false" />
     <template v-if="view === 'channels'">
       <ElForm

@@ -1394,7 +1394,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
   gap: 16px;
-  padding: 16px;
+  padding: 8px;
   overflow: hidden;
   background: var(--page-bg, #f5f7fa);
 }

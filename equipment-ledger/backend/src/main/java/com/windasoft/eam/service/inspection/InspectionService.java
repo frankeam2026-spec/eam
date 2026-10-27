@@ -334,8 +334,18 @@ public class InspectionService {
       require(
           Set.of("无需扫码", "逐台校验", "校验一台即可提交").contains(text(data, "scanMode")),
           com.windasoft.eam.common.MessageContext.text("server.inspection.message0056"));
-      LocalDate start = LocalDate.parse(text(data, "startDate")),
-          end = LocalDate.parse(text(data, "endDate"));
+      boolean periodic = kind.equals("periodic-plans");
+      LocalDateTime start = periodic
+          ? periodicBoundary(data.get("startDate"), false)
+          : LocalDate.parse(text(data, "startDate")).atStartOfDay();
+      LocalDateTime end = periodic
+          ? periodicBoundary(data.get("endDate"), true)
+          : LocalDate.parse(text(data, "endDate")).atStartOfDay();
+      if (periodic) {
+        var seconds = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+        data.put("startDate", start.format(seconds));
+        data.put("endDate", end.format(seconds));
+      }
       require(
           !end.isBefore(start),
           com.windasoft.eam.common.MessageContext.text("server.inspection.message0057"));
@@ -357,13 +367,18 @@ public class InspectionService {
         var selectedType = cycleType(tenant, data.get("typeId"));
         data.put("typeId", selectedType.get("id"));
         data.put("typeName", selectedType.get("name"));
-        data.put("period", selectedType.get("period"));
-        data.put("unit", selectedType.get("unit"));
+        if (!data.containsKey("period")) data.put("period", selectedType.get("period"));
+        if (!data.containsKey("unit")) data.put("unit", selectedType.get("unit"));
+        require(
+            data.get("period") instanceof Number value
+                && value.doubleValue() == Math.rint(value.doubleValue()),
+            com.windasoft.eam.common.MessageContext.text("server.inspection.message0017", "period"));
         range(data, "period", 1, 10000);
         require(
             Set.of("日", "周", "月", "年").contains(text(data, "unit")),
             com.windasoft.eam.common.MessageContext.text("server.maintenance.message0008"));
-        LocalDateTime.parse(text(data, "nextAt"));
+        // Initial inspection follows plan validity; legacy clients cannot choose a separate anchor.
+        data.put("nextAt", start.toString());
       } else {
         // Daily frequency belongs to each arrangement, not to a cycle dictionary.
         data.put("typeId", null);
@@ -425,15 +440,16 @@ public class InspectionService {
       repository.setPlanType(
           tenant, key, kind.equals("daily-plans") ? null : number(data.get("typeId")));
       var cursors = repository.lockPlanSchedules(tenant, key);
-      LocalDateTime next =
-          kind.equals("periodic-plans")
-              ? LocalDateTime.parse(text(data, "nextAt"))
-              : LocalDate.parse(text(data, "startDate")).atStartOfDay();
+      LocalDateTime next = kind.equals("periodic-plans")
+          ? periodicBoundary(data.get("startDate"), false)
+          : LocalDate.parse(text(data, "startDate")).atStartOfDay();
       if (cursors.isEmpty()) repository.insertSchedule(IdWorker.getId(), tenant, key, next, next);
       else if (kind.equals("periodic-plans")
-          && (!next.equals(dateTime(cursors.getFirst().get("next_at")))
+          && ((repository.countPlanTasks(tenant, key) == 0
+                  && !next.equals(dateTime(cursors.getFirst().get("anchor_at"))))
               || (existing != null
-                  && (!text(decode(existing.get("payload")), "typeId").equals(text(data, "typeId"))
+                  && (!periodicBoundary(decode(existing.get("payload")).get("startDate"), false).equals(next)
+                      || !text(decode(existing.get("payload")), "typeId").equals(text(data, "typeId"))
                       || number(decode(existing.get("payload")).get("period"))
                           != number(data.get("period"))
                       || !text(decode(existing.get("payload")), "unit")

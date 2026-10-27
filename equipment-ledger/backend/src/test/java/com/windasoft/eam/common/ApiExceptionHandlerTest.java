@@ -75,6 +75,13 @@ class ApiExceptionHandlerTest {
         .andExpect(jsonPath("$.code").value("UPLOAD_TOO_LARGE"));
   }
 
+  @Test
+  void workflowCalculationErrorKeepsItsActionableMessage() throws Exception {
+    mvc.perform(get("/probe/workflow"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("脚本执行超时，已终止"));
+  }
+
   @RestController
   static class ProbeController {
     record Payload(String name) {}
@@ -112,6 +119,12 @@ class ApiExceptionHandlerTest {
     @GetMapping("/probe/upload")
     void upload() {
       throw new MaxUploadSizeExceededException(20 * 1024 * 1024);
+    }
+
+    @GetMapping("/probe/workflow")
+    void workflow() {
+      throw new org.flowable.common.engine.api.FlowableException(
+          "delegate failed", new IllegalArgumentException("脚本执行超时，已终止"));
     }
   }
 }

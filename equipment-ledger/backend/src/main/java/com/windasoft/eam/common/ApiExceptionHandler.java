@@ -141,6 +141,14 @@ public class ApiExceptionHandler {
                 errors));
   }
 
+  @ExceptionHandler(org.flowable.common.engine.api.FlowableException.class)
+  ResponseEntity<?> workflowFailure(org.flowable.common.engine.api.FlowableException e) {
+    Throwable cause = e;
+    for (int i = 0; i < 12 && cause != null; i++, cause = cause.getCause())
+      if (cause instanceof IllegalArgumentException invalid) return badRequest(invalid);
+    return unexpected(e);
+  }
+
   @ExceptionHandler(Exception.class)
   ResponseEntity<?> unexpected(Exception e) {
     log.error("API request failed", e);

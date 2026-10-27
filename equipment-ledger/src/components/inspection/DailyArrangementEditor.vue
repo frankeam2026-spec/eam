@@ -30,6 +30,8 @@ import DailyRosterEditor from './DailyRosterEditor.vue';
 import PagedChoiceField from '../common/PagedChoiceField.vue';
 import AppDialog from '../common/AppDialog.vue';
 import AppBusinessTable from '../common/AppBusinessTable.vue';
+import AppHelpTip from '../common/AppHelpTip.vue';
+import AppIcon from '../common/AppIcon.vue';
 import { planningSelectors, resolvePlanning, type SelectorRow } from '../../selectors';
 const form = defineModel<InspectionDefinition>({ required: true });
 const props = defineProps<{
@@ -262,16 +264,22 @@ onMounted(() => {
 });
 </script>
 <template>
-  <section class="daily-arrangements">
+  <section class="content daily-arrangements">
     <div class="inspection-form-card arrangement-list">
       <div class="inspection-section-tools">
         <h3>{{ tr('daily.title') }}</h3>
+        <AppHelpTip :content="tr('daily.ui.intro')" />
         <ElButton @click="add">{{ tr('daily.add') }}</ElButton
-        ><ElSelect v-model="previewDays" class="preview-period"
-          ><ElOption :value="7" :label="tr('daily.sevenDays')" /><ElOption
+        ><span class="preview-range-label">{{ tr('daily.previewRange') }}</span
+        ><ElSelect
+          v-model="previewDays"
+          class="preview-period"
+          :aria-label="tr('daily.previewRange')"
+          ><ElOption :value="7" :label="tr('daily.previewLength', { days: 7 })" /><ElOption
             :value="30"
-            :label="tr('daily.thirtyDays')" /></ElSelect
+            :label="tr('daily.previewLength', { days: 30 })" /></ElSelect
         ><ElButton :loading="previewBusy" @click="showPreview">{{ tr('daily.preview') }}</ElButton>
+        <AppHelpTip :content="tr('daily.previewHelp')" />
       </div>
       <ElAlert
         v-if="errors.arrangements"
@@ -279,13 +287,9 @@ onMounted(() => {
         type="error"
         :closable="false"
       />
-      <p class="daily-help">{{ tr('daily.ui.intro') }}</p>
       <AppBusinessTable :rows="form.arrangements" :pagination="false" :fill="false">
         <ElTableColumn :label="tr('daily.name')" min-width="160">
-          <template #default="{ row }"
-            >{{ row.name || tr('daily.unnamed') }} ·
-            {{ tr(row.enabled ? 'daily.enabled' : 'daily.ui.disabled') }}</template
-          >
+          <template #default="{ row }">{{ row.name || tr('daily.unnamed') }}</template>
         </ElTableColumn>
         <!-- @vue-generic {DailyArrangement} -->
         <ElTableColumn :label="tr('daily.ui.what')" min-width="210"
@@ -312,28 +316,21 @@ onMounted(() => {
     <div v-if="editorOpen && current" class="inspection-form-card arrangement-editor">
       <div class="inspection-section-tools arrangement-editor-heading">
         <h3>{{ tr('ui.equipment.text0207') }}：{{ current.name || tr('daily.unnamed') }}</h3>
+        <AppHelpTip :content="tr('daily.ui.saveHint')" />
+        <ElButton type="danger" link @click="remove">{{ tr('daily.remove') }}</ElButton>
         <ElButton @click="editorOpen = false">{{ tr('daily.ui.collapse') }}</ElButton>
       </div>
-      <p class="arrangement-summary" aria-live="polite">
-        {{ scopeSummary(current) }} · {{ timeSummary(current) }} · {{ peopleSummary(current) }}
-      </p>
-      <p class="daily-help">
-        {{ tr('daily.ui.planStartSummary', { date: form.startDate }) }} ·
-        {{ tr(current.allowLate ? 'daily.allowLate' : 'daily.ui.noLate') }}
-      </p>
       <template v-for="a in [current]" :key="active">
-        <ElForm label-width="110px" class="daily-grid" @submit.prevent>
+        <ElForm label-position="top" class="daily-grid" @submit.prevent>
           <ElFormItem :label="tr('daily.name')" required :error="err('name')"
             ><ElInput v-model="a.name" maxlength="150"
           /></ElFormItem>
-          <ElFormItem :label="tr('daily.enabled')"
-            ><ElSwitch v-model="a.enabled" /><ElButton type="danger" link @click="remove">{{
-              tr('daily.remove')
-            }}</ElButton></ElFormItem
-          >
           <ElCollapse v-model="expanded" class="full"
-            ><ElCollapseItem name="scope" :title="tr('daily.ui.scopeSettings')">
-              <p class="daily-help">{{ scopeSummary(a) }} · {{ tr('daily.ui.scopeHelp') }}</p>
+            ><ElCollapseItem name="scope">
+              <template #title
+                ><span>{{ tr('daily.ui.scopeSettings') }}</span
+                ><AppHelpTip :content="tr('daily.ui.scopeHelp')"
+              /></template>
               <div class="daily-grid">
                 <ElFormItem :label="tr('daily.equipment')" :error="err('equipmentIds')"
                   ><PagedChoiceField
@@ -354,8 +351,15 @@ onMounted(() => {
                     :placeholder="tr('daily.allProjects')"
                 /></ElFormItem></div></ElCollapseItem
           ></ElCollapse>
-          <h4 class="daily-group-title full">{{ tr('daily.ui.when') }}</h4>
-          <p class="daily-help full">{{ tr('daily.shiftOnly.help') }}</p>
+          <div class="daily-group-heading full">
+            <h4>{{ tr('daily.ui.when') }}</h4>
+            <AppHelpTip
+              :content="tr('daily.shiftOnly.help') + ' ' + tr('daily.ui.shiftOvernightHelp')"
+            />
+            <ElButton type="primary" plain class="add-slot-button" @click="addSlot"
+              ><AppIcon name="Plus" />{{ tr('daily.addSlot') }}</ElButton
+            >
+          </div>
           <ElAlert
             v-if="!['shift', 'slots'].includes(a.frequency)"
             class="full"
@@ -363,36 +367,57 @@ onMounted(() => {
             type="warning"
             :closable="false"
           />
-          <ElFormItem
-            class="full"
-            :label="tr('daily.slots')"
-            :error="err('slots') || err('frequency')"
+          <ElFormItem class="full slot-field" :error="err('slots') || err('frequency')"
             ><div class="slots">
-              <p v-if="!a.slots.length" class="daily-help">{{ tr('daily.shiftOnly.noShifts') }}</p>
-              <div v-for="(s, n) in a.slots" :key="s.id" class="slot">
-                <ElInput
-                  v-model="s.name"
-                  :placeholder="tr('daily.slotName')"
-                  maxlength="100"
-                /><ElTimePicker v-model="s.start" value-format="HH:mm:ss" /><span>—</span
-                ><ElTimePicker v-model="s.end" value-format="HH:mm:ss" /><ElButton
-                  type="danger"
-                  link
-                  @click="removeSlot(n)"
-                  >{{ tr('daily.remove') }}</ElButton
+              <AppBusinessTable :rows="a.slots" row-key="id" :pagination="false" :fill="false">
+                <ElTableColumn :label="tr('daily.slotName')" min-width="180"
+                  ><template #default="{ row }"
+                    ><ElInput
+                      v-model="row.name"
+                      :aria-label="tr('daily.slotName')"
+                      :placeholder="tr('daily.slotName')"
+                      maxlength="100" /></template
+                ></ElTableColumn>
+                <ElTableColumn :label="tr('daily.startTime')" min-width="180"
+                  ><template #default="{ row }"
+                    ><ElTimePicker
+                      v-model="row.start"
+                      value-format="HH:mm:ss"
+                      format="HH:mm"
+                      :aria-label="tr('daily.startTime')" /></template
+                ></ElTableColumn>
+                <ElTableColumn :label="tr('ui.equipment.text0359')" min-width="180"
+                  ><template #default="{ row }"
+                    ><ElTimePicker
+                      v-model="row.end"
+                      value-format="HH:mm:ss"
+                      format="HH:mm"
+                      :aria-label="tr('ui.equipment.text0359')" /></template
+                ></ElTableColumn>
+                <ElTableColumn :label="tr('ui.equipment.text0145')" width="156"
+                  ><template #default="{ $index }"
+                    ><ElButton type="danger" link @click="removeSlot($index)">{{
+                      tr('daily.remove')
+                    }}</ElButton></template
+                  ></ElTableColumn
                 >
-              </div>
-              <ElButton @click="addSlot">{{ tr('daily.addSlot') }}</ElButton>
+                <template #empty>{{ tr('daily.shiftOnly.noShifts') }}</template>
+              </AppBusinessTable>
             </div></ElFormItem
           >
-          <h4 class="daily-group-title full">{{ tr('daily.ui.who') }}</h4>
+          <div class="daily-group-heading full">
+            <h4>{{ tr('daily.ui.who') }}</h4>
+            <AppHelpTip :content="tr('daily.ui.followUpHelp')" />
+          </div>
           <ElFormItem :label="tr('daily.personMode')" required :error="err('personMode')"
-            ><ElSelect v-model="a.personMode"
-              ><ElOption
-                v-for="m in modes"
-                :key="m"
-                :value="m"
-                :label="tr('daily.mode.' + m)" /></ElSelect
+            ><div class="daily-person-mode">
+              <ElSelect v-model="a.personMode"
+                ><ElOption
+                  v-for="m in modes"
+                  :key="m"
+                  :value="m"
+                  :label="tr('daily.mode.' + m)" /></ElSelect
+              ><AppHelpTip v-if="a.personMode === 'open'" :content="tr('staff.openHelp')" /></div
           ></ElFormItem>
           <ElFormItem
             v-if="a.personMode === 'specified'"
@@ -435,7 +460,6 @@ onMounted(() => {
               :title="tr('daily.followUp')"
               @select="emit('people', $event)"
           /></ElFormItem>
-          <p v-if="a.personMode === 'open'" class="daily-help full">{{ tr('staff.openHelp') }}</p>
           <DailyRosterEditor
             v-if="
               a.personMode === 'roster' &&
@@ -456,7 +480,6 @@ onMounted(() => {
             "
             @people="emit('people', $event)"
           />
-          <p class="daily-help full">{{ tr('daily.ui.followUpHelp') }}</p>
           <ElAlert
             v-if="hasOverrides"
             class="full"
@@ -470,13 +493,10 @@ onMounted(() => {
                 <ElFormItem :label="tr('daily.allowLate')"
                   ><ElSwitch v-model="a.allowLate"
                 /></ElFormItem>
-              </div>
-              <p class="daily-help">{{ tr('daily.ui.shiftOvernightHelp') }}</p></ElCollapseItem
-            ></ElCollapse
-          >
+              </div> </ElCollapseItem
+          ></ElCollapse>
         </ElForm>
       </template>
-      <p class="daily-help">{{ tr('daily.ui.saveHint') }}</p>
     </div>
     <AppDialog
       v-model="teamOpen"
@@ -543,12 +563,6 @@ onMounted(() => {
   </section>
 </template>
 <style scoped>
-.daily-help {
-  color: var(--el-text-color-regular);
-  font-size: 13px;
-  line-height: 1.6;
-  margin: 0 0 12px;
-}
 .daily-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -570,7 +584,7 @@ onMounted(() => {
 }
 .daily-arrangements {
   display: grid;
-  gap: 24px;
+  gap: 16px;
   min-width: 0;
 }
 .arrangement-list,
@@ -589,48 +603,68 @@ onMounted(() => {
 }
 .arrangement-editor-heading h3,
 .arrangement-list .inspection-section-tools h3 {
-  margin: 0 auto 0 0;
+  margin: 0;
 }
-.arrangement-summary {
-  margin: 0 0 8px;
-  padding: 12px;
-  line-height: 1.8;
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-primary);
-  overflow-wrap: anywhere;
+.arrangement-list .preview-range-label {
+  margin-left: auto;
+}
+.arrangement-editor-heading > .el-button.is-link {
+  margin-left: auto;
 }
 .daily-grid > .el-collapse {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 .slots {
   width: 100%;
-  display: grid;
-  gap: 8px;
+  max-width: 980px;
+  min-width: 0;
 }
-.slot {
-  display: grid;
-  max-width: 880px;
-  grid-template-columns: minmax(90px, 1fr) minmax(110px, 1fr) auto minmax(110px, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-}
-.slots > .el-button {
-  justify-self: start;
+.slot-field :deep(.el-form-item__content) {
   margin-left: 0;
+  justify-content: flex-start;
+}
+.slots :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+.slots :deep(.cell) {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.daily-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 8px;
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.daily-group-heading h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.daily-group-heading .add-slot-button {
+  margin-left: 12px;
+}
+.daily-group-heading .add-slot-button :deep(.app-icon) {
+  margin-right: 4px;
+}
+.daily-person-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.daily-person-mode > .el-select {
+  flex: 1;
 }
 .preview-period {
-  width: 130px;
+  width: 100px;
 }
-.daily-group-title {
-  margin: 4px 0 14px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  color: var(--el-text-color-primary);
+.preview-range-label {
   font-size: 13px;
-  font-weight: 600;
-}
-.daily-group-title:first-child {
-  margin-top: 0;
+  color: var(--el-text-color-regular);
 }
 .daily-team-field {
   display: flex;
@@ -653,9 +687,6 @@ onMounted(() => {
 .daily-grid :deep(.el-input-number) {
   width: 100%;
 }
-.daily-grid .el-button {
-  margin-left: 8px;
-}
 @media (max-width: 1400px) {
   .daily-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -664,20 +695,6 @@ onMounted(() => {
 @media (max-width: 900px) {
   .daily-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .slot {
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  }
-  .slot > .el-input,
-  .slot > .el-button {
-    grid-column: 1 / -1;
-  }
-  .slot > .el-button {
-    justify-self: start;
-  }
-  .slot :deep(.el-date-editor) {
-    min-width: 0;
-    width: 100%;
   }
 }
 </style>

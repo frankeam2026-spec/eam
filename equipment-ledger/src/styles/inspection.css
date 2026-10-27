@@ -4,8 +4,7 @@
   height: calc(100vh - 54px);
   box-sizing: border-box;
   min-height: 0;
-  padding: 0px 8px;
-  gap: 12px;
+  /* gap: 12px; */
   font-size: 13px;
   color: #263246;
   overflow: hidden;
@@ -508,8 +507,10 @@
 }
 .inspection-route-panel h3 {
   margin: 0;
-  padding: 14px;
+  padding: 12px 14px;
   font-size: 14px;
+  font-weight: 600;
+  background: var(--el-fill-color-light);
   border-bottom: 1px solid #e1e6ef;
 }
 .inspection-route-panel > button {
@@ -517,6 +518,10 @@
   gap: 8px;
   padding: 12px;
   width: 100%;
+  height: auto;
+  margin: 0;
+  white-space: normal;
+  border-radius: 0;
   border: 0;
   border-bottom: 1px solid #e8edf3;
   background: white;
@@ -525,14 +530,27 @@
   color: #263246;
   cursor: pointer;
 }
+.inspection-route-panel > .el-button + .el-button {
+  margin-left: 0;
+}
 .inspection-route-panel > button.active {
   background: var(--brand-soft);
   color: var(--brand);
+  box-shadow: inset 2px 0 var(--brand);
 }
-.inspection-route-panel > button > div {
+.inspection-route-panel > .el-button.app-content-button > span {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.inspection-route-panel > button > span > div {
   display: grid;
   gap: 5px;
   min-width: 0;
+  text-align: left;
 }
 .inspection-route-panel strong {
   white-space: normal;
@@ -831,6 +849,59 @@
 }
 .daily-plan-editor .inspection-form-grid {
   gap: 12px 24px;
+}
+.periodic-plan-card .inspection-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px 24px;
+}
+.periodic-plan-card .inspection-form-grid > label {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.periodic-plan-card .inspection-form-grid > label > span {
+  width: 100px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+}
+.periodic-plan-card .inspection-form-grid > label.periodic-remark {
+  grid-column: 1 / span 2;
+  align-items: flex-start;
+}
+.periodic-plan-card .inspection-form-grid > label.periodic-remark > span { min-height: 32px; }
+.periodic-plan-card .periodic-section-title {
+  margin: 8px 0 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  font-size: 14px;
+  font-weight: 600;
+}
+.periodic-plan-card .periodic-section-title:first-child { margin-top: 0; }
+.periodic-plan-card .inspection-number-unit { width: 100%; }
+.periodic-plan-card .inspection-form-grid > .reminder-policy-field {
+  grid-column: auto;
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  align-self: start;
+  margin: 0;
+}
+.periodic-plan-card .inspection-form-grid > .reminder-policy-field > .el-select,
+.periodic-plan-card .inspection-form-grid > .reminder-policy-field .dialog-choice-input {
+  grid-column: 2;
+  width: 100%;
+  min-width: 0;
+}
+@media (max-width: 1180px) {
+  .periodic-plan-card .inspection-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 800px) {
+  .periodic-plan-card .inspection-form-grid > label.periodic-remark { grid-column: 1 / -1; }
+  .periodic-plan-card .inspection-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .periodic-plan-card .inspection-form-grid .span-two { grid-column: auto; }
 }
 .daily-plan-editor > .inspection-form-card {
   flex-shrink: 0;

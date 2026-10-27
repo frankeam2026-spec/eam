@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElButton, ElTableColumn } from 'element-plus';
 import { tr } from '../../i18n';
+import { formatDateTime } from '../../utils/dateTime';
 import { inspectionApi, type InspectionDefinition, type DailyArrangement } from '../../inspection';
 import { useAuthStore } from '../../stores/auth';
 import AppDialog from '../common/AppDialog.vue';
@@ -67,7 +68,7 @@ function shifts(a: DailyArrangement) {
         </div>
         <div>
           <span>{{ tr('daily.ui.planDates') }}</span
-          ><strong>{{ plan.startDate }} — {{ plan.endDate }}</strong>
+          ><strong>{{ formatDateTime(plan.startDate) }} — {{ formatDateTime(plan.endDate) }}</strong>
         </div>
       </div>
       <p v-if="plan.remark">{{ plan.remark }}</p>

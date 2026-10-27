@@ -13,6 +13,9 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class AuthorizationRepository {
+  public boolean approvalParticipation(long tenant,long user) {
+    return db.queryForObject("SELECT COUNT(*) FROM wf_approval WHERE tenant_id=? AND user_id=?",Long.class,tenant,user)>0;
+  }
   private final RoleRelationsRepository relations;
   private final UserRoleLinkMapper links;
   private final SystemRoleMapper roles;

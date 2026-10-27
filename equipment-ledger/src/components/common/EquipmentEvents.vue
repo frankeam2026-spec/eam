@@ -75,7 +75,7 @@ const colors: Record<string, string> = {
 };
 </script>
 <template>
-  <section class="equipment-events-panel" :aria-busy="loading">
+  <section class="content equipment-events-panel" :aria-busy="loading">
     <header class="equipment-panel-heading">
       <h3><AppIcon name="Clock" />{{ full ? tr('ui.equipment.text1361') : tr('ui.equipment.text1362') }}</h3>
       <div v-if="full" class="event-controls">
@@ -135,7 +135,7 @@ const colors: Record<string, string> = {
 <style scoped>
 .equipment-events-panel {
   min-width: 0;
-  padding: 16px;
+  /* padding: 16px; */
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);

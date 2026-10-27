@@ -21,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class RequisitionService {
+  @org.springframework.beans.factory.annotation.Autowired private com.windasoft.eam.service.workflow.WorkflowRuntimeService workflow;
   @org.springframework.beans.factory.annotation.Autowired private InventoryListService listQueries;
   @org.springframework.beans.factory.annotation.Autowired private InventoryMutex mutex;
 
@@ -59,6 +60,24 @@ public class RequisitionService {
   }
 
   private record Task(long company, String code, String status) {}
+
+  private void requireApproval(Map<String,Object> raw) {
+    require("LEGACY".equals(raw.get("approval_gate")) || workflow.approved("requisition",id(raw.get("id"))),"领料申请尚未审批通过");
+  }
+  public void lockForWorkflow(long requestId) {
+    mutex.enter();require(!repository.loadRequest(auth.tenantId(),requestId,true).isEmpty(),"领料申请不存在");
+  }
+  public void requireWorkflowTaskActive(long requestId) {
+    var r=repository.loadRequest(auth.tenantId(),requestId,false).getFirst();
+    require(active(task(text(r,"task_kind"),id(r.get("task_id")),false,true).status()),"关联任务已结束，不能继续领料审批");
+  }
+  public void workflowApproved(long requestId) {
+    requireWorkflowTaskActive(requestId);repository.submitRequest(auth.tenantId(),requestId);
+    event(requestId,"审批通过");notifyWarehouse(requestId);
+  }
+  public void workflowReturned(long requestId,String reason) {
+    repository.workflowStatus(auth.tenantId(),requestId,"草稿","REQUIRED");event(requestId,reason);
+  }
 
   private Task task(String kind, long taskId, boolean checkAccess, boolean lock) {
     if (kind.equals("维修")) {
@@ -105,7 +124,7 @@ public class RequisitionService {
         !rows.isEmpty(),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0213"));
     var raw = rows.getFirst();
-    if (!(id(raw.get("applicant_id")) == auth.userId()
+    if (!(action.equals("查看") && workflow.participant("requisition",requestId)) && !(id(raw.get("applicant_id")) == auth.userId()
         && Set.of("查看", "新增", "编辑").contains(action))) {
       if (Set.of("出库", "预留", "释放预留", "确认出库", "关闭剩余需求").contains(action))
         permissions.checkInventoryWarehouse(
@@ -123,7 +142,7 @@ public class RequisitionService {
   }
 
   private void notifyWarehouse(long requestId) {
-    var r = row(requestId, false, "新增");
+    var r = repository.loadRequest(auth.tenantId(),requestId,false).getFirst();
     var warehouse = masters.row("warehouses", id(r.get("warehouse_id")), false);
 
     var recipients =
@@ -197,6 +216,7 @@ public class RequisitionService {
 
   public Map<String, Object> detail(long requestId) {
     var rendered = masters.view(row(requestId, false, "查看"));
+    rendered.put("workflow",workflow.history("requisition",requestId));
     rendered.put(
         "warehouseName",
         masters.row("warehouses", id(rendered.get("warehouseId")), false).get("name"));
@@ -569,7 +589,7 @@ public class RequisitionService {
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0226"));
     if (!text(raw, "status").equals("草稿")) {
       require(
-          Set.of("待预留", "部分预留", "已预留", "部分发料", "已完成").contains(text(raw, "status")),
+          Set.of("审批中", "待预留", "部分预留", "已预留", "部分发料", "已完成").contains(text(raw, "status")),
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0227"));
       return detail(requestId);
     }
@@ -578,6 +598,13 @@ public class RequisitionService {
     require(
         active(t.status()),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0228"));
+    if(workflow.configured(id(raw.get("company_id")),"requisition")) {
+      repository.workflowStatus(auth.tenantId(),requestId,"审批中","REQUIRED");
+      workflow.start("requisition",requestId,id(raw.get("company_id")),auth.userId());
+      event(requestId,"提交审批");
+      return detail(requestId);
+    }
+    repository.workflowStatus(auth.tenantId(),requestId,"草稿","LEGACY");
     repository.submitRequest(auth.tenantId(), requestId);
     event(requestId, "提交申请");
     taskEvent(raw, "领料申请 · " + text(raw, "code"));
@@ -602,6 +629,7 @@ public class RequisitionService {
   public Map<String, Object> reserve(long requestId, Map<String, Object> body) {
     mutex.enter();
     var raw = row(requestId, true, "预留");
+    requireApproval(raw);
     require(
         Set.of("待预留", "部分预留", "已预留", "部分发料").contains(text(raw, "status")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0229"));
@@ -794,6 +822,7 @@ public class RequisitionService {
 
   Map<String, Object> outboundRequest(long requestId, boolean lock, String action) {
     var r = row(requestId, lock, action);
+    requireApproval(r);
     require(
         Set.of("待预留", "部分预留", "已预留", "部分发料").contains(text(r, "status")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0239"));

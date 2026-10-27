@@ -141,7 +141,7 @@ async function restore(row: LanguageOption) {
 onMounted(load);
 </script>
 <template>
-  <section class="language-management">
+  <section class="content language-management">
     <AppListToolbar
       ><div class="language-toolbar-left">
         <AppFilePicker accept=".json" :disabled="busy" @select="select"
@@ -260,10 +260,9 @@ onMounted(load);
 .language-management {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* gap: 8px; */
   height: 100%;
   min-height: 0;
-  padding: 12px;
 }
 .language-management :deep(.el-alert) {
   flex-shrink: 0;

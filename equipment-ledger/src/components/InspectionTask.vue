@@ -18,10 +18,8 @@ import BusinessFields from './business/BusinessFields.vue';
 import { useBusinessExtension } from '../composables/useBusinessExtension';
 const { extension, extensionErrors, prepareExtension, extensionError } = useBusinessExtension();
 import { ElTableColumn } from 'element-plus';
-import TaskAnomalies from './common/TaskAnomalies.vue';
 import { confirmSurplus } from '../services/surplusConfirmation';
 import AppBusinessTable from './common/AppBusinessTable.vue';
-import TaskMaterials from './TaskMaterials.vue';
 import { workspaceReturn } from '../utils/workspaceNavigation';
 import { useUnsavedChanges } from '../composables/useUnsavedChanges';
 import { formatDateTime } from '../utils/dateTime';
@@ -291,7 +289,7 @@ const tableColumnRows1 = () => draft.value.reviewItems;
 type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 <template>
-  <section class="inspection-page inspection-task-page">
+  <section class="content inspection-page inspection-task-page">
     <header class="inspection-edit-heading">
       <AppBackButton
         :label="
@@ -504,18 +502,6 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
               ></AppBusinessTable
             >
           </section>
-          <TaskAnomalies
-            v-if="task.kind !== 'daily'"
-            kind="点巡检"
-            :task-id="String(route.params.id)"
-            :can-record="editing"
-          />
-          <TaskMaterials
-            v-if="task.kind !== 'daily'"
-            :task-id="String(task.id)"
-            kind="点巡检"
-            :can-work="!!task.canExecute && ['执行中', '挂起'].includes(task.status)"
-          />
           <BusinessFields
             ref="extension"
             v-model="task"

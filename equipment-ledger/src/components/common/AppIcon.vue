@@ -14,6 +14,7 @@ import User from '@icon-park/vue-next/es/icons/People';
 import Permissions from '@icon-park/vue-next/es/icons/Permissions';
 import Location from '@icon-park/vue-next/es/icons/MapDraw';
 import Plus from '@icon-park/vue-next/es/icons/Plus';
+import Minus from '@icon-park/vue-next/es/icons/Minus';
 import Close from '@icon-park/vue-next/es/icons/Close';
 import Left from '@icon-park/vue-next/es/icons/Left';
 import Right from '@icon-park/vue-next/es/icons/Right';
@@ -50,6 +51,7 @@ import Proportion from '@icon-park/vue-next/es/icons/ChartPie';
 
 const props = defineProps<{ name: string }>();
 const icons: Record<string, Component> = {
+  Minus,
   Refresh,
   Grid,
   Equipment,

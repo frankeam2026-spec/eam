@@ -796,7 +796,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   border-radius: 6px;
   background: #fff;
   padding: 8px;
-  margin-top: 9px;
+  /* margin-top: 9px; */
 }
 .task-navigation header {
   padding: 10px 10px 14px;

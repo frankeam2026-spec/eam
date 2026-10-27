@@ -934,7 +934,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
 </script>
 
 <template>
-  <section class="outbound-page" v-loading="loading">
+  <section class="content outbound-page" v-loading="loading">
     <div v-if="error" class="outbound-error">
       {{ error }} <ElButton @click="load">{{ tr('ui.equipment.text0299') }}</ElButton>
     </div>
@@ -1635,11 +1635,10 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   flex-direction: column;
   height: calc(100dvh - 54px);
   box-sizing: border-box;
-  padding: 12px;
   min-height: 0;
   font-size: 13px;
   color: var(--el-text-color-primary);
-  gap: 8px;
+  /* gap: 8px; */
 }
 .outbound-query,
 .outbound-actions,

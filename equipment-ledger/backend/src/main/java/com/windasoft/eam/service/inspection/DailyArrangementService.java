@@ -52,6 +52,8 @@ public class DailyArrangementService {
     var keys = new HashSet<Long>();
     for (int i = 0; i < groups.size(); i++) {
       var a = groups.get(i);
+      // Arrangements follow their plan; retain true only for older DTO clients.
+      a.put("enabled", true);
       String path = "arrangements." + i + ".";
       if (planId == null || text(a, "id").isBlank()) a.put("id", Long.toString(IdWorker.getId()));
       long id = number(a.get("id"));

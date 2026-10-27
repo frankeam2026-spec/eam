@@ -229,6 +229,145 @@ class DailyStaffingMySqlIT {
             false));
   }
 
+  Map<String, Object> periodicDraft() {
+    var source = plan("open");
+    var p = mutable(source);
+    p.remove("id"); p.remove("rowVersion"); p.put("code", "");
+    p.put("name", "periodic-start-" + UUID.randomUUID());
+    var type = plans.save("types", null, mutable(Map.of("name", "periodic-cycle-" + UUID.randomUUID(), "period", 1, "unit", "日", "enabled", true)));
+    p.put("typeId", type.get("id")); p.put("owners", List.of("73001"));
+    p.put("validHours", 1); p.put("validUnit", "日");
+    p.remove("nextAt"); return p;
+  }
+
+  @Test
+  @org.springframework.transaction.annotation.Transactional
+  void periodicMigrationOnlyRealignsPlansWithoutAnyTaskHistory() {
+    var live = plans.save("periodic-plans",null,periodicDraft()); long liveId=number(live.get("id"));
+    var body=periodicDraft();body.put("enabled",false);
+    var untouched=plans.save("periodic-plans",null,body);long id=number(untouched.get("id"));
+    db.update("UPDATE eam_inspection_schedule SET next_at=DATE_ADD(anchor_at,INTERVAL 12 HOUR),anchor_at=DATE_ADD(anchor_at,INTERVAL 12 HOUR) WHERE tenant_id=10001 AND plan_id IN (?,?)",liveId,id);
+    db.update("UPDATE eam_inspection_periodic_plan SET next_at=DATE_ADD(TIMESTAMP(start_date),INTERVAL 12 HOUR) WHERE tenant_id=10001 AND id IN (?,?)",liveId,id);
+    var before=db.queryForMap("SELECT next_at,anchor_at,cycle_index FROM eam_inspection_schedule WHERE tenant_id=10001 AND plan_id=?",liveId);
+    int version=db.queryForObject("SELECT row_version FROM eam_inspection_periodic_plan WHERE tenant_id=10001 AND id=?",Integer.class,id);
+    db.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) con -> {
+      org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(con,new org.springframework.core.io.ClassPathResource("db/migration/V100__periodic_first_inspection_from_plan_start.sql"));return null;
+    });
+    assertEquals(before,db.queryForMap("SELECT next_at,anchor_at,cycle_index FROM eam_inspection_schedule WHERE tenant_id=10001 AND plan_id=?",liveId));
+    assertEquals(LocalDate.parse(text(body,"startDate")).atStartOfDay(),db.queryForObject("SELECT anchor_at FROM eam_inspection_schedule WHERE tenant_id=10001 AND plan_id=?",LocalDateTime.class,id));
+    assertEquals(version+1,db.queryForObject("SELECT row_version FROM eam_inspection_periodic_plan WHERE tenant_id=10001 AND id=?",Integer.class,id));
+  }
+
+  @Test
+  void periodicCustomCycleIsSavedAndUsedWithoutChangingTypeDefaults() {
+    var body=periodicDraft();body.put("period",2);body.put("unit","周");body.put("validHours",2);body.put("validUnit","周");
+    long type=number(body.get("typeId"));
+    var saved=mutable(plans.save("periodic-plans",null,body));long id=number(saved.get("id"));
+    assertEquals(2,number(saved.get("period")));assertEquals("周",saved.get("unit"));
+    assertEquals(LocalDate.parse(text(body,"startDate")).plusWeeks(2).atStartOfDay(),db.queryForObject("SELECT next_at FROM eam_inspection_schedule WHERE tenant_id=10001 AND plan_id=?",LocalDateTime.class,id));
+    var defaultType=plans.definition("types",type);assertEquals(1,number(defaultType.get("period")));assertEquals("日",defaultType.get("unit"));
+    saved.put("remark","keep custom cycle");var updated=plans.save("periodic-plans",id,saved);
+    assertEquals(2,number(updated.get("period")));assertEquals("周",updated.get("unit"));
+    assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001 AND plan_id=?",Integer.class,id));
+    var changed=mutable(updated);changed.put("period",3);
+    assertThrows(Exception.class,()->plans.save("periodic-plans",id,changed));
+    assertEquals(2,db.queryForObject("SELECT period_count FROM eam_inspection_periodic_plan WHERE tenant_id=10001 AND id=?",Integer.class,id));
+  }
+
+  @Test
+  void periodicCycleDefaultsOnlyWhenOmittedAndRejectsInvalidOverrides() {
+    var body=periodicDraft();body.put("enabled",false);body.remove("period");body.remove("unit");
+    var saved=mutable(plans.save("periodic-plans",null,body));long id=number(saved.get("id"));
+    assertEquals(1,number(saved.get("period")));assertEquals("日",saved.get("unit"));
+    for(Object invalid:List.of(0,1.5,10001)) {
+      var draft=mutable(saved);draft.put("period",invalid);
+      assertThrows(Exception.class,()->plans.save("periodic-plans",id,draft));
+    }
+    var invalidUnit=mutable(saved);invalidUnit.put("unit","时");assertThrows(Exception.class,()->plans.save("periodic-plans",id,invalidUnit));
+    saved.put("period",3);saved.put("unit","月");var updated=plans.save("periodic-plans",id,saved);
+    assertEquals(3,number(updated.get("period")));assertEquals("月",updated.get("unit"));
+  }
+
+  @Test
+  void periodicFirstInspectionUsesPlanStartWithoutSeparateNextAt() {
+    var body = periodicDraft();
+    body.put("nextAt", "ignored-old-client-value");
+    var saved = plans.save("periodic-plans", null, body);
+    long id = number(saved.get("id"));
+    var expected = LocalDate.parse(text(body, "startDate")).atStartOfDay();
+    assertEquals(expected, db.queryForObject("SELECT anchor_at FROM eam_inspection_schedule WHERE tenant_id=10001 AND plan_id=?", LocalDateTime.class, id));
+    assertEquals(expected, db.queryForObject("SELECT MIN(due_at) FROM eam_inspection_task WHERE tenant_id=10001 AND plan_id=?", LocalDateTime.class, id));
+    assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001 AND plan_id=?", Integer.class, id));
+    assertEquals(text(body, "startDate") + "T00:00:00", saved.get("startDate"));
+    assertEquals(text(body, "endDate") + "T23:59:59", saved.get("endDate"));
+  }
+
+  @Test
+  void periodicPlanPreservesSecondsAndHonorsExactEndBoundary() {
+    var start = now().toLocalDate().minusDays(3).atTime(8, 17, 43);
+    for (boolean inclusive : List.of(false, true)) {
+      var body = periodicDraft();
+      body.put("startDate", start.toString());
+      var end = start.plusDays(1).minusSeconds(inclusive ? 0 : 1);
+      body.put("endDate", end.toString());
+      body.put("period", 1); body.put("unit", "日");
+      var saved = mutable(plans.save("periodic-plans", null, body));
+      long id = number(saved.get("id"));
+      assertEquals(start.toString(), saved.get("startDate"));
+      assertEquals(end.toString(), saved.get("endDate"));
+      assertEquals(start, db.queryForObject("SELECT start_date FROM eam_inspection_periodic_plan WHERE id=?", LocalDateTime.class, id));
+      assertEquals(end, db.queryForObject("SELECT end_date FROM eam_inspection_periodic_plan WHERE id=?", LocalDateTime.class, id));
+      assertEquals(start, db.queryForObject("SELECT anchor_at FROM eam_inspection_schedule WHERE plan_id=?", LocalDateTime.class, id));
+      assertEquals(start, db.queryForObject("SELECT MIN(due_at) FROM eam_inspection_task WHERE plan_id=?", LocalDateTime.class, id));
+      assertEquals(inclusive ? 2 : 1, db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE plan_id=?", Integer.class, id));
+      var cursor = db.queryForMap("SELECT next_at,anchor_at,cycle_index FROM eam_inspection_schedule WHERE plan_id=?", id);
+      saved.put("remark", "preserve seconds and cursor");
+      var updated = plans.save("periodic-plans", id, saved);
+      assertEquals(start.toString(), updated.get("startDate"));
+      assertEquals(cursor, db.queryForMap("SELECT next_at,anchor_at,cycle_index FROM eam_inspection_schedule WHERE plan_id=?", id));
+      assertEquals(inclusive ? 2 : 1, db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE plan_id=?", Integer.class, id));
+    }
+  }
+
+  @Test
+  void periodicPlanRejectsInvertedTimesWithinSameDay() {
+    var body = periodicDraft(); body.put("enabled", false);
+    String day = now().toLocalDate().plusDays(2).toString();
+    body.put("startDate", day + "T09:30:15");
+    body.put("endDate", day + "T09:30:14");
+    assertThrows(IllegalArgumentException.class, () -> plans.save("periodic-plans", null, body));
+    body.put("endDate", day + "T09:30:15");
+    var saved = plans.save("periodic-plans", null, body);
+    assertEquals(body.get("startDate"), saved.get("startDate"));
+    assertEquals(body.get("endDate"), saved.get("endDate"));
+  }
+
+  @Test
+  void periodicOrdinarySavePreservesAdvancedCursorAndDoesNotDuplicateTasks() {
+    var saved = mutable(plans.save("periodic-plans", null, periodicDraft()));
+    long id = number(saved.get("id"));
+    var before = db.queryForMap("SELECT next_at,anchor_at,cycle_index FROM eam_inspection_schedule WHERE tenant_id=10001 AND plan_id=?", id);
+    int count = db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001 AND plan_id=?", Integer.class, id);
+    saved.put("remark", "ordinary edit"); saved.remove("nextAt");
+    var updated = plans.save("periodic-plans", id, saved);
+    assertEquals("ordinary edit", updated.get("remark"));
+    assertEquals(before, db.queryForMap("SELECT next_at,anchor_at,cycle_index FROM eam_inspection_schedule WHERE tenant_id=10001 AND plan_id=?", id));
+    assertEquals(count, db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001 AND plan_id=?", Integer.class, id));
+    var invalid = mutable(updated); invalid.put("startDate", periodicBoundary(invalid.get("startDate"),false).minusDays(1).toString());
+    assertThrows(Exception.class, () -> plans.save("periodic-plans", id, invalid));
+    assertEquals(before, db.queryForMap("SELECT next_at,anchor_at,cycle_index FROM eam_inspection_schedule WHERE tenant_id=10001 AND plan_id=?", id));
+  }
+
+  @Test
+  void periodicUntouchedPlanCanMoveStartWhileRemainingDisabled() {
+    var body = periodicDraft();body.put("enabled",false);body.put("startDate",now().toLocalDate().plusDays(1).toString());
+    var saved = mutable(plans.save("periodic-plans", null, body));long id=number(saved.get("id"));
+    saved.put("startDate",now().toLocalDate().plusDays(2).toString());saved.remove("nextAt");
+    plans.save("periodic-plans", id, saved);
+    assertEquals(now().toLocalDate().plusDays(2).atStartOfDay(),db.queryForObject("SELECT next_at FROM eam_inspection_schedule WHERE tenant_id=10001 AND plan_id=?",LocalDateTime.class,id));
+    assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001 AND plan_id=?",Integer.class,id));
+  }
+
   @Test
   void openTasksAreUnassignedDiscoverableIdempotentAndRecordActualOperator() {
     var p = plan("open");
@@ -275,6 +414,18 @@ class DailyStaffingMySqlIT {
                 + " owner_id IS NULL AND status='已完成'",
             Integer.class,
             number(p.get("id"))));
+  }
+
+  @Test
+  void arrangementsFollowThePlanAndIgnoreLegacyDisabledInput() {
+    var enabled = plan("open", "shift", p -> arrangement(p).put("enabled", false));
+    long planId = number(enabled.get("id"));
+    assertTrue(yes(arrangement(enabled).get("enabled")));
+    assertEquals(1, db.queryForObject("SELECT enabled FROM eam_inspection_daily_arrangement WHERE tenant_id=10001 AND plan_id=?", Integer.class, planId));
+    assertTrue(db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001 AND plan_id=?", Integer.class, planId) > 0);
+    var disabled = plan("open", "shift", p -> {p.put("enabled", false);arrangement(p).put("enabled", false);});
+    assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001 AND plan_id=?", Integer.class, number(disabled.get("id"))));
+    assertTrue(yes(arrangement(disabled).get("enabled")));
   }
 
   @Test

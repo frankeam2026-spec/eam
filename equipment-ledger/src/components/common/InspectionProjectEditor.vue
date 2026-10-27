@@ -85,7 +85,7 @@ const tableColumnRows1 = () => items.value;
 type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </script>
 <template>
-  <section class="inspection-projects">
+  <section class="content inspection-projects">
     <div class="inspection-section-tools">
       <h3>
         {{ tr('ui.equipment.text0377') }} <span>{{ items.length }}</span>

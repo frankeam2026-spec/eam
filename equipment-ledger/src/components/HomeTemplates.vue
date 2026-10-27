@@ -153,7 +153,7 @@ async function cancel() {
 onMounted(load);
 </script>
 <template>
-  <section class="home-template-page">
+  <section class="content home-template-page">
     <aside class="template-library">
       <header>
         <strong>{{ tr('ui.equipment.text0034') }}</strong
@@ -266,7 +266,6 @@ onMounted(load);
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);
   gap: 16px;
-  padding: 16px 16px 0;
   height: calc(100dvh - 54px);
   min-height: 0;
   background: var(--canvas);

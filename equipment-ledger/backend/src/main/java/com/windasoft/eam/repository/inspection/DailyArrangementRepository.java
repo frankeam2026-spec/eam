@@ -36,7 +36,7 @@ public class DailyArrangementRepository {
       for (String key : List.of("id", "anchorDate", "startTime", "endTime", "followUpUserId"))
         r.put(key, Objects.toString(r.get(key), ""));
       r.put("teamId", Objects.toString(r.get("teamId"), ""));
-      r.put("enabled", flag(r.get("enabled")));
+      r.put("enabled", true); // Compatibility field, no independent arrangement switch.
       r.put("allowLate", flag(r.get("allowLate")));
       r.put("regularRoster", staffing(tenant, id, false));
       r.put("dateRoster", staffing(tenant, id, true));
@@ -115,7 +115,7 @@ public class DailyArrangementRepository {
           plan,
           text(a, "name"),
           order++,
-          yes(a.get("enabled")),
+          true,
           text(a, "frequency"),
           number(a.get("intervalCount")),
           text(a, "anchorDate"),

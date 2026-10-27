@@ -447,6 +447,7 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         actions: ['查看'],
         scopes: ['all'],
       },
+      {key:'workflow',name:'审批流程',actions:['查看','编辑','发布','停用','脚本配置','脚本发布','脚本试算'],scopes:['all','company','companyTree','companies']},
       {key:'notificationPolicy',get name(){return tr('notify.policies');},actions:['查看','编辑'],scopes:['all']},
       {key:'notificationChannel',get name(){return tr('notify.channels');},actions:['查看','编辑'],scopes:['all']},
       {key:'notificationDelivery',get name(){return tr('notify.deliveries');},actions:['查看','重试'],scopes:['all']},

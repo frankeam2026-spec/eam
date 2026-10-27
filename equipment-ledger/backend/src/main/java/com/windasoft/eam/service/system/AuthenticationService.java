@@ -76,10 +76,10 @@ public class AuthenticationService {
         || user.getPasswordHash() == null
         || !passwords.matches(form.currentPassword(), user.getPasswordHash()))
       throw new com.windasoft.eam.common.FieldValidationException("currentPassword", "当前密码不正确");
-    if (form.newPassword().length() < 12
+    if (form.newPassword().length() < 6
         || form.newPassword().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72)
       throw new com.windasoft.eam.common.FieldValidationException(
-          "newPassword", "新密码至少12位，且不超过72字节");
+          "newPassword", "新密码至少6位，且不超过72字节");
     if (form.currentPassword().equals(form.newPassword()))
       throw new com.windasoft.eam.common.FieldValidationException("newPassword", "新密码不能与当前密码相同");
     user.setPasswordHash(passwords.encode(form.newPassword()));

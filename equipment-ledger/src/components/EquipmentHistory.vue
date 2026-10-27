@@ -152,7 +152,7 @@ function time(value: string) {
 }
 </script>
 <template>
-  <section class="equipment-history">
+  <section class="content equipment-history">
     <header class="equipment-history-heading">
       <AppBackButton :label="tr('ui.equipment.text0075')" @click="emit('close')" />
       <template v-if="record"
@@ -548,7 +548,7 @@ function time(value: string) {
 }
 .history-body {
   overflow: auto;
-  padding: 8px;
+  padding: 8px 0px;
   flex: 1;
   min-height: 0;
   min-width: 0;

@@ -221,7 +221,7 @@ async function logo(files: File[]) {
 }
 </script>
 <template>
-  <section class="print-template-management">
+  <section class="content print-template-management">
     <ElAlert v-if="error" :title="error" type="error" show-icon :closable="false" />
     <template v-if="!editing">
       <AppListToolbar
@@ -538,8 +538,7 @@ async function logo(files: File[]) {
   flex-direction: column;
   height: calc(100dvh - 54px);
   min-height: 0;
-  padding: 8px 16px 0;
-  gap: 8px;
+  /* gap: 8px; */
   color: var(--el-text-color-primary);
   font-size: 13px;
 }

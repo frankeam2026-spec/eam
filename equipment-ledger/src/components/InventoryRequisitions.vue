@@ -35,6 +35,7 @@ import {
 import AppDialog from './common/AppDialog.vue';
 import AppBackButton from './common/AppBackButton.vue';
 import AppFormFooter from './common/AppFormFooter.vue';
+import RequisitionApproval from './workflow/RequisitionApproval.vue';
 import AppPagination from './common/AppPagination.vue';
 import ListSearchInput from './common/ListSearchInput.vue';
 import ListToolbarIcons from './ListToolbarIcons.vue';
@@ -286,7 +287,9 @@ async function load() {
         result.taskKind = String(route.query.taskKind || '');
         result.taskId = String(route.query.taskId || '');
       }
-      const options = await requisitionApi.choices(true, result.taskKind, result.taskId);
+      const options = result.status === '草稿' && (!result.id || result.applicantId === auth.user?.id)
+        ? await requisitionApi.choices(true, result.taskKind, result.taskId)
+        : {data:{companies:[],users:[],warehouses:[],materials:[],bins:[],tasks:[]} as RequisitionChoices};
       if (current !== revision) return;
       choices.value = options.data;
       form.value = result;
@@ -548,7 +551,7 @@ const tableColumnRows5 = () => poolRows.value;
 type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
 </script>
 <template>
-  <section class="requisition-page">
+  <section class="content requisition-page">
     <p v-if="error" class="error" role="alert">
       {{ error }} <ElButton text @click="load">{{ tr('ui.equipment.text0299') }}</ElButton>
     </p>
@@ -927,6 +930,7 @@ type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
             {{ tr('ui.equipment.text0659') }} {{ formatNumber(issue.totalAmount) }}
           </p>
         </div>
+        <RequisitionApproval :rounds="form.workflow||[]" :applicant-id="form.applicantId" @changed="load"/>
         <div v-if="form.events?.length" class="records">
           <strong>{{ tr('ui.equipment.text0637') }}</strong>
           <p v-for="(event, index) in form.events" :key="index">
@@ -1065,8 +1069,7 @@ type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
   height: calc(100dvh - 54px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  /* gap: 8px; */
   min-height: 0;
   font-size: 13px;
   color: var(--text);

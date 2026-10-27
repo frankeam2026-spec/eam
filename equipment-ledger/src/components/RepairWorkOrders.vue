@@ -1041,9 +1041,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
 .repair-footer button {
   font-size: 13px;
 }
-.repair-page {
-  padding-top: 20px;
-}
+
 .repair-actions,
 .repair-filters {
   display: flex;
@@ -1436,7 +1434,6 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   min-height: 360px;
   display: flex;
   flex-direction: column;
-  padding: 14px 12px 0;
 }
 .repair-table-card {
   flex: 1;

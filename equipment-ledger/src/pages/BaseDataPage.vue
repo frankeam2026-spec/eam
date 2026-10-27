@@ -851,9 +851,9 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
   min-width: 0;
   min-height: 0;
 }
-.base-toolbar {
+/* .base-toolbar {
   margin-top: 0;
-}
+} */
 @media (max-width: 800px) {
   .base-page {
     grid-template-columns: 140px minmax(0, 1fr);

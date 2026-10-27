@@ -1,7 +1,9 @@
-<script setup lang="ts">import { tr } from '../i18n';
+<script setup lang="ts">
+import { tr } from '../i18n';
 
 import LanguageSelect from './common/LanguageSelect.vue';
-import { ElButton, ElInput } from 'element-plus';
+import { ElButton, ElCheckbox, ElInput } from 'element-plus';
+import { forgetLogin, loginMemory } from '../utils/loginMemory';
 
 import SystemBrand from './common/SystemBrand.vue';
 import { defaultBranding } from '../branding';
@@ -18,10 +20,15 @@ watch(
   },
 );
 const emit = defineEmits<{
-  login: [tenantId: string, account: string, password: string];
+  login: [tenantId: string, account: string, password: string, remember: boolean];
   retry: [];
 }>();
-const form = reactive({ tenantId: '10001', account: '', password: '' });
+const saved = loginMemory();
+const form = reactive({ tenantId: saved.tenantId, account: saved.account, password: '' });
+const remember = ref(saved.remember);
+watch(remember, (value) => {
+  if (!value) forgetLogin();
+});
 const submitting = ref(false);
 watch(
   () => form.tenantId,
@@ -33,7 +40,7 @@ watch(
 function submit() {
   if (!form.tenantId.trim() || !form.account.trim() || !form.password) return;
   submitting.value = true;
-  emit('login', form.tenantId.trim(), form.account.trim(), form.password);
+  emit('login', form.tenantId.trim(), form.account.trim(), form.password, remember.value);
   window.setTimeout(() => (submitting.value = false), 800);
 }
 </script>
@@ -55,31 +62,42 @@ function submit() {
       <div v-if="state === 'loading'" class="login-status">{{ tr('ui.equipment.text0735') }}</div>
       <div v-else-if="state === 'unavailable'" class="login-status">
         <span>{{ message || tr('ui.equipment.text0736') }}</span
-        ><ElButton @click="emit('retry')" native-type="button">{{ tr('ui.equipment.text0737') }}</ElButton>
+        ><ElButton @click="emit('retry')" native-type="button">{{
+          tr('ui.equipment.text0737')
+        }}</ElButton>
       </div>
-      <form v-else @submit.prevent="submit">
+      <form v-else :autocomplete="remember ? 'on' : 'off'" @submit.prevent="submit">
         <label
-          >{{ tr('ui.equipment.text0738') }}<ElInput
+          >{{ tr('ui.equipment.text0738')
+          }}<ElInput
             v-model="form.tenantId"
             inputmode="numeric"
             autocomplete="organization"
             :placeholder="tr('ui.equipment.text0739')" /></label
         ><label
-          >{{ tr('ui.equipment.text0740') }}<ElInput
+          >{{ tr('ui.equipment.text0740')
+          }}<ElInput
             v-model="form.account"
+            name="username"
             autocomplete="username"
             :placeholder="tr('ui.equipment.text0741')" /></label
         ><label
-          >{{ tr('ui.equipment.text0742') }}<ElInput
+          >{{ tr('ui.equipment.text0742')
+          }}<ElInput
             v-model="form.password"
+            name="password"
             type="password"
-            autocomplete="current-password"
+            :autocomplete="remember ? 'current-password' : 'off'"
             :placeholder="tr('ui.equipment.text0743')"
         /></label>
+        <div class="login-options">
+          <ElCheckbox v-model="remember">{{ tr('auth.rememberPassword') }}</ElCheckbox>
+          <span v-if="remember">{{ tr('auth.browserPasswordHint') }}</span>
+        </div>
         <div v-if="message" class="login-error">{{ message }}</div>
-        <ElButton class="login-submit" :disabled="submitting" native-type="submit" type="primary"
-          >{{ tr('ui.equipment.text0744') }}</ElButton
-        >
+        <ElButton class="login-submit" :disabled="submitting" native-type="submit" type="primary">{{
+          tr('ui.equipment.text0744')
+        }}</ElButton>
       </form>
     </section>
     <div class="login-foot">{{ tr('ui.equipment.text0745') }}</div>
@@ -143,7 +161,7 @@ function submit() {
   display: grid;
   gap: 16px;
 }
-.login-card label {
+.login-card form > label {
   display: grid;
   gap: 7px;
   color: #4d5b70;
@@ -166,6 +184,16 @@ function submit() {
 }
 .login-error {
   color: #c13e49;
+}
+.login-options {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.login-options span {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 .login-status {
   display: grid;
