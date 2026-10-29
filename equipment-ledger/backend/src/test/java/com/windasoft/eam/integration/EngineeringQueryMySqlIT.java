@@ -1197,6 +1197,22 @@ class EngineeringQueryMySqlIT {
           var last = equipmentQueries.list(query.at(51, 200));
           assertEquals(5, last.data().size());
           assertEquals("QA-PAGE-EQ-10000", last.data().getFirst().code());
+          // The first ten codes all share a timestamp except the highest code,
+          // which is deliberately earlier. Sorting by "code" must not fall back to createdAt.
+          db.update(
+              "UPDATE eam_equipment SET created_at='2026-01-02 00:00:00'"
+                  + " WHERE tenant_id=10001 AND equipment_code LIKE 'QA-PAGE-EQ-0000%'");
+          db.update(
+              "UPDATE eam_equipment SET created_at='2026-01-01 00:00:00'"
+                  + " WHERE tenant_id=10001 AND equipment_code='QA-PAGE-EQ-00009'");
+          input.put("keyword", "QA-PAGE-EQ-0000");
+          var codeSorted =
+              equipmentQueries.list(
+                  json.convertValue(
+                      input, com.windasoft.eam.dto.equipment.EquipmentListQuery.class));
+          assertEquals(10, codeSorted.page().total());
+          assertEquals("QA-PAGE-EQ-00000", codeSorted.data().getFirst().code());
+          assertEquals("QA-PAGE-EQ-00009", codeSorted.data().getLast().code());
           input.put("keyword", "QA-PAGE-EQ-1000");
           var writer = new java.io.StringWriter();
           equipmentQueries.export(
