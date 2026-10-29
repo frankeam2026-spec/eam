@@ -239,7 +239,7 @@ public class EquipmentQueryRepository {
     authorizedScope.accept(q);
     if (!sortBy.startsWith("custom:"))
       switch (sortBy) {
-        case "equipmentCode" -> order(q, direction, Equipment::getEquipmentCode);
+        case "equipmentCode", "code" -> order(q, direction, Equipment::getEquipmentCode);
         case "name" -> order(q, direction, Equipment::getName);
         case "category" -> order(q, direction, Equipment::getCategory);
         case "model" -> order(q, direction, Equipment::getModel);
@@ -255,6 +255,7 @@ public class EquipmentQueryRepository {
         case "warrantyUntil" -> order(q, direction, Equipment::getWarrantyUntil);
         default -> order(q, direction, Equipment::getCreatedAt);
       }
+    if (!sortBy.startsWith("custom:")) q.orderByAsc(Equipment::getId);
     return media.hydratePage(
         equipment.selectPage(new Page<>(Math.max(1, page), Math.min(10000, Math.max(1, size))), q));
   }
