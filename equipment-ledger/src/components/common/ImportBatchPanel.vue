@@ -518,7 +518,7 @@ onBeforeUnmount(() => {
 </template>
 <style scoped>
 .import-page {
-  height: calc(100dvh - 54px);
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;

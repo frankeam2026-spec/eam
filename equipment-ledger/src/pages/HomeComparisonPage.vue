@@ -814,7 +814,7 @@ onUnmounted(() => {
 .overview-page {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 54px);
+  height: 100%;
   min-height: 0;
   color: var(--text);
   font-size: 13px;

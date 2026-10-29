@@ -1155,12 +1155,12 @@ onMounted(async () => {
 </template>
 <style scoped>
 .workflow-page {
-  height: calc(100dvh - 54px);
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  background: var(--el-bg-color);
+  gap: 8px;
+  /* background: var(--el-bg-color); */
   overflow: auto;
 }
 .workflow-editing {

@@ -323,7 +323,7 @@ defineExpose({
   width: auto;
   margin: 0;
   padding: 6px 12px;
-  min-height: 42px;
+  min-height: var(--list-footer-height, 42px);
   box-shadow: none;
   border-top: 1px solid var(--el-border-color-lighter);
   background: var(--el-bg-color);

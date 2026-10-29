@@ -1325,8 +1325,8 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   }
 }
 .sys-page {
-  height: calc(100vh - 56px);
-  min-height: 540px;
+  height: 100%;
+  min-height: 0;
   max-width: none;
   display: flex;
   flex-direction: column;

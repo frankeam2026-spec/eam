@@ -87,6 +87,10 @@ public class RepairQueryService {
 
   public record Result(Page<RepairOrder> page, Map<String, Long> counts) {}
 
+  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(){
+    permissions.require("repair","查看");var params=Map.<String,String>of();return repository.assistantSource(query(params,filters(params),"all",false));
+  }
+
   @Transactional(readOnly = true)
   public Result list(Map<String, String> params) {
     var filters = filters(params);

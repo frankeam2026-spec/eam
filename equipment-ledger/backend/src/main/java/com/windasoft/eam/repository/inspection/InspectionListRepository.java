@@ -21,6 +21,16 @@ public class InspectionListRepository {
 
   public record Selection(String kind, String from, SqlPredicate predicate, String order) {}
 
+  public AssistantReadSource assistantSource(Selection selected){
+    String select="CAST(t.id AS CHAR) id,t.code,COALESCE(o.name,'') department,CAST(t.department_id AS CHAR) departmentId,t.created_at createdAt";
+    if(selected.kind().endsWith("tasks")){
+      select="CAST(t.id AS CHAR) id,t.code,(SELECT p.name FROM eam_org_unit p WHERE p.tenant_id=t.tenant_id AND p.id="+taskPlanDepartment()+") department,CAST("+taskPlanDepartment()+" AS CHAR) departmentId,t.created_at createdAt";
+      for(String key:List.of("equipmentName","planName","ownerName","shiftName","dueAt","expiresAt","startedAt","finishedAt","abnormal","checked","missing","expected"))select+=","+fields(selected.kind()).get(key).expression()+" `"+(key.equals("ownerName")?"owner":key)+"`";
+      select+=",t.status,CAST(t.plan_id AS CHAR) planId,CAST(t.equipment_id AS CHAR) equipmentId,CAST(t.owner_id AS CHAR) ownerId,CAST(t.company_id AS CHAR) companyId,(SELECT c.name FROM eam_org_unit c WHERE c.tenant_id=t.tenant_id AND c.id=t.company_id) company";
+    }else select+=",t.name,"+fields(selected.kind()).get("enabled").expression()+" status";
+    return AssistantReadSource.selected(select,selected.from(),selected.predicate());
+  }
+
   static String taskPlanDepartment() {
     return "COALESCE(dp.department_id,pp.department_id)";
   }

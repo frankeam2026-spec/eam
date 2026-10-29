@@ -268,6 +268,11 @@ public class EquipmentQueryRepository {
                 .eq(Equipment::getId, id)));
   }
 
+  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(long tenant,Consumer<LambdaQueryWrapper<Equipment>> scope){
+    var q=new LambdaQueryWrapper<Equipment>().eq(Equipment::getTenantId,tenant).eq(Equipment::getDeleted,0);scope.accept(q);
+    return com.windasoft.eam.repository.common.AssistantReadSource.wrapped("CAST(id AS CHAR) id,equipment_code code,name,COALESCE((SELECT b.name FROM eam_base_item b WHERE b.tenant_id=eam_equipment.tenant_id AND b.id=category_id AND b.item_type='CATEGORY' AND b.deleted=0),category) category,CAST(category_id AS CHAR) categoryId,model,brand,equipment_status status,COALESCE((SELECT b.name FROM eam_base_item b WHERE b.tenant_id=eam_equipment.tenant_id AND b.id=use_status_id AND b.item_type='USE_STATUS' AND b.deleted=0),use_status) useState,company,CAST(company_org_id AS CHAR) companyId,department,CAST(department_org_id AS CHAR) departmentId,owner_name owner,CAST(owner_user_id AS CHAR) ownerId,COALESCE(purchase_date,acquired_at) acquiredAt,warranty_until warrantyUntil,created_at createdAt,function_location location", "eam_equipment",q);
+  }
+
   public List<Equipment> visibleOrganizations(
       long tenant, Consumer<LambdaQueryWrapper<Equipment>> authorizedScope) {
     var q =

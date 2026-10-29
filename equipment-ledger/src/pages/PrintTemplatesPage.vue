@@ -536,7 +536,7 @@ async function logo(files: File[]) {
 .print-template-management {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 54px);
+  height: 100%;
   min-height: 0;
   /* gap: 8px; */
   color: var(--el-text-color-primary);

@@ -2665,7 +2665,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   flex: none;
 }
 .maintenance-page {
-  height: calc(100vh - 54px);
+  height: 100%;
   display: flex;
   flex-direction: column;
   min-width: 0;

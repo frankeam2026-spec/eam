@@ -15,8 +15,8 @@ spring:
     baseline-on-migrate: true
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 40MB
+      max-file-size: 50MB
+      max-request-size: 60MB
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true

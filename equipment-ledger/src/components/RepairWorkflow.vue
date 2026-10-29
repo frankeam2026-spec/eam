@@ -33,6 +33,7 @@ import RepairUserPicker from './common/RepairUserPicker.vue';
 import TreeSelect from './TreeSelect.vue';
 import { useBaseDataStore } from '../stores/baseData';
 import * as api from '../api';
+import AiRepairAssist from './knowledge/AiRepairAssist.vue';
 const route = useRoute(),
   router = useRouter(),
   base = useBaseDataStore();
@@ -512,6 +513,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
         <template v-if="pageMode === 'process'">
           <form class="processing-form" @submit.prevent="submitProcess">
             <h3 class="process-heading">{{ tr('ui.equipment.text1099') }}</h3>
+            <div class="full"><AiRepairAssist :key="id+'record'" mode="RECORD" :order-id="id" :input="form.content" @apply="form.content=$event"/><AiRepairAssist :key="id+'diagnose'" mode="DIAGNOSE" :order-id="id"/></div>
             <ElAlert
               v-if="legacyReferences.length"
               class="full"
@@ -1017,7 +1019,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
 .workflow-page {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 54px);
+  height: 100%;
   min-height: 0;
   font-size: 13px;
   color: #334155;

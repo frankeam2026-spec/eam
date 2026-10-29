@@ -76,6 +76,8 @@ public class InventoryQueryService {
     return Map.of("data", rows, "page", Map.of("total", total));
   }
 
+  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(){return repository.assistantSource(query("balances","","{}"),auth.tenantId());}
+
   public Object export(String kind, String q, String filters) {
     permissions.require("inventoryQuery", "导出");
     var query = query(kind, q, filters);

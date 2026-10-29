@@ -305,7 +305,7 @@ onMounted(() => {
 
 <style scoped>
 .personal-settings-page {
-  height: calc(100dvh - 54px);
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   display: flex;

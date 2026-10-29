@@ -1066,7 +1066,7 @@ type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
   color: var(--brand);
 }
 .requisition-page {
-  height: calc(100dvh - 54px);
+  height: 100%;
   display: flex;
   flex-direction: column;
   /* gap: 8px; */
@@ -1116,7 +1116,7 @@ table {
   box-shadow: -1px 0 #e4e9f0;
 }
 .list-footer {
-  height: 46px;
+  height: var(--list-footer-height);
   padding: 0 12px;
   flex: none;
   border-top: 1px solid #e4e9f0;

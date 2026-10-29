@@ -1,4 +1,5 @@
-<script setup lang="ts">import { tr } from './i18n';
+<script setup lang="ts">
+import { tr } from './i18n';
 
 import { canUseBaseTab } from './utils/baseDataAccess';
 import { visibleNotificationTabs } from './utils/notificationAccess';
@@ -26,9 +27,15 @@ import { useBaseDataStore, BASE_TABS } from './stores/baseData';
 import type { AppPage } from './router';
 import * as api from './api';
 import LoginScreen from './components/LoginScreen.vue';
+import AppWorkspacePage from './components/common/AppWorkspacePage.vue';
+import XiaozhuAssistant from './components/knowledge/XiaozhuAssistant.vue';
 import { rememberLogin } from './utils/loginMemory';
 
 const auth = useAuthStore();
+const assistantLayout = ref({ open: false, overlay: false });
+const assistantOverlay = computed(
+  () => can('knowledge', '查看') && assistantLayout.value.open && assistantLayout.value.overlay,
+);
 
 const ui = useUiStore();
 
@@ -45,7 +52,9 @@ const workflowFocus = ref(false);
 provide('workflowFocus', workflowFocus);
 
 const collapsed = computed({
-  get: () => workflowFocus.value || (compactViewport.value ? !compactExpanded.value : desktopCollapsed.value),
+  get: () =>
+    workflowFocus.value ||
+    (compactViewport.value ? !compactExpanded.value : desktopCollapsed.value),
   set: (value: boolean) => {
     workflowFocus.value = false;
     if (compactViewport.value) compactExpanded.value = !value;
@@ -77,7 +86,9 @@ function can(menu: string, action = '查看') {
 function canMenu(item: MenuItem) {
   if (item.page === 'notification-policies') return visibleNotificationTabs(can).length > 0;
   const experienceMenus: Record<string, string> = {
-    workflows:'workflow',
+    knowledge: 'knowledge',
+    'ai-settings': 'aiSetting',
+    workflows: 'workflow',
     anomalies: 'anomaly',
     'repair-plans': 'repairPlan',
     'home-templates': 'homeTemplate',
@@ -145,50 +156,135 @@ type MenuGroup = { id: string; label: string; icon: string; items: MenuItem[] };
 const navGroups: MenuGroup[] = [
   {
     id: 'assets',
-    get label() { return tr('ui.equipment.text0001'); },
+    get label() {
+      return tr('ui.equipment.text0001');
+    },
     icon: 'Equipment',
     items: [
-      { get label() { return tr('ui.equipment.text0002'); }, icon: 'Equipment', page: 'equipment' },
-      { get label() { return tr('ui.equipment.text0003'); }, icon: 'Document', page: 'labels' },
+      {
+        get label() {
+          return tr('ui.equipment.text0002');
+        },
+        icon: 'Equipment',
+        page: 'equipment',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0003');
+        },
+        icon: 'Document',
+        page: 'labels',
+      },
     ],
   },
   {
     id: 'operations',
-    get label() { return tr('ui.equipment.text0004'); },
+    get label() {
+      return tr('ui.equipment.text0004');
+    },
     icon: 'Tool',
     items: [
-      { get label() { return tr('ui.equipment.text0005'); }, icon: 'Warning', page: 'anomalies' },
+      {
+        get label() {
+          return tr('ui.equipment.text0005');
+        },
+        icon: 'Warning',
+        page: 'anomalies',
+      },
       // { label: '维修计划', icon: 'Clock', page: 'repair-plans' },
-      { get label() { return tr('ui.equipment.text0006'); }, icon: 'Tool', page: 'repairs' },
+      {
+        get label() {
+          return tr('ui.equipment.text0006');
+        },
+        icon: 'Tool',
+        page: 'repairs',
+      },
     ],
   },
   {
     id: 'maintenance',
-    get label() { return tr('ui.equipment.text0007'); },
+    get label() {
+      return tr('ui.equipment.text0007');
+    },
     icon: 'Clock',
     items: [
-      { get label() { return tr('ui.equipment.text0008'); }, icon: 'Clock', page: 'maintenance', maintenanceKind: 'types' },
-      { get label() { return tr('ui.equipment.text0009'); }, icon: 'Document', page: 'maintenance', maintenanceKind: 'standards' },
-      { get label() { return tr('ui.equipment.text0010'); }, icon: 'Grid', page: 'maintenance', maintenanceKind: 'plans' },
-      { get label() { return tr('ui.equipment.text0011'); }, icon: 'Check', page: 'maintenance', maintenanceKind: 'tasks' },
+      {
+        get label() {
+          return tr('ui.equipment.text0008');
+        },
+        icon: 'Clock',
+        page: 'maintenance',
+        maintenanceKind: 'types',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0009');
+        },
+        icon: 'Document',
+        page: 'maintenance',
+        maintenanceKind: 'standards',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0010');
+        },
+        icon: 'Grid',
+        page: 'maintenance',
+        maintenanceKind: 'plans',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0011');
+        },
+        icon: 'Check',
+        page: 'maintenance',
+        maintenanceKind: 'tasks',
+      },
     ],
   },
   {
     id: 'inspection',
-    get label() { return tr('ui.equipment.text0012'); },
+    get label() {
+      return tr('ui.equipment.text0012');
+    },
     icon: 'Check',
     items: [
-      { get label() { return tr('ui.equipment.text0013'); }, icon: 'Document', page: 'inspection', maintenanceKind: 'standards' },
-      { get label() { return tr('ui.equipment.text0014'); }, icon: 'Grid', page: 'inspection', maintenanceKind: 'daily-plans' },
-      { get label() { return tr('ui.equipment.text0015'); }, icon: 'Check', page: 'inspection', maintenanceKind: 'daily-tasks' },
       {
-        get label() { return tr('ui.equipment.text0016'); },
+        get label() {
+          return tr('ui.equipment.text0013');
+        },
+        icon: 'Document',
+        page: 'inspection',
+        maintenanceKind: 'standards',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0014');
+        },
+        icon: 'Grid',
+        page: 'inspection',
+        maintenanceKind: 'daily-plans',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0015');
+        },
+        icon: 'Check',
+        page: 'inspection',
+        maintenanceKind: 'daily-tasks',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0016');
+        },
         icon: 'Clock',
         page: 'inspection',
         maintenanceKind: 'periodic-plans',
       },
       {
-        get label() { return tr('ui.equipment.text0017'); },
+        get label() {
+          return tr('ui.equipment.text0017');
+        },
         icon: 'Check',
         page: 'inspection',
         maintenanceKind: 'periodic-tasks',
@@ -197,40 +293,207 @@ const navGroups: MenuGroup[] = [
   },
   {
     id: 'spares',
-    get label() { return tr('ui.equipment.text0018'); },
+    get label() {
+      return tr('ui.equipment.text0018');
+    },
     icon: 'Warehouse',
     items: [
-      { get label() { return tr('ui.equipment.text0019'); }, icon: 'Document', page: 'inventory', maintenanceKind: 'materials' },
-      { get label() { return tr('ui.equipment.text0020'); }, icon: 'Warehouse', page: 'inventory', maintenanceKind: 'warehouses' },
-      { get label() { return tr('ui.equipment.text0021'); }, icon: 'Download', page: 'inventory', maintenanceKind: 'receipts' },
-      { get label() { return tr('ui.equipment.text0022'); }, icon: 'Right', page: 'inventory', maintenanceKind: 'requisitions' },
-      { get label() { return tr('ui.equipment.text0023'); }, icon: 'Right', page: 'inventory', maintenanceKind: 'outbounds' },
-      { get label() { return tr('ui.equipment.text0024'); }, icon: 'Grid', page: 'inventory', maintenanceKind: 'balances' },
-      { get label() { return tr('ui.equipment.text0025'); }, icon: 'Warehouse', page: 'material-custody' },
-      { get label() { return tr('ui.equipment.text0026'); }, icon: 'Return', page: 'inventory', maintenanceKind: 'returns' },
-      { get label() { return tr('ui.equipment.text0027'); }, icon: 'Transfer', page: 'inventory', maintenanceKind: 'transfers' },
-      { get label() { return tr('ui.equipment.text0028'); }, icon: 'Document', page: 'inventory', maintenanceKind: 'counts' },
-      { get label() { return tr('ui.equipment.text0029'); }, icon: 'Warehouse', page: 'inventory', maintenanceKind: 'openings' },
-      { get label() { return tr('ui.equipment.text0030'); }, icon: 'Undo', page: 'inventory', maintenanceKind: 'reversals' },
+      {
+        get label() {
+          return tr('ui.equipment.text0019');
+        },
+        icon: 'Document',
+        page: 'inventory',
+        maintenanceKind: 'materials',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0020');
+        },
+        icon: 'Warehouse',
+        page: 'inventory',
+        maintenanceKind: 'warehouses',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0021');
+        },
+        icon: 'Download',
+        page: 'inventory',
+        maintenanceKind: 'receipts',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0022');
+        },
+        icon: 'Right',
+        page: 'inventory',
+        maintenanceKind: 'requisitions',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0023');
+        },
+        icon: 'Right',
+        page: 'inventory',
+        maintenanceKind: 'outbounds',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0024');
+        },
+        icon: 'Grid',
+        page: 'inventory',
+        maintenanceKind: 'balances',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0025');
+        },
+        icon: 'Warehouse',
+        page: 'material-custody',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0026');
+        },
+        icon: 'Return',
+        page: 'inventory',
+        maintenanceKind: 'returns',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0027');
+        },
+        icon: 'Transfer',
+        page: 'inventory',
+        maintenanceKind: 'transfers',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0028');
+        },
+        icon: 'Document',
+        page: 'inventory',
+        maintenanceKind: 'counts',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0029');
+        },
+        icon: 'Warehouse',
+        page: 'inventory',
+        maintenanceKind: 'openings',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0030');
+        },
+        icon: 'Undo',
+        page: 'inventory',
+        maintenanceKind: 'reversals',
+      },
     ],
   },
   {
     id: 'system',
-    get label() { return tr('ui.equipment.text0031'); },
+    get label() {
+      return tr('ui.equipment.text0031');
+    },
     icon: 'Settings',
     items: [
-      { get label() { return tr('ui.equipment.text0032'); }, icon: 'Settings', page: 'business-config' },
-      {label:'审批流程',icon:'Settings',page:'workflows'},
-      {get label(){return tr('notify.policies');},icon:'Settings',page:'notification-policies'},
-      { get label() { return tr('ui.equipment.text0033'); }, icon: 'Settings', page: 'personalization' },
-      { get label(){ return tr('language.manager.menu'); }, icon:'Settings',page:'languages' },
-      { get label() { return tr('ui.equipment.text0034'); }, icon: 'Grid', page: 'home-templates' },
-      { get label() { return tr('ui.equipment.text0035'); }, icon: 'Printer', page: 'print-templates' },
-      { get label() { return tr('ui.equipment.text0036'); }, icon: 'Organization', page: 'organization' },
-      { get label() { return tr('ui.equipment.text0037'); }, icon: 'User', page: 'users' },
-      { get label() { return tr('ui.equipment.text0038'); }, icon: 'Permissions', page: 'roles' },
-      { get label() { return tr('ui.equipment.text0039'); }, icon: 'Location', page: 'locations' },
-      { get label() { return tr('ui.equipment.text0040'); }, icon: 'Grid', page: 'base' },
+      {
+        get label() {
+          return tr('ui.equipment.text0032');
+        },
+        icon: 'Settings',
+        page: 'business-config',
+      },
+      { label: '审批流程', icon: 'Settings', page: 'workflows' },
+      {
+        get label() {
+          return tr('knowledge.menu');
+        },
+        icon: 'Document',
+        page: 'knowledge',
+      },
+      {
+        get label() {
+          return tr('ai.settings');
+        },
+        icon: 'Settings',
+        page: 'ai-settings',
+      },
+      {
+        get label() {
+          return tr('notify.policies');
+        },
+        icon: 'Settings',
+        page: 'notification-policies',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0033');
+        },
+        icon: 'Settings',
+        page: 'personalization',
+      },
+      {
+        get label() {
+          return tr('language.manager.menu');
+        },
+        icon: 'Settings',
+        page: 'languages',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0034');
+        },
+        icon: 'Grid',
+        page: 'home-templates',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0035');
+        },
+        icon: 'Printer',
+        page: 'print-templates',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0036');
+        },
+        icon: 'Organization',
+        page: 'organization',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0037');
+        },
+        icon: 'User',
+        page: 'users',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0038');
+        },
+        icon: 'Permissions',
+        page: 'roles',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0039');
+        },
+        icon: 'Location',
+        page: 'locations',
+      },
+      {
+        get label() {
+          return tr('ui.equipment.text0040');
+        },
+        icon: 'Grid',
+        page: 'base',
+      },
     ],
   },
 ];
@@ -441,7 +704,7 @@ onUnmounted(() => {
 
 <template>
   <div v-if="authState === 'ready'" class="app-shell" :class="{ 'sidebar-collapsed': collapsed }">
-    <aside class="sidebar">
+    <aside class="sidebar" :inert="assistantOverlay">
       <div class="sidebar-tools">
         <ElButton
           class="collapse"
@@ -452,7 +715,11 @@ onUnmounted(() => {
         /></ElButton>
       </div>
       <div v-if="!collapsed" class="navigation-search">
-        <ElInput v-model="menuSearch" :placeholder="tr('ui.equipment.text0045')" :aria-label="tr('ui.equipment.text0045')" /><ElButton
+        <ElInput
+          v-model="menuSearch"
+          :placeholder="tr('ui.equipment.text0045')"
+          :aria-label="tr('ui.equipment.text0045')"
+        /><ElButton
           v-if="menuSearch"
           :aria-label="tr('ui.equipment.text0046')"
           @click="menuSearch = ''"
@@ -514,6 +781,11 @@ onUnmounted(() => {
           </ElMenuItem>
         </ElSubMenu>
       </ElMenu>
+      <div
+        v-if="can('knowledge', '查看')"
+        class="assistant-navigation-space"
+        aria-hidden="true"
+      ></div>
       <ElButton
         :title="tr('ui.equipment.text0050')"
         :aria-label="tr('ui.equipment.text0051')"
@@ -523,11 +795,14 @@ onUnmounted(() => {
         ><div class="help-icon">
           <AppIcon name="Help" />
         </div>
-        <div class="help-copy"><b>{{ tr('ui.equipment.text0052') }}</b><small>{{ tr('ui.equipment.text0050') }}</small></div>
+        <div class="help-copy">
+          <b>{{ tr('ui.equipment.text0052') }}</b
+          ><small>{{ tr('ui.equipment.text0050') }}</small>
+        </div>
         <span class="chevron" aria-hidden="true"> <AppIcon name="Right" /> </span
       ></ElButton>
     </aside>
-    <main class="main-area">
+    <main class="main-area" :inert="assistantOverlay">
       <header class="topbar">
         <div class="top-left">
           <ElButton
@@ -549,8 +824,14 @@ onUnmounted(() => {
           <UserAccountMenu @logout="signOut" />
         </div>
       </header>
-      <RouterView />
+      <AppWorkspacePage><RouterView /></AppWorkspacePage>
     </main>
+    <XiaozhuAssistant
+      v-if="can('knowledge', '查看')"
+      :key="`${auth.user?.tenantId}:${auth.user?.id}`"
+      :collapsed="collapsed"
+      @layout="assistantLayout = $event"
+    />
   </div>
   <LoginScreen
     v-else
@@ -562,6 +843,11 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.assistant-navigation-space {
+  height: 64px;
+  min-height: 64px;
+  flex-shrink: 0;
+}
 .navigation-search {
   display: flex;
   align-items: center;

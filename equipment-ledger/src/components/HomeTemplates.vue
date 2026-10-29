@@ -266,7 +266,7 @@ onMounted(load);
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);
   gap: 16px;
-  height: calc(100dvh - 54px);
+  height: 100%;
   min-height: 0;
   background: var(--canvas);
   color: var(--text);

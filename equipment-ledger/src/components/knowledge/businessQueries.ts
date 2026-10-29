@@ -1,0 +1,32 @@
+export type BusinessPlan = {
+  domain: string;
+  operation: 'LIST' | 'COUNT' | 'GROUP' | 'TREND';
+  where?: unknown;
+  groupBy: string[];
+  aggregate: string;
+  measure: string;
+  sortBy: string;
+  direction: string;
+  timeField: string;
+  period: string;
+  from: string;
+  to: string;
+  bucket: string;
+  topN?: number;
+};
+export type BusinessQuery = {
+  title: string;
+  range: string;
+  asOf: string;
+  conditions?: string;
+  valueLabel?: string;
+  timeField: string;
+  equipmentId: string;
+  plan: BusinessPlan;
+  identities: Record<string, string>;
+  columns?: { key: string; label: string }[];
+  data?: Record<string, unknown>[];
+  value?: number | string | null;
+  total: number;
+  records?: number;
+};

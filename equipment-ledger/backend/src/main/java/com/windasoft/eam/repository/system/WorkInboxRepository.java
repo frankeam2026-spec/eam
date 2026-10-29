@@ -88,6 +88,8 @@ public class WorkInboxRepository {
     return Map.of("counts", counts, "kinds", kinds);
   }
 
+  public List<Map<String,Object>> assistantKinds(long tenant,long user){return db.queryForList("SELECT DISTINCT module,kind FROM "+ROWS+" WHERE todo=1 ORDER BY module,kind",identity(tenant,user));}
+
   public Object list(
       long tenantId,
       long userId,

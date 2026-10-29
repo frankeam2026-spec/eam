@@ -468,7 +468,7 @@ onMounted(load);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  height: calc(100dvh - 54px);
+  height: 100%;
   overflow: hidden;
   box-sizing: border-box;
 }

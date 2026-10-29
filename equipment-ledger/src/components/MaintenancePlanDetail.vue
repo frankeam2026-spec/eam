@@ -151,6 +151,8 @@ watch(() => route.params.id, load, { immediate: true });
   font-size: 18px;
 }
 .plan-content {
+  flex: 1;
+  min-height: 0;
   padding: 16px;
   overflow: auto;
   display: grid;

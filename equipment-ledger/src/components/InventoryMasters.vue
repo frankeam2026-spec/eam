@@ -684,7 +684,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
 </template>
 <style scoped>
 .inventory-master-page {
-  height: calc(100dvh - 54px);
+  height: 100%;
   display: flex;
   flex-direction: column;
   /* gap: 8px; */
@@ -731,7 +731,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
   z-index: 2;
 }
 .master-card footer {
-  height: 46px;
+  height: var(--list-footer-height);
   flex: none;
   display: flex;
   align-items: center;

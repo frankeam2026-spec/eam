@@ -127,6 +127,12 @@ public class MaintenanceListService {
     return query(kind, query, false);
   }
 
+  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(String kind){
+    if(!Set.of("tasks","plans").contains(kind))throw new IllegalArgumentException("保养查询对象无效");
+    permissions.require(kind.equals("tasks")?"maintenanceTask":"maintenancePlan","查看");
+    return repository.assistantSource(repository.select(auth.tenantId(),auth.userId(),kind,scope(kind,"查看"),false,null,ListQuery.from(Map.of()),SqlPredicate.of("1=1"),null));
+  }
+
   public PageResult<Map<String, Object>> query(String kind, ListQuery query, boolean export) {
     var scope = scope(kind, export ? "导出" : "查看");
     String object =

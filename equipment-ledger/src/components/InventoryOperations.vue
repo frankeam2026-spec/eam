@@ -896,7 +896,7 @@ footer > span {
   width: 150px;
 }
 .operation-page {
-  height: calc(100dvh - 54px);
+  height: 100%;
   display: flex;
   flex-direction: column;
   /* gap: 8px; */
@@ -948,7 +948,7 @@ table {
   width: 36%;
 }
 footer {
-  height: 46px;
+  height: var(--list-footer-height);
   flex: none;
   padding: 0 12px;
   border-top: 1px solid #e4e9f0;

@@ -163,10 +163,9 @@ watch([page, size], load);
 </template>
 <style scoped>
 .analysis-detail {
-  height: calc(100dvh - 54px);
+  height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 16px;
   gap: 12px;
   min-height: 0;
 }

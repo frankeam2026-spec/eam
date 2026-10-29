@@ -1,7 +1,7 @@
 .inspection-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 54px);
+  height: 100%;
   box-sizing: border-box;
   min-height: 0;
   /* gap: 12px; */
@@ -69,7 +69,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 14px;
+  padding: 4px 12px;
+  min-height: var(--list-footer-height);
   border-top: 1px solid #e4e9f0;
   flex: none;
   background: white;

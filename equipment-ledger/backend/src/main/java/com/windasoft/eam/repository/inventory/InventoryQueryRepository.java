@@ -36,6 +36,11 @@ public class InventoryQueryRepository {
         "SELECT id,company_id FROM inv_warehouse WHERE tenant_id=? ORDER BY id", tenant);
   }
 
+  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(Query query,long tenant){
+    var args=new ArrayList<Object>();args.add(tenant);args.addAll(query.args());
+    return new com.windasoft.eam.repository.common.AssistantReadSource("SELECT CAST(id AS CHAR) id,material_code code,material_name name,model,unit,company_name company,CAST((SELECT company_id FROM inv_warehouse w WHERE w.tenant_id=? AND w.id=stock.warehouse_id) AS CHAR) companyId,warehouse_name warehouse,CAST(warehouse_id AS CHAR) warehouseId,bin_name bin,batch_code batch,stock_status status,quantity,reserved_quantity reserved,available_quantity available,expiry_date expiryDate FROM ("+query.sql()+") stock",args);
+  }
+
   public Query query(
       long tenantId, String kind, String q, Map<String, String> filters, List<Long> warehouses) {
     var fields = new LinkedHashMap<String, String>();

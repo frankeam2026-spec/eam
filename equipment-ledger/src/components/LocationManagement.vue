@@ -500,7 +500,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   font-size: 13px;
   color: #263246;
   box-sizing: border-box;
-  height: calc(100vh - 54px);
+  height: 100%;
 }
 .location-company-panel {
   width: 240px;
@@ -636,7 +636,8 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 14px;
+  padding: 4px 12px;
+  min-height: var(--list-footer-height);
   border-top: 1px solid #e9edf3;
   flex: none;
   background: white;

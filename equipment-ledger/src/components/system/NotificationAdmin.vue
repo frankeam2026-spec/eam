@@ -782,7 +782,7 @@ const userColumns = computed(() => [
 </template>
 <style scoped>
 .notification-page {
-  height: calc(100dvh - 54px);
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;

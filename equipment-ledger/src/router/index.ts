@@ -9,6 +9,8 @@ import { canUseBaseTab } from '../utils/baseDataAccess';
 import { visibleNotificationTabs } from '../utils/notificationAccess';
 
 export type AppPage =
+  | 'ai-settings'
+  | 'knowledge'
   | 'workflows'
   | 'notification-policies'
   | 'notification-channels'
@@ -42,6 +44,8 @@ export const router = createRouter({
       path: '/',
       component: () => import('../WorkspaceLayout.vue'),
       children: [
+        {path:'ai-settings',name:'ai-settings',component:()=>import('../pages/AiSettingsPage.vue'),meta:{page:'ai-settings',menu:'aiSetting'}},
+        {path:'knowledge',name:'knowledge',component:()=>import('../pages/KnowledgePage.vue'),meta:{page:'knowledge',menu:'knowledge'}},
         {path:'workflows',name:'workflows',component:()=>import('../pages/WorkflowPage.vue'),meta:{page:'workflows',menu:'workflow'}},
         {
           path: 'home/analytics/:key',

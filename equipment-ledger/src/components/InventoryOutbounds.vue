@@ -1633,7 +1633,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
 .outbound-page {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 54px);
+  height: 100%;
   box-sizing: border-box;
   min-height: 0;
   font-size: 13px;
@@ -1680,7 +1680,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   align-items: center;
   gap: 12px;
   flex: none;
-  min-height: 46px;
+  min-height: var(--list-footer-height);
   padding: 0 12px;
   border-top: 1px solid var(--el-border-color-light);
 }

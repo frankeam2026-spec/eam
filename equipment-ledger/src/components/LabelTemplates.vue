@@ -714,7 +714,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 }
 .template-pagination {
   background: #fff;
-  height: 40px;
+  height: var(--list-footer-height);
   flex-shrink: 0;
   border-top: 1px solid #e2e7ee;
   display: flex;
@@ -730,7 +730,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   z-index: 30;
 }
 .print-template-page {
-  height: calc(100vh - 54px);
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;

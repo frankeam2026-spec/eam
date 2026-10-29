@@ -60,3 +60,8 @@ zsh run-local.sh frontend
 - 保养分页列表使用 `useMaintenanceList` 管理查询结果和响应序号；编辑页继续独立维护草稿。服务端分页列表不得再次在前端截取一页后筛选或导出当前页冒充全量。
 - 测试运行 `npm run test`；完整前端检查 `npm run check`。组件测试使用 Vitest / Vue Test Utils / jsdom，报告写入 test-results；不得对开发业务数据提交操作。
 - 分阶段实施状态见 [第一、二批实施记录](docs/engineering/第一二批实施记录.md)，其他模块未完成前不得宣称全系统查询已统一。
+
+
+## 工作区页面布局（2026-10-27）
+
+WorkspaceLayout通过AppWorkspacePage统一提供可用高度、定位上下文和8px外围间距，content类仅保留页面语义，不再重复padding。顶栏高度使用--app-header-height，业务页面填满父容器，不计算窗口高度减顶栏；内部布局继续由各业务组件负责。列表的弹性表格区与不收缩底栏分离，底栏公共尺寸为--list-footer-height（42px）；编辑保留AppFormFooter，详情内部明细及弹窗遵循各自分页与滚动语义。新增路由页面应复用这个契约。

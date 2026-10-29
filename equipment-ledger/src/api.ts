@@ -211,6 +211,63 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export async function requestFile(path: string, init?: RequestInit): Promise<Blob> {
   return (await checkedResponse(path, init)).blob();
 }
+export async function requestStream<T>(path: string, init: RequestInit): Promise<T> {
+  const response = await checkedResponse(path, {
+    ...init,
+    headers: { Accept: 'text/event-stream' },
+  });
+  if (!response.body) throw new ApiError('流式响应不可用', 502);
+  const reader = response.body.getReader(),
+    decoder = new TextDecoder();
+  let buffer = '',
+    received = false,
+    total = 0;
+  let result: T | undefined;
+  function event(block: string) {
+    let name = 'message';
+    const lines: string[] = [];
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event:')) name = line.slice(6).trim();
+      else if (line.startsWith('data:')) lines.push(line.slice(5).trimStart());
+    }
+    const data = lines.join('\n');
+    if (name === 'failure') {
+      let payload: { message?: string; status?: number; code?: string } = {};
+      try {
+        payload = JSON.parse(data);
+      } catch {}
+      throw new ApiError(
+        payload.message || data || '回答未完成',
+        payload.status && payload.status >= 400 && payload.status <= 599 ? payload.status : 502,
+        {},
+        payload.code === 'AI_TURN_FAILED' ? 'AI_TURN_FAILED' : 'REQUEST_ERROR',
+      );
+    }
+    if (name === 'answer') {
+      result = JSON.parse(data) as T;
+      received = true;
+    }
+  }
+  try {
+    while (true) {
+      const value = await reader.read();
+      if (value.done) break;
+      total += value.value.length;
+      if (total > 1_000_000) throw new ApiError('流式响应超限', 502);
+      buffer = (buffer + decoder.decode(value.value, { stream: true })).replace(/\r\n/g, '\n');
+      let end: number;
+      while ((end = buffer.indexOf('\n\n')) >= 0) {
+        event(buffer.slice(0, end));
+        buffer = buffer.slice(end + 2);
+      }
+    }
+    if (!received) throw new ApiError('回答尚未完成，请检查历史对话', 502);
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  return result as T;
+}
 export async function listEquipment(params: Record<string, string | number | undefined>) {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -277,7 +334,9 @@ export async function saveEquipment(form: EquipmentRecord, isNew: boolean, detai
       ? '/equipment'
       : '/equipment/' +
           form.id +
-          (detailsOnly ? '/details' : '') + '?rowVersion=' + requiredRowVersion(form.rowVersion),
+          (detailsOnly ? '/details' : '') +
+          '?rowVersion=' +
+          requiredRowVersion(form.rowVersion),
     { method: isNew ? 'POST' : 'PUT', body: JSON.stringify(body) },
   );
 }
@@ -819,7 +878,12 @@ export function equipmentBomMaterials(q: string, page: number, size: number) {
   );
 }
 
-export type PersonalSettings = { locale: string; effectiveLocale: string; theme: import('./stores/ui').Theme; roles: string[] };
+export type PersonalSettings = {
+  locale: string;
+  effectiveLocale: string;
+  theme: import('./stores/ui').Theme;
+  roles: string[];
+};
 export function getPersonalSettings() {
   return request<{ data: PersonalSettings }>('/auth/settings');
 }

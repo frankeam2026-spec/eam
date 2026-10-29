@@ -665,7 +665,7 @@ const dialogTitle = computed(
   font-size: 13px;
 }
 .maintenance-task-page {
-  height: calc(100vh - 54px);
+  height: 100%;
   display: flex;
   flex-direction: column;
   font-size: 13px;

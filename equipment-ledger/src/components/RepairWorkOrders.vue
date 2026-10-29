@@ -3,6 +3,7 @@ import { isDepartmentCustomColumn } from '../businessConfig';
 import DepartmentValuesText from './common/DepartmentValuesText.vue';
 
 import DepartmentText from './common/DepartmentText.vue';
+import AiRepairAssist from './knowledge/AiRepairAssist.vue';
 import { tr, enumLabel } from '../i18n';
 
 import DialogChoiceInput from './common/DialogChoiceInput.vue';
@@ -805,6 +806,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     :rows="3"
                     :placeholder="tr('ui.equipment.text1067')"
                     type="textarea" /></label
+                ><div v-if="!detailMode" class="repair-span-2"><AiRepairAssist :key="active.id||'new'" mode="REPORT" :input="active.description" @apply="active.description=$event"/></div
                 ><label v-if="detailMode" class="repair-span-2"
                   ><span>{{ tr('ui.equipment.text1068') }}</span
                   ><ElInput
@@ -1430,8 +1432,8 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   border-top: 1px solid #edf0f4;
 }
 .repair-page {
-  height: calc(100vh - 54px);
-  min-height: 360px;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }

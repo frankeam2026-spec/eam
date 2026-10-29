@@ -792,7 +792,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
 .receipts {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 54px);
+  height: 100%;
   min-height: 0;
   font-size: 13px;
   color: var(--text);
@@ -828,7 +828,7 @@ header strong {
   overflow: auto;
 }
 .list-footer {
-  height: 46px;
+  height: var(--list-footer-height);
   flex: none;
   padding: 0 12px;
   border-top: 1px solid #e4e9f0;

@@ -18,6 +18,8 @@ public class WorkInboxService {
     return repository.summary(auth.tenantId(), auth.userId());
   }
 
+  public List<Map<String,Object>> assistantKinds(){return repository.assistantKinds(auth.tenantId(),auth.userId());}
+
   public Object list(
       String channel, String state, String module, String kind, String search, int page, int size) {
     if (!Set.of("todo", "notification").contains(channel)

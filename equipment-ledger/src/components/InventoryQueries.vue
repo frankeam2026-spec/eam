@@ -447,7 +447,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   box-shadow: -3px 0 7px #20375608;
 }
 .inventory-queries {
-  height: calc(100dvh - 54px);
+  height: 100%;
   display: flex;
   flex-direction: column;
   /* gap: 8px; */
@@ -531,7 +531,7 @@ footer > span {
   justify-content: center;
 }
 footer {
-  height: 46px;
+  height: var(--list-footer-height);
   flex: none;
   padding: 0 12px;
   border-top: 1px solid #e4e9f0;

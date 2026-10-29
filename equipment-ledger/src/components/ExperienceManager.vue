@@ -896,7 +896,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
   flex-direction: column;
   /* padding: 0px 8px; */
   /* gap: 12px; */
-  height: calc(100vh - 56px);
+  height: 100%;
   min-height: 0;
   background: var(--canvas);
 }

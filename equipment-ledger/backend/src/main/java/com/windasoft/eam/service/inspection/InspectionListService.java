@@ -57,6 +57,13 @@ public class InspectionListService {
     return kind.endsWith("tasks") ? (kind.startsWith("daily") ? "daily" : "periodic") : kind;
   }
 
+  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(String kind){
+    if(!Set.of("daily-tasks","periodic-tasks","daily-plans","periodic-plans").contains(kind))throw new IllegalArgumentException("点巡检查询对象无效");
+    permissions.require(kind.startsWith("daily")?(kind.endsWith("tasks")?"inspectionDailyTask":"inspectionDailyPlan"):(kind.endsWith("tasks")?"inspectionPeriodicTask":"inspectionPeriodicPlan"),"查看");
+    String permission=permissionKind(kind);var read=scope(permission,"查看");
+    return repository.assistantSource(repository.select(auth.tenantId(),auth.userId(),kind,read,kind.endsWith("tasks")?scope(permission,"审核"):read,false,null,ListQuery.from(Map.of()),SqlPredicate.of("1=1"),null));
+  }
+
   @Transactional(readOnly = true)
   public Map<String, Object> context(String kind) {
     String permissionKind = permissionKind(kind);

@@ -629,9 +629,8 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 .inbox-page {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 54px);
+  height: 100%;
   min-height: 0;
-  padding: 12px;
   color: var(--text);
   font-size: 13px;
 }

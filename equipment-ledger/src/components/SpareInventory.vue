@@ -213,11 +213,10 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
 </template>
 <style scoped>
 .inventory-page {
-  height: calc(100dvh - 54px);
+  height: 100%;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 12px;
   font-size: 13px;
 }
 .inventory-page h1 {
@@ -257,7 +256,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   table-layout: fixed;
 }
 .inventory-card footer {
-  height: 46px;
+  height: var(--list-footer-height);
   flex-shrink: 0;
   border-top: 1px solid #e1e7ef;
   padding: 0 14px;

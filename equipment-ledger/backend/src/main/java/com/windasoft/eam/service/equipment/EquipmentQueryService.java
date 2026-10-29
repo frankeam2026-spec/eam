@@ -45,6 +45,10 @@ public class EquipmentQueryService {
     return list(request, false);
   }
 
+  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(){
+    permissions.require("equipment","查看");return repository.assistantSource(auth.tenantId(),permissions::filterEquipment);
+  }
+
   private EquipmentPage list(EquipmentListQuery request, boolean exporting) {
     var adjusted =
         new EquipmentListQuery(

@@ -14,6 +14,8 @@ export type MenuGrants = Record<string, MenuGrant>;
 export type PermissionMenu = { key: string; name: string; actions: string[]; scopes: DataScope[] };
 
 export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
+  {get name(){return tr('ai.settings');},menus:[{key:'aiSetting',get name(){return tr('ai.settings');},actions:['查看','编辑'],scopes:['all']}]},
+  {get name(){return tr('knowledge.menu');},menus:[{key:'knowledge',get name(){return tr('knowledge.menu');},actions:['查看','编辑','发布','停用'],scopes:['all','company','companyTree','companies']}]},
   {
     get name() {
       return tr('ui.common.label1');

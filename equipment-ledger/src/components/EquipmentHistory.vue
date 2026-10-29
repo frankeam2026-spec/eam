@@ -490,7 +490,7 @@ function time(value: string) {
 
 .equipment-history {
   position: absolute;
-  inset: 48px 0 0;
+  inset: var(--page-inset);
   z-index: 30;
   background: var(--canvas);
   display: flex;
