@@ -15,6 +15,7 @@ import {
   ElAlert,
   ElTabs,
   ElTabPane,
+  ElSwitch,
   type FormInstance,
 } from 'element-plus';
 import AppBusinessTable from '../components/common/AppBusinessTable.vue';
@@ -57,6 +58,52 @@ const auth = useAuthStore(),
   error = ref(''),
   formRef = ref<FormInstance>();
 const canvasRef = ref<InstanceType<typeof WorkflowBpmnCanvas>>();
+const businessLabel = (type: string) =>
+  tr(type === 'repair_report' ? 'workflow.repair.business' : 'workflow.ui.032');
+const settingOpen = ref(false),
+  settingCompany = ref(''),
+  setting = ref({ required: false, rowVersion: -1, templateAvailable: false }),
+  settingBusy = ref(false),
+  settingLoaded = ref(false),
+  settingCompanies = ref<SelectorRow[]>([]);
+async function loadSetting() {
+  settingLoaded.value = false;
+  if (!settingCompany.value) return;
+  settingBusy.value = true;
+  try {
+    const selected = settingCompany.value;
+    const r = (await workflowApi.repairApprovalSetting(selected)).data;
+    if (selected === settingCompany.value) {
+      setting.value = {
+        required: !!r.required,
+        rowVersion: r.rowVersion,
+        templateAvailable: !!r.templateAvailable,
+      };
+      settingLoaded.value = true;
+    }
+  } catch (e) {
+    message(e);
+  } finally {
+    settingBusy.value = false;
+  }
+}
+async function saveSetting() {
+  if (!settingCompany.value || !settingLoaded.value) return;
+  settingBusy.value = true;
+  try {
+    await workflowApi.saveRepairApprovalSetting(
+      settingCompany.value,
+      setting.value.required,
+      setting.value.rowVersion,
+    );
+    settingOpen.value = false;
+    ElMessage.success(tr('workflow.repair.saved'));
+  } catch (e) {
+    message(e);
+  } finally {
+    settingBusy.value = false;
+  }
+}
 const rows = ref<Awaited<ReturnType<typeof workflowApi.list>>['data']>([]),
   total = ref(0),
   page = ref(1),
@@ -83,6 +130,29 @@ const variables = computed<WorkflowVariable[]>(() => [
     })),
 ]);
 const node = computed(() => form.value?.nodes.find((n) => n.key === selected.value));
+let variableRevision = 0;
+watch(
+  () => form.value?.businessType,
+  async (type) => {
+    const revision = ++variableRevision;
+    if (!type) return;
+    if (form.value && !form.value.id) {
+      for (const n of form.value.nodes) {
+        if (n.key === 'approval' && ['领料审批', '报修审批'].includes(n.name))
+          n.name = type === 'repair_report' ? '报修审批' : '领料审批';
+        if (n.key === 'start' && ['申请人提交', '报修人提交'].includes(n.name))
+          n.name = type === 'repair_report' ? '报修人提交' : '申请人提交';
+      }
+    }
+    baseVariables.value = [];
+    try {
+      const result = await workflowApi.variables(type);
+      if (revision === variableRevision) baseVariables.value = result.data;
+    } catch (e) {
+      message(e);
+    }
+  },
+);
 const conditionLabels = computed(() =>
   Object.fromEntries(
     (form.value?.nodes || [])
@@ -387,7 +457,7 @@ function add(type: WorkflowNode['type'], branchIndex?: number) {
               name: '条件一',
               target: next,
               fallback: false,
-              expression: 'SUM(lines.quantity) > 0',
+              expression: '',
             },
             { key: 'otherwise', name: '其他情况', target: next, fallback: true, expression: '' },
           ]
@@ -422,7 +492,7 @@ function addBranch() {
       name: parallel ? '新路径' : '新条件',
       target: targetOptions(node.value.key).find((n) => n.type === 'END')?.key || '',
       fallback: false,
-      expression: parallel ? '' : 'SUM(lines.quantity) > 0',
+      expression: '',
     },
   );
 }
@@ -604,7 +674,8 @@ onMounted(async () => {
     companies.value = (await workflowApi.companies()).data;
     if (auth.can('workflow', '编辑'))
       editCompanies.value = (await workflowApi.companies('编辑')).data;
-    baseVariables.value = (await workflowApi.variables()).data;
+    if (auth.can('workflow', '发布'))
+      settingCompanies.value = (await workflowApi.companies('发布')).data;
     await load();
   } catch (e) {
     message(e);
@@ -643,6 +714,17 @@ onMounted(async () => {
         ><ElButton v-if="auth.can('workflow', '编辑')" type="primary" @click="edit()">{{
           tr('workflow.ui.028')
         }}</ElButton>
+        <ElButton
+          v-if="auth.can('workflow', '发布')"
+          @click="
+            settingCompany = settingCompanies.some((c) => c.id === company)
+              ? company
+              : settingCompanies[0]?.id || '';
+            settingOpen = true;
+            loadSetting();
+          "
+          >{{ tr('workflow.repair.settings') }}</ElButton
+        >
       </div>
       <AppBusinessTable
         v-model:page="page"
@@ -663,7 +745,7 @@ onMounted(async () => {
           :label="tr('workflow.ui.030')"
           min-width="180"
         /><ElTableColumn :label="tr('workflow.ui.031')" width="140"
-          ><template #default>{{ tr('workflow.ui.032') }}</template></ElTableColumn
+          ><template #default="s">{{ businessLabel(s.row.businessType) }}</template></ElTableColumn
         ><ElTableColumn :label="tr('workflow.ui.033')" width="120"
           ><template #default="s"
             ><ElTag :type="s.row.active ? 'success' : 'info'">{{
@@ -738,7 +820,11 @@ onMounted(async () => {
               :key="c.id"
               :value="c.id"
               :label="c.name" /></ElSelect></AppFormField
-        ><AppFormField :label="tr('workflow.ui.031')">{{ tr('workflow.ui.032') }}</AppFormField
+        ><AppFormField :label="tr('workflow.ui.031')"
+          ><ElSelect v-model="form.businessType" :disabled="!!form.id"
+            ><ElOption value="requisition" :label="tr('workflow.ui.032')" /><ElOption
+              value="repair_report"
+              :label="tr('workflow.repair.business')" /></ElSelect></AppFormField
         ><AppFormField class="workflow-description" :label="tr('workflow.ui.041')"
           ><ElInput v-model="form.description" maxlength="1000" /></AppFormField
       ></ElForm>
@@ -1151,6 +1237,45 @@ onMounted(async () => {
         }}</ElButton></template
       ></AppDialog
     >
+    <AppDialog
+      v-model="settingOpen"
+      :title="tr('workflow.repair.settings')"
+      width="560px"
+      :close-on-click-modal="false"
+    >
+      <ElForm label-position="left" label-width="110px" :disabled="settingBusy">
+        <AppFormField :label="tr('workflow.ui.030')"
+          ><ElSelect v-model="settingCompany" @change="loadSetting"
+            ><ElOption
+              v-for="c in settingCompanies"
+              :key="c.id"
+              :value="c.id"
+              :label="c.name" /></ElSelect
+        ></AppFormField>
+        <AppFormField :label="tr('workflow.repair.enabled')"
+          ><ElSwitch v-model="setting.required" :disabled="!settingLoaded"
+        /></AppFormField>
+        <ElAlert :title="tr('workflow.repair.settingHelp')" type="info" :closable="false" />
+        <ElAlert
+          v-if="setting.required && !setting.templateAvailable"
+          :title="tr('workflow.repair.missingTemplate')"
+          type="warning"
+          :closable="false"
+        />
+      </ElForm>
+      <template #footer
+        ><ElButton :disabled="settingBusy" @click="settingOpen = false">{{
+          tr('workflow.ui.076')
+        }}</ElButton
+        ><ElButton
+          type="primary"
+          :loading="settingBusy"
+          :disabled="!settingLoaded"
+          @click="saveSetting"
+          >{{ tr('ui.equipment.text0159') }}</ElButton
+        ></template
+      >
+    </AppDialog>
   </section>
 </template>
 <style scoped>

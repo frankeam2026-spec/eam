@@ -243,7 +243,7 @@ public class BaseDataService {
         throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0047");
       p = p.getParentId() == null ? null : require(type, p.getParentId());
     }
-    if (currentId != null && parentId.equals(currentId))
+    if (parentId.equals(currentId))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0048");
   }
 

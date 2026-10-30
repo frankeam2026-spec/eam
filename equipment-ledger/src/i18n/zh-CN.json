@@ -3940,5 +3940,14 @@
   "xiaozhu.repairs.total": "共{count}条",
   "xiaozhu.repairs.sort": "报修时间从新到旧",
   "xiaozhu.repairs.orderNo": "工单编号",
-  "xiaozhu.repairs.status": "状态"
+  "xiaozhu.repairs.status": "状态",
+  "workflow.repair.business": "维修报修",
+  "workflow.repair.settings": "报修审批设置",
+  "workflow.repair.enabled": "启用报修审批",
+  "workflow.repair.settingHelp": "按公司设置。启用后，报修必须审批通过才能派工；停用模板不会关闭此要求。",
+  "workflow.repair.missingTemplate": "当前没有有效模板，启用后将阻止提交报修，请先发布本公司的维修报修流程。",
+  "workflow.repair.saved": "审批设置已保存",
+  "workflow.repair.resubmit": "重新提交审批",
+  "workflow.repair.pendingSubmit": "待提交",
+  "workflow.repair.reviewing": "审批中"
 }

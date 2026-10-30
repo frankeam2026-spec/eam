@@ -328,7 +328,7 @@ public class PermissionService {
   }
 
   private boolean repairOwnerMatches(RepairOrder r, String action) {
-    if (Set.of("处理").contains(action)) return Objects.equals(r.getAssigneeUserId(), auth.userId());
+    if (Objects.equals("处理", action)) return Objects.equals(r.getAssigneeUserId(), auth.userId());
     if (Set.of("验收", "报修", "编辑", "撤回", "派工").contains(action))
       return Objects.equals(r.getReporterUserId(), auth.userId());
     return Objects.equals(r.getReporterUserId(), auth.userId())

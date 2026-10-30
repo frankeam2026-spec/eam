@@ -216,7 +216,7 @@ public class BusinessConfigService {
     checkVersion(row, body.path("version").asInt(-1));
     var draft =
         body.path("configuration").isObject()
-            ? hydrate(((ObjectNode) body.path("configuration")).deepCopy())
+            ? hydrate(body.path("configuration").deepCopy())
             : body.path("configuration");
     validate(object, draft, decode(row.get("published")));
     repo.draft(auth.tenantId(), object, encode(draft), body.path("version").asInt(), auth.userId());

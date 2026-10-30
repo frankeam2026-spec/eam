@@ -1,8 +1,19 @@
 package com.windasoft.eam.controller.inventory;
 
+import com.windasoft.eam.dto.common.DataResponse;
+import com.windasoft.eam.dto.inventory.RequisitionDetail;
+import com.windasoft.eam.dto.inventory.RequisitionDraftForm;
 import com.windasoft.eam.service.inventory.RequisitionService;
 import java.util.Map;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/inventory/requisitions")
@@ -49,18 +60,19 @@ public class RequisitionController {
   }
 
   @GetMapping("/{id}")
-  public Object detail(@PathVariable long id) {
-    return Map.of("data", service.detail(id));
+  public DataResponse<RequisitionDetail> detail(@PathVariable long id) {
+    return new DataResponse<>(service.detailView(id));
   }
 
   @PostMapping
-  public Object create(@RequestBody Map<String, Object> body) {
-    return Map.of("data", service.save(null, body));
+  public DataResponse<RequisitionDetail> create(@RequestBody RequisitionDraftForm body) {
+    return new DataResponse<>(service.create(body));
   }
 
   @PutMapping("/{id}")
-  public Object update(@PathVariable long id, @RequestBody Map<String, Object> body) {
-    return Map.of("data", service.save(id, body));
+  public DataResponse<RequisitionDetail> update(
+      @PathVariable long id, @RequestBody RequisitionDraftForm body) {
+    return new DataResponse<>(service.update(id, body));
   }
 
   @PostMapping("/{id}/submit")

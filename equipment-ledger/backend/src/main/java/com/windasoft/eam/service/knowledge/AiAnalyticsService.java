@@ -14,7 +14,7 @@ public class AiAnalyticsService {
     if(!permissions.allowed("workspace","查看"))return Map.of("answer","你没有统计查看权限，请联系管理员。","citations",List.of());
     if(question.contains("故障率"))return Map.of("answer","目前可查询设备报修次数排名，尚无统一的故障率分母。报修次数不等于故障率。你要查看报修次数排名吗？","citations",List.of());
     var catalog=analytics.catalog();
-    var body=Map.<String,Object>of("enable_thinking",false,"max_tokens",700,"response_format",Map.of("type","json_object"),"messages",List.of(
+    var body=Map.of("enable_thinking",false,"max_tokens",700,"response_format",Map.of("type","json_object"),"messages",List.of(
         Map.of("role","system","content","将问题转换为允许的指标查询，不能生成SQL。只返回JSON：operation为QUERY/CLARIFY/KNOWLEDGE。QUERY字段metric、scope(personal/team)、topN(5/10/20)、period{preset,from,to}、companyIds字符串数组、departmentIds字符串数组。只能使用目录指标和组织ID。period.preset支持yesterday/last7/last90/month/lastMonth/quarter/year/last12months/custom。未指定周期默认month。公司或部门有歧义、指标不支持返回CLARIFY及message，不能忽略用户筛选。不涉及统计返回KNOWLEDGE。"),
         Map.of("role","user","content",json.writeValueAsString(Map.of("question",question,"previousUserQuestions",previous,"catalog",catalog)))));
     var response=gateway.post("/chat/completions",body,false);
@@ -33,7 +33,7 @@ public class AiAnalyticsService {
       var ids=intent.path(field);if(!ids.isArray()||ids.size()>20)throw new IllegalArgumentException("组织筛选参数无效");
       var selected=new ArrayList<String>();for(var id:ids){if(!id.isTextual()||!id.asText().matches("[0-9]+"))throw new IllegalArgumentException("组织ID无效");selected.add(id.asText());}widget.put(field,selected);
     }
-    var queryContext=Map.<String,Object>of("period",periodMap,"companyIds",widget.get("companyIds"),"departmentIds",widget.get("departmentIds"));
+    var queryContext=Map.of("period",periodMap,"companyIds",widget.get("companyIds"),"departmentIds",widget.get("departmentIds"));
     var result=(Map<String,Object>)analytics.query(Map.of("widgets",List.of(widget),"context",queryContext));
     var data=((List<Map<String,Object>>)result.get("data")).getFirst();
     var out=new LinkedHashMap<String,Object>();out.put("answer","已按系统统计口径查询："+metric.get("name")+"。统计图表显示本次查询结果；历史会话请重新查询最新结果。");out.put("citations",List.of());

@@ -31,7 +31,7 @@ public class AiQuestionRouter {
       结合最近用户问题理解追问；当前问题的明确主题优先，绝不能因为无法分类就默认KNOWLEDGE。
       """;
     var prior=previous.stream().skip(Math.max(0,previous.size()-3)).toList();
-    var body=Map.<String,Object>of("enable_thinking",false,"max_tokens",700,"response_format",Map.of("type","json_object"),"messages",List.of(
+    var body=Map.of("enable_thinking",false,"max_tokens",700,"response_format",Map.of("type","json_object"),"messages",List.of(
         Map.of("role","system","content",instructions),Map.of("role","user","content",json.writeValueAsString(Map.of("question",question,"previousUserQuestions",prior)))));
     var response=gateway.post("/chat/completions",body,false);
     try{return parse(response.path("choices").path(0).path("message").path("content").asText(),question+"\n"+String.join("\n",prior));}

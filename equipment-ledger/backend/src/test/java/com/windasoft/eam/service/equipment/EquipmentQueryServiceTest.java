@@ -1,17 +1,30 @@
 package com.windasoft.eam.service.equipment;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.equipment.EquipmentOwnerView;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
-import com.windasoft.eam.service.equipment.EquipmentQueryService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.math.BigDecimal;
-import java.util.*;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -29,10 +42,19 @@ class EquipmentQueryServiceTest {
     permissions = mock(PermissionService.class);
     var auth = mock(AuthContext.class);
     when(auth.tenantId()).thenReturn(10001L);
-    service = new EquipmentQueryService(repository, auth, permissions, new ObjectMapper());
-    var custom=mock(com.windasoft.eam.service.business.BusinessValueService.class);
-    when(custom.read(anyString(),anyLong())).thenReturn(new com.windasoft.eam.service.business.BusinessValueService.Values(Map.of(),Map.of(),0));
-    org.springframework.test.util.ReflectionTestUtils.setField(service,"custom",custom);
+    service =
+        new EquipmentQueryService(
+            repository,
+            auth,
+            permissions,
+            new ObjectMapper(),
+            mock(com.windasoft.eam.repository.equipment.EquipmentAssistantRepository.class));
+    var custom = mock(com.windasoft.eam.service.business.BusinessValueService.class);
+    when(custom.read(anyString(), anyLong()))
+        .thenReturn(
+            new com.windasoft.eam.service.business.BusinessValueService.Values(
+                Map.of(), Map.of(), 0));
+    org.springframework.test.util.ReflectionTestUtils.setField(service, "custom", custom);
   }
 
   @Test

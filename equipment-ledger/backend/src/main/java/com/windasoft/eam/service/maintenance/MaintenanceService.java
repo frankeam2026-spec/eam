@@ -115,12 +115,17 @@ public class MaintenanceService {
 
   @Transactional(readOnly = true)
   public List<Map<String, Object>> definitions(String kind) {
+    return readDefinitions(kind);
+  }
+
+  private List<Map<String, Object>> readDefinitions(String kind) {
     require(
         KINDS.contains(kind),
         com.windasoft.eam.common.MessageContext.text("server.system.message0045"));
     permissions.require(PermissionService.maintenanceMenu(kind), "查看");
-    if (kind.equals("types"))
+    if (kind.equals("types")) {
       return repository.listDefinitions(auth.tenantId(), kind).stream().map(this::view).toList();
+    }
     return definitionBatches(kind);
   }
 
@@ -137,12 +142,13 @@ public class MaintenanceService {
     }
   }
 
+  @Transactional(readOnly = true)
   public List<Map<String, Object>> exportRows(String kind) {
     require(
         kind.equals("types"),
         com.windasoft.eam.common.MessageContext.text("server.maintenance.message0019"));
     permissions.require(PermissionService.maintenanceMenu(kind), "导出");
-    return definitions(kind);
+    return readDefinitions(kind);
   }
 
   public Map<String, Object> definition(String kind, long id) {
@@ -544,16 +550,14 @@ public class MaintenanceService {
                 .filter(
                     e -> {
                       try {
-                        if (!permissions.maintenanceEquipmentVisible(
-                            e.get("company_org_id") == null
-                                ? null
-                                : number(e.get("company_org_id")),
-                            e.get("department_org_id") == null
-                                ? null
-                                : number(e.get("department_org_id")),
-                            e.get("owner_user_id") == null ? null : number(e.get("owner_user_id"))))
-                          return false;
-                        return true;
+                        return permissions.maintenanceEquipmentVisible(
+                          e.get("company_org_id") == null
+                            ? null
+                            : number(e.get("company_org_id")),
+                          e.get("department_org_id") == null
+                            ? null
+                            : number(e.get("department_org_id")),
+                          e.get("owner_user_id") == null ? null : number(e.get("owner_user_id")));
                       } catch (ResponseStatusException ex) {
                         return false;
                       }
@@ -596,9 +600,9 @@ public class MaintenanceService {
                             || List.of("standards", "plans", "tasks").stream()
                                 .anyMatch(
                                     k ->
-                                        permissions.allowed(permissions.maintenanceMenu(k), "查看")
+                                        permissions.allowed(PermissionService.maintenanceMenu(k), "查看")
                                             && permissions.companyAllowed(
-                                                permissions.maintenanceMenu(k),
+                                                PermissionService.maintenanceMenu(k),
                                                 "查看",
                                                 number(r.get("company_id")))))
                 .map(

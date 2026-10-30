@@ -12,7 +12,7 @@ public final class NotificationContracts {
       @NotBlank String businessKind, boolean enabled, @NotNull @Size(max=100) List<@Valid Rule> rules) {}
   public record DefaultPolicy(Long policyId, @Min(0) int rowVersion) {}
   public record Channel(@Min(0) int rowVersion, boolean systemEnabled, boolean emailEnabled,
-      @Size(max=255) String smtpHost, @Min(1) @Max(65535) int smtpPort, String smtpSecurity,
+      @Size(max=255) String smtpHost, @Min(1) @Max(65535) int smtpPort, @NotBlank String smtpSecurity,
       @Size(max=255) String smtpUsername, @Size(max=1000) String password,
       @Email @Size(max=254) String senderAddress, @Size(max=500) String publicUrl) {}
   public record TestEmail(@NotBlank @Email String address) {}

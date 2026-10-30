@@ -1,7 +1,12 @@
 package com.windasoft.eam.dto.equipment;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import jakarta.validation.constraints.*;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.windasoft.eam.common.ExactLongDeserializer;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -45,16 +50,45 @@ public record EquipmentForm(
     LocalDate calibrationDate,
     LocalDate calibrationValidUntil,
     @Size(max = 100) String inspectorName,
-    @jakarta.validation.constraints.NotNull(message = "{ui.equipment.text0099}")
+    @NotNull(message = "{ui.equipment.text0099}")
+        @Positive(message = "{server.inventory.message0024}")
+        @JsonDeserialize(using = ExactLongDeserializer.class)
         Long departmentOrgId,
-    @jakarta.validation.constraints.NotNull(message = "{server.equipment.message0005}")
+    @NotNull(message = "{server.equipment.message0005}")
+        @Positive(message = "{server.inventory.message0024}")
+        @JsonDeserialize(using = ExactLongDeserializer.class)
         Long locationId,
-    @jakarta.validation.constraints.NotNull(message = "{ui.equipment.text0084}") Long categoryId,
-    @jakarta.validation.constraints.NotNull(message = "{server.equipment.message0006}") Long unitId,
-    @jakarta.validation.constraints.NotNull(message = "{server.equipment.message0007}")
+    @NotNull(message = "{ui.equipment.text0084}")
+        @Positive(message = "{server.inventory.message0024}")
+        @JsonDeserialize(using = ExactLongDeserializer.class)
+        Long categoryId,
+    @NotNull(message = "{server.equipment.message0006}")
+        @Positive(message = "{server.inventory.message0024}")
+        @JsonDeserialize(using = ExactLongDeserializer.class)
+        Long unitId,
+    @NotNull(message = "{server.equipment.message0007}")
+        @Positive(message = "{server.inventory.message0024}")
+        @JsonDeserialize(using = ExactLongDeserializer.class)
         Long useStateId,
-    Long sourceId,
-    Long ownerId,
-    @Size(max = 50, message = "{server.equipment.message0001}") List<Long> ownerIds,
+    @Positive(message = "{server.inventory.message0024}")
+        @JsonDeserialize(using = ExactLongDeserializer.class)
+        Long sourceId,
+    @Positive(message = "{server.inventory.message0024}")
+        @JsonDeserialize(using = ExactLongDeserializer.class)
+        Long ownerId,
+    @Size(max = 50, message = "{server.equipment.message0001}")
+        @JsonDeserialize(contentUsing = ExactLongDeserializer.class)
+        List<
+                @NotNull(message = "{server.inventory.message0024}")
+                @Positive(message = "{server.inventory.message0024}") Long>
+            ownerIds,
     JsonNode customFields,
-    Integer customSchemaVersion) {}
+    Integer customSchemaVersion) {
+  public EquipmentForm {
+    // 保留未传与空集合的区别；空元素由字段校验定位，避免复制时抛出空指针。
+    ownerIds =
+        ownerIds == null
+            ? null
+            : java.util.Collections.unmodifiableList(new java.util.ArrayList<>(ownerIds));
+  }
+}

@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class RepairOrderService {
+  @org.springframework.beans.factory.annotation.Autowired private RepairApprovalService approvals;
+
   @org.springframework.beans.factory.annotation.Autowired
   private com.windasoft.eam.service.business.BusinessValueService custom;
 
@@ -58,6 +60,7 @@ public class RepairOrderService {
     row.setReportedAt(LocalDateTime.now());
     row.setRowVersion(0);
     row.setDeleted(0);
+    approvals.prepare(row);
     repository.insert(row);
     custom.save(
         "repair_report",
@@ -80,19 +83,25 @@ public class RepairOrderService {
             row.getReportedAt().toString(),
             "attachments",
             views.json(row.getAttachmentsJson())));
-    return Map.of("data", views.view(row));
+    approvals.start(row);
+    return Map.of("data", views.view(require(row.getId())));
   }
 
   @org.springframework.transaction.annotation.Transactional
   public Map<String, Object> update(Long id, RepairForm form, int rowVersion) {
     var row = require(id);
-    permissions.checkRepair(row, "编辑");
+    boolean ownReturned =
+        "待提交".equals(row.getStatus()) && Objects.equals(row.getReporterUserId(), auth.userId());
+    permissions.checkRepair(row, ownReturned ? "报修" : "编辑");
     VersionGuard.check(row.getRowVersion(), rowVersion);
-    if (!"待派工".equals(row.getStatus()))
+    Long originalCompany = row.getCompanyOrgId();
+    if (!("待提交".equals(row.getStatus()) && Objects.equals(row.getReporterUserId(), auth.userId()))
+        && !("待派工".equals(row.getStatus()) && !"REQUIRED".equals(row.getApprovalGate())))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0041");
     copy(form, row);
     setEquipment(row, form.equipmentCode());
-    permissions.checkRepair(row, "编辑");
+    permissions.checkRepair(row, ownReturned ? "报修" : "编辑");
+    approvals.requireCompanyChangeAllowed(originalCompany, row);
     VersionGuard.updated(repository.update(row));
     custom.save(
         "repair_report",

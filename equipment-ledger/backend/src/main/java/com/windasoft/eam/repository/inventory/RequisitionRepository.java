@@ -4,24 +4,51 @@ import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
 import java.math.BigDecimal;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class RequisitionRepository {
-  public void workflowStatus(long tenant,long id,String state,String gate) {
-    db.update("UPDATE inv_requisition SET status=?,approval_gate=?,row_version=row_version+1 WHERE tenant_id=? AND id=? AND deleted=0",state,gate,tenant,id);
+  public void workflowStatus(long tenant, long id, String state, String gate) {
+    db.update(
+        "UPDATE inv_requisition SET status=?,approval_gate=?,row_version=row_version+1 WHERE"
+            + " tenant_id=? AND id=? AND deleted=0",
+        state,
+        gate,
+        tenant,
+        id);
   }
-  public Map<String,Object> workflowValues(long tenant,long id) {
-    var rows=db.queryForList("SELECT r.applicant_id AS applicantId,CASE WHEN o.org_type='部门' THEN u.org_id ELSE NULL END AS applicantDepartmentId,r.company_id AS companyId,r.warehouse_id AS warehouseId,r.task_kind AS taskKind FROM inv_requisition r JOIN eam_sys_user u ON u.tenant_id=r.tenant_id AND u.id=r.applicant_id LEFT JOIN eam_org_unit o ON o.tenant_id=u.tenant_id AND o.id=u.org_id WHERE r.tenant_id=? AND r.id=? AND r.deleted=0",tenant,id);
-    if(rows.isEmpty()) throw new IllegalArgumentException("领料申请不存在");
-    var values=rows.getFirst();
-    values.put("lines",db.queryForList("SELECT l.material_id AS materialId,m.code,l.quantity FROM inv_requisition_line l JOIN inv_material m ON m.tenant_id=l.tenant_id AND m.id=l.material_id WHERE l.tenant_id=? AND l.requisition_id=? ORDER BY l.line_no,l.id",tenant,id));
+
+  public Map<String, Object> workflowValues(long tenant, long id) {
+    var rows =
+        db.queryForList(
+            "SELECT r.applicant_id AS applicantId,CASE WHEN o.org_type='部门' THEN u.org_id ELSE NULL"
+                + " END AS applicantDepartmentId,r.company_id AS companyId,r.warehouse_id AS"
+                + " warehouseId,r.task_kind AS taskKind FROM inv_requisition r JOIN eam_sys_user u"
+                + " ON u.tenant_id=r.tenant_id AND u.id=r.applicant_id LEFT JOIN eam_org_unit o ON"
+                + " o.tenant_id=u.tenant_id AND o.id=u.org_id WHERE r.tenant_id=? AND r.id=? AND"
+                + " r.deleted=0",
+            tenant,
+            id);
+    if (rows.isEmpty()) throw new IllegalArgumentException("领料申请不存在");
+    var values = rows.getFirst();
+    values.put(
+        "lines",
+        db.queryForList(
+            "SELECT l.material_id AS materialId,m.code,l.quantity FROM inv_requisition_line l JOIN"
+                + " inv_material m ON m.tenant_id=l.tenant_id AND m.id=l.material_id WHERE"
+                + " l.tenant_id=? AND l.requisition_id=? ORDER BY l.line_no,l.id",
+            tenant,
+            id));
     return values;
   }
+
   @org.springframework.beans.factory.annotation.Autowired
   private com.windasoft.eam.repository.system.NotificationRepository notifications;
+
   private final JdbcTemplate db;
   private final NumberCounterMapper counter;
 
@@ -54,37 +81,6 @@ public class RequisitionRepository {
     this.db = db;
     this.counter = counter;
     this.repairs = repairs;
-  }
-
-  public List<Map<String, Object>> loadRepairTask(long tenantId, Object taskId, boolean lock) {
-    return db.queryForList(
-        "SELECT id,department_org_id,equipment_code,order_no,status FROM eam_repair_order"
-            + " WHERE tenant_id=? AND id=? AND deleted=0"
-            + (lock ? " FOR UPDATE" : ""),
-        tenantId,
-        taskId);
-  }
-
-  public List<Map<String, Object>> findEquipmentCompany(long tenantId, Object value) {
-    return db.queryForList(
-        "SELECT company_org_id FROM eam_equipment WHERE tenant_id=? AND equipment_code=?"
-            + " AND deleted=0",
-        tenantId,
-        value);
-  }
-
-  public List<Map<String, Object>> loadTask(
-      long tenantId, Object taskId, String table, String kind, boolean lock) {
-    if (!(Set.of("v_maintenance_task", "v_inspection_task").contains(table)))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0008");
-    return db.queryForList(
-        "SELECT * FROM "
-            + table
-            + " WHERE tenant_id=? AND id=?"
-            + (kind.equals("点巡检") ? " AND deleted=0" : "")
-            + (lock ? " FOR UPDATE" : ""),
-        tenantId,
-        taskId);
   }
 
   public List<Map<String, Object>> loadRequest(long tenantId, Object requestId, boolean lock) {
@@ -167,7 +163,7 @@ public class RequisitionRepository {
   }
 
   public int insertEvent(
-      long recordId, long tenantId, Object requestId, Object action, long userId, Object value) {
+      long recordId, long tenantId, long requestId, String action, long userId, String actorName) {
     return db.update(
         "INSERT INTO"
             + " inv_document_event(id,tenant_id,document_kind,document_id,action,actor_id,actor_name)"
@@ -177,7 +173,7 @@ public class RequisitionRepository {
         requestId,
         action,
         userId,
-        value);
+        actorName);
   }
 
   public int countCode(long tenantId, Object code) {
@@ -186,74 +182,6 @@ public class RequisitionRepository {
         Integer.class,
         tenantId,
         code);
-  }
-
-  public List<Map<String, Object>> listLines(long tenantId, Object requestId) {
-    return db.queryForList(
-        "SELECT l.*,m.code material_code,m.name material_name,m.model"
-            + " material_model,m.unit,COALESCE((SELECT SUM(r.remaining_quantity) FROM"
-            + " inv_reservation r WHERE r.tenant_id=l.tenant_id AND"
-            + " r.requisition_line_id=l.id),0) reserved_quantity FROM inv_requisition_line"
-            + " l JOIN inv_material m ON m.tenant_id=l.tenant_id AND m.id=l.material_id"
-            + " WHERE l.tenant_id=? AND l.requisition_id=? ORDER BY l.line_no",
-        tenantId,
-        requestId);
-  }
-
-  public List<Map<String, Object>> listReservations(long tenantId, Object requestId) {
-    return db.queryForList(
-        "SELECT r.*,m.name material_name,b.name bin_name,pc.code batch_code FROM"
-            + " inv_reservation r JOIN inv_balance s ON s.tenant_id=r.tenant_id AND"
-            + " s.id=r.balance_id JOIN inv_material m ON m.tenant_id=s.tenant_id AND"
-            + " m.id=s.material_id JOIN inv_bin b ON b.tenant_id=s.tenant_id AND"
-            + " b.id=s.bin_id LEFT JOIN inv_batch pc ON pc.tenant_id=s.tenant_id AND"
-            + " pc.id=s.batch_id WHERE r.tenant_id=? AND r.requisition_id=? AND"
-            + " r.remaining_quantity>0 ORDER BY r.created_at,r.id",
-        tenantId,
-        requestId);
-  }
-
-  public List<Map<String, Object>> listIssues(long tenantId, Object requestId) {
-    return db.queryForList(
-        "SELECT i.*,g.code group_code FROM inv_issue i LEFT JOIN inv_issue_group g ON"
-            + " g.tenant_id=i.tenant_id AND g.id=i.group_id WHERE i.tenant_id=? AND"
-            + " (i.requisition_id=? OR EXISTS(SELECT 1 FROM inv_issue_allocation a JOIN"
-            + " inv_requisition_line l ON l.tenant_id=a.tenant_id AND"
-            + " l.id=a.requisition_line_id WHERE a.tenant_id=i.tenant_id AND"
-            + " a.issue_id=i.id AND l.requisition_id="
-            + requestId
-            + ")) ORDER BY i.created_at,i.id",
-        tenantId,
-        requestId);
-  }
-
-  public List<Map<String, Object>> listAllocations(long tenantId, Object id, long requestId) {
-    return db.queryForList(
-        "SELECT a.*,m.name material_name,b.name bin_name,pc.code batch_code"
-            + " FROM inv_issue_allocation a JOIN inv_balance s ON"
-            + " s.tenant_id=a.tenant_id AND s.id=a.balance_id JOIN"
-            + " inv_material m ON m.tenant_id=s.tenant_id AND"
-            + " m.id=s.material_id JOIN inv_bin b ON b.tenant_id=s.tenant_id"
-            + " AND b.id=s.bin_id LEFT JOIN inv_batch pc ON"
-            + " pc.tenant_id=s.tenant_id AND pc.id=s.batch_id WHERE"
-            + " a.tenant_id=? AND a.issue_id=? AND a.requisition_line_id IN"
-            + " (SELECT id FROM inv_requisition_line WHERE tenant_id="
-            + tenantId
-            + " AND requisition_id="
-            + requestId
-            + ") ORDER BY a.id",
-        tenantId,
-        id);
-  }
-
-  public List<Map<String, Object>> listEvents(long tenantId, Object requestId) {
-    return db.queryForList(
-        "SELECT"
-            + " action,actor_name,created_at,JSON_UNQUOTE(JSON_EXTRACT(details_json,'$.reason'))"
-            + " reason FROM inv_document_event WHERE tenant_id=? AND document_kind='领料' AND"
-            + " document_id=? ORDER BY created_at,id",
-        tenantId,
-        requestId);
   }
 
   public BigDecimal sumIssued(long tenantId, Object id) {
@@ -314,77 +242,11 @@ public class RequisitionRepository {
         ((long) page - 1) * size);
   }
 
-  public int insertRequest(
-      Object target,
-      long tenantId,
-      Object value,
-      Object value4,
-      Object id,
-      Object value6,
-      Object taskId,
-      Object value8,
-      long userId,
-      Object value10,
-      Object value11) {
-    return db.update(
-        "INSERT INTO"
-            + " inv_requisition(id,tenant_id,code,company_id,warehouse_id,task_kind,task_id,task_code,applicant_id,applicant_name,remark)"
-            + " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-        target,
-        tenantId,
-        value,
-        value4,
-        id,
-        value6,
-        taskId,
-        value8,
-        userId,
-        value10,
-        value11);
-  }
-
-  public int updateRequest(
-      Object value,
-      Object id,
-      Object value3,
-      Object taskId,
-      Object value5,
-      Object value6,
-      long tenantId,
-      Object target) {
-    return db.update(
-        "UPDATE inv_requisition SET"
-            + " company_id=?,warehouse_id=?,task_kind=?,task_id=?,task_code=?,remark=?,row_version=row_version+1"
-            + " WHERE tenant_id=? AND id=?",
-        value,
-        id,
-        value3,
-        taskId,
-        value5,
-        value6,
-        tenantId,
-        target);
-  }
-
   public int deleteLines(long tenantId, Object target) {
     return db.update(
         "DELETE FROM inv_requisition_line WHERE tenant_id=? AND requisition_id=?",
         tenantId,
         target);
-  }
-
-  public int insertLine(
-      long recordId, long tenantId, Object target, Object value, Object materialId, Object qty) {
-    return db.update(
-        "INSERT INTO"
-            + " inv_requisition_line(id,tenant_id,requisition_id,line_no,material_id,quantity)"
-            + " VALUES(?,?,?,?,?,?)",
-        recordId,
-        tenantId,
-        target,
-        value,
-        materialId,
-        qty);
   }
 
   public int submitRequest(long tenantId, Object requestId) {

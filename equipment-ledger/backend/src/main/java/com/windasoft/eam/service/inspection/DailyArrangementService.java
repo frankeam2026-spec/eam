@@ -371,9 +371,7 @@ public class DailyArrangementService {
           }
         } else check(number(r.get("weekday")) >= 0 && number(r.get("weekday")) <= 7, field, "days");
         check(
-            yes(r.get("unassigned"))
-                ? ids(r.get("users")).isEmpty()
-                : !ids(r.get("users")).isEmpty(),
+          yes(r.get("unassigned")) == ids(r.get("users")).isEmpty(),
             field,
             "staffPeople");
         check(activeIds.containsAll(ids(r.get("users"))), field, "people");

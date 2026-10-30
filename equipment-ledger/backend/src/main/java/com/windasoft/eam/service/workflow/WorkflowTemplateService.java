@@ -62,6 +62,18 @@ public class WorkflowTemplateService {
     return variables.catalog(business).values();
   }
 
+  public Object approvalSetting(long company) {
+    check(company, "查看");
+    return repository.approvalSetting(auth.tenantId(), company);
+  }
+
+  @Transactional
+  public Object approvalSetting(long company, boolean required, long version) {
+    check(company, "发布");
+    repository.approvalSetting(auth.tenantId(), company, required, version);
+    return repository.approvalSetting(auth.tenantId(), company);
+  }
+
   public Object parse(String expression) {
     permissions.require("workflow", "查看");
     return WorkflowExpression.parse(expression, variables.catalog("requisition"));
@@ -185,7 +197,8 @@ public class WorkflowTemplateService {
               switch (field) {
                 case "applicantId" ->
                     permissions.companyOfOrganization(repository.userOrg(auth.tenantId(), id));
-                case "applicantDepartmentId" -> permissions.companyOfOrganization(id);
+                case "applicantDepartmentId", "departmentId" ->
+                    permissions.companyOfOrganization(id);
                 case "companyId" -> id;
                 default -> company;
               };

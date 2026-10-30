@@ -1191,8 +1191,7 @@ class EngineeringQueryMySqlIT {
                       "code",
                       "direction",
                       "asc"));
-          var query =
-              json.convertValue(input, com.windasoft.eam.dto.equipment.EquipmentListQuery.class);
+          var query = com.windasoft.eam.dto.equipment.EquipmentQueryParameters.read(input, json);
           assertEquals(10005, equipmentQueries.list(query).page().total());
           var last = equipmentQueries.list(query.at(51, 200));
           assertEquals(5, last.data().size());
@@ -1208,15 +1207,14 @@ class EngineeringQueryMySqlIT {
           input.put("keyword", "QA-PAGE-EQ-0000");
           var codeSorted =
               equipmentQueries.list(
-                  json.convertValue(
-                      input, com.windasoft.eam.dto.equipment.EquipmentListQuery.class));
+                  com.windasoft.eam.dto.equipment.EquipmentQueryParameters.read(input, json));
           assertEquals(10, codeSorted.page().total());
           assertEquals("QA-PAGE-EQ-00000", codeSorted.data().getFirst().code());
           assertEquals("QA-PAGE-EQ-00009", codeSorted.data().getLast().code());
           input.put("keyword", "QA-PAGE-EQ-1000");
           var writer = new java.io.StringWriter();
           equipmentQueries.export(
-              json.convertValue(input, com.windasoft.eam.dto.equipment.EquipmentListQuery.class),
+              com.windasoft.eam.dto.equipment.EquipmentQueryParameters.read(input, json),
               List.of("code", "name"),
               new java.io.PrintWriter(writer));
           assertEquals(6, writer.toString().lines().count());

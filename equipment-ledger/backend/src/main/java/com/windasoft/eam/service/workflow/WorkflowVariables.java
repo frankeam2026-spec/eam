@@ -35,6 +35,20 @@ public class WorkflowVariables {
   }
 
   public Map<String, Variable> catalog(String businessType) {
+    if ("repair_report".equals(businessType)) {
+      var result = new LinkedHashMap<String, Variable>();
+      for (var v :
+          List.of(
+              new Variable("applicantId", "报修人", Type.REFERENCE, true, false),
+              new Variable("applicantDepartmentId", "报修人所属部门", Type.REFERENCE, true, true),
+              new Variable("companyId", "工单所属公司", Type.REFERENCE, true, false),
+              new Variable("departmentId", "工单所属部门", Type.REFERENCE, true, false),
+              new Variable("equipmentId", "设备", Type.REFERENCE, true, false),
+              new Variable("categoryId", "设备分类", Type.REFERENCE, true, true),
+              new Variable("faultTypeId", "故障类型", Type.REFERENCE, true, false),
+              new Variable("severity", "故障等级", Type.TEXT, true, false))) result.put(v.key(), v);
+      return Collections.unmodifiableMap(result);
+    }
     if (!"requisition".equals(businessType)) throw new IllegalArgumentException("不支持的审批业务类型");
     Map<String, Variable> result = new LinkedHashMap<>();
     for (var v :

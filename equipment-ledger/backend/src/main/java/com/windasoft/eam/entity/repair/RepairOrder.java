@@ -15,6 +15,8 @@ public class RepairOrder {
   private Long id;
 
   private Long tenantId;
+  private String approvalGate;
+  private LocalDateTime approvalReadyAt;
   private Long equipmentId;
   private Long companyOrgId;
   private Long faultTypeId;

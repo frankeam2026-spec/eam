@@ -27,7 +27,9 @@ public class NotificationChannelService {
   @Transactional public void save(Channel c) {
     permissions.require("notificationChannel","编辑");
     NotificationPolicyService.require(c.systemEnabled(),"站内消息为公共通知基础渠道，须保持启用");
-    NotificationPolicyService.require(Set.of("NONE","STARTTLS","SSL").contains(c.smtpSecurity()),"SMTP安全方式无效");
+    NotificationPolicyService.require(
+        c.smtpSecurity() != null && Set.of("NONE", "STARTTLS", "SSL").contains(c.smtpSecurity()),
+        "SMTP安全方式无效");
     NotificationPolicyService.require(!c.emailEnabled() || (c.smtpHost()!=null && !c.smtpHost().isBlank() && c.senderAddress()!=null && !c.senderAddress().isBlank()),"启用邮件必须配置SMTP主机和发件邮箱");
     NotificationPolicyService.require(c.publicUrl()==null || c.publicUrl().isBlank() || c.publicUrl().matches("https?://[^\\s]+"),"系统访问地址必须是HTTP或HTTPS地址");
     var old=repo.channel(auth.tenantId(),true);VersionGuard.checkPayload((Number)old.get("row_version"),Map.of("rowVersion",c.rowVersion()));

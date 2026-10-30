@@ -46,7 +46,8 @@ class RepairWorkflowServiceTest {
                 orders,
                 mock(EquipmentMapper.class),
                 mock(SystemUserMapper.class),
-                mock(BaseItemMapper.class), com.windasoft.eam.support.RelationStubs.repair()),
+                mock(BaseItemMapper.class),
+                com.windasoft.eam.support.RelationStubs.repair()),
             auth,
             permissions,
             json,
@@ -55,6 +56,8 @@ class RepairWorkflowServiceTest {
         service,
         "experienceInventoryMutex",
         mock(com.windasoft.eam.service.inventory.InventoryMutex.class));
+    org.springframework.test.util.ReflectionTestUtils.setField(
+        service, "approvals", mock(RepairApprovalService.class));
     org.springframework.test.util.ReflectionTestUtils.setField(
         service,
         "experiencePublisher",

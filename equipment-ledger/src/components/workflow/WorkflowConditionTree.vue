@@ -23,14 +23,29 @@ function child(i: number, value: Condition) {
   update({ children });
 }
 function empty(): Condition {
+  const variable =
+    props.variables.find((v) => v.available && v.type === 'TEXT') ||
+    props.variables.find((v) => v.available);
   return {
     op: '==',
     field: null,
     literal: null,
     type: 'BOOLEAN',
     children: [
-      { op: 'FIELD', field: 'taskKind', literal: null, type: 'TEXT', children: [] },
-      { op: 'LITERAL', field: null, literal: '维修', type: 'TEXT', children: [] },
+      {
+        op: 'FIELD',
+        field: variable?.key || '',
+        literal: null,
+        type: variable?.type || 'TEXT',
+        children: [],
+      },
+      {
+        op: 'LITERAL',
+        field: null,
+        literal: variable?.type === 'REFERENCE' ? '0' : '',
+        type: variable?.type || 'TEXT',
+        children: [],
+      },
     ],
   };
 }
@@ -70,6 +85,10 @@ const referenceKind = computed(
         applicantId: 'users',
         applicantDepartmentId: 'departments',
         warehouseId: 'warehouses',
+        departmentId: 'departments',
+        equipmentId: 'equipment',
+        categoryId: 'categories',
+        faultTypeId: 'faultTypes',
         'lines.materialId': 'materials',
       }) as Record<string, string>
     )[left.value?.field || ''],
@@ -147,8 +166,12 @@ function operator(op: string) {
           ><ElOption :label="tr('workflow.ui.012')" value="AND" /><ElOption
             :label="tr('workflow.ui.013')"
             value="OR" /><ElOption :label="tr('workflow.ui.014')" value="NOT" /><ElOption
+            v-if="variables.some((v) => v.key.startsWith('lines.'))"
             :label="tr('workflow.ui.015')"
-            value="ANY" /><ElOption :label="tr('workflow.ui.016')" value="ALL" /></ElSelect
+            value="ANY" /><ElOption
+            v-if="variables.some((v) => v.key.startsWith('lines.'))"
+            :label="tr('workflow.ui.016')"
+            value="ALL" /></ElSelect
         ><ElButton
           v-if="['AND', 'OR'].includes(modelValue.op)"
           text
@@ -261,7 +284,12 @@ function operator(op: string) {
     <div v-if="(depth || 0) < 8" class="condition-actions">
       <ElButton text @click="group('AND')">{{ tr('workflow.ui.021') }}</ElButton
       ><ElButton text @click="group('OR')">{{ tr('workflow.ui.022') }}</ElButton
-      ><ElButton text @click="group('ANY')">{{ tr('workflow.ui.023') }}</ElButton>
+      ><ElButton
+        v-if="variables.some((v) => v.key.startsWith('lines.'))"
+        text
+        @click="group('ANY')"
+        >{{ tr('workflow.ui.023') }}</ElButton
+      >
     </div>
   </div>
 </template>

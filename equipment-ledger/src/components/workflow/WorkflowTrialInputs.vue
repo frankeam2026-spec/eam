@@ -25,6 +25,10 @@ const kinds: Record<string, string> = {
   applicantDepartmentId: 'departments',
   companyId: 'companies',
   warehouseId: 'warehouses',
+  departmentId: 'departments',
+  equipmentId: 'equipment',
+  categoryId: 'categories',
+  faultTypeId: 'faultTypes',
 };
 const choices = (kind: string) => (q: string, p: number, s: number) =>
   workflowApi.choices(props.companyId, kind, q, p, s);
@@ -71,54 +75,56 @@ function material(index: number, value: string | string[]) {
       />
     </AppFormField>
   </ElForm>
-  <h3>{{ tr('workflow.ui.071') }}</h3>
-  <AppBusinessTable :rows="lines" :fill="false" :pagination="false">
-    <ElTableColumn :label="tr('workflow.ui.072')"
-      ><template #default="s"
-        ><ElInput
-          :model-value="s.row.code"
-          :disabled="disabled"
-          @update:model-value="line(s.$index, { code: $event })" /></template
-    ></ElTableColumn>
-    <ElTableColumn :label="tr('ui.equipment.text0515')"
-      ><template #default="s"
-        ><PagedChoiceField
-          :model-value="s.row.materialId"
-          :options="options"
-          :disabled="disabled || !companyId"
-          :context="companyId + 'materials'"
-          :load-rows="choices('materials')"
-          :columns="[{ key: 'name', label: tr('ui.equipment.text0404') }]"
-          @select="merge"
-          @update:model-value="material(s.$index, $event)" /></template
-    ></ElTableColumn>
-    <ElTableColumn :label="tr('workflow.ui.074')"
-      ><template #default="s"
-        ><ElInput
-          :model-value="s.row.quantity"
-          :disabled="disabled"
-          @update:model-value="line(s.$index, { quantity: $event })" /></template
-    ></ElTableColumn>
-    <ElTableColumn :label="tr('workflow.ui.034')" min-width="156"
-      ><template #default="s"
-        ><ElButton
-          text
-          type="danger"
-          :disabled="disabled"
-          @click="
-            emit(
-              'update:lines',
-              lines.filter((_, i) => i !== s.$index),
-            )
-          "
-          >{{ tr('ui.equipment.text0146') }}</ElButton
-        ></template
-      ></ElTableColumn
+  <template v-if="variables.some((v) => v.key.startsWith('lines.'))">
+    <h3>{{ tr('workflow.ui.071') }}</h3>
+    <AppBusinessTable :rows="lines" :fill="false" :pagination="false">
+      <ElTableColumn :label="tr('workflow.ui.072')"
+        ><template #default="s"
+          ><ElInput
+            :model-value="s.row.code"
+            :disabled="disabled"
+            @update:model-value="line(s.$index, { code: $event })" /></template
+      ></ElTableColumn>
+      <ElTableColumn :label="tr('ui.equipment.text0515')"
+        ><template #default="s"
+          ><PagedChoiceField
+            :model-value="s.row.materialId"
+            :options="options"
+            :disabled="disabled || !companyId"
+            :context="companyId + 'materials'"
+            :load-rows="choices('materials')"
+            :columns="[{ key: 'name', label: tr('ui.equipment.text0404') }]"
+            @select="merge"
+            @update:model-value="material(s.$index, $event)" /></template
+      ></ElTableColumn>
+      <ElTableColumn :label="tr('workflow.ui.074')"
+        ><template #default="s"
+          ><ElInput
+            :model-value="s.row.quantity"
+            :disabled="disabled"
+            @update:model-value="line(s.$index, { quantity: $event })" /></template
+      ></ElTableColumn>
+      <ElTableColumn :label="tr('workflow.ui.034')" min-width="156"
+        ><template #default="s"
+          ><ElButton
+            text
+            type="danger"
+            :disabled="disabled"
+            @click="
+              emit(
+                'update:lines',
+                lines.filter((_, i) => i !== s.$index),
+              )
+            "
+            >{{ tr('ui.equipment.text0146') }}</ElButton
+          ></template
+        ></ElTableColumn
+      >
+    </AppBusinessTable>
+    <ElButton
+      :disabled="disabled || lines.length >= 500"
+      @click="emit('update:lines', [...lines, { code: '', materialId: '', quantity: '1' }])"
+      >{{ tr('workflow.ui.075') }}</ElButton
     >
-  </AppBusinessTable>
-  <ElButton
-    :disabled="disabled || lines.length >= 500"
-    @click="emit('update:lines', [...lines, { code: '', materialId: '', quantity: '1' }])"
-    >{{ tr('workflow.ui.075') }}</ElButton
-  >
+  </template>
 </template>

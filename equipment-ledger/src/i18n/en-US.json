@@ -3940,5 +3940,14 @@
   "xiaozhu.repairs.total": "{count} records",
   "xiaozhu.repairs.sort": "Newest report first",
   "xiaozhu.repairs.orderNo": "Work order",
-  "xiaozhu.repairs.status": "Status"
+  "xiaozhu.repairs.status": "Status",
+  "workflow.repair.business": "Repair request",
+  "workflow.repair.settings": "Repair approval settings",
+  "workflow.repair.enabled": "Require approval",
+  "workflow.repair.settingHelp": "Applies to the selected company. Approval is required before dispatch. Disabling a template does not remove this requirement.",
+  "workflow.repair.missingTemplate": "No active template. Enabling approval will block repair requests until a repair workflow is published for this company.",
+  "workflow.repair.saved": "Approval settings saved",
+  "workflow.repair.resubmit": "Resubmit for approval",
+  "workflow.repair.pendingSubmit": "Awaiting resubmission",
+  "workflow.repair.reviewing": "Awaiting approval"
 }

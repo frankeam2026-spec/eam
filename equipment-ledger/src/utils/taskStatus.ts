@@ -12,7 +12,7 @@ export type TaskStatusTone = keyof typeof TASK_STATUS_PALETTE;
 const statusGroups: Record<TaskStatusTone, readonly string[]> = {
   waiting: ['待派工', '待接单', '待执行', '待处理', '已安排'],
   active: ['处理中', '执行中'],
-  review: ['待验收', '待审核'],
+  review: ['审批中', '待验收', '待审核'],
   complete: ['已完成', '已审核', '已消除'],
   danger: ['故障', '审核不通过', '已过期', '已超期'],
   neutral: ['未开始', '挂起', '已挂起', '已取消', '已撤销', '已作废', '过期作废', '已免检'],

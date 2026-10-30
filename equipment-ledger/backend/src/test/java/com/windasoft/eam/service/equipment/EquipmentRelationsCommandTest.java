@@ -1,15 +1,26 @@
 package com.windasoft.eam.service.equipment;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.same;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.equipment.Equipment;
-import com.windasoft.eam.repository.equipment.EquipmentWriteRepository;
 import com.windasoft.eam.repository.equipment.EquipmentRelationsRepository;
+import com.windasoft.eam.repository.equipment.EquipmentWriteRepository;
+import com.windasoft.eam.service.inventory.InventoryMutex;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
-import com.windasoft.eam.service.inventory.InventoryMutex;
 import org.junit.jupiter.api.Test;
 
 class EquipmentRelationsCommandTest {
@@ -28,28 +39,43 @@ class EquipmentRelationsCommandTest {
     parent.setRowVersion(version);
     when(writes.find(10001L, 901L)).thenReturn(parent);
     when(writes.advanceVersion(10001L, 901L, version, 73001L)).thenReturn(1);
-    return new EquipmentCommandService(relations, mock(EquipmentFileService.class),
-        mock(EquipmentQueryService.class), writes, json, auth, permissions);
+    return new EquipmentCommandService(
+        relations,
+        mock(EquipmentFileService.class),
+        mock(EquipmentQueryService.class),
+        writes,
+        json,
+        auth,
+        permissions,
+        mock(com.windasoft.eam.service.business.BusinessValueService.class),
+        mock(EquipmentInputValidation.class));
   }
 
-  @Test void staleVersionCannotReplaceRelations() {
+  @Test
+  void staleVersionCannotReplaceRelations() {
     var service = commands(4);
-    assertThrows(org.springframework.web.server.ResponseStatusException.class,
+    assertThrows(
+        org.springframework.web.server.ResponseStatusException.class,
         () -> service.updateRelations(901L, json.createArrayNode(), 3, false));
     verify(writes, never()).advanceVersion(anyLong(), anyLong(), anyInt(), anyLong());
     verify(relations, never()).saveBom(any(), any());
   }
 
-  @Test void forbiddenWriteDoesNotAdvanceVersionOrChangeRelations() {
+  @Test
+  void forbiddenWriteDoesNotAdvanceVersionOrChangeRelations() {
     var service = commands(4);
-    doThrow(new IllegalArgumentException("denied")).when(permissions).checkEquipment(any(), eq("编辑"));
-    assertThrows(IllegalArgumentException.class,
+    doThrow(new IllegalArgumentException("denied"))
+        .when(permissions)
+        .checkEquipment(any(), eq("编辑"));
+    assertThrows(
+        IllegalArgumentException.class,
         () -> service.updateRelations(901L, json.createArrayNode(), 4, true));
     verify(writes, never()).advanceVersion(anyLong(), anyLong(), anyInt(), anyLong());
     verify(relations, never()).saveChildren(any(), any());
   }
 
-  @Test void bomWriteUsesExistingLockOrderAndDoesNotSubmitEquipmentFields() {
+  @Test
+  void bomWriteUsesExistingLockOrderAndDoesNotSubmitEquipmentFields() {
     var service = commands(4);
     var rows = json.createArrayNode();
     service.updateRelations(901L, rows, 4, false);
@@ -64,11 +90,15 @@ class EquipmentRelationsCommandTest {
     verify(relations, never()).saveChildren(any(), any());
   }
 
-  @Test void emptyBomCannotClearChildrenOrTheirLegacyRows() {
+  @Test
+  void emptyBomCannotClearChildrenOrTheirLegacyRows() {
     var repo = mock(EquipmentRelationsRepository.class);
     when(repo.legacy(anyLong(), anyLong(), anyString())).thenReturn(java.util.List.of());
-    var service = new EquipmentRelationsService(repo, auth, permissions, json, mock(InventoryMutex.class), mock(com.windasoft.eam.repository.system.OrgUnitRepository.class));
-    var parent = new Equipment(); parent.setId(901L);
+    var service =
+        new EquipmentRelationsService(repo, auth, permissions, json, mock(InventoryMutex.class),
+            mock(com.windasoft.eam.repository.system.OrgUnitRepository.class));
+    var parent = new Equipment();
+    parent.setId(901L);
     service.saveBom(parent, json.createArrayNode());
     verify(repo).clearBom(anyLong(), eq(901L));
     verify(repo, never()).clearChildren(anyLong(), anyLong());
@@ -76,11 +106,15 @@ class EquipmentRelationsCommandTest {
     verify(repo, never()).clearLegacy(anyLong(), anyLong());
   }
 
-  @Test void emptyChildrenCannotClearBomOrItsLegacyRows() {
+  @Test
+  void emptyChildrenCannotClearBomOrItsLegacyRows() {
     var repo = mock(EquipmentRelationsRepository.class);
     when(repo.legacy(anyLong(), anyLong(), anyString())).thenReturn(java.util.List.of());
-    var service = new EquipmentRelationsService(repo, auth, permissions, json, mock(InventoryMutex.class), mock(com.windasoft.eam.repository.system.OrgUnitRepository.class));
-    var parent = new Equipment(); parent.setId(901L);
+    var service =
+        new EquipmentRelationsService(repo, auth, permissions, json, mock(InventoryMutex.class),
+            mock(com.windasoft.eam.repository.system.OrgUnitRepository.class));
+    var parent = new Equipment();
+    parent.setId(901L);
     service.saveChildren(parent, json.createArrayNode());
     verify(repo).clearChildren(anyLong(), eq(901L));
     verify(repo, never()).clearBom(anyLong(), anyLong());

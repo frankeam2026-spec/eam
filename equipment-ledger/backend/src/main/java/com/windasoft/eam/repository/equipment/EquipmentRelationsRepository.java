@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.windasoft.eam.dto.equipment.EquipmentBomMaterialQuery;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.entity.equipment.EquipmentChild;
+import com.windasoft.eam.entity.equipment.EquipmentBom;
+import com.windasoft.eam.entity.equipment.EquipmentRelationLegacy;
 import com.windasoft.eam.entity.inventory.Material;
 import com.windasoft.eam.repository.inventory.MaterialRepository;
 import java.util.*;
@@ -13,6 +16,9 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class EquipmentRelationsRepository {
+  private final EquipmentChildRepository children;
+  private final EquipmentBomRepository bom;
+  private final EquipmentRelationLegacyRepository legacy;
   private final JdbcTemplate db;
   private final EquipmentMapper equipment;
   private final EquipmentMediaRepository media;
@@ -24,7 +30,8 @@ public class EquipmentRelationsRepository {
       EquipmentMapper equipment,
       EquipmentMediaRepository media,
       EquipmentQueryRepository queries,
-      MaterialRepository materials) {
+      MaterialRepository materials, EquipmentChildRepository children, EquipmentBomRepository bom, EquipmentRelationLegacyRepository legacy) {
+    this.children=children; this.bom=bom; this.legacy=legacy;
     this.db = db;
     this.equipment = equipment;
     this.media = media;
@@ -40,50 +47,17 @@ public class EquipmentRelationsRepository {
                 .eq(Equipment::getId, id)));
   }
 
-  public int relationshipCount(long tenant, long id) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_equipment_child WHERE tenant_id=? AND (parent_id=? OR"
-            + " child_id=?)",
-        Integer.class,
-        tenant,
-        id,
-        id);
-  }
+  public int relationshipCount(long tenant, long id) { return children.countRelations(tenant,id); }
 
-  public List<Map<String, Object>> parents(long tenant, Long id) {
-    return db.queryForList(
-        "SELECT parent_id FROM eam_equipment_child WHERE tenant_id=? AND child_id=?", tenant, id);
-  }
+  public List<EquipmentChild> parents(long tenant, Long id) { return children.parents(tenant,id); }
 
-  public void clearBom(long tenant, long id) {
-    db.update("DELETE FROM eam_equipment_bom WHERE tenant_id=? AND equipment_id=?", tenant, id);
-  }
+  public void clearBom(long tenant,long id) { bom.clear(tenant,id); }
 
-  public void clearLegacy(long tenant, long id) {
-    db.update(
-        "DELETE FROM eam_equipment_relation_legacy WHERE tenant_id=? AND equipment_id=?",
-        tenant,
-        id);
-  }
+  public void clearLegacy(long tenant,long id) { legacy.clear(tenant,id); }
 
-  public void removeLegacy(long tenant, long id, String kind, Object index) {
-    db.update(
-        "DELETE FROM eam_equipment_relation_legacy WHERE tenant_id=? AND equipment_id=? AND kind=?"
-            + " AND source_index=?",
-        tenant,
-        id,
-        kind,
-        index);
-  }
+  public void removeLegacy(long tenant,long id,String kind,int index) { legacy.remove(tenant,id,kind,index); }
 
-  public List<Map<String, Object>> legacy(long tenant, long id, String kind) {
-    return db.queryForList(
-        "SELECT source_index,snapshot_json FROM eam_equipment_relation_legacy WHERE tenant_id=? AND"
-            + " equipment_id=? AND kind=?",
-        tenant,
-        id,
-        kind);
-  }
+  public List<EquipmentRelationLegacy> legacy(long tenant,long id,String kind) { return legacy.list(tenant,id,kind); }
 
   public List<Map<String, Object>> lockMaterial(long tenant, long id) {
     return db.queryForList(
@@ -93,37 +67,13 @@ public class EquipmentRelationsRepository {
         id);
   }
 
-  public int bomCount(long tenant, long id, long material) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_equipment_bom WHERE tenant_id=? AND equipment_id=? AND"
-            + " material_id=?",
-        Integer.class,
-        tenant,
-        id,
-        material);
-  }
+  public int bomCount(long tenant,long id,long material) { return bom.count(tenant,id,material); }
 
-  public void clearChildren(long tenant, long id) {
-    db.update("DELETE FROM eam_equipment_child WHERE tenant_id=? AND parent_id=?", tenant, id);
-  }
+  public void clearChildren(long tenant,long id) { children.clear(tenant,id); }
 
-  public void addChild(long tenant, long parent, long child, int sort) {
-    db.update("INSERT INTO eam_equipment_child VALUES(?,?,?,?)", tenant, parent, child, sort);
-  }
+  public void addChild(long tenant,long parent,long child,int sort) { children.add(new EquipmentChild(tenant,parent,child,sort)); }
 
-  public void addBom(long tenant, long parent, Map<String, Object> m, int sort) {
-    db.update(
-        "INSERT INTO eam_equipment_bom VALUES(?,?,?,?,?,?,?,?,?)",
-        tenant,
-        parent,
-        m.get("id"),
-        m.get("quantity"),
-        m.get("code"),
-        m.get("name"),
-        m.get("model"),
-        m.get("unit"),
-        sort);
-  }
+  public void addBom(EquipmentBom row) { bom.add(row); }
 
   public List<Map<String, Object>> children(long tenant, long id) {
     return queries.children(tenant, id);

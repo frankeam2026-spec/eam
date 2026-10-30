@@ -85,6 +85,36 @@ public class WorkflowRepository {
         == 1;
   }
 
+  public Map<String, Object> approvalSetting(long tenant, long company) {
+    var rows =
+        db.queryForList(
+            "SELECT requires_approval AS required,row_version AS rowVersion,(enabled=1 AND"
+                + " version_id IS NOT NULL) AS templateAvailable FROM wf_binding WHERE tenant_id=?"
+                + " AND company_id=? AND business_type='repair_report'",
+            tenant,
+            company);
+    return rows.isEmpty()
+        ? Map.of("required", false, "rowVersion", -1L, "templateAvailable", false)
+        : rows.getFirst();
+  }
+
+  public void approvalSetting(long tenant, long company, boolean required, long version) {
+    db.update(
+        "INSERT IGNORE INTO wf_binding(tenant_id,company_id,business_type,requires_approval)"
+            + " VALUES(?,?,'repair_report',0)",
+        tenant,
+        company);
+    int changed =
+        db.update(
+            "UPDATE wf_binding SET requires_approval=?,row_version=row_version+1 WHERE tenant_id=?"
+                + " AND company_id=? AND business_type='repair_report' AND row_version=?",
+            required,
+            tenant,
+            company,
+            version == -1 ? 0 : version);
+    if (changed != 1) throw new IllegalArgumentException("审批设置已变化，请刷新后重试");
+  }
+
   public List<Map<String, Object>> users(long tenant) {
     return db.queryForList(
         "SELECT id,display_name AS name,org_id FROM eam_sys_user WHERE tenant_id=? AND deleted=0"
@@ -369,10 +399,12 @@ public class WorkflowRepository {
       String xml,
       String engineId) {
     db.update(
-        "INSERT IGNORE INTO wf_binding(tenant_id,company_id,business_type) VALUES(?,?,?)",
+        "INSERT IGNORE INTO wf_binding(tenant_id,company_id,business_type,requires_approval)"
+            + " VALUES(?,?,?,?)",
         tenant,
         company,
-        business);
+        business,
+        business.equals("repair_report") ? 0 : 1);
     db.queryForList(
         "SELECT version_id FROM wf_binding WHERE tenant_id=? AND company_id=? AND business_type=?"
             + " FOR UPDATE",
@@ -482,7 +514,7 @@ public class WorkflowRepository {
           case "applicantId" ->
               "SELECT COUNT(*) FROM eam_sys_user WHERE tenant_id=? AND id=? AND deleted=0 AND"
                   + " status=1";
-          case "applicantDepartmentId" ->
+          case "applicantDepartmentId", "departmentId" ->
               "SELECT COUNT(*) FROM eam_org_unit WHERE tenant_id=? AND id=? AND deleted=0 AND"
                   + " status=1 AND org_type='部门'";
           case "companyId" ->
@@ -494,6 +526,15 @@ public class WorkflowRepository {
                   + company;
           case "lines.materialId" ->
               "SELECT COUNT(*) FROM inv_material WHERE tenant_id=? AND id=? AND enabled=1";
+          case "equipmentId" ->
+              "SELECT COUNT(*) FROM eam_equipment WHERE tenant_id=? AND id=? AND deleted=0 AND"
+                  + " company_org_id="
+                  + company;
+          case "categoryId", "faultTypeId" ->
+              "SELECT COUNT(*) FROM eam_base_item WHERE tenant_id=? AND id=? AND deleted=0 AND"
+                  + " status=1 AND item_type='"
+                  + (field.equals("categoryId") ? "CATEGORY" : "FAULT_TYPE")
+                  + "'";
           default -> throw new IllegalArgumentException("不支持的关联变量");
         };
     return db.queryForObject(sql, Integer.class, tenant, value) == 1;
@@ -545,12 +586,29 @@ public class WorkflowRepository {
         label = "name";
         where = " AND enabled=1";
       }
+      case "equipment" -> {
+        table = "eam_equipment";
+        label = "name";
+        where = " AND deleted=0";
+      }
+      case "categories", "faultTypes" -> {
+        table = "eam_base_item";
+        label = "name";
+        where =
+            " AND deleted=0 AND status=1 AND item_type='"
+                + (kind.equals("categories") ? "CATEGORY" : "FAULT_TYPE")
+                + "'";
+      }
       default -> throw new IllegalArgumentException("不支持的关联对象类型");
     }
     where = " WHERE tenant_id=? AND " + label + " LIKE ?" + where;
-    if (Set.of("users", "departments", "warehouses", "companies").contains(kind)) {
+    if (Set.of("users", "departments", "warehouses", "companies", "equipment").contains(kind)) {
       String field =
-          kind.equals("users") ? "org_id" : kind.equals("warehouses") ? "company_id" : "id";
+          kind.equals("users")
+              ? "org_id"
+              : kind.equals("equipment")
+                  ? "department_org_id"
+                  : kind.equals("warehouses") ? "company_id" : "id";
       if (organizations.isEmpty()) where += " AND 1=0";
       else {
         where +=

@@ -30,11 +30,14 @@ class WorkflowMySqlIT {
   static void database(DynamicPropertyRegistry p) {
     String url = System.getenv("EAM_WORKFLOW_TEST_URL");
     if (url == null
-        || !url.matches("jdbc:mysql://127\\.0\\.0\\.1:3307/eam_staffing_test_20261023(\\?.*)?"))
+        || !(url.matches("jdbc:mysql://127\\.0\\.0\\.1:3307/eam_staffing_test_20261023(\\?.*)?")
+            || url.matches(
+                "jdbc:mysql://127\\.0\\.0\\.1:3308/eam_repair_approval_test_20261030(\\?.*)?")))
       throw new IllegalStateException("Only isolated workflow test database allowed");
     p.add("spring.datasource.url", () -> url);
     p.add("spring.datasource.username", () -> "root");
     p.add("spring.datasource.password", () -> "");
+    p.add("eam.notification.secret-key", () -> Base64.getEncoder().encodeToString(new byte[32]));
   }
 
   @MockitoBean AuthContext auth;
@@ -44,6 +47,7 @@ class WorkflowMySqlIT {
   @MockitoBean com.windasoft.eam.scheduler.inspection.InspectionScheduler inspectionScheduler;
   @MockitoBean com.windasoft.eam.scheduler.inventory.InventoryReservationCleanup cleanup;
   @MockitoBean com.windasoft.eam.scheduler.experience.RepairPlanScheduler repairScheduler;
+  @MockitoBean com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler knowledgeScheduler;
   @Autowired WorkflowTemplateService templates;
   @Autowired WorkflowRuntimeService runtime;
   @Autowired RequisitionService requests;

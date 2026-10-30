@@ -35,6 +35,19 @@ public class WorkflowTemplateController {
     return Map.of("data", service.variables(businessType));
   }
 
+  public record ApprovalSetting(boolean required, long rowVersion) {}
+
+  @GetMapping("/repair-approval-setting")
+  public Object approvalSetting(@RequestParam long companyId) {
+    return exact(Map.of("data", service.approvalSetting(companyId)));
+  }
+
+  @PutMapping("/repair-approval-setting")
+  public Object approvalSetting(@RequestParam long companyId, @RequestBody ApprovalSetting body) {
+    return exact(
+        Map.of("data", service.approvalSetting(companyId, body.required(), body.rowVersion())));
+  }
+
   @GetMapping("/choices")
   public Object choices(
       @RequestParam long companyId,

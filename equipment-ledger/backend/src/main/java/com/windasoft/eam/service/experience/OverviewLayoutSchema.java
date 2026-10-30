@@ -117,7 +117,11 @@ public final class OverviewLayoutSchema {
     check(
         metrics.size() <= 4
             && metrics.stream()
-                .allMatch(List.of("pending", "active", "today", "notification")::contains)
+                .allMatch(
+                    value ->
+                        value instanceof String metric
+                            && Set.of("pending", "active", "today", "notification")
+                                .contains(metric))
             && new HashSet<>(metrics).size() == metrics.size(),
         "工作指标配置无效");
     String mode = text(input, "layoutMode");

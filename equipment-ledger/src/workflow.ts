@@ -63,7 +63,7 @@ export type WorkflowRound = {
   startedAt: string;
   approvals: WorkflowApproval[];
   nodes?: WorkflowNode[];
-  events: { type: string; nodeKey?:string; description: string; createdAt: string }[];
+  events: { type: string; nodeKey?: string; description: string; createdAt: string }[];
 };
 export type Condition = {
   op: string;
@@ -95,7 +95,15 @@ export function conditionText(c: Condition): string {
   return conditionText(c.children[0]!) + ' ' + c.op + ' ' + conditionText(c.children[1]!);
 }
 export const workflowApi = {
-  scriptTrial:(companyId:string,script:NonNullable<WorkflowNode['script']>,values:Record<string,unknown>)=>request<{data:{value:string|boolean}}>('/workflow/templates/script-trial',{method:'POST',body:JSON.stringify({companyId,script,values})}),
+  scriptTrial: (
+    companyId: string,
+    script: NonNullable<WorkflowNode['script']>,
+    values: Record<string, unknown>,
+  ) =>
+    request<{ data: { value: string | boolean } }>('/workflow/templates/script-trial', {
+      method: 'POST',
+      body: JSON.stringify({ companyId, script, values }),
+    }),
   resolve: (companyId: string, kind: string, ids: string[]) =>
     request<SelectorPage<SelectorRow>>('/workflow/templates/resolve', {
       method: 'POST',
@@ -109,6 +117,7 @@ export const workflowApi = {
         companyName: string;
         active: boolean;
         rowVersion: number;
+        businessType: string;
       }[];
       total: number;
     }>(
@@ -124,7 +133,21 @@ export const workflowApi = {
     request<{ data: SelectorRow[] }>(
       '/workflow/templates/companies?' + new URLSearchParams({ action }),
     ),
-  variables: () => request<{ data: WorkflowVariable[] }>('/workflow/templates/variables'),
+  variables: (businessType = 'requisition') =>
+    request<{ data: WorkflowVariable[] }>(
+      '/workflow/templates/variables?' + new URLSearchParams({ businessType }),
+    ),
+  repairApprovalSetting: (companyId: string) =>
+    request<{
+      data: { required: boolean | number; rowVersion: number; templateAvailable: boolean | number };
+    }>('/workflow/templates/repair-approval-setting?' + new URLSearchParams({ companyId })),
+  saveRepairApprovalSetting: (companyId: string, required: boolean, rowVersion: number) =>
+    request<{
+      data: { required: boolean | number; rowVersion: number; templateAvailable: boolean | number };
+    }>('/workflow/templates/repair-approval-setting?' + new URLSearchParams({ companyId }), {
+      method: 'PUT',
+      body: JSON.stringify({ required, rowVersion }),
+    }),
   detail: (id: string, versionId?: string) =>
     request<{ data: WorkflowDefinition }>(
       '/workflow/templates/' + id + (versionId ? '?versionId=' + versionId : ''),

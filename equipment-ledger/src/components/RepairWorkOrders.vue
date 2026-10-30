@@ -5,6 +5,8 @@ import DepartmentValuesText from './common/DepartmentValuesText.vue';
 import DepartmentText from './common/DepartmentText.vue';
 import AiRepairAssist from './knowledge/AiRepairAssist.vue';
 import { tr, enumLabel } from '../i18n';
+import { useAuthStore } from '../stores/auth';
+const repairAuth=useAuthStore();
 
 import DialogChoiceInput from './common/DialogChoiceInput.vue';
 import {
@@ -87,7 +89,7 @@ const baseData = useBaseDataStore();
 const { faultTypeData } = storeToRefs(baseData);
 const faultTypeNodes = computed(() => faultTypeData.value.filter((x) => x.status === '启用'));
 const uploading = ref(false);
-const states: RepairStatus[] = ['待派工', '待接单', '处理中', '挂起', '待验收', '已完成', '已撤销'];
+const states: RepairStatus[] = ['审批中', '待提交', '待派工', '待接单', '处理中', '挂起', '待验收', '已完成', '已撤销'];
 const route = useRoute(),
   router = useRouter();
 const query = reactive({ keyword: '', status: '', severity: '', department: '' });
@@ -682,7 +684,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               <ElButton
                 link
                 type="primary"
-                v-if="row.status === '待派工' && props.grantedActions.includes('编辑')"
+                v-if="(row.status==='待提交'&&row.reporterUserId===repairAuth.user?.id&&props.grantedActions.includes('报修'))||((row.status === '待派工'&&row.approvalGate!=='REQUIRED')&&props.grantedActions.includes('编辑'))"
                 @click.stop="openEdit(row)"
               >
                 {{ tr('ui.equipment.text0207') }}</ElButton

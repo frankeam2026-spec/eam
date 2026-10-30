@@ -1,8 +1,22 @@
 package com.windasoft.eam.service.inventory;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.anyMap;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.repair.RepairOrder;
@@ -13,7 +27,9 @@ import com.windasoft.eam.service.inspection.InspectionService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,6 +39,7 @@ class RequisitionChoicesTest {
   InventoryService masters;
   PermissionService permissions;
   RequisitionService service;
+  com.windasoft.eam.repository.inventory.RequisitionDraftRepository drafts;
 
   @BeforeEach
   void setup() {
@@ -73,6 +90,11 @@ class RequisitionChoicesTest {
                   "name",
                   row.get("name"));
             });
+    drafts = mock(com.windasoft.eam.repository.inventory.RequisitionDraftRepository.class);
+    when(drafts.source(10001L, 1L, "维修", false))
+        .thenReturn(
+            new com.windasoft.eam.repository.inventory.RequisitionDraftRepository.SourceTask(
+                1L, 30L, "QA-EQ", "QA-REQUEST-1", "处理中", "LEGACY", null));
     service =
         new RequisitionService(
             new RequisitionRepository(db, mock(NumberCounterMapper.class), repairs),
@@ -81,7 +103,13 @@ class RequisitionChoicesTest {
             permissions,
             mock(MaintenanceService.class),
             mock(InspectionService.class),
-            new ObjectMapper());
+            new ObjectMapper(),
+            mock(com.windasoft.eam.service.workflow.WorkflowRuntimeService.class),
+            mock(InventoryListService.class),
+            mock(InventoryMutex.class),
+            mock(OutboundService.class),
+            drafts,
+            mock(InventorySelectorService.class));
   }
 
   @SuppressWarnings("unchecked")
@@ -123,7 +151,12 @@ class RequisitionChoicesTest {
     when(permissions.allowed("inventoryRequisition", "新增")).thenReturn(true);
     when(permissions.inventoryWarehouseAllowed("inventoryRequisition", 100L, "新增"))
         .thenReturn(true);
-    when(permissions.companyOfOrganization(0L)).thenReturn(null);
+    when(permissions.companyOfOrganization((Long) null)).thenReturn(null);
+    when(drafts.source(10001L, 1L, "维修", false))
+        .thenReturn(
+            new com.windasoft.eam.repository.inventory.RequisitionDraftRepository.SourceTask(
+                1L, null, "QA-EQ", "QA-REQUEST-1", "处理中", "LEGACY", null));
+    when(drafts.equipmentCompany(10001L, "QA-EQ")).thenReturn(2L);
     when(db.queryForList(anyString(), eq(10001L), eq(1L)))
         .thenReturn(
             List.of(

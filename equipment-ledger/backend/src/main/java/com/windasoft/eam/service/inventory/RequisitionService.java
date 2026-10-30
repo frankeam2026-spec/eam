@@ -1,33 +1,52 @@
 package com.windasoft.eam.service.inventory;
 
-import static com.windasoft.eam.service.inventory.InventoryService.*;
+import static com.windasoft.eam.service.inventory.InventoryService.flag;
+import static com.windasoft.eam.service.inventory.InventoryService.id;
+import static com.windasoft.eam.service.inventory.InventoryService.require;
+import static com.windasoft.eam.service.inventory.InventoryService.text;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
-import com.windasoft.eam.common.inventory.InventoryMoney;
+import com.windasoft.eam.dto.inventory.RequisitionDetail;
+import com.windasoft.eam.dto.inventory.RequisitionDraftForm;
+import com.windasoft.eam.dto.workflow.WorkflowHistoryRound;
+import com.windasoft.eam.entity.inventory.RequisitionHeader;
+import com.windasoft.eam.entity.inventory.RequisitionLine;
+import com.windasoft.eam.repository.inventory.RequisitionDraftRepository;
 import com.windasoft.eam.repository.inventory.RequisitionRepository;
 import com.windasoft.eam.service.inspection.InspectionService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
-import java.math.*;
-import java.time.*;
+import com.windasoft.eam.service.workflow.WorkflowRuntimeService;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class RequisitionService {
-  @org.springframework.beans.factory.annotation.Autowired private com.windasoft.eam.service.workflow.WorkflowRuntimeService workflow;
-  @org.springframework.beans.factory.annotation.Autowired private InventoryListService listQueries;
-  @org.springframework.beans.factory.annotation.Autowired private InventoryMutex mutex;
-
-  @org.springframework.beans.factory.annotation.Autowired
-  @org.springframework.context.annotation.Lazy
-  private OutboundService outbounds;
+  private final WorkflowRuntimeService workflow;
+  private final InventoryListService listQueries;
+  private final InventoryMutex mutex;
+  private final OutboundService outbounds;
+  private final RequisitionDraftRepository drafts;
+  private final InventorySelectorService selectors;
 
   private final RequisitionRepository repository;
   private final InventoryService masters;
@@ -44,7 +63,13 @@ public class RequisitionService {
       PermissionService permissions,
       MaintenanceService maintenance,
       InspectionService inspection,
-      ObjectMapper json) {
+      ObjectMapper json,
+      WorkflowRuntimeService workflow,
+      InventoryListService listQueries,
+      InventoryMutex mutex,
+      @Lazy OutboundService outbounds,
+      RequisitionDraftRepository drafts,
+      InventorySelectorService selectors) {
     this.repository = repository;
     this.masters = masters;
     this.auth = auth;
@@ -52,70 +77,92 @@ public class RequisitionService {
     this.maintenance = maintenance;
     this.inspection = inspection;
     this.json = json;
+    this.workflow = workflow;
+    this.listQueries = listQueries;
+    this.mutex = mutex;
+    this.outbounds = outbounds;
+    this.drafts = drafts;
+    this.selectors = selectors;
   }
 
   private boolean active(String status) {
-    return !Set.of("待验收", "待审核", "已完成", "已验收", "已审核", "已作废", "已免检", "过期作废", "已取消", "作废", "完成", "已关闭")
+    return !Set.of(
+            "审批中", "待提交", "待验收", "待审核", "已完成", "已验收", "已审核", "已作废", "已免检", "过期作废", "已取消", "作废",
+            "完成", "已关闭")
         .contains(status);
   }
 
   private record Task(long company, String code, String status) {}
 
-  private void requireApproval(Map<String,Object> raw) {
-    require("LEGACY".equals(raw.get("approval_gate")) || workflow.approved("requisition",id(raw.get("id"))),"领料申请尚未审批通过");
+  private void requireApproval(Map<String, Object> raw) {
+    require(
+        "LEGACY".equals(raw.get("approval_gate"))
+            || workflow.approved("requisition", id(raw.get("id"))),
+        "领料申请尚未审批通过");
   }
+
   public void lockForWorkflow(long requestId) {
-    mutex.enter();require(!repository.loadRequest(auth.tenantId(),requestId,true).isEmpty(),"领料申请不存在");
+    mutex.enter();
+    require(!repository.loadRequest(auth.tenantId(), requestId, true).isEmpty(), "领料申请不存在");
   }
+
   public void requireWorkflowTaskActive(long requestId) {
-    var r=repository.loadRequest(auth.tenantId(),requestId,false).getFirst();
-    require(active(task(text(r,"task_kind"),id(r.get("task_id")),false,true).status()),"关联任务已结束，不能继续领料审批");
+    var r = repository.loadRequest(auth.tenantId(), requestId, false).getFirst();
+    require(
+        active(task(text(r, "task_kind"), id(r.get("task_id")), false, true).status()),
+        "关联任务已结束，不能继续领料审批");
   }
+
   public void workflowApproved(long requestId) {
-    requireWorkflowTaskActive(requestId);repository.submitRequest(auth.tenantId(),requestId);
-    event(requestId,"审批通过");notifyWarehouse(requestId);
+    requireWorkflowTaskActive(requestId);
+    repository.submitRequest(auth.tenantId(), requestId);
+    event(requestId, "审批通过");
+    notifyWarehouse(requestId);
   }
-  public void workflowReturned(long requestId,String reason) {
-    repository.workflowStatus(auth.tenantId(),requestId,"草稿","REQUIRED");event(requestId,reason);
+
+  public void workflowReturned(long requestId, String reason) {
+    repository.workflowStatus(auth.tenantId(), requestId, "草稿", "REQUIRED");
+    event(requestId, reason);
   }
 
   private Task task(String kind, long taskId, boolean checkAccess, boolean lock) {
+    var source = drafts.source(auth.tenantId(), taskId, kind, lock);
+    require(
+        source != null,
+        com.windasoft.eam.common.MessageContext.text(
+            kind.equals("维修") ? "server.repair.message0046" : "server.inventory.message0211"));
+    Long company;
     if (kind.equals("维修")) {
-      // Lock the source task before creating or reserving against it.
-      var found = repository.loadRepairTask(auth.tenantId(), taskId, lock);
+      require(!Set.of("审批中", "待提交").contains(source.status()), "报修尚未审批通过，不能领料");
       require(
-          found.size() == 1,
-          com.windasoft.eam.common.MessageContext.text("server.repair.message0046"));
-      var raw = found.getFirst();
-      if (checkAccess) permissions.checkRepair(repository.findRepair(taskId), "查看");
-      Long company = permissions.companyOfOrganization(id(raw.get("department_org_id")));
+          Set.of("LEGACY", "EXEMPT").contains(source.approvalGate())
+              || ("REQUIRED".equals(source.approvalGate())
+                  && workflow.approved("repair_report", taskId)),
+          "报修尚未审批通过，不能领料");
+      if (checkAccess) {
+        permissions.checkRepair(repository.findRepair(taskId), "查看");
+      }
+      company = permissions.companyOfOrganization(source.departmentOrgId());
       if (company == null) {
-        var devices = repository.findEquipmentCompany(auth.tenantId(), text(raw, "equipment_code"));
-        if (devices.size() == 1 && devices.getFirst().get("company_org_id") != null)
-          company = id(devices.getFirst().get("company_org_id"));
+        company = drafts.equipmentCompany(auth.tenantId(), source.equipmentCode());
       }
       require(
           company != null,
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0210"));
-      return new Task(company, text(raw, "order_no"), text(raw, "status"));
+    } else {
+      if (checkAccess) {
+        if (kind.equals("保养")) {
+          maintenance.task(taskId);
+        } else {
+          inspection.task(taskId);
+        }
+      }
+      company = source.companyId();
+      require(
+          company != null,
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0212"));
     }
-    require(
-        Set.of("保养", "点巡检").contains(kind),
-        com.windasoft.eam.common.MessageContext.text("server.inventory.message0018"));
-    String table = kind.equals("保养") ? "v_maintenance_task" : "v_inspection_task";
-    var found = repository.loadTask(auth.tenantId(), taskId, table, kind, lock);
-    require(
-        found.size() == 1,
-        com.windasoft.eam.common.MessageContext.text("server.inventory.message0211"));
-    if (checkAccess) {
-      if (kind.equals("保养")) maintenance.task(taskId);
-      else inspection.task(taskId);
-    }
-    var raw = found.getFirst();
-    require(
-        raw.get("company_id") != null,
-        com.windasoft.eam.common.MessageContext.text("server.inventory.message0212"));
-    return new Task(id(raw.get("company_id")), text(raw, "code"), text(raw, "status"));
+    return new Task(company, source.code(), source.status());
   }
 
   private Map<String, Object> row(long requestId, boolean lock, String action) {
@@ -124,25 +171,26 @@ public class RequisitionService {
         !rows.isEmpty(),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0213"));
     var raw = rows.getFirst();
-    if (!(action.equals("查看") && workflow.participant("requisition",requestId)) && !(id(raw.get("applicant_id")) == auth.userId()
-        && Set.of("查看", "新增", "编辑").contains(action))) {
-      if (Set.of("出库", "预留", "释放预留", "确认出库", "关闭剩余需求").contains(action))
-        permissions.checkInventoryWarehouse(
-            "inventoryOutbound",
-            id(raw.get("warehouse_id")),
-            action.equals("出库") ? "确认出库" : action);
-      else if (action.equals("查看")
-          && permissions.inventoryWarehouseAllowed(
-              "inventoryOutbound", id(raw.get("warehouse_id")), "查看")) {
-      } else
-        permissions.checkInventoryWarehouse(
-            "inventoryRequisition", id(raw.get("warehouse_id")), action);
-    }
+    checkAccess(requestId, id(raw.get("applicant_id")), id(raw.get("warehouse_id")), action);
     return raw;
   }
 
+  private void checkAccess(long requestId, long applicantId, long warehouseId, String action) {
+    if (!(action.equals("查看") && workflow.participant("requisition", requestId))
+        && !(applicantId == auth.userId() && Set.of("查看", "新增", "编辑").contains(action))) {
+      if (Set.of("出库", "预留", "释放预留", "确认出库", "关闭剩余需求").contains(action)) {
+        permissions.checkInventoryWarehouse(
+            "inventoryOutbound", warehouseId, action.equals("出库") ? "确认出库" : action);
+      } else if (action.equals("查看")
+          && permissions.inventoryWarehouseAllowed("inventoryOutbound", warehouseId, "查看")) {
+      } else {
+        permissions.checkInventoryWarehouse("inventoryRequisition", warehouseId, action);
+      }
+    }
+  }
+
   private void notifyWarehouse(long requestId) {
-    var r = repository.loadRequest(auth.tenantId(),requestId,false).getFirst();
+    var r = repository.loadRequest(auth.tenantId(), requestId, false).getFirst();
     var warehouse = masters.row("warehouses", id(r.get("warehouse_id")), false);
 
     var recipients =
@@ -214,53 +262,65 @@ public class RequisitionService {
     return code;
   }
 
+  /** Compatibility boundary for inventory operations not yet migrated to typed results. */
   public Map<String, Object> detail(long requestId) {
-    var rendered = masters.view(row(requestId, false, "查看"));
-    rendered.put("workflow",workflow.history("requisition",requestId));
-    rendered.put(
-        "warehouseName",
-        masters.row("warehouses", id(rendered.get("warehouseId")), false).get("name"));
-    rendered.put(
-        "lines",
-        repository.listLines(auth.tenantId(), requestId).stream().map(masters::view).toList());
-    rendered.put(
-        "reservations",
-        repository.listReservations(auth.tenantId(), requestId).stream()
-            .map(masters::view)
-            .toList());
-    rendered.put(
-        "issues",
-        repository.listIssues(auth.tenantId(), requestId).stream()
-            .map(
-                issue -> {
-                  var v = masters.view(issue);
-                  v.put(
-                      "allocations",
-                      repository
-                          .listAllocations(auth.tenantId(), issue.get("id"), requestId)
-                          .stream()
-                          .map(masters::view)
-                          .toList());
-                  @SuppressWarnings("unchecked")
-                  var visibleAllocations = (List<Map<String, Object>>) v.get("allocations");
-                  v.put(
-                      "totalAmount",
-                      visibleAllocations.stream()
-                          .map(a -> new BigDecimal(text(a, "amount")))
-                          .reduce(BigDecimal.ZERO, BigDecimal::add)
-                          .toPlainString());
-                  return v;
-                })
-            .toList());
-    rendered.put(
-        "events",
-        repository.listEvents(auth.tenantId(), requestId).stream().map(masters::view).toList());
-    if (!permissions.inventoryWarehouseAllowed(
-            "inventoryOutbound", id(rendered.get("warehouseId")), "查看金额")
-        && !permissions.inventoryWarehouseAllowed(
-            "inventoryRequisition", id(rendered.get("warehouseId")), "查看金额"))
-      InventoryMoney.hide(rendered);
-    return rendered;
+    return json.convertValue(detailView(requestId), new TypeReference<Map<String, Object>>() {});
+  }
+
+  public RequisitionDetail detailView(long requestId) {
+    var header = drafts.header(auth.tenantId(), requestId, false);
+    require(
+        header != null,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0213"));
+    checkAccess(requestId, header.getApplicantId(), header.getWarehouseId(), "查看");
+    var warehouse = requiredWarehouse(header.getWarehouseId(), false);
+    boolean showMoney =
+        permissions.inventoryWarehouseAllowed("inventoryOutbound", header.getWarehouseId(), "查看金额")
+            || permissions.inventoryWarehouseAllowed(
+                "inventoryRequisition", header.getWarehouseId(), "查看金额");
+    var allocations =
+        drafts.allocations(auth.tenantId(), requestId).stream()
+            .collect(
+                java.util.stream.Collectors.groupingBy(RequisitionDetail.Allocation::getIssueId));
+    var issues = drafts.issues(auth.tenantId(), requestId);
+    for (var issue : issues) {
+      var visible = allocations.getOrDefault(issue.getId(), List.of());
+      issue.setAllocations(visible);
+      issue.setTotalAmount(
+          showMoney
+              ? visible.stream()
+                  .map(RequisitionDetail.Allocation::getAmount)
+                  .reduce(BigDecimal.ZERO, BigDecimal::add)
+              : null);
+      if (!showMoney) {
+        for (var allocation : visible) {
+          allocation.setAmount(null);
+          allocation.setUnitCost(null);
+          allocation.setReturnedAmount(null);
+        }
+      }
+    }
+    List<WorkflowHistoryRound> rounds =
+        json.convertValue(
+            workflow.history("requisition", requestId),
+            new TypeReference<List<WorkflowHistoryRound>>() {});
+    return new RequisitionDetail(
+        RequisitionDetail.Header.from(header),
+        warehouse.name(),
+        drafts.lines(auth.tenantId(), requestId),
+        drafts.reservations(auth.tenantId(), requestId),
+        issues,
+        drafts.events(auth.tenantId(), requestId),
+        rounds);
+  }
+
+  private RequisitionDraftRepository.Warehouse requiredWarehouse(long id, boolean lock) {
+    var warehouse = drafts.warehouse(auth.tenantId(), id, lock);
+    if (warehouse == null) {
+      throw new com.windasoft.eam.common.LocalizedStatusException(
+          org.springframework.http.HttpStatus.NOT_FOUND, "server.inspection.message0013");
+    }
+    return warehouse;
   }
 
   public Object list(String q, String filters, int page, int size) {
@@ -290,9 +350,6 @@ public class RequisitionService {
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0215"));
     }
   }
-
-  @org.springframework.beans.factory.annotation.Autowired
-  private InventorySelectorService selectors;
 
   public Object choices(boolean paged, String taskKind, Long taskId) {
     if (!paged) return choices();
@@ -477,99 +534,95 @@ public class RequisitionService {
   }
 
   @Transactional
-  public Map<String, Object> save(Long requestId, Map<String, Object> body) {
+  public RequisitionDetail create(RequisitionDraftForm form) {
+    form.validate(false);
     mutex.enter();
-    var previous = requestId == null ? null : row(requestId, true, "新增");
-    if (previous != null) {
-      require(
-          id(previous.get("applicant_id")) == auth.userId(),
-          com.windasoft.eam.common.MessageContext.text("server.inventory.message0219"));
-      require(
-          text(previous, "status").equals("草稿"),
-          com.windasoft.eam.common.MessageContext.text("server.inventory.message0220"));
-      VersionGuard.checkPayload((Number) previous.get("row_version"), body);
-    }
-    var t = task(text(body, "taskKind"), id(body.get("taskId")), true, true);
+    return saveDraft(null, form);
+  }
+
+  @Transactional
+  public RequisitionDetail update(long requestId, RequisitionDraftForm form) {
+    form.validate(true);
+    mutex.enter();
+    var previous = drafts.header(auth.tenantId(), requestId, true);
     require(
-        active(t.status()),
+        previous != null,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0213"));
+    checkAccess(requestId, previous.getApplicantId(), previous.getWarehouseId(), "新增");
+    require(
+        previous.getApplicantId() == auth.userId(),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0219"));
+    require(
+        previous.getStatus() == com.windasoft.eam.dto.inventory.RequisitionStatus.DRAFT,
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0220"));
+    VersionGuard.check(previous.getRowVersion(), form.rowVersion());
+    return saveDraft(previous, form);
+  }
+
+  private RequisitionDetail saveDraft(RequisitionHeader previous, RequisitionDraftForm form) {
+    var task = task(form.taskKind().value(), form.taskId(), true, true);
+    require(
+        active(task.status()),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0221"));
-    var warehouse = masters.row("warehouses", id(body.get("warehouseId")), true);
-    if (!permissions.allowed("inventoryRequisition", "新增"))
-      checkTaskApplicant(text(body, "taskKind"), id(body.get("taskId")));
-    else permissions.checkInventoryWarehouse("inventoryRequisition", id(warehouse.get("id")), "新增");
+    var warehouse = requiredWarehouse(form.warehouseId(), true);
+    if (!permissions.allowed("inventoryRequisition", "新增")) {
+      checkTaskApplicant(form.taskKind().value(), form.taskId());
+    } else {
+      permissions.checkInventoryWarehouse("inventoryRequisition", warehouse.id(), "新增");
+    }
     require(
-        flag(warehouse.get("enabled")) && id(warehouse.get("company_id")) == t.company(),
+        warehouse.enabled() && warehouse.companyId() == task.company(),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0217"));
-    require(
-        text(body, "remark").length() <= 1000,
-        com.windasoft.eam.common.MessageContext.text("server.inventory.message0091"));
-    require(
-        body.get("lines") instanceof List<?>,
-        com.windasoft.eam.common.MessageContext.text("server.inventory.message0222"));
-    var input = (List<?>) body.get("lines");
-    require(
-        !input.isEmpty() && input.size() <= 500,
-        com.windasoft.eam.common.MessageContext.text("server.inventory.message0223"));
-    var orderedMaterials = new TreeSet<Long>();
-    for (Object item : input) {
-      require(item instanceof Map<?, ?>, "明细格式无效");
-      orderedMaterials.add(id(((Map<?, ?>) item).get("materialId")));
-    }
-    for (long materialId : orderedMaterials) masters.row("materials", materialId, true);
-    long target = requestId == null ? IdWorker.getId() : requestId;
-    if (previous == null)
-      repository.insertRequest(
-          target,
-          auth.tenantId(),
-          number(),
-          t.company(),
-          warehouse.get("id"),
-          text(body, "taskKind"),
-          id(body.get("taskId")),
-          t.code(),
-          auth.userId(),
-          auth.user().getDisplayName(),
-          text(body, "remark"));
-    else {
-      repository.updateRequest(
-          t.company(),
-          warehouse.get("id"),
-          text(body, "taskKind"),
-          id(body.get("taskId")),
-          t.code(),
-          text(body, "remark"),
-          auth.tenantId(),
-          target);
-      repository.deleteLines(auth.tenantId(), target);
-    }
-    var materials = new HashSet<Long>();
-    int lineNo = 0;
-    for (Object item : input) {
-      require(item instanceof Map<?, ?>, "明细格式无效");
-      @SuppressWarnings("unchecked")
-      var line = (Map<String, Object>) item;
-      long materialId = id(line.get("materialId"));
-      require(
-          materials.add(materialId),
-          com.windasoft.eam.common.MessageContext.text("server.inventory.message0224"));
-      var material = masters.row("materials", materialId, true);
-      require(
-          flag(material.get("enabled")),
-          com.windasoft.eam.common.MessageContext.text("server.inventory.message0057"));
-      BigDecimal qty;
-      try {
-        qty = new BigDecimal(text(line, "quantity"));
-      } catch (Exception e) {
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.inventory.message0027");
+    // Keep the existing inventory -> request -> task -> warehouse -> ascending material lock order.
+    for (long materialId :
+        new TreeSet<>(form.lines().stream().map(RequisitionDraftForm.Line::materialId).toList())) {
+      var material = drafts.material(auth.tenantId(), materialId);
+      if (material == null) {
+        throw new com.windasoft.eam.common.LocalizedStatusException(
+            org.springframework.http.HttpStatus.NOT_FOUND, "server.inspection.message0013");
       }
       require(
-          qty.signum() > 0 && qty.scale() <= 6 && qty.precision() - qty.scale() <= 14,
-          com.windasoft.eam.common.MessageContext.text("server.inventory.message0225"));
-      repository.insertLine(IdWorker.getId(), auth.tenantId(), target, ++lineNo, materialId, qty);
+          material.enabled(),
+          com.windasoft.eam.common.MessageContext.text("server.inventory.message0057"));
     }
-    event(target, previous == null ? "创建草稿" : "修改草稿");
-    return detail(target);
+    var header = previous == null ? new RequisitionHeader() : previous;
+    if (previous == null) {
+      header.setId(IdWorker.getId());
+      header.setTenantId(auth.tenantId());
+      header.setCode(number());
+      header.setApplicantId(auth.userId());
+      header.setApplicantName(auth.user().getDisplayName());
+    }
+    header.setCompanyId(task.company());
+    header.setWarehouseId(warehouse.id());
+    header.setTaskKind(form.taskKind().value());
+    header.setTaskId(form.taskId());
+    header.setTaskCode(task.code());
+    header.setRemark(form.remark());
+    if (previous == null) {
+      drafts.insert(header);
+    } else {
+      VersionGuard.updated(drafts.update(header, form.rowVersion()));
+    }
+    var lines = new ArrayList<RequisitionLine>();
+    int lineNo = 0;
+    for (var input : form.lines()) {
+      var line = new RequisitionLine();
+      line.setId(IdWorker.getId());
+      line.setTenantId(auth.tenantId());
+      line.setRequisitionId(header.getId());
+      line.setLineNo(++lineNo);
+      line.setMaterialId(input.materialId());
+      line.setQuantity(input.quantity());
+      lines.add(line);
+    }
+    if (previous == null) {
+      drafts.insertLines(lines);
+    } else {
+      drafts.replaceLines(auth.tenantId(), header.getId(), lines);
+    }
+    event(header.getId(), previous == null ? "创建草稿" : "修改草稿");
+    return detailView(header.getId());
   }
 
   public Object mergedPreview(Map<String, Object> body) {
@@ -598,13 +651,13 @@ public class RequisitionService {
     require(
         active(t.status()),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0228"));
-    if(workflow.configured(id(raw.get("company_id")),"requisition")) {
-      repository.workflowStatus(auth.tenantId(),requestId,"审批中","REQUIRED");
-      workflow.start("requisition",requestId,id(raw.get("company_id")),auth.userId());
-      event(requestId,"提交审批");
+    if (workflow.configured(id(raw.get("company_id")), "requisition")) {
+      repository.workflowStatus(auth.tenantId(), requestId, "审批中", "REQUIRED");
+      workflow.start("requisition", requestId, id(raw.get("company_id")), auth.userId());
+      event(requestId, "提交审批");
       return detail(requestId);
     }
-    repository.workflowStatus(auth.tenantId(),requestId,"草稿","LEGACY");
+    repository.workflowStatus(auth.tenantId(), requestId, "草稿", "LEGACY");
     repository.submitRequest(auth.tenantId(), requestId);
     event(requestId, "提交申请");
     taskEvent(raw, "领料申请 · " + text(raw, "code"));

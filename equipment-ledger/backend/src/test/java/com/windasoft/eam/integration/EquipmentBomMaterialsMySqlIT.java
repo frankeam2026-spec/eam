@@ -70,6 +70,14 @@ class EquipmentBomMaterialsMySqlIT {
   @Autowired ObjectMapper json;
   @Autowired EquipmentSelectionController controller;
   @Autowired OrgUnitRepository organizations;
+  @Autowired com.windasoft.eam.repository.equipment.EquipmentChildRepository childRelations;
+  @Autowired com.windasoft.eam.repository.equipment.EquipmentBomRepository bomRelations;
+
+  @Autowired
+  com.windasoft.eam.repository.equipment.EquipmentRelationLegacyRepository legacyRelations;
+
+  @Autowired com.windasoft.eam.repository.equipment.EquipmentRelationLegacyMapper legacyMapper;
+  @Autowired com.windasoft.eam.repository.equipment.EquipmentQueryRepository equipmentQueries;
   @Autowired javax.sql.DataSource dataSource;
   MockMvc mvc;
 
@@ -103,6 +111,111 @@ class EquipmentBomMaterialsMySqlIT {
             .getFirst()
             .get("Value")
             .toString());
+  }
+
+  private void relationEquipment() {
+    for (int i = 0; i < 4; i++)
+      db.update(
+          "INSERT INTO eam_equipment(id,tenant_id,equipment_code,name,category,company,department)"
+              + " VALUES(?,?,?,?,?,?,?)",
+          993980001L + i,
+          i < 2 ? TENANT : TENANT + 1,
+          "QA-REL-" + i,
+          "设备",
+          "分类",
+          "公司",
+          "部门");
+  }
+
+  @Test
+  void childCompositeKeyAndTenantScopeArePreserved() {
+    relationEquipment();
+    childRelations.add(
+        new com.windasoft.eam.entity.equipment.EquipmentChild(TENANT, 993980001L, 993980002L, 0));
+    childRelations.add(
+        new com.windasoft.eam.entity.equipment.EquipmentChild(
+            TENANT + 1, 993980003L, 993980004L, 0));
+    assertEquals(993980001L, childRelations.parents(TENANT, 993980002L).getFirst().getParentId());
+    assertEquals(0, childRelations.parents(TENANT, 993980004L).size());
+    assertEquals(1, childRelations.countRelations(TENANT, 993980002L));
+    childRelations.clear(TENANT, 993980003L);
+    assertEquals(1, childRelations.parents(TENANT + 1, 993980004L).size());
+    childRelations.clear(TENANT, 993980001L);
+    assertEquals(0, childRelations.parents(TENANT, 993980002L).size());
+  }
+
+  @Test
+  void bomCompositeDeleteDoesNotAffectAnotherEquipment() {
+    relationEquipment();
+    for (long equipment : java.util.List.of(993980001L, 993980002L))
+      bomRelations.add(
+          new com.windasoft.eam.entity.equipment.EquipmentBom(
+              TENANT,
+              equipment,
+              FIRST,
+              new java.math.BigDecimal("1.20"),
+              "旧编号",
+              "旧名称",
+              null,
+              null,
+              0));
+    assertEquals(1, bomRelations.count(TENANT, 993980001L, FIRST));
+    assertEquals(0, bomRelations.count(TENANT + 1, 993980001L, FIRST));
+    bomRelations.clear(TENANT, 993980001L);
+    assertEquals(0, bomRelations.count(TENANT, 993980001L, FIRST));
+    assertEquals(1, bomRelations.count(TENANT, 993980002L, FIRST));
+  }
+
+  @Test
+  void legacyCompositeKeyAndUnknownSnapshotFieldsStayIntact() {
+    for (String kind : java.util.List.of("child", "bom"))
+      for (int index = 0; index < 2; index++)
+        legacyMapper.insert(
+            new com.windasoft.eam.entity.equipment.EquipmentRelationLegacy(
+                TENANT,
+                993980001L,
+                kind,
+                index,
+                "{\"code\":\"OLD\",\"extra\":{\"value\":3}}",
+                "历史原因"));
+    legacyRelations.remove(TENANT, 993980001L, "child", 0);
+    assertEquals(1, legacyRelations.list(TENANT, 993980001L, "child").size());
+    assertEquals(2, legacyRelations.list(TENANT, 993980001L, "bom").size());
+    assertEquals(0, legacyRelations.list(TENANT + 1, 993980001L, "bom").size());
+    var view = legacyRelations.view(legacyRelations.list(TENANT, 993980001L, "bom").getFirst());
+    assertEquals(java.util.Map.of("value", 3), view.get("extra"));
+    assertEquals(true, view.get("legacy"));
+    assertEquals("历史原因", view.get("legacyReason"));
+  }
+
+  @Test
+  void batchAndSingleRelationReadsShareResultsAndBoundedSql() {
+    relationEquipment();
+    childRelations.add(
+        new com.windasoft.eam.entity.equipment.EquipmentChild(TENANT, 993980001L, 993980002L, 0));
+    bomRelations.add(
+        new com.windasoft.eam.entity.equipment.EquipmentBom(
+            TENANT,
+            993980001L,
+            FIRST,
+            new java.math.BigDecimal("1.20"),
+            "旧编号",
+            "旧名称",
+            null,
+            null,
+            0));
+    legacyMapper.insert(
+        new com.windasoft.eam.entity.equipment.EquipmentRelationLegacy(
+            TENANT, 993980001L, "bom", 5, "{\"code\":\"OLD\"}", "原因"));
+    var parent = new com.windasoft.eam.entity.equipment.Equipment();
+    parent.setId(993980001L);
+    long before = selects();
+    var batch = equipmentQueries.pageRelations(TENANT, java.util.List.of(parent));
+    assertEquals(4L, selects() - before);
+    assertEquals(
+        equipmentQueries.children(TENANT, parent.getId()), batch.children().get(parent.getId()));
+    assertEquals(equipmentQueries.bom(TENANT, parent.getId()), batch.bom().get(parent.getId()));
+    assertEquals("1.20", batch.bom().get(parent.getId()).getFirst().get("quantity"));
   }
 
   @Test

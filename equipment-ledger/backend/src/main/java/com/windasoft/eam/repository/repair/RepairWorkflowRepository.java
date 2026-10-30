@@ -16,7 +16,23 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class RepairWorkflowRepository {
   @org.springframework.beans.factory.annotation.Autowired
+  private org.springframework.jdbc.core.JdbcTemplate db;
+
+  public Map<String, Object> approvalValues(long tenant, long id) {
+    return db.queryForMap(
+        "SELECT r.reporter_user_id applicantId,u.org_id applicantDepartmentId,r.company_org_id"
+            + " companyId,r.department_org_id departmentId,r.equipment_id equipmentId,e.category_id"
+            + " categoryId,r.fault_type_id faultTypeId,r.severity FROM eam_repair_order r JOIN"
+            + " eam_equipment e ON e.tenant_id=r.tenant_id AND e.id=r.equipment_id AND e.deleted=0"
+            + " JOIN eam_sys_user u ON u.tenant_id=r.tenant_id AND u.id=r.reporter_user_id AND"
+            + " u.deleted=0 WHERE r.tenant_id=? AND r.id=? AND r.deleted=0",
+        tenant,
+        id);
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
   private com.windasoft.eam.repository.system.NotificationRepository notifications;
+
   private final RepairRelationsRepository collaborators;
   private final RepairWorkflowMapper mapper;
   private final RepairOrderMapper orders;
@@ -98,6 +114,14 @@ public class RepairWorkflowRepository {
 
   public RepairOrder lock(long tenant, long id) {
     return collaborators.hydrate(mapper.lock(tenant, id));
+  }
+
+  public void closeApprovalReturnTodos(long tenant, long id) {
+    db.update(
+        "UPDATE eam_repair_inbox SET done=1 WHERE tenant_id=? AND order_id=? AND kind='报修待修改' AND"
+            + " is_todo=1 AND done=0",
+        tenant,
+        id);
   }
 
   public List<Map<String, Object>> users(long tenant) {

@@ -15,15 +15,24 @@ import com.windasoft.eam.repository.repair.RepairOrderMapper;
 import com.windasoft.eam.repository.repair.RepairWorkflowMapper;
 import com.windasoft.eam.repository.system.OrgUnitMapper;
 import com.windasoft.eam.repository.system.SystemUserMapper;
-import java.time.LocalDate;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** Read-only data access for the ledger; never checks permissions or writes business state. */
+/** 台账只读数据访问，不授予权限，也不写入业务状态。 */
 @Repository
 public class EquipmentQueryRepository {
+  private final EquipmentRelationLegacyRepository legacyRelations;
+  private final EquipmentChildRepository childRelations;
+  private final EquipmentBomRepository bomRelations;
   private final EquipmentMapper equipment;
   private final EquipmentMediaRepository media;
   private final BaseItemMapper baseItems;
@@ -43,7 +52,9 @@ public class EquipmentQueryRepository {
       RepairOrderMapper repairs,
       RepairWorkflowMapper repairWorkflow,
       JdbcTemplate db,
-      ObjectMapper json) {
+      ObjectMapper json, EquipmentChildRepository childRelations, EquipmentBomRepository bomRelations, EquipmentRelationLegacyRepository legacyRelations) {
+    this.legacyRelations=legacyRelations;
+    this.childRelations=childRelations;this.bomRelations=bomRelations;
     this.equipment = equipment;
     this.media = media;
     this.baseItems = baseItems;
@@ -58,206 +69,58 @@ public class EquipmentQueryRepository {
   public Page<Equipment> list(
       long tenant,
       EquipmentListQuery request,
-      Consumer<LambdaQueryWrapper<Equipment>> authorizedScope) {
-    long page = request.page();
-    long size = request.size();
-    String keyword = request.keyword();
-    String category = request.category();
-    String state = request.state();
-    String department = request.department();
-    String company = request.company();
-    String model = request.model();
-    String serial = request.serial();
-    String owner = request.owner();
-    String brand = request.brand();
-    String useState = request.useState();
-    String source = request.source();
-    LocalDate acquiredFrom = request.acquiredFrom();
-    LocalDate acquiredTo = request.acquiredTo();
-    LocalDate warrantyBefore = request.warrantyBefore();
-    String sortBy = request.sortBy();
-    String direction = request.direction();
-
-    var q =
+      Consumer<LambdaQueryWrapper<Equipment>> authorizedScope,
+      com.windasoft.eam.repository.common.SqlPredicate extensions,
+      String extensionOrder) {
+    var query =
         new LambdaQueryWrapper<Equipment>()
             .eq(Equipment::getTenantId, tenant)
-            .eq(Equipment::getDeleted, 0)
-            .and(
-                has(keyword),
-                x ->
-                    x.like(Equipment::getEquipmentCode, keyword)
-                        .or()
-                        .like(Equipment::getAssetNo, keyword)
-                        .or()
-                        .like(Equipment::getTagCode, keyword)
-                        .or()
-                        .like(Equipment::getName, keyword)
-                        .or()
-                        .like(Equipment::getModel, keyword)
-                        .or()
-                        .like(Equipment::getSerialNo, keyword)
-                        .or()
-                        .like(Equipment::getDepartment, keyword)
-                        .or()
-                        .like(Equipment::getOwnerName, keyword))
-            .eq(has(category), Equipment::getCategory, category)
-            .eq(has(state), Equipment::getEquipmentStatus, state)
-            .eq(has(department), Equipment::getDepartment, department)
-            .like(has(company), Equipment::getCompany, company)
-            .like(has(model), Equipment::getModel, model)
-            .like(has(serial), Equipment::getSerialNo, serial)
-            .like(has(owner), Equipment::getOwnerName, owner)
-            .like(has(brand), Equipment::getBrand, brand)
-            .eq(has(useState), Equipment::getUseStatus, useState)
-            .eq(has(source), Equipment::getSource, source)
-            .ge(acquiredFrom != null, Equipment::getAcquiredAt, acquiredFrom)
-            .le(acquiredTo != null, Equipment::getAcquiredAt, acquiredTo)
-            .le(warrantyBefore != null, Equipment::getWarrantyUntil, warrantyBefore);
-    var fields =
-        new java.util.HashMap<String, com.windasoft.eam.common.AdvancedFilters.Field<Equipment>>();
-    fields.put(
-        "code",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getEquipmentCode, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
-    fields.put(
-        "name",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getName, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
-    fields.put(
-        "state",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getEquipmentStatus, com.windasoft.eam.common.AdvancedFilters.Kind.CHOICE));
-    fields.put(
-        "useState",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getUseStatus, com.windasoft.eam.common.AdvancedFilters.Kind.CHOICE));
-    fields.put(
-        "assetNo",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getAssetNo, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
-    fields.put(
-        "category",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getCategory, com.windasoft.eam.common.AdvancedFilters.Kind.CHOICE));
-    fields.put(
-        "department",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getDepartment, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
-    fields.put(
-        "company",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getCompany, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
-    fields.put(
-        "functionLocation",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getFunctionLocation, com.windasoft.eam.common.AdvancedFilters.Kind.CHOICE));
-    fields.put(
-        "model",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getModel, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
-    fields.put(
-        "serial",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getSerialNo, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
-    fields.put(
-        "owner",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getOwnerName, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
-    fields.put(
-        "brand",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getBrand, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
-    fields.put(
-        "source",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getSource, com.windasoft.eam.common.AdvancedFilters.Kind.CHOICE));
-    fields.put(
-        "unit",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getUnitName, com.windasoft.eam.common.AdvancedFilters.Kind.CHOICE));
-    fields.put(
-        "supplier",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getSupplier, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
-    fields.put(
-        "tagCode",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getTagCode, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
-    fields.put(
-        "level",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getEquipmentLevel, com.windasoft.eam.common.AdvancedFilters.Kind.TEXT));
-    fields.put(
-        "acquiredAt",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getAcquiredAt, com.windasoft.eam.common.AdvancedFilters.Kind.DATE));
-    fields.put(
-        "warranty",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getWarrantyUntil, com.windasoft.eam.common.AdvancedFilters.Kind.DATE));
-    fields.put(
-        "inServiceDate",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getInServiceDate, com.windasoft.eam.common.AdvancedFilters.Kind.DATE));
-    fields.put(
-        "retirementDate",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getExpectedRetirementDate,
-            com.windasoft.eam.common.AdvancedFilters.Kind.DATE));
-    fields.put(
-        "amount",
-        new com.windasoft.eam.common.AdvancedFilters.Field<>(
-            Equipment::getAcquiredAmount, com.windasoft.eam.common.AdvancedFilters.Kind.NUMBER));
-    com.windasoft.eam.common.AdvancedFilters.apply(q, request.advanced(), fields, json);
-    if (request.scopeType() != null && !request.scopeType().isBlank()) {
-      var ids =
-          Arrays.stream(Objects.toString(request.scopeIds(), "").split(","))
-              .filter(v -> !v.isBlank())
-              .map(Long::valueOf)
-              .toList();
-      if (ids.isEmpty() || ids.size() > 5000)
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.equipment.message0008");
-      switch (request.scopeType()) {
-        case "organization" ->
-            q.and(
-                w ->
-                    w.in(Equipment::getDepartmentOrgId, ids)
-                        .or()
-                        .in(Equipment::getCompanyOrgId, ids));
-        case "category" -> q.in(Equipment::getCategoryId, ids);
-        case "location" -> {
-          q.in(Equipment::getFunctionLocationId, ids);
-          if (request.scopeCompanyId() != null && !request.scopeCompanyId().isBlank())
-            q.eq(Equipment::getCompanyOrgId, Long.valueOf(request.scopeCompanyId()));
-        }
-        default ->
-            throw new com.windasoft.eam.common.LocalizedArgumentException(
-                "server.equipment.message0008");
+            .eq(Equipment::getDeleted, 0);
+    if (!request.keyword().isBlank()) apply(query, EquipmentQueryFields.keyword(request.keyword()));
+    apply(query, EquipmentQueryFields.filters(json, request.conditions()));
+    applyScope(query, request.scope());
+    authorizedScope.accept(query);
+    apply(query, extensions);
+    String order =
+        request.sort().field().startsWith("custom:")
+            ? extensionOrder
+            : EquipmentQueryFields.order(request.sort());
+    if (order == null || order.isBlank())
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0009");
+    query.last(
+        "ORDER BY " + order + " " + request.sort().direction().name() + ",eam_equipment.id ASC");
+    return media.hydratePage(
+        equipment.selectPage(new Page<>(request.page(), request.size()), query));
+  }
+
+  private static void apply(
+      LambdaQueryWrapper<Equipment> query,
+      com.windasoft.eam.repository.common.SqlPredicate predicate) {
+    var sql = new StringBuilder();
+    int index = 0;
+    for (char c : predicate.sql().toCharArray()) {
+      sql.append(c == '?' ? "{" + (index++) + "}" : String.valueOf(c));
+    }
+    // 关键词可能包含OR，必须作为完整条件与租户和授权范围相交。
+    query.apply("(" + sql + ")", predicate.arguments().toArray());
+  }
+
+  private static void applyScope(
+      LambdaQueryWrapper<Equipment> query, EquipmentListQuery.Scope scope) {
+    switch (scope.type()) {
+      case NONE -> {}
+      case ORGANIZATION ->
+          query.and(
+              w ->
+                  w.in(Equipment::getDepartmentOrgId, scope.ids())
+                      .or()
+                      .in(Equipment::getCompanyOrgId, scope.ids()));
+      case CATEGORY -> query.in(Equipment::getCategoryId, scope.ids());
+      case LOCATION -> {
+        query.in(Equipment::getFunctionLocationId, scope.ids());
+        if (scope.companyId() != null) query.eq(Equipment::getCompanyOrgId, scope.companyId());
       }
     }
-    authorizedScope.accept(q);
-    if (!sortBy.startsWith("custom:"))
-      switch (sortBy) {
-        case "equipmentCode", "code" -> order(q, direction, Equipment::getEquipmentCode);
-        case "name" -> order(q, direction, Equipment::getName);
-        case "category" -> order(q, direction, Equipment::getCategory);
-        case "model" -> order(q, direction, Equipment::getModel);
-        case "serialNo" -> order(q, direction, Equipment::getSerialNo);
-        case "department" -> order(q, direction, Equipment::getDepartment);
-        case "ownerName" -> order(q, direction, Equipment::getOwnerName);
-        case "brand" -> order(q, direction, Equipment::getBrand);
-        case "equipmentStatus" -> order(q, direction, Equipment::getEquipmentStatus);
-        case "useStatus" -> order(q, direction, Equipment::getUseStatus);
-        case "source" -> order(q, direction, Equipment::getSource);
-        case "acquiredAt" -> order(q, direction, Equipment::getAcquiredAt);
-        case "acquiredAmount" -> order(q, direction, Equipment::getAcquiredAmount);
-        case "warrantyUntil" -> order(q, direction, Equipment::getWarrantyUntil);
-        default -> order(q, direction, Equipment::getCreatedAt);
-      }
-    if (!sortBy.startsWith("custom:")) q.orderByAsc(Equipment::getId);
-    return media.hydratePage(
-        equipment.selectPage(new Page<>(Math.max(1, page), Math.min(10000, Math.max(1, size))), q));
   }
 
   public Equipment find(long tenant, long id) {
@@ -266,11 +129,6 @@ public class EquipmentQueryRepository {
             new LambdaQueryWrapper<Equipment>()
                 .eq(Equipment::getTenantId, tenant)
                 .eq(Equipment::getId, id)));
-  }
-
-  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(long tenant,Consumer<LambdaQueryWrapper<Equipment>> scope){
-    var q=new LambdaQueryWrapper<Equipment>().eq(Equipment::getTenantId,tenant).eq(Equipment::getDeleted,0);scope.accept(q);
-    return com.windasoft.eam.repository.common.AssistantReadSource.wrapped("CAST(id AS CHAR) id,equipment_code code,name,COALESCE((SELECT b.name FROM eam_base_item b WHERE b.tenant_id=eam_equipment.tenant_id AND b.id=category_id AND b.item_type='CATEGORY' AND b.deleted=0),category) category,CAST(category_id AS CHAR) categoryId,model,brand,equipment_status status,COALESCE((SELECT b.name FROM eam_base_item b WHERE b.tenant_id=eam_equipment.tenant_id AND b.id=use_status_id AND b.item_type='USE_STATUS' AND b.deleted=0),use_status) useState,company,CAST(company_org_id AS CHAR) companyId,department,CAST(department_org_id AS CHAR) departmentId,owner_name owner,CAST(owner_user_id AS CHAR) ownerId,COALESCE(purchase_date,acquired_at) acquiredAt,warranty_until warrantyUntil,created_at createdAt,function_location location", "eam_equipment",q);
   }
 
   public List<Equipment> visibleOrganizations(
@@ -318,6 +176,86 @@ public class EquipmentQueryRepository {
     return baseItems.selectById(id);
   }
 
+  public record PageRelations(
+      Map<Long, BaseItem> dictionary,
+      Map<Long, List<EquipmentOwnerView>> owners,
+      Map<Long, List<Map<String, Object>>> children,
+      Map<Long, List<Map<String, Object>>> bom) {}
+
+  public PageRelations pageRelations(long tenant, List<Equipment> rows) {
+    var dictionary = new HashMap<Long, BaseItem>();
+    var owners = new HashMap<Long, List<EquipmentOwnerView>>();
+    var children = new HashMap<Long, List<Map<String, Object>>>();
+    var bom = new HashMap<Long, List<Map<String, Object>>>();
+    if (rows.isEmpty()) return new PageRelations(dictionary, owners, children, bom);
+    var ids = rows.stream().map(Equipment::getId).toList();
+    var requested = new HashSet<Long>();
+    var pending = new HashSet<Long>();
+    for (var row : rows)
+      for (Long id :
+          Arrays.asList(
+              row.getCategoryId(),
+              row.getUseStatusId(),
+              row.getUnitId(),
+              row.getSourceId(),
+              row.getFunctionLocationId())) if (id != null) pending.add(id);
+    while (!pending.isEmpty()) {
+      var next = new ArrayList<>(pending);
+      requested.addAll(next);
+      pending.clear();
+      for (int start = 0; start < next.size(); start += 500)
+        for (var item :
+            baseItems.selectList(
+                new LambdaQueryWrapper<BaseItem>()
+                    .eq(BaseItem::getTenantId, tenant)
+                    .in(
+                        BaseItem::getId,
+                        next.subList(start, Math.min(start + 500, next.size()))))) {
+          dictionary.put(item.getId(), item);
+          if (item.getParentId() != null && !requested.contains(item.getParentId()))
+            pending.add(item.getParentId());
+        }
+    }
+    for (int start = 0; start < ids.size(); start += 500) {
+      var batch = ids.subList(start, Math.min(start + 500, ids.size()));
+      String marks = String.join(",", Collections.nCopies(batch.size(), "?"));
+      var args = new ArrayList<Object>();
+      args.add(tenant);
+      args.addAll(batch);
+      for (var row :
+          db.queryForList(
+              "SELECT equipment_id,user_id,owner_name FROM eam_equipment_owner WHERE tenant_id=?"
+                  + " AND equipment_id IN ("
+                  + marks
+                  + ") ORDER BY equipment_id,sort_no,user_id",
+              args.toArray()))
+        owners
+            .computeIfAbsent(
+                ((Number) row.get("equipment_id")).longValue(), key -> new ArrayList<>())
+            .add(
+                new EquipmentOwnerView(
+                    row.get("user_id").toString(), (String) row.get("owner_name")));
+      group(children, childRelations.viewRows(tenant,batch));
+      group(bom, bomRelations.viewRows(tenant,batch));
+      for (var row:legacyRelations.list(tenant,batch)) {
+        var target=row.getKind().equals("child")?children:bom;
+        target.computeIfAbsent(row.getEquipmentId(),key->new ArrayList<>()).add(legacyRelations.view(row));
+      }
+    }
+    return new PageRelations(dictionary, owners, children, bom);
+  }
+
+  private static void group(
+      Map<Long, List<Map<String, Object>>> target, List<Map<String, Object>> rows) {
+    for (var row : rows) {
+      var value = new LinkedHashMap<>(row);
+      long id = ((Number) value.remove("__equipment_id")).longValue();
+      target.computeIfAbsent(id, key -> new ArrayList<>()).add(value);
+    }
+  }
+
+  
+
   public List<EquipmentOwnerView> owners(long tenant, Long id) {
     if (id == null) return List.of();
     return db.query(
@@ -358,66 +296,11 @@ public class EquipmentQueryRepository {
     return result;
   }
 
-  public List<Map<String, Object>> children(long tenant, long id) {
-    var result =
-        db.queryForList(
-            "SELECT CAST(e.id AS CHAR) equipmentId,e.equipment_code code,e.name,e.model,e.brand"
-                + " FROM eam_equipment_child c JOIN eam_equipment e ON e.tenant_id=c.tenant_id AND"
-                + " e.id=c.child_id WHERE c.tenant_id=? AND c.parent_id=? AND e.deleted=0 ORDER BY"
-                + " c.sort_no,e.id",
-            tenant,
-            id);
-    appendLegacy(result, tenant, id, "child");
-    return result;
-  }
+  public List<Map<String,Object>> children(long tenant,long id) { var grouped=new HashMap<Long,List<Map<String,Object>>>(); group(grouped,childRelations.viewRows(tenant,List.of(id))); var result=new ArrayList<>(grouped.getOrDefault(id,List.of())); appendLegacy(result,tenant,id,"child");return result; }
 
-  public List<Map<String, Object>> bom(long tenant, long id) {
-    var result =
-        db.queryForList(
-            "SELECT CAST(b.material_id AS CHAR) materialId,COALESCE(m.code,b.code)"
-                + " code,COALESCE(m.name,b.name) name,COALESCE(m.model,b.model)"
-                + " specification,COALESCE(m.unit,b.unit) unit,CAST(b.quantity AS CHAR) quantity"
-                + " FROM eam_equipment_bom b LEFT JOIN inv_material m ON m.tenant_id=b.tenant_id"
-                + " AND m.id=b.material_id WHERE b.tenant_id=? AND b.equipment_id=? ORDER BY"
-                + " b.sort_no,b.material_id",
-            tenant,
-            id);
-    appendLegacy(result, tenant, id, "bom");
-    return result;
-  }
+  public List<Map<String,Object>> bom(long tenant,long id) { var grouped=new HashMap<Long,List<Map<String,Object>>>(); group(grouped,bomRelations.viewRows(tenant,List.of(id))); var result=new ArrayList<>(grouped.getOrDefault(id,List.of())); appendLegacy(result,tenant,id,"bom");return result; }
 
-  private void appendLegacy(List<Map<String, Object>> result, long tenant, long id, String kind) {
-    for (var r :
-        db.queryForList(
-            "SELECT source_index,snapshot_json,reason FROM eam_equipment_relation_legacy WHERE"
-                + " tenant_id=? AND equipment_id=? AND kind=? ORDER BY source_index",
-            tenant,
-            id,
-            kind))
-      try {
-        Map<String, Object> snapshot =
-            json.readValue(
-                r.get("snapshot_json").toString(),
-                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
-        snapshot.put("legacy", true);
-        snapshot.put("legacyIndex", r.get("source_index"));
-        snapshot.put("legacyReason", r.get("reason"));
-        result.add(snapshot);
-      } catch (Exception e) {
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.equipment.message0009");
-      }
-  }
-
-  private static boolean has(String s) {
-    return s != null && !s.isBlank();
-  }
-
-  private static <T> void order(
-      LambdaQueryWrapper<Equipment> q,
-      String direction,
-      com.baomidou.mybatisplus.core.toolkit.support.SFunction<Equipment, T> col) {
-    if ("asc".equalsIgnoreCase(direction)) q.orderByAsc(col);
-    else q.orderByDesc(col);
+  private void appendLegacy(List<Map<String,Object>> result,long tenant,long id,String kind) {
+    for(var row:legacyRelations.list(tenant,id,kind)) result.add(legacyRelations.view(row));
   }
 }

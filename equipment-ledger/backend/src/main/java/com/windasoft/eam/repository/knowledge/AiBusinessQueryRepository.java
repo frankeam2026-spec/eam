@@ -2,8 +2,13 @@ package com.windasoft.eam.repository.knowledge;
 
 import com.windasoft.eam.dto.knowledge.AiBusinessCatalog;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
-import com.windasoft.eam.repository.common.*;
-import java.util.*;
+import com.windasoft.eam.repository.common.AssistantReadSource;
+import com.windasoft.eam.repository.common.SqlPredicate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -27,8 +32,6 @@ public class AiBusinessQueryRepository {
 
   public SqlPredicate equipmentFilter(AiBusinessPlan plan, long tenant, long equipment) {
     var domain = AiBusinessCatalog.ALL.get(plan.domain());
-    if (plan.domain().equals("equipment"))
-      return SqlPredicate.of("s.id=?", Long.toString(equipment));
     if (domain.fields().containsKey("equipmentId"))
       return SqlPredicate.of("s.equipmentId=?", Long.toString(equipment));
     if (plan.domain().endsWith("Plan")) {
@@ -57,6 +60,10 @@ public class AiBusinessQueryRepository {
 
   public Map<String, Object> execute(
       AssistantReadSource source, SqlPredicate filter, AiBusinessPlan plan, int page, int size) {
+    if (plan.domain().equals("equipment")) {
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.equipment.assistant.invalid");
+    }
     var domain = AiBusinessCatalog.ALL.get(plan.domain());
     String from = " FROM (" + source.sql() + ") s WHERE " + filter.sql();
     var args = new ArrayList<Object>(source.arguments());

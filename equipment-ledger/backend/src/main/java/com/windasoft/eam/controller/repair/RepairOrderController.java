@@ -22,6 +22,17 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController
 @RequestMapping("/api/v1/repairs")
 public class RepairOrderController {
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.windasoft.eam.service.repair.RepairApprovalService approvals;
+
+  public record Resubmit(int rowVersion) {}
+
+  @PostMapping("/{id}/approval-submit")
+  public Object submitApproval(@PathVariable long id, @RequestBody Resubmit body) {
+    approvals.submit(id, body.rowVersion());
+    return Map.of("data", true);
+  }
+
   private final RepairOrderService service;
   private final RepairFileService files;
   private final RepairWorkflowService workflow;

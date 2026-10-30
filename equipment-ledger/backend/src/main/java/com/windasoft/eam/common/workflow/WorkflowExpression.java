@@ -106,7 +106,7 @@ public final class WorkflowExpression {
             found = true;
             break;
           }
-        yield e.op().equals("IN") ? found : !found;
+        yield e.op().equals("IN") == found;
       }
       case "CONTAINS", "STARTS_WITH" -> {
         String left = (String) required(evaluate(c.get(0), values, item, used));

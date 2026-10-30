@@ -3940,5 +3940,16 @@
   "xiaozhu.repairs.total": "共{count}條",
   "xiaozhu.repairs.sort": "報修時間從新到舊",
   "xiaozhu.repairs.orderNo": "工單編號",
-  "xiaozhu.repairs.status": "狀態"
+  "xiaozhu.repairs.status": "狀態",
+  "workflow.repair.business": "維修報修",
+  "workflow.repair.settings": "報修審批設定",
+  "workflow.repair.enabled": "啟用報修審批",
+  "workflow.repair.settingHelp": "按公司設定。啟用後，報修必須審批通過才能派工；停用範本不會關閉此要求。",
+  "workflow.repair.missingTemplate": "目前沒有有效範本，啟用後將阻止提交報修，請先發佈本公司的維修報修流程。",
+  "workflow.repair.saved": "審批設定已儲存",
+  "workflow.repair.resubmit": "重新提交審批",
+  "workflow.repair.pendingSubmit": "待提交",
+  "workflow.repair.reviewing": "審批中",
+  "server.equipment.assistant.invalid": "設備查詢計畫無效或包含未開放的查詢能力",
+  "server.equipment.assistant.ambiguous": "所選{p0}存在同名物件，請補充公司、部門或編號限定，不能將同名物件合併"
 }

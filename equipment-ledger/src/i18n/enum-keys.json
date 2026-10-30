@@ -1,5 +1,7 @@
 {
   "status": {
+    "审批中": "workflow.repair.reviewing",
+    "待提交": "workflow.repair.pendingSubmit",
     "正常": "ui.equipment.text1493",
     "带病运行": "ui.common.dynamic1",
     "故障": "ui.common.dynamic2",

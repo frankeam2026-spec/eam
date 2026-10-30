@@ -82,9 +82,36 @@ class ApiExceptionHandlerTest {
         .andExpect(jsonPath("$.message").value("脚本执行超时，已终止"));
   }
 
+  @Test
+  void methodParameterValidationIsAFieldErrorInsteadOf500() throws Exception {
+    mvc.perform(get("/probe/positive").param("quantity", "0"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+        .andExpect(jsonPath("$.fieldErrors.quantity").isString());
+  }
+
+  @Test
+  void invalidServerReturnValueRemainsAnInternalError() throws Exception {
+    mvc.perform(get("/probe/invalid-return"))
+        .andExpect(status().isInternalServerError())
+        .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+        .andExpect(jsonPath("$.fieldErrors").doesNotExist());
+  }
+
   @RestController
   static class ProbeController {
     record Payload(String name) {}
+
+    @GetMapping("/probe/positive")
+    int positive(@RequestParam @jakarta.validation.constraints.Min(1) int quantity) {
+      return quantity;
+    }
+
+    @GetMapping("/probe/invalid-return")
+    @jakarta.validation.constraints.Min(1)
+    int invalidReturn() {
+      return 0;
+    }
 
     @PostMapping("/probe")
     Payload body(@RequestBody Payload payload) {

@@ -29,6 +29,16 @@ public class WorkflowInstanceRepository {
     return rows.isEmpty() ? null : rows.getFirst();
   }
 
+  public boolean approvalRequired(long tenant, long company) {
+    var rows =
+        db.queryForList(
+            "SELECT requires_approval FROM wf_binding WHERE tenant_id=? AND company_id=? AND"
+                + " business_type='repair_report' FOR UPDATE",
+            tenant,
+            company);
+    return !rows.isEmpty() && ((Number) rows.getFirst().get("requires_approval")).intValue() == 1;
+  }
+
   public Map<String, Object> instance(long tenant, long id, boolean lock) {
     var rows =
         db.queryForList(
@@ -159,7 +169,8 @@ public class WorkflowInstanceRepository {
       String task,
       long user,
       long businessId,
-      String title) {
+      String title,
+      String business) {
     long id = IdWorker.getId(), inbox = IdWorker.getId();
     db.update(
         "INSERT INTO wf_approval(id,tenant_id,instance_id,node_key,engine_task_id,user_id)"
@@ -170,16 +181,33 @@ public class WorkflowInstanceRepository {
         node,
         task,
         user);
+    if (business.equals("repair_report")) {
+      db.update(
+          "INSERT INTO"
+              + " eam_repair_inbox(id,tenant_id,user_id,order_id,kind,title,is_todo,created_at)"
+              + " VALUES(?,?,?,?,'报修审批',?,1,NOW(3))",
+          inbox,
+          tenant,
+          user,
+          businessId,
+          title);
+    } else
+      db.update(
+          "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
+              + " VALUES(?,?,?,?,'requisitions','领料审批',?,1)",
+          inbox,
+          tenant,
+          user,
+          businessId,
+          title);
     db.update(
-        "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
-            + " VALUES(?,?,?,?,'requisitions','领料审批',?,1)",
-        inbox,
+        "INSERT INTO wf_todo(tenant_id,approval_id,inbox_id,source_kind) VALUES(?,?,?,?)",
         tenant,
-        user,
-        businessId,
-        title);
-    db.update("INSERT INTO wf_todo VALUES(?,?,?)", tenant, id, inbox);
-    notifications.captureSource("inv_inbox", tenant, inbox);
+        id,
+        inbox,
+        business.equals("repair_report") ? "REPAIR" : "INVENTORY");
+    notifications.captureSource(
+        business.equals("repair_report") ? "eam_repair_inbox" : "inv_inbox", tenant, inbox);
   }
 
   public List<Map<String, Object>> approvals(long tenant, long instance) {
@@ -225,7 +253,15 @@ public class WorkflowInstanceRepository {
     db.update(
         "UPDATE inv_inbox i JOIN wf_todo t ON t.tenant_id=i.tenant_id AND t.inbox_id=i.id JOIN"
             + " wf_approval a ON a.tenant_id=t.tenant_id AND a.id=t.approval_id SET i.done=1 WHERE"
-            + " a.tenant_id=? AND a.instance_id=? AND a.state<>'PENDING'",
+            + " a.tenant_id=? AND a.instance_id=? AND a.state<>'PENDING' AND"
+            + " t.source_kind='INVENTORY'",
+        tenant,
+        instance);
+    db.update(
+        "UPDATE eam_repair_inbox i JOIN wf_todo t ON t.tenant_id=i.tenant_id AND t.inbox_id=i.id"
+            + " JOIN wf_approval a ON a.tenant_id=t.tenant_id AND a.id=t.approval_id SET i.done=1"
+            + " WHERE a.tenant_id=? AND a.instance_id=? AND a.state<>'PENDING' AND"
+            + " t.source_kind='REPAIR'",
         tenant,
         instance);
   }

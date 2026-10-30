@@ -1,8 +1,12 @@
 package com.windasoft.eam.dto.knowledge;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
-/** Business semantics, never model-provided column names or expressions. */
+/** 业务字段能力目录，不接受模型提供数据库列名或表达式。 */
 public final class AiBusinessCatalog {
   private AiBusinessCatalog() {}
 
@@ -20,9 +24,15 @@ public final class AiBusinessCatalog {
 
   static {
     var domains = new LinkedHashMap<String, Domain>();
-    var equipment =
-        fields(
-            "id:ID:ID,code:设备编号:TEXT,name:设备名称:TEXT,model:规格型号:TEXT,brand:品牌:TEXT,category:设备分类:TEXT,categoryId:分类ID:ID,status:设备状态:TEXT,useState:使用状态:TEXT,company:公司:TEXT,companyId:公司ID:ID,department:部门:TEXT,departmentId:部门ID:ID,owner:负责人:TEXT,ownerId:负责人ID:ID,acquiredAt:购置日期:DATE,warrantyUntil:保修到期:DATE,createdAt:创建时间:DATETIME,location:位置:TEXT");
+    var equipment = new LinkedHashMap<String, Field>();
+    for (var field : com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Field.values()) {
+      equipment.put(
+          field.key(),
+          new Field(
+              field.label(),
+              field.kind().name(),
+              field.identity() == null ? "" : field.identity().key()));
+    }
     domains.put(
         "equipment",
         new Domain(
@@ -31,7 +41,9 @@ public final class AiBusinessCatalog {
             "/equipment/%s/history",
             "createdAt",
             equipment,
-            List.of("code", "name", "category", "status", "useState", "department", "model")));
+            com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.LIST_FIELDS.stream()
+                .map(com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Field::key)
+                .toList()));
     var repair =
         fields(
             "id:ID:ID,code:工单编号:TEXT,equipmentCode:设备编号:TEXT,equipmentName:设备名称:TEXT,equipmentId:设备ID:ID,status:工单状态:TEXT,severity:紧急程度:TEXT,department:部门:TEXT,departmentId:部门ID:ID,company:公司:TEXT,companyId:公司ID:ID,owner:维修负责人:TEXT,ownerId:负责人ID:ID,reporter:报修人:TEXT,reporterId:报修人ID:ID,faultType:故障类型:TEXT,faultTypeId:类型ID:ID,faultCause:故障原因:TEXT,faultCauseId:原因ID:ID,reportedAt:报修时间:DATETIME,claimedAt:接单时间:DATETIME,submittedAt:提交解决时间:DATETIME,acceptedAt:验收完成时间:DATETIME,downtimeMinutes:人工记录停机分钟:DISPLAY");
@@ -69,7 +81,7 @@ public final class AiBusinessCatalog {
                   ? List.of("code", "equipmentName", "status", "department", "owner", "dueDate")
                   : List.of("code", "planName", "equipmentName", "shiftName", "status", "dueAt")));
     }
-    for (String kind : List.of("maintenancePlan", "dailyPlan", "periodicPlan"))
+    for (String kind : List.of("maintenancePlan", "dailyPlan", "periodicPlan")) {
       domains.put(
           kind,
           new Domain(
@@ -84,6 +96,7 @@ public final class AiBusinessCatalog {
               fields(
                   "id:ID:ID,code:计划编号:TEXT,name:计划名称:TEXT,department:所属部门:TEXT,departmentId:部门ID:ID,status:启用状态:TEXT,createdAt:创建时间:DATETIME"),
               List.of("code", "name", "status", "department", "createdAt")));
+    }
     domains.put(
         "stock",
         new Domain(

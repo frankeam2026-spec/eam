@@ -52,6 +52,10 @@ public class RepairViewAssembler {
         Map.entry("reporter", safe(r.getReporter())),
         Map.entry("assignee", safe(r.getAssignee())),
         Map.entry("status", safe(r.getStatus())),
+        Map.entry("approvalGate", safe(r.getApprovalGate())),
+        Map.entry(
+            "reporterUserId",
+            r.getReporterUserId() == null ? "" : r.getReporterUserId().toString()),
         Map.entry("repairAction", safe(r.getRepairAction())),
         Map.entry("downtimeMinutes", r.getDowntimeMinutes() == null ? 0 : r.getDowntimeMinutes()),
         Map.entry("reportedAt", date(r.getReportedAt())),

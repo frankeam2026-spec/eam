@@ -5,7 +5,7 @@
 | 模块 | 调用方 | 权限与数据范围 | 版本及错误约定 |
 |---|---|---|---|
 | 设备 | 台账、编辑、档案、选择器 | equipment 对应操作；公司/部门/负责人范围，子设备/BOM保存重新校验 | 修改传 rowVersion；扩展配置传 customSchemaVersion |
-| 维修 | 工单列表、报修、处理、工作台 | repair 对应操作；报修人/负责人/候选人/验收参与例外保留 | 修改/状态动作传 rowVersion；待派工才可编辑 |
+| 维修 | 工单列表、报修、处理、工作台 | repair 对应操作；退回待提交单仅报修人按报修权限编辑与重提；审批按分配任务办理 | 修改/状态动作传 rowVersion；未要求审批的待派工可编辑，审批中及通过后不可改内容 |
 | 保养 | 类型、标准、计划、任务 | maintenanceType/Standard/Plan/Task；任务参与者查看例外与执行/验收判定分开 | rowVersion；计划与任务独立扩展配置 |
 | 点巡检 | 标准、日常/周期计划与任务 | inspection 各子菜单；任务参与者范围保留 | rowVersion；暂存/提交校验不同 |
 | 库存 | 物料、仓库、入出库、领料与纠正 | 各库存子菜单与仓库范围；金额独立授权，不能由查看仓库代替业务授权 | rowVersion；出库确认另带幂等键和分配指纹 |
@@ -16,6 +16,8 @@
 设备编辑保存边界（2026-10-21）：`PUT /equipment/{id}/details` 只更新核心资料、图片、文件与扩展字段；`PUT /equipment/{id}/children` 和 `/bom` 分别只替换对应关系，请求体为 `{rows:[...]}`。三者均要求父设备编辑权限与 `rowVersion`，关系接口沿用库存互斥→公司锁顺序、ID/租户/权限校验及既有子设备与BOM规则；原整体更新接口保留兼容。
 
 ## 当前 HTTP 入口
+
+2026-10-30补充：`GET/PUT /api/v1/workflow/templates/repair-approval-setting?companyId=...`查询／维护公司报修审批开关；查看／发布权限及公司范围分别校验，PUT传`required,rowVersion`。`POST /api/v1/repairs/{id}/approval-submit`仅本人重提待提交报修，请求体传`rowVersion`。审批办理仍复用`/api/v1/workflow/instances/{id}/act`和`/withdraw`，只允许被分配办理人／申请人。`GET /api/v1/repairs/{id}/workflow`增加`approvalRounds,canResubmit`，报修查看授权先于审批历史返回。
 
 | 模块 | 方法 | 路径 | Controller | 处理方法 |
 |---|---|---|---|---|
@@ -293,6 +295,45 @@
 - 会话提问/stream增加可选`queryContext`，仅携带上轮查询结构，后台重新校验；不携带结果行、不授予权限、不作为SQL。最多6组、每组条件深度4层/24节点。当前会话内追问可沿用；历史业务结果不持久化数值，需重新查询。
 - 本人待办复用`GET /api/v1/work-inbox`的类型/状态/搜索与分页。无审批、接单、出库等写操作。只有明确知识问题才进入向量检索，业务结果不发送模型二次生成。
 - 无新增数据库表或迁移；保养/点巡检快照及原业务存储保持原样。接口设计与实测边界见[统一业务查询记录](../features/小卓统一业务查询-20261029.md)。
+
+
+## 领料草稿类型契约（2026-10-30）
+
+原路径与成功200状态不变；调用方为`src/inventory.ts`及`InventoryRequisitions.vue`。
+
+| 入口 | 请求/响应 | 权限与版本 |
+|---|---|---|
+| POST `/api/v1/inventory/requisitions` | RequisitionDraftForm → DataResponse<RequisitionDetail> | 任务权限及资格、仓库新增范围或本人执行任务例外；公司一致 |
+| PUT `/api/v1/inventory/requisitions/{id}` | 同上，完整替换可编辑字段和明细 | 本人草稿、rowVersion必填非负整数、同上关联复核；冲突409 |
+| GET `/api/v1/inventory/requisitions/{id}` | DataResponse<RequisitionDetail> | 原申请人/流程参与者/仓库范围；金额独立授权 |
+
+可编辑字段为taskKind（维修/保养/点巡检）、taskId、warehouseId、remark、lines[{materialId,quantity}]；仅修改必传rowVersion。ID接受十进制字符串或精确整数，拒绝小数、布尔及溢出；数量接受十进制字符串/JSON数值，以BigDecimal解析，沿用正数、最多14位整数及6位小数；明细1～500行、物料不能重复，备注trim后最多1000字符。
+
+客户端原有只读主单字段及明细展示字段按DTO白名单忽略，不采信其公司、申请人、编号或状态。未登记字段（包括拼写错误）返回400；格式错误保留INVALID_ARGUMENT，业务字段校验使用既有VALIDATION_ERROR及fieldErrors，如`lines[0].quantity`。这项错误定位改进不同于仅替换Java类型，已单独回归。
+
+响应字段及null/空字符串兼容范围、旧内部调用适配和验证证据见[领料草稿类型化重构](../plans/领料草稿类型化重构-20261030.md)。其他库存路由未在本批改为类型化，不据此认定其已满足新规范。
+
+
+## 设备台账核心写入契约（2026-10-30）
+
+- 调用方保持`src/api.ts`的saveEquipment、saveEquipmentRelations及deleteEquipment；POST设备、PUT设备及details分区、children/bom、DELETE和batch原路径不变。
+- 新增/编辑/详情返回DataResponse<EquipmentView>；删除返回DataResponse<EquipmentMutationResult.Deleted>，批量返回DataResponse<EquipmentMutationResult.Count>，导航树使用DataResponse<List<EquipmentNavigationNode>>。JSON结构与成功200不变。
+- 核心关联ID及负责人ID支持十进制字符串和整数，拒绝小数、布尔、溢出及非正值。可选ID仍允许null；实际前端已将空字符串转换为null。ownerIds的空元素定位到ownerIds[0]等字段。
+- 新增与编辑统一执行已有长度、精度和业务字段校验。非法规格型号等在写SQL前返回400/VALIDATION_ERROR及fieldErrors；版本查询参数仍必填，冲突409，保留原权限及公司锁顺序。
+- details只保存基础信息；children/bom仍为独立替换入口，保持原关联校验，不因封装调整而改变协议。深层旧结构及实际测试范围见[设备台账核心写入优化](../plans/设备台账核心写入优化-20261030.md)。
+
+## 设备AI查询内部契约（2026-10-30）
+
+- POST `/api/v1/knowledge/assistant/business-query`路径及原`plan/equipmentId/page/size`请求不变。设备分支保持count/list/group/trend结果、columns、identities、跳转及时间元数据兼容；其他业务分支沿用原路径。
+- AI适配层转换为EquipmentAssistantQuery；设备Service校验查看权限、查询能力及选中设备的对象权限，Repository执行并返回EquipmentAssistantResult。跨设备模块边界不传SQL、Wrapper或AssistantReadSource。
+- 设备字段目录与台账字段表达式、授权构造器同源；过滤条件只能缩小授权范围。设备Service再次限制page为1～1000000、size为20/50/100、topN为0～100、分组最多2维，并校验日期、操作符、值类型及条件复杂度；非法计划与同名对象歧义使用本地化错误。
+- 旧动态响应仅在AI兼容边界组装。具体兼容范围、隔离MySQL证据和未验证事项见[设备AI查询边界重构](../plans/设备AI查询边界重构-20261030.md)。
+
+## IDEA整改涉及的校验兼容（2026-10-30）
+
+- PUT `/api/v1/notifications/channels`的smtpSecurity必须非空，仍只接受NONE/STARTTLS/SSL。缺失字段由原统一错误入口返回400/VALIDATION_ERROR及fieldErrors.smtpSecurity；原合法请求及成功响应不变。Service独立拒绝null，内部调用不能绕过。
+- 首页布局metrics只接受原指标白名单中的字符串且不能重复，含null或错误类型时返回原输入错误，避免500；原顺序及空列表语义不变。
+- 方法级参数校验内部换用Spring现行API，原字段错误、参数别名及服务端返回值错误协议不变。模板列表的初始化事务和保养类型导出的只读事务变化见[IDEA检查整改](../plans/IDEA检查整改-20261030.md)。
 
 ## BOM物料候选查询契约（2026-10-30）
 

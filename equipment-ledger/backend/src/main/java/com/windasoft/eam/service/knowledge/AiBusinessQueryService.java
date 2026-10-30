@@ -1,12 +1,21 @@
 package com.windasoft.eam.service.knowledge;
 
 import com.fasterxml.jackson.databind.*;
-import com.windasoft.eam.dto.knowledge.*;
-import com.windasoft.eam.repository.common.*;
+import com.windasoft.eam.dto.knowledge.AiBusinessCatalog;
+import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
+import com.windasoft.eam.repository.common.AssistantReadSource;
+import com.windasoft.eam.repository.common.SqlPredicate;
 import com.windasoft.eam.repository.knowledge.AiBusinessQueryRepository;
-import com.windasoft.eam.service.system.*;
-import java.time.*;
-import java.util.*;
+import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.PermissionService;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,7 +70,6 @@ public class AiBusinessQueryService {
 
   AssistantReadSource source(String domain) {
     return switch (domain) {
-      case "equipment" -> equipment.assistantSource();
       case "repair" -> repairs.assistantSource();
       case "maintenanceTask" -> maintenance.assistantSource("tasks");
       case "maintenancePlan" -> maintenance.assistantSource("plans");
@@ -77,25 +85,41 @@ public class AiBusinessQueryService {
   @Transactional(readOnly = true)
   public Map<String, Object> query(JsonNode input, Long equipmentId, int page, int size) {
     permissions.require("knowledge", "查看");
-    if (page < 1 || page > 1_000_000 || !Set.of(20, 50, 100).contains(size))
+    if (page < 1 || page > 1_000_000 || !Set.of(20, 50, 100).contains(size)) {
       throw new IllegalArgumentException("查询分页无效");
+    }
     var plan = AiBusinessPlan.parse(input);
     var domain = AiBusinessCatalog.ALL.get(plan.domain());
     permissions.require(domain.menu(), "查看");
-    var source = source(plan.domain());
     var now = LocalDateTime.now(ZoneId.of("Asia/Shanghai")).withNano(0);
-    var filter =
-        com.windasoft.eam.repository.knowledge.AiBusinessFilters.compile(
-            plan.where(), domain, now, auth.userId(),auth.tenantId());
-    if (equipmentId != null) {
-      equipment.get(equipmentId);
-      filter = filter.and(repository.equipmentFilter(plan, auth.tenantId(), equipmentId));
+    LocalDate[] bounds;
+    Map<String, Object> executed;
+    if (plan.domain().equals("equipment")) {
+      var request = EquipmentAssistantAdapter.request(plan, equipmentId, page, size);
+      var answer = equipment.queryAssistant(request);
+      executed = EquipmentAssistantAdapter.response(answer, request);
+      now = answer.evaluatedAt();
+      bounds =
+          answer.range() == null
+              ? null
+              : new LocalDate[] {answer.range().start(), answer.range().end()};
+    } else {
+      var source = source(plan.domain());
+      var filter =
+          com.windasoft.eam.repository.knowledge.AiBusinessFilters.compile(
+              plan.where(), domain, now, auth.userId(), auth.tenantId());
+      if (equipmentId != null) {
+        equipment.get(equipmentId);
+        filter = filter.and(repository.equipmentFilter(plan, auth.tenantId(), equipmentId));
+      }
+      bounds = bounds(plan, now.toLocalDate());
+      if (bounds != null) {
+        filter = filter.and(repository.timeFilter(plan.timeField(), bounds[0], bounds[1]));
+      }
+      checkNames(plan.where(), domain, source, filter);
+      executed = repository.execute(source, filter, plan, page, size);
     }
-    var bounds = bounds(plan, now.toLocalDate());
-    if (bounds != null)
-      filter = filter.and(repository.timeFilter(plan.timeField(), bounds[0], bounds[1]));
-    checkNames(plan.where(), domain, source, filter);
-    var result = new LinkedHashMap<>(repository.execute(source, filter, plan, page, size));
+    var result = new LinkedHashMap<>(executed);
     result.put("conditions", describe(plan.where(), domain));
     result.put(
         "valueLabel",
@@ -118,10 +142,12 @@ public class AiBusinessQueryService {
         .fields()
         .forEach(
             (key, field) -> {
-              if (!field.identity().isEmpty()) identities.put(key, field.identity());
+              if (!field.identity().isEmpty()) {
+                identities.put(key, field.identity());
+              }
             });
     result.put("identities", identities);
-    if (result.get("columns") instanceof List<?> columns)
+    if (result.get("columns") instanceof List<?> columns) {
       result.put(
           "columns",
           columns.stream()
@@ -144,9 +170,14 @@ public class AiBusinessQueryService {
                                           ? "时间"
                                           : domain.fields().get(k.toString()).label()))
               .toList());
-    if (plan.operation().equals("LIST"))
-      for (var row : (List<Map<String, Object>>) result.get("data"))
-        if (!domain.route().isEmpty()) row.put("url", domain.route().formatted(row.get("id")));
+    }
+    if (plan.operation().equals("LIST")) {
+      for (var row : (List<Map<String, Object>>) result.get("data")) {
+        if (!domain.route().isEmpty()) {
+          row.put("url", domain.route().formatted(row.get("id")));
+        }
+      }
+    }
     return result;
   }
 

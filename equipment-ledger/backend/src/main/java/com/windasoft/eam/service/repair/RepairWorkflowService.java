@@ -20,6 +20,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class RepairWorkflowService {
+  @org.springframework.beans.factory.annotation.Autowired private RepairApprovalService approvals;
+
   @org.springframework.beans.factory.annotation.Autowired
   private com.windasoft.eam.service.business.BusinessValueService custom;
 
@@ -111,6 +113,10 @@ public class RepairWorkflowService {
     result.put("canDispatch", canDispatch(row));
     result.put("canIssue", canIssue(eq.getCompanyOrgId()));
     result.put("results", results());
+    result.put("approvalRounds", approvals.history(id));
+    result.put(
+        "canResubmit",
+        "待提交".equals(row.getStatus()) && Objects.equals(row.getReporterUserId(), auth.userId()));
     return result;
   }
 
@@ -136,6 +142,7 @@ public class RepairWorkflowService {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0012");
     VersionGuard.check(row.getRowVersion(), version);
     String action = text(body, "action", 30), previous = row.getStatus();
+    approvals.requireReleased(row);
     Map<String, Object> details = new LinkedHashMap<>();
     details.put("before", previous);
     String label;
@@ -165,7 +172,7 @@ public class RepairWorkflowService {
         row.setDispatcherUserId(auth.userId());
         row.setAssigneeUserId(null); // Explicit SQL clears the previous owner (MP skips nulls).
         row.setAssignee(String.join("、", names));
-        if(action.equals("dispatch"))row.setDispatchedAt(LocalDateTime.now());
+        if (action.equals("dispatch")) row.setDispatchedAt(LocalDateTime.now());
         row.setStatus("待接单");
         flow.clearOwner(auth.tenantId(), id);
         if (!ids.contains(auth.userId())) todo(row, auth.userId(), "等待接单", true);

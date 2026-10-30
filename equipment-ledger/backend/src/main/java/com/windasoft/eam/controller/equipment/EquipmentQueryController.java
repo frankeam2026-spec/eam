@@ -1,104 +1,43 @@
 package com.windasoft.eam.controller.equipment;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.dto.common.DataResponse;
 import com.windasoft.eam.dto.equipment.EquipmentHistoryView;
-import com.windasoft.eam.dto.equipment.EquipmentListQuery;
 import com.windasoft.eam.dto.equipment.EquipmentNavigationNode;
 import com.windasoft.eam.dto.equipment.EquipmentOptions;
 import com.windasoft.eam.dto.equipment.EquipmentPage;
+import com.windasoft.eam.dto.equipment.EquipmentQueryParameters;
 import com.windasoft.eam.dto.equipment.EquipmentView;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
-import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Map;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/equipment")
 public class EquipmentQueryController {
   private final EquipmentQueryService service;
+  private final ObjectMapper json;
 
-  public EquipmentQueryController(EquipmentQueryService service) {
+  public EquipmentQueryController(EquipmentQueryService service, ObjectMapper json) {
     this.service = service;
+    this.json = json;
   }
 
   @GetMapping
-  public EquipmentPage list(
-      @RequestParam(defaultValue = "1") long page,
-      @RequestParam(defaultValue = "10") long size,
-      @RequestParam(required = false) String keyword,
-      @RequestParam(required = false) String category,
-      @RequestParam(required = false) String state,
-      @RequestParam(required = false) String department,
-      @RequestParam(required = false) String company,
-      @RequestParam(required = false) String model,
-      @RequestParam(required = false) String serial,
-      @RequestParam(required = false) String owner,
-      @RequestParam(required = false) String brand,
-      @RequestParam(required = false) String useState,
-      @RequestParam(required = false) String source,
-      @RequestParam(required = false) LocalDate acquiredFrom,
-      @RequestParam(required = false) LocalDate acquiredTo,
-      @RequestParam(required = false) LocalDate warrantyBefore,
-      @RequestParam(defaultValue = "createdAt") String sortBy,
-      @RequestParam(defaultValue = "desc") String direction,
-      @RequestParam(required = false) String advanced,
-      @RequestParam(required = false) String scopeType,
-      @RequestParam(required = false) String scopeIds,
-      @RequestParam(required = false) String scopeCompanyId) {
-    return service.list(
-        new EquipmentListQuery(
-            page,
-            size,
-            keyword,
-            category,
-            state,
-            department,
-            company,
-            model,
-            serial,
-            owner,
-            brand,
-            useState,
-            source,
-            acquiredFrom,
-            acquiredTo,
-            warrantyBefore,
-            sortBy,
-            direction,
-            advanced,
-            scopeType,
-            scopeIds,
-            scopeCompanyId));
+  public EquipmentPage list(@RequestParam Map<String, String> parameters) {
+    return service.list(EquipmentQueryParameters.read(parameters, json));
   }
 
   @GetMapping("/export")
   public void export(
       @RequestParam Map<String, String> p, jakarta.servlet.http.HttpServletResponse response)
       throws java.io.IOException {
-    var query =
-        new EquipmentListQuery(
-            1,
-            500,
-            p.get("keyword"),
-            p.get("category"),
-            p.get("state"),
-            p.get("department"),
-            p.get("company"),
-            p.get("model"),
-            p.get("serial"),
-            p.get("owner"),
-            p.get("brand"),
-            p.get("useState"),
-            p.get("source"),
-            null,
-            null,
-            null,
-            p.getOrDefault("sortBy", "createdAt"),
-            p.getOrDefault("direction", "desc"),
-            p.get("advanced"),
-            p.get("scopeType"),
-            p.get("scopeIds"),
-            p.get("scopeCompanyId"));
+    var query = EquipmentQueryParameters.export(p, json);
     response.setContentType("text/csv;charset=UTF-8");
     response.setHeader("Content-Disposition", "attachment; filename=equipment.csv");
     service.export(
@@ -108,8 +47,8 @@ public class EquipmentQueryController {
   }
 
   @GetMapping("/{id}")
-  public Map<String, EquipmentView> get(@PathVariable Long id) {
-    return Map.of("data", service.get(id));
+  public DataResponse<EquipmentView> get(@PathVariable Long id) {
+    return new DataResponse<>(service.get(id));
   }
 
   @GetMapping(value = "/{id}/qrcode", produces = "image/png")
@@ -122,8 +61,8 @@ public class EquipmentQueryController {
   }
 
   @GetMapping("/navigation-tree")
-  public Map<String, java.util.List<EquipmentNavigationNode>> navigationTree() {
-    return Map.of("data", service.navigationTree());
+  public DataResponse<java.util.List<EquipmentNavigationNode>> navigationTree() {
+    return new DataResponse<>(service.navigationTree());
   }
 
   @GetMapping("/owner-candidates")

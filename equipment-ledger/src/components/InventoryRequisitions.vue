@@ -35,7 +35,7 @@ import {
 import AppDialog from './common/AppDialog.vue';
 import AppBackButton from './common/AppBackButton.vue';
 import AppFormFooter from './common/AppFormFooter.vue';
-import RequisitionApproval from './workflow/RequisitionApproval.vue';
+import WorkflowApproval from './workflow/WorkflowApproval.vue';
 import AppPagination from './common/AppPagination.vue';
 import ListSearchInput from './common/ListSearchInput.vue';
 import ListToolbarIcons from './ListToolbarIcons.vue';
@@ -930,7 +930,7 @@ type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
             {{ tr('ui.equipment.text0659') }} {{ formatNumber(issue.totalAmount) }}
           </p>
         </div>
-        <RequisitionApproval :rounds="form.workflow||[]" :applicant-id="form.applicantId" @changed="load"/>
+        <WorkflowApproval :rounds="form.workflow||[]" :applicant-id="form.applicantId" @changed="load"/>
         <div v-if="form.events?.length" class="records">
           <strong>{{ tr('ui.equipment.text0637') }}</strong>
           <p v-for="(event, index) in form.events" :key="index">

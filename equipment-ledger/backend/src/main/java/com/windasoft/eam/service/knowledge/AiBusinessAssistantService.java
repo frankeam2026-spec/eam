@@ -98,7 +98,7 @@ KNOWLEDGE/ANALYTICS/CLARIFY的queries必须为空。message使用客户可懂的
             "currentCompany",
             company);
     var body =
-        Map.<String, Object>of(
+        Map.of(
             "enable_thinking",
             false,
             "max_tokens",

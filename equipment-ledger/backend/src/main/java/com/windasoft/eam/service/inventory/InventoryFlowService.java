@@ -218,7 +218,7 @@ public class InventoryFlowService {
         NAMES.containsKey(kind),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0022"));
     @SuppressWarnings("unchecked")
-    var result = new LinkedHashMap<String, Object>((Map<String, Object>) masters.stockChoices());
+    var result = new LinkedHashMap<String, Object>(masters.stockChoices());
     result.put(
         "warehouses",
         ((List<Map<String, Object>>) result.get("warehouses"))

@@ -62,7 +62,10 @@ public class BusinessQueryService {
   }
 
   private List<BusinessFilterTerm> terms(String object, String raw) {
-    var conditions = conditions(raw);
+    return terms(object, conditions(raw));
+  }
+
+  private List<BusinessFilterTerm> terms(String object, JsonNode conditions) {
     if (object == null) {
       for (var c : conditions)
         if (c.path("field").asText().startsWith("custom:"))
@@ -181,6 +184,10 @@ public class BusinessQueryService {
 
   public SqlPredicate predicate(String object, String raw, String alias) {
     return queries.predicate(auth.tenantId(), object, alias, terms(object, raw));
+  }
+
+  public SqlPredicate predicate(String object, JsonNode conditions, String alias) {
+    return queries.predicate(auth.tenantId(), object, alias, terms(object, conditions));
   }
 
   public <T> void apply(LambdaQueryWrapper<T> query, String object, String raw) {

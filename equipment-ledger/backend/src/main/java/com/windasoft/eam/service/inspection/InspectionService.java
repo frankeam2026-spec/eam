@@ -659,11 +659,10 @@ public class InspectionService {
                 .filter(
                     e -> {
                       try {
-                        if (!permissions.inspectionEquipmentVisible(
-                            nullable(e.get("company_org_id")),
-                            nullable(e.get("department_org_id")),
-                            nullable(e.get("owner_user_id")))) return false;
-                        return true;
+                        return permissions.inspectionEquipmentVisible(
+                          nullable(e.get("company_org_id")),
+                          nullable(e.get("department_org_id")),
+                          nullable(e.get("owner_user_id")));
                       } catch (ResponseStatusException ex) {
                         return false;
                       }

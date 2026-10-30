@@ -10,15 +10,18 @@ public final class WorkflowResponse {
   private WorkflowResponse() {}
 
   public static Object exact(Object value) {
-    if (value instanceof Expr expression) {
+    if (value instanceof Expr(
+      String op, String field, Object literal, com.windasoft.eam.common.workflow.WorkflowExpression.Type type,
+      List<Expr> children
+    )) {
       return new Expr(
-          expression.op(),
-          expression.field(),
-          expression.literal() instanceof Number
-              ? expression.literal().toString()
-              : expression.literal(),
-          expression.type(),
-          expression.children().stream().map(child -> (Expr) exact(child)).toList());
+        op,
+        field,
+          literal instanceof Number
+              ? literal.toString()
+              : literal,
+        type,
+          children.stream().map(child -> (Expr) exact(child)).toList());
     }
     if (value instanceof List<?> rows) return rows.stream().map(WorkflowResponse::exact).toList();
     if (value instanceof Map<?, ?> row) {

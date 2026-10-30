@@ -1,19 +1,31 @@
 package com.windasoft.eam.service.knowledge;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.PermissionScope;
-import com.windasoft.eam.service.system.*;
-import java.util.*;
-import org.junit.jupiter.api.*;
+import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.PermissionService;
+import java.util.Base64;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.*;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -25,8 +37,9 @@ class AiBusinessQueryMySqlIT {
     String url = System.getenv("EAM_BUSINESS_TEST_URL");
     if (url == null
         || !url.matches(
-            "jdbc:mysql://127\\.0\\.0\\.1:3308/eam_business_query_test_20261029(\\?.*)?"))
+            "jdbc:mysql://127\\.0\\.0\\.1:3308/eam_business_query_test_20261029(\\?.*)?")) {
       throw new IllegalStateException("Requires isolated business query database");
+    }
     p.add("spring.datasource.url", () -> url);
     p.add("spring.datasource.username", () -> "root");
     p.add("spring.datasource.password", () -> "");
@@ -52,6 +65,7 @@ class AiBusinessQueryMySqlIT {
     when(permissions.allowed(anyString(), anyString())).thenReturn(true);
     var scope = new PermissionScope(true, null, Set.of(), false);
     when(permissions.scope(anyString(), anyString())).thenReturn(scope);
+    when(permissions.equipment("查看")).thenReturn(scope);
     when(permissions.maintenance(anyString(), anyString())).thenReturn(scope);
     when(permissions.inspection(anyString(), anyString())).thenReturn(scope);
   }

@@ -289,7 +289,7 @@ public class EquipmentImportValidation {
           String display = name;
           if (type.equals("USER")) {
             var u = c.users.get(Long.valueOf(oid));
-            if (u == null || !active(u)) continue;
+            if (!active(u)) continue;
             display = u.get("account").toString();
           }
           if (type.equals("DEPARTMENT")) {

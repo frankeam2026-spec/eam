@@ -1,13 +1,21 @@
 package com.windasoft.eam.controller.equipment;
 
+import com.windasoft.eam.dto.common.DataResponse;
 import com.windasoft.eam.dto.equipment.EquipmentBatchForm;
 import com.windasoft.eam.dto.equipment.EquipmentForm;
-import com.windasoft.eam.dto.equipment.EquipmentView;
+import com.windasoft.eam.dto.equipment.EquipmentMutationResult;
 import com.windasoft.eam.dto.equipment.EquipmentRelationsForm;
+import com.windasoft.eam.dto.equipment.EquipmentView;
 import com.windasoft.eam.service.equipment.EquipmentCommandService;
 import jakarta.validation.Valid;
-import java.util.Map;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/equipment")
@@ -19,43 +27,46 @@ public class EquipmentController {
   }
 
   @PostMapping
-  public Map<String, EquipmentView> create(@Valid @RequestBody EquipmentForm form) {
-    return Map.of("data", service.create(form));
+  public DataResponse<EquipmentView> create(@Valid @RequestBody EquipmentForm form) {
+    return new DataResponse<>(service.create(form));
   }
 
   @PutMapping("/{id}")
-  public Map<String, EquipmentView> update(
+  public DataResponse<EquipmentView> update(
       @PathVariable Long id, @Valid @RequestBody EquipmentForm form, @RequestParam int rowVersion) {
-    return Map.of("data", service.update(id, form, rowVersion));
+    return new DataResponse<>(service.update(id, form, rowVersion));
   }
 
   @DeleteMapping("/{id}")
-  public Map<String, Object> delete(@PathVariable Long id) {
-    return Map.of("data", Map.of("deleted", service.delete(id)));
+  public DataResponse<EquipmentMutationResult.Deleted> delete(@PathVariable Long id) {
+    return new DataResponse<>(new EquipmentMutationResult.Deleted(service.delete(id)));
   }
 
   @PutMapping("/{id}/details")
-  public Map<String, EquipmentView> updateDetails(
+  public DataResponse<EquipmentView> updateDetails(
       @PathVariable Long id, @Valid @RequestBody EquipmentForm form, @RequestParam int rowVersion) {
-    return Map.of("data", service.updateDetails(id, form, rowVersion));
+    return new DataResponse<>(service.updateDetails(id, form, rowVersion));
   }
 
   @PutMapping("/{id}/children")
-  public Map<String, EquipmentView> updateChildren(
-      @PathVariable Long id, @Valid @RequestBody EquipmentRelationsForm form,
+  public DataResponse<EquipmentView> updateChildren(
+      @PathVariable Long id,
+      @Valid @RequestBody EquipmentRelationsForm form,
       @RequestParam int rowVersion) {
-    return Map.of("data", service.updateRelations(id, form.rows(), rowVersion, true));
+    return new DataResponse<>(service.updateRelations(id, form.rows(), rowVersion, true));
   }
 
   @PutMapping("/{id}/bom")
-  public Map<String, EquipmentView> updateBom(
-      @PathVariable Long id, @Valid @RequestBody EquipmentRelationsForm form,
+  public DataResponse<EquipmentView> updateBom(
+      @PathVariable Long id,
+      @Valid @RequestBody EquipmentRelationsForm form,
       @RequestParam int rowVersion) {
-    return Map.of("data", service.updateRelations(id, form.rows(), rowVersion, false));
+    return new DataResponse<>(service.updateRelations(id, form.rows(), rowVersion, false));
   }
 
   @PostMapping("/batch")
-  public Map<String, Object> batch(@Valid @RequestBody EquipmentBatchForm form) {
-    return Map.of("data", Map.of("count", service.batch(form)));
+  public DataResponse<EquipmentMutationResult.Count> batch(
+      @Valid @RequestBody EquipmentBatchForm form) {
+    return new DataResponse<>(new EquipmentMutationResult.Count(service.batch(form)));
   }
 }

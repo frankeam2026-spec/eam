@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.*;
 import com.windasoft.eam.dto.equipment.EquipmentBomMaterialQuery;
 import com.windasoft.eam.dto.equipment.EquipmentBomMaterials;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.entity.equipment.EquipmentBom;
 import com.windasoft.eam.repository.equipment.EquipmentRelationsRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.inventory.InventoryMutex;
@@ -103,7 +104,7 @@ public class EquipmentRelationsService {
       while (next != null) {
         var rows = repository.parents(auth.tenantId(), next);
         if (rows.isEmpty()) break;
-        next = ((Number) rows.getFirst().get("parent_id")).longValue();
+        next = rows.getFirst().getParentId();
         if (!excluded.add(next))
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.equipment.message0013");
@@ -191,13 +192,13 @@ public class EquipmentRelationsService {
       int index = n.path("legacyIndex").asInt(-1);
       var match =
           current.stream()
-              .filter(r -> ((Number) r.get("source_index")).intValue() == index)
+              .filter(r -> r.getSourceIndex() == index)
               .findFirst();
       if (match.isEmpty())
         throw new com.windasoft.eam.common.LocalizedArgumentException(
             "server.equipment.message0015");
       try {
-        var snapshot = json.readTree(match.get().get("snapshot_json").toString());
+        var snapshot = json.readTree(match.get().getSnapshotJson());
         var submitted = ((ObjectNode) n).deepCopy();
         submitted.remove(List.of("legacy", "legacyIndex", "legacyReason"));
         if (!submitted.equals(snapshot))
@@ -210,8 +211,8 @@ public class EquipmentRelationsService {
       retained.add(index);
     }
     for (var r : current)
-      if (!retained.contains(((Number) r.get("source_index")).intValue()))
-        repository.removeLegacy(auth.tenantId(), equipmentId, kind, r.get("source_index"));
+      if (!retained.contains(r.getSourceIndex()))
+        repository.removeLegacy(auth.tenantId(), equipmentId, kind, r.getSourceIndex());
   }
 
   public void save(Equipment parent, JsonNode children, JsonNode bom) {
@@ -249,7 +250,7 @@ public class EquipmentRelationsService {
             "server.equipment.message0020");
       var current = repository.parents(auth.tenantId(), id);
       if (!current.isEmpty()
-          && ((Number) current.getFirst().get("parent_id")).longValue() != parent.getId())
+          && current.getFirst().getParentId() != parent.getId())
         throw new com.windasoft.eam.common.LocalizedArgumentException(
             "server.equipment.message0021");
       Long ancestor = parent.getId();
@@ -259,11 +260,11 @@ public class EquipmentRelationsService {
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.equipment.message0022");
         var rows = repository.parents(auth.tenantId(), ancestor);
-        ancestor = rows.isEmpty() ? null : ((Number) rows.getFirst().get("parent_id")).longValue();
+        ancestor = rows.isEmpty() ? null : rows.getFirst().getParentId();
       }
       links.add(child);
     }
-    var materials = new ArrayList<Map<String, Object>>();
+    var materials = new ArrayList<EquipmentBom>();
     int index = 0;
     for (var n : bomNodes) {
       int lineIndex = index++;
@@ -297,8 +298,7 @@ public class EquipmentRelationsService {
       }
       if (qty.precision() > 18)
         throw new com.windasoft.eam.common.FieldValidationException(field, "数量超出范围");
-      m.put("quantity", qty);
-      materials.add(m);
+      materials.add(new EquipmentBom(auth.tenantId(), parent.getId(), id, qty, (String)m.get("code"), (String)m.get("name"), (String)m.get("model"), (String)m.get("unit"), materials.size()));
     }
     if (replaceChildren) {
       legacySelection(parent.getId(), "child", childNodes);
@@ -311,7 +311,7 @@ public class EquipmentRelationsService {
       repository.clearBom(auth.tenantId(), parent.getId());
       for (int i = 0; i < materials.size(); i++) {
         var m = materials.get(i);
-        repository.addBom(auth.tenantId(), parent.getId(), m, i);
+        repository.addBom(m);
       }
     }
   }

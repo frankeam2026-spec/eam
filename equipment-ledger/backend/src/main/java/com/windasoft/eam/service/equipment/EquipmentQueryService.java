@@ -2,6 +2,27 @@ package com.windasoft.eam.service.equipment;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Aggregate;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.All;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Comparison;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Condition;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.DateRange;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.DateTimeValue;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.DateValue;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Field;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.FieldSort;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Filter;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Identifier;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Junction;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Kind;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Logical;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Operation;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Period;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Reference;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.ResultSort;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Text;
+import com.windasoft.eam.dto.equipment.EquipmentAssistantResult;
 import com.windasoft.eam.dto.equipment.EquipmentHistoryView;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery;
 import com.windasoft.eam.dto.equipment.EquipmentNavigationNode;
@@ -10,11 +31,17 @@ import com.windasoft.eam.dto.equipment.EquipmentOwnerView;
 import com.windasoft.eam.dto.equipment.EquipmentPage;
 import com.windasoft.eam.dto.equipment.EquipmentView;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.repository.equipment.EquipmentAssistantRepository;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.time.LocalDate;
-import java.util.*;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -29,61 +56,254 @@ public class EquipmentQueryService {
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper objectMapper;
+  private final EquipmentAssistantRepository assistantRepository;
 
   public EquipmentQueryService(
       EquipmentQueryRepository repository,
       AuthContext auth,
       PermissionService permissions,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      EquipmentAssistantRepository assistantRepository) {
     this.repository = repository;
     this.auth = auth;
     this.permissions = permissions;
     this.objectMapper = objectMapper;
+    this.assistantRepository = assistantRepository;
   }
 
   public EquipmentPage list(EquipmentListQuery request) {
     return list(request, false);
   }
 
-  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(){
-    permissions.require("equipment","查看");return repository.assistantSource(auth.tenantId(),permissions::filterEquipment);
+  @org.springframework.transaction.annotation.Transactional(readOnly = true)
+  public EquipmentAssistantResult queryAssistant(EquipmentAssistantQuery query) {
+    permissions.require("equipment", "查看");
+    validateAssistant(query);
+    if (query.equipmentId() != null) {
+      get(query.equipmentId());
+    }
+    var now = java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai")).withNano(0);
+    var range = assistantRange(query, now.toLocalDate());
+    var scope = Objects.requireNonNull(permissions.equipment("查看"));
+    var ambiguous =
+        assistantRepository.ambiguousName(auth.tenantId(), auth.userId(), scope, query, now, range);
+    if (ambiguous.isPresent()) {
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.equipment.assistant.ambiguous", ambiguous.get().label());
+    }
+    return new EquipmentAssistantResult(
+        assistantRepository.execute(auth.tenantId(), auth.userId(), scope, query, now, range),
+        now,
+        range);
+  }
+
+  private static void assistantValid(boolean condition) {
+    if (!condition) {
+      throw new com.windasoft.eam.common.LocalizedArgumentException(
+          "server.equipment.assistant.invalid");
+    }
+  }
+
+  private static void validateAssistant(EquipmentAssistantQuery q) {
+    assistantValid(q != null);
+    assistantValid(
+        q.operation() != null
+            && q.aggregate() != null
+            && q.direction() != null
+            && q.period() != null
+            && q.bucket() != null
+            && q.groupBy() != null
+            && q.where() != null);
+    assistantValid(
+        q.page() >= 1
+            && q.page() <= 1_000_000
+            && Set.of(20, 50, 100).contains(q.size())
+            && q.topN() >= 0
+            && q.topN() <= 100
+            && (q.equipmentId() == null || q.equipmentId() > 0));
+    assistantValid(
+        q.groupBy().size() <= 2 && new HashSet<>(q.groupBy()).size() == q.groupBy().size());
+    for (var field : q.groupBy()) {
+      assistantValid(field != null && field.kind() == Kind.TEXT);
+    }
+    assistantValid(
+        q.aggregate() == Aggregate.DISTINCT
+            ? q.measure() != null && Set.of(Kind.TEXT, Kind.ID).contains(q.measure().kind())
+            : q.measure() == null);
+    assistantValid(
+        q.timeField() == null || Set.of(Kind.DATE, Kind.DATETIME).contains(q.timeField().kind()));
+    assistantValid(q.period() == Period.ALL || q.timeField() != null);
+    assistantValid((q.period() == Period.CUSTOM) == (q.customRange() != null));
+    if (q.operation() == Operation.COUNT) {
+      assistantValid(q.groupBy().isEmpty() && q.topN() == 0 && q.sortBy() == null);
+    }
+    if (q.operation() == Operation.LIST) {
+      assistantValid(q.groupBy().isEmpty() && q.aggregate() == Aggregate.COUNT);
+    }
+    if (q.operation() == Operation.GROUP) {
+      assistantValid(!q.groupBy().isEmpty());
+    }
+    if (q.operation() == Operation.TREND) {
+      assistantValid(q.timeField() != null);
+    }
+    if (q.sortBy() instanceof FieldSort(Field field)) {
+      assistantValid(
+          field != null
+              && (q.operation() == Operation.LIST || q.groupBy().contains(field)));
+    } else if (q.sortBy() instanceof ResultSort sort) {
+      assistantValid(
+          q.operation() != Operation.LIST
+              && (sort != ResultSort.PERIOD || q.operation() == Operation.TREND));
+    }
+    validateAssistantFilter(q.where(), 0, new int[] {0});
+  }
+
+  private static void validateAssistantFilter(Filter filter, int depth, int[] count) {
+    assistantValid(filter != null && depth <= 4 && ++count[0] <= 24);
+    if (filter instanceof All) {
+      assistantValid(depth == 0);
+      return;
+    }
+    if (filter instanceof Junction(Logical operator, List<Filter> children)) {
+      assistantValid(
+          operator != null
+              && children != null
+              && !children.isEmpty()
+              && children.size() <= 12
+              && (operator != Logical.NOT || children.size() == 1));
+      for (var child : children) {
+        validateAssistantFilter(child, depth + 1, count);
+      }
+      return;
+    }
+    var condition = (Condition) filter;
+    assistantValid(
+        condition.field() != null
+            && condition.operator() != null
+            && condition.values() != null
+            && condition.values().size() <= 20);
+    if (Set.of(Comparison.EMPTY, Comparison.NOT_EMPTY).contains(condition.operator())) {
+      assistantValid(condition.values().isEmpty());
+      return;
+    }
+    assistantValid(
+        !condition.values().isEmpty()
+            && (condition.operator() == Comparison.IN || condition.values().size() == 1));
+    if (condition.operator() == Comparison.CONTAINS) {
+      assistantValid(condition.field().kind() == Kind.TEXT);
+    }
+    if (Set.of(Comparison.GT, Comparison.GTE, Comparison.LT, Comparison.LTE)
+        .contains(condition.operator())) {
+      assistantValid(Set.of(Kind.DATE, Kind.DATETIME).contains(condition.field().kind()));
+    }
+    for (var value : condition.values()) {
+      boolean valid =
+          switch (condition.field().kind()) {
+            case TEXT -> value instanceof Text(String value1) && value1 != null && value1.length() <= 200;
+            case ID ->
+                value instanceof Identifier(Long value1) && value1 != null && value1 > 0
+                    || value == Reference.ME && condition.field() == Field.OWNER_ID;
+            case DATE ->
+                value instanceof DateValue(LocalDate value1)
+                        && value1 != null
+                        && value1.getYear() >= 1000
+                        && value1.getYear() <= 9999
+                    || value == Reference.TODAY;
+            case DATETIME ->
+                value instanceof DateTimeValue(java.time.LocalDateTime value1)
+                        && value1 != null
+                        && value1.getYear() >= 1000
+                        && value1.getYear() <= 9999
+                    || value == Reference.TODAY
+                    || value == Reference.NOW;
+          };
+      assistantValid(valid);
+    }
+  }
+
+  private static DateRange assistantRange(EquipmentAssistantQuery q, LocalDate today) {
+    if (q.period() == Period.ALL) {
+      return null;
+    }
+    LocalDate start = today, end = today;
+    switch (q.period()) {
+      case TODAY -> {}
+      case YESTERDAY -> {
+        start = today.minusDays(1);
+        end = start;
+      }
+      case WEEK, LAST_WEEK -> {
+        start = today.minusDays(today.getDayOfWeek().getValue() - 1);
+        if (q.period() == Period.LAST_WEEK) {
+          start = start.minusWeeks(1);
+        }
+        end = start.plusDays(6);
+      }
+      case MONTH -> {
+        start = today.withDayOfMonth(1);
+        end = today.withDayOfMonth(today.lengthOfMonth());
+      }
+      case LAST_MONTH -> {
+        end = today.withDayOfMonth(1).minusDays(1);
+        start = end.withDayOfMonth(1);
+      }
+      case YEAR, LAST_YEAR -> {
+        start = today.withDayOfYear(1);
+        if (q.period() == Period.LAST_YEAR) {
+          start = start.minusYears(1);
+        }
+        end = start.plusYears(1).minusDays(1);
+      }
+      case LAST7 -> start = today.minusDays(6);
+      case LAST30 -> start = today.minusDays(29);
+      case LAST90 -> start = today.minusDays(89);
+      case CUSTOM -> {
+        start = q.customRange().start();
+        end = q.customRange().end();
+      }
+      default -> throw new IllegalStateException("未处理的设备查询周期");
+    }
+    assistantValid(
+        start != null
+            && end != null
+            && !start.isAfter(end)
+            && !start.isBefore(LocalDate.of(1900, 1, 1))
+            && !end.isAfter(today.plusYears(10)));
+    return new DateRange(start, end);
+  }
+
+  private record PreparedQuery(
+      com.windasoft.eam.repository.common.SqlPredicate extensions, String order) {}
+
+  private PreparedQuery prepare(EquipmentListQuery request) {
+    var extensions =
+        request.conditions().stream().filter(c -> c.field().startsWith("custom:")).toList();
+    var predicate =
+        extensions.isEmpty()
+            ? com.windasoft.eam.repository.common.SqlPredicate.of("1=1")
+            : customQueries.predicate(
+                "equipment", objectMapper.valueToTree(extensions), "eam_equipment");
+    return new PreparedQuery(
+        predicate,
+        customQueries.orderExpression("equipment", request.sort().field(), "eam_equipment"));
   }
 
   private EquipmentPage list(EquipmentListQuery request, boolean exporting) {
-    var adjusted =
-        new EquipmentListQuery(
-            request.page(),
-            request.size(),
-            request.keyword(),
-            request.category(),
-            request.state(),
-            request.department(),
-            request.company(),
-            request.model(),
-            request.serial(),
-            request.owner(),
-            request.brand(),
-            request.useState(),
-            request.source(),
-            request.acquiredFrom(),
-            request.acquiredTo(),
-            request.warrantyBefore(),
-            request.sortBy(),
-            request.direction(),
-            customQueries.standard(request.advanced()),
-            request.scopeType(),
-            request.scopeIds(),
-            request.scopeCompanyId());
+    return load(request, exporting, prepare(request));
+  }
+
+  private EquipmentPage load(
+      EquipmentListQuery request, boolean exporting, PreparedQuery prepared) {
     var result =
         repository.list(
             auth.tenantId(),
-            adjusted,
+            request,
             q -> {
               permissions.filterEquipment(q);
               if (exporting) permissions.filterEquipment(q, "导出");
-              customQueries.apply(q, "equipment", request.advanced());
-              customQueries.sort(q, "equipment", request.sortBy(), request.direction());
-            });
+            },
+            prepared.extensions(),
+            prepared.order());
     var extra =
         custom.batch("equipment", result.getRecords().stream().map(Equipment::getId).toList());
     result
@@ -95,8 +315,9 @@ public class EquipmentQueryService {
               e.setCustomFieldLabels(v.customFieldLabels());
               e.setCustomSchemaVersion(v.customSchemaVersion());
             });
+    var relations = repository.pageRelations(auth.tenantId(), result.getRecords());
     return new EquipmentPage(
-        result.getRecords().stream().map(this::view).toList(),
+        result.getRecords().stream().map(row -> view(row, relations)).toList(),
         new EquipmentPage.PageInfo(result.getCurrent(), result.getSize(), result.getTotal()));
   }
 
@@ -142,15 +363,16 @@ public class EquipmentQueryService {
         || !labels.keySet().containsAll(columns)
         || new HashSet<>(columns).size() != columns.size())
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0028");
-    // Validate the full query before committing response headers through the first write.
-    var first = list(request.at(1, 500), true);
+    // 首次写出响应前完成整份查询的校验，避免响应头提交后再报错。
+    var prepared = prepare(request);
+    var first = load(request.at(1, 500), true, prepared);
     writer.print('\ufeff');
     writer.println(
         columns.stream()
             .map(k -> csv(labels.get(k)))
             .collect(java.util.stream.Collectors.joining(",")));
     for (int page = 1; ; page++) {
-      var result = page == 1 ? first : list(request.at(page, 500), true);
+      var result = page == 1 ? first : load(request.at(page, 500), true, prepared);
       for (var row : result.data()) {
         Map<String, Object> view =
             objectMapper.convertValue(
@@ -172,7 +394,7 @@ public class EquipmentQueryService {
 
   private static String csv(String value) {
     String text = Objects.toString(value, "");
-    if (!text.stripLeading().isEmpty() && "=+-@".indexOf(text.stripLeading().charAt(0)) >= 0
+    if (!text.isBlank() && "=+-@".indexOf(text.stripLeading().charAt(0)) >= 0
         || text.startsWith("\t")
         || text.startsWith("\r")) text = "'" + text;
     return "\"" + text.replace("\"", "\"\"") + "\"";
@@ -341,7 +563,8 @@ public class EquipmentQueryService {
     return e;
   }
 
-  private String locationPath(Long id, Long company, boolean required) {
+  private String locationPath(
+      Long id, Long company, boolean required, EquipmentQueryRepository.PageRelations context) {
     if (id == null) {
       if (required)
         throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0109");
@@ -349,7 +572,7 @@ public class EquipmentQueryService {
     }
     var parts = new java.util.ArrayList<String>();
     var visited = new java.util.HashSet<Long>();
-    var node = repository.baseItem(id);
+    var node = baseItem(id, context);
     if (node == null) {
       if (required)
         throw new com.windasoft.eam.common.LocalizedArgumentException(
@@ -369,14 +592,20 @@ public class EquipmentQueryService {
         throw new com.windasoft.eam.common.LocalizedArgumentException(
             "server.equipment.message0033");
       parts.addFirst(node.getName());
-      node = node.getParentId() == null ? null : repository.baseItem(node.getParentId());
+      node = node.getParentId() == null ? null : baseItem(node.getParentId(), context);
     }
     return String.join(" · ", parts);
   }
 
-  private String currentBaseName(Long id, String type, String snapshot) {
+  private com.windasoft.eam.entity.basedata.BaseItem baseItem(
+      Long id, EquipmentQueryRepository.PageRelations context) {
+    return context == null ? repository.baseItem(id) : context.dictionary().get(id);
+  }
+
+  private String currentBaseName(
+      Long id, String type, String snapshot, EquipmentQueryRepository.PageRelations context) {
     if (id == null) return safe(snapshot);
-    var node = repository.baseItem(id);
+    var node = baseItem(id, context);
     return node != null
             && java.util.Objects.equals(node.getTenantId(), auth.tenantId())
             && type.equals(node.getItemType())
@@ -401,18 +630,25 @@ public class EquipmentQueryService {
   }
 
   public EquipmentView view(Equipment e) {
+    return view(e, null);
+  }
+
+  private EquipmentView view(Equipment e, EquipmentQueryRepository.PageRelations context) {
     if (e.getCustomFields() == null) {
       var v = custom.read("equipment", e.getId());
       e.setCustomFields(v.customFields());
       e.setCustomFieldLabels(v.customFieldLabels());
       e.setCustomSchemaVersion(v.customSchemaVersion());
     }
-    var owners = repository.owners(auth.tenantId(), e.getId());
+    var owners =
+        context == null
+            ? repository.owners(auth.tenantId(), e.getId())
+            : context.owners().getOrDefault(e.getId(), List.of());
     return new EquipmentView(
         String.valueOf(e.getId()),
         safe(e.getEquipmentCode()),
         safe(e.getName()),
-        currentBaseName(e.getCategoryId(), "CATEGORY", e.getCategory()),
+        currentBaseName(e.getCategoryId(), "CATEGORY", e.getCategory(), context),
         e.getCategoryId() == null ? "" : String.valueOf(e.getCategoryId()),
         e.getUnitId() == null ? "" : String.valueOf(e.getUnitId()),
         e.getUseStatusId() == null ? "" : String.valueOf(e.getUseStatusId()),
@@ -430,8 +666,8 @@ public class EquipmentQueryService {
         safe(e.getOwnerName()),
         safe(e.getBrand()),
         safe(e.getEquipmentStatus()),
-        currentBaseName(e.getUseStatusId(), "USE_STATUS", e.getUseStatus()),
-        currentBaseName(e.getSourceId(), "SOURCE", e.getSource()),
+        currentBaseName(e.getUseStatusId(), "USE_STATUS", e.getUseStatus(), context),
+        currentBaseName(e.getSourceId(), "SOURCE", e.getSource(), context),
         date(e.getPurchaseDate() != null ? e.getPurchaseDate() : e.getAcquiredAt()),
         e.getAcquiredAmount() == null ? "" : e.getAcquiredAmount().toPlainString(),
         e.getWarrantyUntil() == null ? "" : e.getWarrantyUntil().toString(),
@@ -439,7 +675,7 @@ public class EquipmentQueryService {
         e.getRowVersion() == null ? 0 : e.getRowVersion(),
         safe(e.getAssetNo()),
         safe(e.getTagCode()),
-        currentBaseName(e.getUnitId(), "UNIT", e.getUnitName()),
+        currentBaseName(e.getUnitId(), "UNIT", e.getUnitName(), context),
         safe(e.getSupplier()),
         date(e.getPurchaseDate()),
         date(e.getInServiceDate()),
@@ -450,7 +686,7 @@ public class EquipmentQueryService {
             e.getFunctionLocationId() == null
                 ? e.getFunctionLocation()
                 : java.util.Objects.requireNonNullElse(
-                    locationPath(e.getFunctionLocationId(), e.getCompanyOrgId(), false),
+                    locationPath(e.getFunctionLocationId(), e.getCompanyOrgId(), false, context),
                     safe(e.getFunctionLocation()))),
         safe(e.getSpecialEquipment()),
         safe(e.getMetrologyEquipment()),
@@ -463,8 +699,12 @@ public class EquipmentQueryService {
         safe(e.getImageFileId()),
         json(e.getImagesJson()),
         json(e.getDocumentsJson()),
-        repository.children(auth.tenantId(), e.getId()),
-        repository.bom(auth.tenantId(), e.getId()),
+        context == null
+            ? repository.children(auth.tenantId(), e.getId())
+            : context.children().getOrDefault(e.getId(), List.of()),
+        context == null
+            ? repository.bom(auth.tenantId(), e.getId())
+            : context.bom().getOrDefault(e.getId(), List.of()),
         e.getCustomFields(),
         e.getCustomFieldLabels(),
         e.getCustomSchemaVersion());

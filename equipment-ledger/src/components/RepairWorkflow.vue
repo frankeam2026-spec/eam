@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DepartmentText from './common/DepartmentText.vue';
+import WorkflowApproval from './workflow/WorkflowApproval.vue';
 import { enumLabel } from '../i18n';
 import { tr } from '../i18n';
 
@@ -144,6 +145,7 @@ async function load(): Promise<boolean> {
     if (revision === loadRevision) loading.value = false;
   }
 }
+async function resubmitApproval(){if(!order.value||busy.value)return;busy.value=true;try{await api.request('/repairs/'+id.value+'/approval-submit',{method:'POST',body:JSON.stringify({rowVersion:order.value.rowVersion})});await load();}catch(e){ElMessage.error(e instanceof Error?e.message:String(e));}finally{busy.value=false;}}
 watch(
   [id, () => route.query.taskAction, () => route.query.mode],
   async () => {
@@ -394,6 +396,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
         ><MaintenanceStatus v-if="order" :status="order.status" />
       </div>
       <div v-if="detail && order && pageMode === 'detail'" class="workflow-actions">
+        <ElButton v-if="detail.canResubmit" type="primary" :loading="busy" @click="resubmitApproval">{{tr('workflow.repair.resubmit')}}</ElButton>
         <ElButton
           v-if="detail.canClaim"
           class=""
@@ -504,6 +507,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
             <AppAttachmentList :files="order.attachments" />
           </div>
         </div>
+        <WorkflowApproval v-if="pageMode==='detail'" :rounds="detail.approvalRounds||[]" :applicant-id="order.reporterUserId" @changed="load"/>
         <BusinessFields
           :model-value="order"
           object="repair_report"

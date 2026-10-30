@@ -2,7 +2,12 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.windasoft</groupId><artifactId>equipment-ledger-api</artifactId><version>0.1.0</version>
   <parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId><version>3.5.6</version><relativePath/></parent>
-  <properties><java.version>21</java.version><mybatis-plus.version>3.5.17</mybatis-plus.version></properties>
+  <properties>
+    <java.version>21</java.version>
+    <mybatis-plus.version>3.5.17</mybatis-plus.version>
+    <!-- 修复传递依赖中的 CVE-2025-48924，保留现有 Spring Boot 主版本。 -->
+    <commons-lang3.version>3.18.0</commons-lang3.version>
+  </properties>
   <dependencies>
     <dependency><groupId>org.graalvm.polyglot</groupId><artifactId>js-community</artifactId><version>24.1.2</version><type>pom</type></dependency>
     <dependency><groupId>org.graalvm.polyglot</groupId><artifactId>polyglot</artifactId><version>24.1.2</version></dependency>

@@ -62,7 +62,7 @@ public class HomeService {
       check(TYPES.contains(type), "未知首页区块");
       int width = (int) id(b.getOrDefault("width", 6));
       check(
-          Set.of(4, 6, 12).contains(width) && (!type.equals("stats") ? width != 4 : true),
+          Set.of(4, 6, 12).contains(width) && (type.equals("stats") || width != 4),
           "区块宽度无效");
       int limit = (int) id(b.getOrDefault("limit", 5));
       check(Set.of(5, 10, 20).contains(limit), "展示数量无效");
@@ -170,8 +170,8 @@ public class HomeService {
     return Map.of("success", true);
   }
 
-  @Transactional
-  public void seed() {
+  // 初始化是入口事务的一部分，内部调用不依赖事务代理。
+  private void seed() {
     var names =
         Map.of(
             "reporter",
@@ -244,6 +244,7 @@ public class HomeService {
     }
   }
 
+  @Transactional
   public List<Map<String, Object>> templates() {
     permissions.require("homeTemplate", "查看");
     seed();

@@ -124,7 +124,9 @@ export type RepairRecord = import('./businessConfig').CustomRecord & {
   description: string;
   reporter: string;
   assignee: string;
-  status: '待派工' | '待接单' | '处理中' | '挂起' | '待验收' | '已完成' | '已撤销';
+  approvalGate?: string;
+  reporterUserId?: string;
+  status: '审批中' | '待提交' | '待派工' | '待接单' | '处理中' | '挂起' | '待验收' | '已完成' | '已撤销';
   repairAction: string;
   downtimeMinutes: number;
   reportedAt: string;
@@ -749,6 +751,8 @@ export type WorkflowEvent = {
   details: Record<string, unknown>;
 };
 export type WorkflowDetail = {
+  approvalRounds?: import('./workflow').WorkflowRound[];
+  canResubmit?: boolean;
   categoryId?: string;
   order: RepairRecord;
   model: string;

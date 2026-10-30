@@ -62,6 +62,10 @@ public class WorkflowRuntimeService {
     return repository.binding(auth.tenantId(), company, business) != null;
   }
 
+  public boolean repairApprovalRequired(long company) {
+    return repository.approvalRequired(auth.tenantId(), company);
+  }
+
   @Transactional
   public long start(String business, long businessId, long company, long applicant) {
     var adapter = adapter(business);
@@ -161,7 +165,10 @@ public class WorkflowRuntimeService {
             task.getId(),
             user,
             number(instance, "business_id"),
-            "领料申请待审批 · " + node.name());
+            (instance.get("business_type").equals("repair_report") ? "报修待审批" : "领料申请待审批")
+                + " · "
+                + node.name(),
+            instance.get("business_type").toString());
     }
   }
 

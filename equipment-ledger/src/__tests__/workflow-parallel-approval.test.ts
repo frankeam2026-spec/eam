@@ -1,7 +1,7 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import { ElSelect, ElInput, ElButton } from 'element-plus';
-import RequisitionApproval from '../components/workflow/RequisitionApproval.vue';
+import WorkflowApproval from '../components/workflow/WorkflowApproval.vue';
 import WorkflowBpmnCanvas from '../components/workflow/WorkflowBpmnCanvas.vue';
 import { workflowApi, type WorkflowRound, type WorkflowNode } from '../workflow';
 vi.mock('../stores/auth', () => ({ useAuthStore: () => ({ user: { id: 'user' } }) }));
@@ -39,7 +39,7 @@ describe('parallel approval selection', () => {
         acted_at: null,
       })),
     };
-    const wrapper = mount(RequisitionApproval, {
+    const wrapper = mount(WorkflowApproval, {
       props: { rounds: [round] },
       global: {
         stubs: {
@@ -84,7 +84,7 @@ describe('parallel approval selection', () => {
         acted_at: null,
       })),
     };
-    const wrapper = mount(RequisitionApproval, {
+    const wrapper = mount(WorkflowApproval, {
       props: { rounds: [round] },
       global: { stubs: { AppBusinessTable: { template: '<div/>' }, ElTableColumn: true } },
     });
