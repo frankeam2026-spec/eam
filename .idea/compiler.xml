@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <annotationProcessing>
+      <profile name="Maven default annotation processors profile" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <module name="commons-beanutils (1)" />
+        <module name="commons-io (1)" />
+        <module name="commons-io (2)" />
+        <module name="joda-time" />
+        <module name="commons-io (3)" />
+        <module name="commons-io (4)" />
+        <module name="commons-codec (1)" />
+        <module name="commons-codec (2)" />
+        <module name="commons-collections" />
+        <module name="commons-beanutils" />
+        <module name="commons-io" />
+        <module name="commons-codec" />
+        <module name="commons-logging (1)" />
+        <module name="equipment-ledger-api" />
+        <module name="commons-logging" />
+      </profile>
+    </annotationProcessing>
+  </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="commons-codec (3)" options="-proc:none" />
+      <module name="commons-io (5)" options="-proc:none" />
+      <module name="commons-io (6)" options="-proc:none" />
+      <module name="commons-logging (2)" options="-proc:none" />
+      <module name="equipment-ledger-api" options="-parameters" />
+    </option>
+  </component>
+</project>

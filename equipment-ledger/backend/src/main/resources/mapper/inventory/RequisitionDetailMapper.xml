@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.windasoft.eam.repository.inventory.RequisitionDetailMapper">
+  <select id="lines" resultType="com.windasoft.eam.dto.inventory.RequisitionDetail$Line">
+    SELECT l.id,l.tenant_id,l.requisition_id,l.line_no,l.material_id,l.quantity,l.issued_quantity,
+           m.code material_code,m.name material_name,m.model material_model,m.unit,
+           COALESCE((SELECT SUM(r.remaining_quantity) FROM inv_reservation r
+             WHERE r.tenant_id=l.tenant_id AND r.requisition_line_id=l.id),0) reserved_quantity
+    FROM inv_requisition_line l JOIN inv_material m ON m.tenant_id=l.tenant_id AND m.id=l.material_id
+    WHERE l.tenant_id=#{tenant} AND l.requisition_id=#{id} ORDER BY l.line_no,l.id
+  </select>
+  <select id="reservations" resultType="com.windasoft.eam.dto.inventory.RequisitionDetail$Reservation">
+    SELECT r.id,r.tenant_id,r.requisition_id,r.requisition_line_id,r.balance_id,r.quantity,
+           r.remaining_quantity,r.created_at,m.name material_name,b.name bin_name,pc.code batch_code
+    FROM inv_reservation r JOIN inv_balance s ON s.tenant_id=r.tenant_id AND s.id=r.balance_id
+    JOIN inv_material m ON m.tenant_id=s.tenant_id AND m.id=s.material_id
+    JOIN inv_bin b ON b.tenant_id=s.tenant_id AND b.id=s.bin_id
+    LEFT JOIN inv_batch pc ON pc.tenant_id=s.tenant_id AND pc.id=s.batch_id
+    WHERE r.tenant_id=#{tenant} AND r.requisition_id=#{id} AND r.remaining_quantity&gt;0
+    ORDER BY r.created_at,r.id
+  </select>
+  <select id="issues" resultType="com.windasoft.eam.dto.inventory.RequisitionDetail$Issue">
+    SELECT i.id,i.tenant_id,i.code,i.requisition_id,i.company_id,i.warehouse_id,i.confirmation_key,
+           i.preview_fingerprint,i.total_amount,i.actor_id,i.actor_name,i.created_at,i.reversed,
+           i.group_id,i.status,i.source_kind,i.row_version,i.deleted,i.confirmed_at,i.purpose,
+           i.remark,i.department_id,i.recipient_id,i.recipient_name,i.task_kind,i.task_id,
+           i.legacy_fingerprint,g.code group_code
+    FROM inv_issue i LEFT JOIN inv_issue_group g ON g.tenant_id=i.tenant_id AND g.id=i.group_id
+    WHERE i.tenant_id=#{tenant} AND (i.requisition_id=#{id} OR EXISTS(
+      SELECT 1 FROM inv_issue_allocation a JOIN inv_requisition_line l
+        ON l.tenant_id=a.tenant_id AND l.id=a.requisition_line_id
+      WHERE a.tenant_id=i.tenant_id AND a.issue_id=i.id AND l.requisition_id=#{id}))
+    ORDER BY i.created_at,i.id
+  </select>
+  <select id="allocations" resultType="com.windasoft.eam.dto.inventory.RequisitionDetail$Allocation">
+    SELECT a.id,a.tenant_id,a.issue_id,a.requisition_line_id,a.reservation_id,a.balance_id,
+           a.cost_layer_id,a.quantity,a.amount,a.unit_cost,a.returned_quantity,a.returned_amount,
+           a.used_quantity,a.outbound_line_id,m.name material_name,b.name bin_name,pc.code batch_code
+    FROM inv_issue_allocation a JOIN inv_requisition_line l
+      ON l.tenant_id=a.tenant_id AND l.id=a.requisition_line_id
+    JOIN inv_balance s ON s.tenant_id=a.tenant_id AND s.id=a.balance_id
+    JOIN inv_material m ON m.tenant_id=s.tenant_id AND m.id=s.material_id
+    JOIN inv_bin b ON b.tenant_id=s.tenant_id AND b.id=s.bin_id
+    LEFT JOIN inv_batch pc ON pc.tenant_id=s.tenant_id AND pc.id=s.batch_id
+    WHERE a.tenant_id=#{tenant} AND l.requisition_id=#{id} ORDER BY a.id
+  </select>
+  <select id="events" resultType="com.windasoft.eam.dto.inventory.RequisitionDetail$Event">
+    SELECT action,actor_name,created_at,JSON_UNQUOTE(JSON_EXTRACT(details_json,'$.reason')) reason
+    FROM inv_document_event WHERE tenant_id=#{tenant} AND document_kind='领料' AND document_id=#{id}
+    ORDER BY created_at,id
+  </select>
+</mapper>

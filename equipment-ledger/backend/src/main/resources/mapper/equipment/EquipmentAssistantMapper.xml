@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.windasoft.eam.repository.equipment.EquipmentAssistantMapper">
+  <!-- Wrapper及投影由设备Repository按白名单构造，用户值通过MyBatis参数绑定。 -->
+  <sql id="projection">
+    SELECT /*+ MAX_EXECUTION_TIME(8000) */ ${ew.sqlSelect}
+    FROM eam_equipment ${ew.customSqlSegment}
+  </sql>
+  <select id="count" resultType="long" timeout="8">
+    SELECT /*+ MAX_EXECUTION_TIME(8000) */ COUNT(*)
+    FROM eam_equipment ${ew.customSqlSegment}
+  </select>
+  <select id="rows" resultType="java.util.LinkedHashMap" timeout="8">
+    <include refid="projection"/>
+  </select>
+  <select id="page" resultType="java.util.LinkedHashMap" timeout="8">
+    <include refid="projection"/>
+  </select>
+</mapper>

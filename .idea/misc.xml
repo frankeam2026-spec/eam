@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ExternalStorageConfigurationManager" enabled="true" />
+  <component name="MavenProjectsManager">
+    <option name="originalFiles">
+      <list>
+        <option value="$PROJECT_DIR$/equipment-ledger/backend/pom.xml" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/joda-time/joda-time/2.14.0/joda-time-2.14.0.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-io/commons-io/2.5/commons-io-2.5.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-io/commons-io/2.11.0/commons-io-2.11.0.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-io/commons-io/2.15.1/commons-io-2.15.1.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-io/commons-io/2.16.1/commons-io-2.16.1.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-io/commons-io/2.17.0/commons-io-2.17.0.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-io/commons-io/2.20.0/commons-io-2.20.0.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-io/commons-io/2.21.0/commons-io-2.21.0.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-codec/commons-codec/1.16.1/commons-codec-1.16.1.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-codec/commons-codec/1.17.0/commons-codec-1.17.0.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-codec/commons-codec/1.17.1/commons-codec-1.17.1.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-codec/commons-codec/1.18.0/commons-codec-1.18.0.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-logging/commons-logging/1.2/commons-logging-1.2.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-logging/commons-logging/1.1.1/commons-logging-1.1.1.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-logging/commons-logging/1.3.5/commons-logging-1.3.5.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-beanutils/commons-beanutils/1.8.3/commons-beanutils-1.8.3.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-beanutils/commons-beanutils/1.9.4/commons-beanutils-1.9.4.pom" />
+        <option value="$PROJECT_DIR$/.local-runtime/m2/commons-collections/commons-collections/3.2.2/commons-collections-3.2.2.pom" />
+      </list>
+    </option>
+  </component>
+  <component name="ProjectRootManager" version="2" languageLevel="JDK_27" project-jdk-name="ms-21" project-jdk-type="JavaSDK">
+    <output url="file://$PROJECT_DIR$/out" />
+  </component>
+</project>
