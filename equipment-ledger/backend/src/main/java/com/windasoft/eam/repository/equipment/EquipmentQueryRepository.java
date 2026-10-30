@@ -52,9 +52,13 @@ public class EquipmentQueryRepository {
       RepairOrderMapper repairs,
       RepairWorkflowMapper repairWorkflow,
       JdbcTemplate db,
-      ObjectMapper json, EquipmentChildRepository childRelations, EquipmentBomRepository bomRelations, EquipmentRelationLegacyRepository legacyRelations) {
-    this.legacyRelations=legacyRelations;
-    this.childRelations=childRelations;this.bomRelations=bomRelations;
+      ObjectMapper json,
+      EquipmentChildRepository childRelations,
+      EquipmentBomRepository bomRelations,
+      EquipmentRelationLegacyRepository legacyRelations) {
+    this.legacyRelations = legacyRelations;
+    this.childRelations = childRelations;
+    this.bomRelations = bomRelations;
     this.equipment = equipment;
     this.media = media;
     this.baseItems = baseItems;
@@ -235,11 +239,13 @@ public class EquipmentQueryRepository {
             .add(
                 new EquipmentOwnerView(
                     row.get("user_id").toString(), (String) row.get("owner_name")));
-      group(children, childRelations.viewRows(tenant,batch));
-      group(bom, bomRelations.viewRows(tenant,batch));
-      for (var row:legacyRelations.list(tenant,batch)) {
-        var target=row.getKind().equals("child")?children:bom;
-        target.computeIfAbsent(row.getEquipmentId(),key->new ArrayList<>()).add(legacyRelations.view(row));
+      group(children, childRelations.viewRows(tenant, batch));
+      group(bom, bomRelations.viewRows(tenant, batch));
+      for (var row : legacyRelations.list(tenant, batch)) {
+        var target = row.getKind().equals("child") ? children : bom;
+        target
+            .computeIfAbsent(row.getEquipmentId(), key -> new ArrayList<>())
+            .add(legacyRelations.view(row));
       }
     }
     return new PageRelations(dictionary, owners, children, bom);
@@ -253,8 +259,6 @@ public class EquipmentQueryRepository {
       target.computeIfAbsent(id, key -> new ArrayList<>()).add(value);
     }
   }
-
-  
 
   public List<EquipmentOwnerView> owners(long tenant, Long id) {
     if (id == null) return List.of();
@@ -296,11 +300,23 @@ public class EquipmentQueryRepository {
     return result;
   }
 
-  public List<Map<String,Object>> children(long tenant,long id) { var grouped=new HashMap<Long,List<Map<String,Object>>>(); group(grouped,childRelations.viewRows(tenant,List.of(id))); var result=new ArrayList<>(grouped.getOrDefault(id,List.of())); appendLegacy(result,tenant,id,"child");return result; }
+  public List<Map<String, Object>> children(long tenant, long id) {
+    var grouped = new HashMap<Long, List<Map<String, Object>>>();
+    group(grouped, childRelations.viewRows(tenant, List.of(id)));
+    var result = new ArrayList<>(grouped.getOrDefault(id, List.of()));
+    appendLegacy(result, tenant, id, "child");
+    return result;
+  }
 
-  public List<Map<String,Object>> bom(long tenant,long id) { var grouped=new HashMap<Long,List<Map<String,Object>>>(); group(grouped,bomRelations.viewRows(tenant,List.of(id))); var result=new ArrayList<>(grouped.getOrDefault(id,List.of())); appendLegacy(result,tenant,id,"bom");return result; }
+  public List<Map<String, Object>> bom(long tenant, long id) {
+    var grouped = new HashMap<Long, List<Map<String, Object>>>();
+    group(grouped, bomRelations.viewRows(tenant, List.of(id)));
+    var result = new ArrayList<>(grouped.getOrDefault(id, List.of()));
+    appendLegacy(result, tenant, id, "bom");
+    return result;
+  }
 
-  private void appendLegacy(List<Map<String,Object>> result,long tenant,long id,String kind) {
-    for(var row:legacyRelations.list(tenant,id,kind)) result.add(legacyRelations.view(row));
+  private void appendLegacy(List<Map<String, Object>> result, long tenant, long id, String kind) {
+    for (var row : legacyRelations.list(tenant, id, kind)) result.add(legacyRelations.view(row));
   }
 }
