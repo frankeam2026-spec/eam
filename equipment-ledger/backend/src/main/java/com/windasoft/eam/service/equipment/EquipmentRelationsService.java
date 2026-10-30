@@ -6,6 +6,7 @@ import com.windasoft.eam.dto.equipment.EquipmentBomMaterialQuery;
 import com.windasoft.eam.dto.equipment.EquipmentBomMaterials;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.equipment.EquipmentRelationsRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.inventory.InventoryMutex;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -20,18 +21,21 @@ public class EquipmentRelationsService {
   final PermissionService permissions;
   final ObjectMapper json;
   final InventoryMutex inventoryMutex;
+  private final OrgUnitRepository organizations;
 
   public EquipmentRelationsService(
       EquipmentRelationsRepository repository,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json,
-      InventoryMutex inventoryMutex) {
+      InventoryMutex inventoryMutex,
+      OrgUnitRepository organizations) {
     this.repository = repository;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
     this.inventoryMutex = inventoryMutex;
+    this.organizations = organizations;
   }
 
   public void enter(Collection<Long> companies) {
@@ -42,10 +46,10 @@ public class EquipmentRelationsService {
         .sorted()
         .forEach(
             id -> {
-              var rows = repository.lockCompany(auth.tenantId(), id);
-              if (rows.isEmpty())
+              if (!organizations.lockExisting(auth.tenantId(), id)) {
                 throw new com.windasoft.eam.common.LocalizedArgumentException(
                     "server.equipment.message0010");
+              }
             });
   }
 

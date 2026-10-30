@@ -1,6 +1,7 @@
 package com.windasoft.eam.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -13,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.controller.equipment.EquipmentSelectionController;
 import com.windasoft.eam.entity.inventory.Material;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.util.Base64;
@@ -67,6 +69,8 @@ class EquipmentBomMaterialsMySqlIT {
   @Autowired JdbcTemplate db;
   @Autowired ObjectMapper json;
   @Autowired EquipmentSelectionController controller;
+  @Autowired OrgUnitRepository organizations;
+  @Autowired javax.sql.DataSource dataSource;
   MockMvc mvc;
 
   @BeforeEach
@@ -117,6 +121,45 @@ class EquipmentBomMaterialsMySqlIT {
                 String.class,
                 "inv_material"));
     assertEquals(actual, mapped);
+  }
+
+  @Test
+  void companyLockPreservesTenantDeletionAndExistingStatusRules() {
+    for (int i = 0; i < 3; i++) {
+      db.update(
+          "INSERT INTO eam_org_unit(id,tenant_id,code,name,org_type,status,deleted)"
+              + " VALUES(?,?,?,?,?,?,?)",
+          992970001L + i,
+          i == 1 ? TENANT + 1 : TENANT,
+          "QA-GOV-ORG-" + i,
+          "测试组织",
+          "部门",
+          0,
+          i == 2 ? 1 : 0);
+    }
+    assertEquals(true, organizations.lockExisting(TENANT, 992970001L));
+    assertEquals(false, organizations.lockExisting(TENANT, 992970002L));
+    assertEquals(false, organizations.lockExisting(TENANT, 992970003L));
+    assertEquals(false, organizations.lockExisting(TENANT, 992970004L));
+  }
+
+  @Test
+  void companyLockActuallyHoldsTheRowUntilTransactionEnds() throws Exception {
+    // 使用已提交的隔离库组织，避免未提交INSERT本身造成行锁，掩盖FOR UPDATE缺失。
+    assertEquals(true, organizations.lockExisting(10001L, 71002L));
+    try (var other = dataSource.getConnection()) {
+      other.setAutoCommit(false);
+      try (var statement =
+          other.prepareStatement(
+              "SELECT id FROM eam_org_unit WHERE tenant_id=? AND id=? FOR UPDATE NOWAIT")) {
+        statement.setLong(1, 10001L);
+        statement.setLong(2, 71002L);
+        var error = assertThrows(java.sql.SQLException.class, statement::executeQuery);
+        assertEquals(3572, error.getErrorCode());
+      } finally {
+        other.rollback();
+      }
+    }
   }
 
   @Test

@@ -67,7 +67,7 @@ class EquipmentRelationsCommandTest {
   @Test void emptyBomCannotClearChildrenOrTheirLegacyRows() {
     var repo = mock(EquipmentRelationsRepository.class);
     when(repo.legacy(anyLong(), anyLong(), anyString())).thenReturn(java.util.List.of());
-    var service = new EquipmentRelationsService(repo, auth, permissions, json, mock(InventoryMutex.class));
+    var service = new EquipmentRelationsService(repo, auth, permissions, json, mock(InventoryMutex.class), mock(com.windasoft.eam.repository.system.OrgUnitRepository.class));
     var parent = new Equipment(); parent.setId(901L);
     service.saveBom(parent, json.createArrayNode());
     verify(repo).clearBom(anyLong(), eq(901L));
@@ -79,7 +79,7 @@ class EquipmentRelationsCommandTest {
   @Test void emptyChildrenCannotClearBomOrItsLegacyRows() {
     var repo = mock(EquipmentRelationsRepository.class);
     when(repo.legacy(anyLong(), anyLong(), anyString())).thenReturn(java.util.List.of());
-    var service = new EquipmentRelationsService(repo, auth, permissions, json, mock(InventoryMutex.class));
+    var service = new EquipmentRelationsService(repo, auth, permissions, json, mock(InventoryMutex.class), mock(com.windasoft.eam.repository.system.OrgUnitRepository.class));
     var parent = new Equipment(); parent.setId(901L);
     service.saveChildren(parent, json.createArrayNode());
     verify(repo).clearChildren(anyLong(), eq(901L));

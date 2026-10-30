@@ -40,13 +40,6 @@ public class EquipmentRelationsRepository {
                 .eq(Equipment::getId, id)));
   }
 
-  public List<Map<String, Object>> lockCompany(long tenant, long id) {
-    return db.queryForList(
-        "SELECT id FROM eam_org_unit WHERE tenant_id=? AND id=? AND deleted=0 FOR UPDATE",
-        tenant,
-        id);
-  }
-
   public int relationshipCount(long tenant, long id) {
     return db.queryForObject(
         "SELECT COUNT(*) FROM eam_equipment_child WHERE tenant_id=? AND (parent_id=? OR"
