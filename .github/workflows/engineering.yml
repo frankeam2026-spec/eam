@@ -60,6 +60,7 @@ jobs:
       EAM_ENGINEERING_DB_URL: jdbc:mysql://127.0.0.1:3306/eam_engineering_test?connectionTimeZone=UTC
       EAM_ENGINEERING_DB_USER: eam
       EAM_ENGINEERING_DB_PASSWORD: engineering-test-only
+      EAM_EQUIPMENT_BOM_TEST_URL: jdbc:mysql://127.0.0.1:3306/eam_engineering_test?connectionTimeZone=UTC
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -67,7 +68,7 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-      - run: mvn -B -f equipment-ledger/backend/pom.xml '-Dtest=EngineeringQueryMySqlIT,SelectorMySqlIT' test
+      - run: mvn -B -f equipment-ledger/backend/pom.xml '-Dtest=EngineeringQueryMySqlIT,SelectorMySqlIT,EquipmentBomMaterialsMySqlIT' test
       - uses: actions/upload-artifact@v4
         if: always()
         with:

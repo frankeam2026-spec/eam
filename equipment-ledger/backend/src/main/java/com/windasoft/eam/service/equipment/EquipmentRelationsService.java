@@ -2,6 +2,8 @@ package com.windasoft.eam.service.equipment;
 
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.*;
+import com.windasoft.eam.dto.equipment.EquipmentBomMaterialQuery;
+import com.windasoft.eam.dto.equipment.EquipmentBomMaterials;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.equipment.EquipmentRelationsRepository;
 import com.windasoft.eam.service.inventory.InventoryMutex;
@@ -142,22 +144,19 @@ public class EquipmentRelationsService {
             "total", result.getTotal(), "number", result.getCurrent(), "size", result.getSize()));
   }
 
-  public Object materials(String q, int page, int size) {
-    if (!permissions.allowed("equipment", "新增")) permissions.require("equipment", "编辑");
-    long total = repository.materialTotal(auth.tenantId(), q);
-    var rows = repository.materials(auth.tenantId(), q, page, size);
-    return Map.of(
-        "data",
+  public EquipmentBomMaterials materials(EquipmentBomMaterialQuery query) {
+    if (!permissions.allowed("equipment", "新增")) {
+      permissions.require("equipment", "编辑");
+    }
+    long total = repository.materialTotal(auth.tenantId(), query);
+    var rows = repository.materials(auth.tenantId(), query);
+    return new EquipmentBomMaterials(
         rows.stream()
             .map(
-                m -> {
-                  m.put("id", m.get("id").toString());
-                  m.put("enabled", true);
-                  return m;
-                })
+                m -> new EquipmentBomMaterials.Material(
+                    Long.toString(m.id()), m.code(), m.name(), m.model(), m.unit(), m.category(), true))
             .toList(),
-        "page",
-        Map.of("total", total));
+        new EquipmentBomMaterials.Page(total));
   }
 
   List<JsonNode> nodes(JsonNode data) {

@@ -2,6 +2,7 @@ package com.windasoft.eam.repository.equipment;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.windasoft.eam.dto.equipment.EquipmentBomMaterialQuery;
 import com.windasoft.eam.entity.equipment.Equipment;
 import java.util.*;
 import java.util.function.Consumer;
@@ -177,22 +178,28 @@ public class EquipmentRelationsRepository {
     return new Object[] {tenant, "%" + q + "%", "%" + q + "%", "%" + q + "%", "%" + q + "%"};
   }
 
-  public long materialTotal(long tenant, String q) {
+  public long materialTotal(long tenant, EquipmentBomMaterialQuery query) {
     return db.queryForObject(
         "SELECT COUNT(*) FROM inv_material WHERE" + materialWhere(),
         Long.class,
-        materialArgs(tenant, q));
+        materialArgs(tenant, query.keyword()));
   }
 
-  public List<Map<String, Object>> materials(long tenant, String q, int page, int size) {
-    int n = Math.max(1, Math.min(100, size));
-    var args = new ArrayList<Object>(Arrays.asList(materialArgs(tenant, q)));
-    args.add(n);
-    args.add((Math.max(1, page) - 1) * n);
-    return db.queryForList(
+  /** 只读投影在Service转换为协议类型，不直接作为HTTP响应。 */
+  public record BomMaterial(
+      long id, String code, String name, String model, String unit, String category) {}
+
+  public List<BomMaterial> materials(long tenant, EquipmentBomMaterialQuery query) {
+    var args = new ArrayList<Object>(Arrays.asList(materialArgs(tenant, query.keyword())));
+    args.add(query.size());
+    args.add(query.offset());
+    return db.query(
         "SELECT id,code,name,model,unit,category FROM inv_material WHERE"
             + materialWhere()
             + " ORDER BY code,id LIMIT ? OFFSET ?",
+        (row, index) -> new BomMaterial(
+            row.getLong("id"), row.getString("code"), row.getString("name"),
+            row.getString("model"), row.getString("unit"), row.getString("category")),
         args.toArray());
   }
 }

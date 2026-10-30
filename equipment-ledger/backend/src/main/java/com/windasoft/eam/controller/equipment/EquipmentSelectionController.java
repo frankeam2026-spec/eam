@@ -1,5 +1,7 @@
 package com.windasoft.eam.controller.equipment;
 
+import com.windasoft.eam.dto.equipment.EquipmentBomMaterialQuery;
+import com.windasoft.eam.dto.equipment.EquipmentBomMaterials;
 import com.windasoft.eam.service.equipment.EquipmentRelationsService;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,10 +25,10 @@ public class EquipmentSelectionController {
   }
 
   @GetMapping("/bom-materials")
-  public Object bomMaterials(
+  public EquipmentBomMaterials bomMaterials(
       @RequestParam(defaultValue = "") String q,
       @RequestParam(defaultValue = "1") int page,
       @RequestParam(defaultValue = "20") int size) {
-    return relations.materials(q, page, size);
+    return relations.materials(new EquipmentBomMaterialQuery(q, page, size));
   }
 }
