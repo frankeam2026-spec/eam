@@ -8,9 +8,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.controller.equipment.EquipmentSelectionController;
+import com.windasoft.eam.entity.inventory.Material;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.util.Base64;
@@ -97,6 +99,24 @@ class EquipmentBomMaterialsMySqlIT {
             .getFirst()
             .get("Value")
             .toString());
+  }
+
+  @Test
+  void materialEntityCoversActualTableColumns() {
+    var table = TableInfoHelper.getTableInfo(Material.class);
+    var mapped =
+        table.getFieldList().stream()
+            .map(field -> field.getColumn())
+            .collect(java.util.stream.Collectors.toSet());
+    mapped.add(table.getKeyColumn());
+    var actual =
+        new java.util.HashSet<>(
+            db.queryForList(
+                "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()"
+                    + " AND TABLE_NAME=?",
+                String.class,
+                "inv_material"));
+    assertEquals(actual, mapped);
   }
 
   @Test

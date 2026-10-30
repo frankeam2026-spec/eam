@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.windasoft.eam.dto.equipment.EquipmentBomMaterialQuery;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.entity.inventory.Material;
+import com.windasoft.eam.repository.inventory.MaterialRepository;
 import java.util.*;
 import java.util.function.Consumer;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -15,16 +17,19 @@ public class EquipmentRelationsRepository {
   private final EquipmentMapper equipment;
   private final EquipmentMediaRepository media;
   private final EquipmentQueryRepository queries;
+  private final MaterialRepository materials;
 
   public EquipmentRelationsRepository(
       JdbcTemplate db,
       EquipmentMapper equipment,
       EquipmentMediaRepository media,
-      EquipmentQueryRepository queries) {
+      EquipmentQueryRepository queries,
+      MaterialRepository materials) {
     this.db = db;
     this.equipment = equipment;
     this.media = media;
     this.queries = queries;
+    this.materials = materials;
   }
 
   public Equipment find(long tenant, long id) {
@@ -169,37 +174,11 @@ public class EquipmentRelationsRepository {
     return equipment.selectPage(new Page<>(Math.max(1, page), Math.max(1, Math.min(100, size))), q);
   }
 
-  private String materialWhere() {
-    return " tenant_id=? AND enabled=1 AND (code LIKE ? OR name LIKE ? OR model LIKE ? OR category"
-        + " LIKE ?)";
-  }
-
-  private Object[] materialArgs(long tenant, String q) {
-    return new Object[] {tenant, "%" + q + "%", "%" + q + "%", "%" + q + "%", "%" + q + "%"};
-  }
-
   public long materialTotal(long tenant, EquipmentBomMaterialQuery query) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM inv_material WHERE" + materialWhere(),
-        Long.class,
-        materialArgs(tenant, query.keyword()));
+    return materials.countEnabledCandidates(tenant, query.keyword());
   }
 
-  /** 只读投影在Service转换为协议类型，不直接作为HTTP响应。 */
-  public record BomMaterial(
-      long id, String code, String name, String model, String unit, String category) {}
-
-  public List<BomMaterial> materials(long tenant, EquipmentBomMaterialQuery query) {
-    var args = new ArrayList<Object>(Arrays.asList(materialArgs(tenant, query.keyword())));
-    args.add(query.size());
-    args.add(query.offset());
-    return db.query(
-        "SELECT id,code,name,model,unit,category FROM inv_material WHERE"
-            + materialWhere()
-            + " ORDER BY code,id LIMIT ? OFFSET ?",
-        (row, index) -> new BomMaterial(
-            row.getLong("id"), row.getString("code"), row.getString("name"),
-            row.getString("model"), row.getString("unit"), row.getString("category")),
-        args.toArray());
+  public List<Material> materials(long tenant, EquipmentBomMaterialQuery query) {
+    return materials.enabledCandidates(tenant, query.keyword(), query.page(), query.size());
   }
 }

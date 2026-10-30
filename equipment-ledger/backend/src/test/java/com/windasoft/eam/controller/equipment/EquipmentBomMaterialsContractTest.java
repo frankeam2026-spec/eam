@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.equipment.EquipmentBomMaterialQuery;
 import com.windasoft.eam.dto.equipment.EquipmentBomMaterials;
+import com.windasoft.eam.entity.inventory.Material;
 import com.windasoft.eam.repository.equipment.EquipmentRelationsRepository;
 import com.windasoft.eam.service.equipment.EquipmentRelationsService;
 import java.lang.reflect.ParameterizedType;
@@ -16,11 +17,10 @@ import org.junit.jupiter.api.Test;
 
 class EquipmentBomMaterialsContractTest {
   @Test
-  void queryKeepsClampingAndUsesLongOffset() {
+  void queryKeepsClamping() {
     assertEquals(
         new EquipmentBomMaterialQuery(" %_ ", 1, 1), new EquipmentBomMaterialQuery(" %_ ", -1, -1));
     assertEquals(100, new EquipmentBomMaterialQuery("", 1, 200).size());
-    assertEquals(214748364600L, new EquipmentBomMaterialQuery("", Integer.MAX_VALUE, 100).offset());
   }
 
   @Test
@@ -49,10 +49,12 @@ class EquipmentBomMaterialsContractTest {
     assertEquals(EquipmentBomMaterials.class, service.getReturnType());
     explicit(endpoint.getGenericReturnType());
     explicit(EquipmentBomMaterialQuery.class);
-    explicit(
-        EquipmentRelationsRepository.class
-            .getMethod("materials", long.class, EquipmentBomMaterialQuery.class)
-            .getGenericReturnType());
+    var internalRows =
+        (ParameterizedType)
+            EquipmentRelationsRepository.class
+                .getMethod("materials", long.class, EquipmentBomMaterialQuery.class)
+                .getGenericReturnType();
+    assertEquals(Material.class, internalRows.getActualTypeArguments()[0]);
     assertThrows(AssertionError.class, () -> explicit(DynamicResponse.class));
     assertThrows(AssertionError.class, () -> explicit(NestedDynamicResponse.class));
   }

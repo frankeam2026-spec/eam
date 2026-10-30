@@ -300,4 +300,4 @@ GET `/api/v1/equipment/bom-materials`的q/page/size参数、默认值及成功20
 
 查看条件保持当前租户、enabled=1、设备新增或编辑权限；四列LIKE通配符语义及code/id排序不变。原page收敛至至少1、size收敛至1～100的兼容行为保留；偏移以long计算，int范围内的大页码返回空页，越出int或非数字仍由原绑定错误返回400。只查询物料，不变更库存或关联写入。
 
-Controller/Service使用明确查询及响应类型，Repository使用内部只读投影并由Service转换。回归证据与范围见[设备台账专项治理第一批](../plans/设备台账专项治理-实施记录-20261030.md)。
+Controller/Service使用明确查询及响应类型，设备关联Repository复用物料Repository的MyBatis-Plus查询，Service将内部物料实体转换为协议DTO。回归证据与范围见[设备台账专项治理第一批](../plans/设备台账专项治理-实施记录-20261030.md)。

@@ -154,7 +154,8 @@ public class EquipmentRelationsService {
         rows.stream()
             .map(
                 m -> new EquipmentBomMaterials.Material(
-                    Long.toString(m.id()), m.code(), m.name(), m.model(), m.unit(), m.category(), true))
+                    Long.toString(m.getId()), m.getCode(), m.getName(), m.getModel(),
+                    m.getUnit(), m.getCategory(), true))
             .toList(),
         new EquipmentBomMaterials.Page(total));
   }
