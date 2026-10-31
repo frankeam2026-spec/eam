@@ -9,7 +9,6 @@ import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.basedata.BaseItemMapper;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
-import com.windasoft.eam.repository.repair.RepairWorkflowMapper;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -18,7 +17,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** 台账只读数据访问，不授予权限，也不写入业务状态。 */
@@ -31,8 +29,6 @@ public class EquipmentQueryRepository {
   private final EquipmentMediaRepository media;
   private final BaseItemMapper baseItems;
   private final RepairOrderMapper repairs;
-  private final RepairWorkflowMapper repairWorkflow;
-  private final JdbcTemplate db;
   private final ObjectMapper json;
 
 
@@ -41,8 +37,6 @@ public class EquipmentQueryRepository {
       EquipmentMediaRepository media,
       BaseItemMapper baseItems,
       RepairOrderMapper repairs,
-      RepairWorkflowMapper repairWorkflow,
-      JdbcTemplate db,
       ObjectMapper json,
       EquipmentChildRepository childRelations,
       EquipmentBomRepository bomRelations,
@@ -54,8 +48,6 @@ public class EquipmentQueryRepository {
     this.media = media;
     this.baseItems = baseItems;
     this.repairs = repairs;
-    this.repairWorkflow = repairWorkflow;
-    this.db = db;
     this.json = json;
   }
 
@@ -203,19 +195,6 @@ public class EquipmentQueryRepository {
             .eq(RepairOrder::getTenantId, tenant)
             .eq(RepairOrder::getEquipmentCode, code)
             .orderByDesc(RepairOrder::getReportedAt));
-  }
-
-  public List<Map<String, Object>> installedSpares(long tenant, long id) {
-    var result = new ArrayList<Map<String, Object>>(repairWorkflow.installed(tenant, id));
-    result.addAll(
-        db.queryForList(
-            "SELECT CAST(u.id AS CHAR)"
-                + " id,m.code,m.name,m.model,u.quantity,u.status,DATE_FORMAT(u.created_at,'%Y-%m-%d"
-                + " %H:%i') installedAt FROM inv_usage u JOIN inv_material m ON"
-                + " m.tenant_id=u.tenant_id AND m.id=u.material_id WHERE u.tenant_id=? AND"
-                + " u.equipment_id=? AND u.status='在用' ORDER BY u.created_at DESC,u.id DESC",
-            tenant, id));
-    return result;
   }
 
   public List<Map<String, Object>> children(long tenant, long id) {
