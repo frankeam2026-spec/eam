@@ -1572,6 +1572,29 @@ class EngineeringQueryMySqlIT {
                                 inspectionStandard.get("id"),
                                 "itemId",
                                 "qa-ins-item")))));
+            inspectionPlan.put(
+                "arrangements",
+                List.of(
+                    Map.of(
+                        "name",
+                        "全天安排",
+                        "frequency",
+                        "shift",
+                        "slots",
+                        List.of(),
+                        "personMode",
+                        "specified",
+                        "owners",
+                        List.of("73001"),
+                        "equipmentIds",
+                        List.of("970000001"),
+                        "projectRefs",
+                        List.of(
+                            Map.of(
+                                "standardId",
+                                inspectionStandard.get("id"),
+                                "itemId",
+                                "qa-ins-item")))));
             inspectionPlan.put("customFields", Map.of());
             inspectionPlan.put("customSchemaVersion", 0);
             var created = inspectionDefinitions.save(kind, null, mutable(inspectionPlan));
