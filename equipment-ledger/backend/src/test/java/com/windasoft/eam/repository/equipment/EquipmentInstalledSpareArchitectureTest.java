@@ -26,6 +26,22 @@ class EquipmentInstalledSpareArchitectureTest {
   }
 
   @Test
+  void experienceRepositoryDoesNotDelegateBackToEquipmentQueryRepository() {
+    var fieldTypes =
+        Arrays.stream(com.windasoft.eam.repository.experience.EquipmentExperienceRepository.class
+                .getDeclaredFields())
+            .filter(field -> !Modifier.isStatic(field.getModifiers()))
+            .map(java.lang.reflect.Field::getType)
+            .toList();
+    assertFalse(fieldTypes.contains(EquipmentQueryRepository.class));
+    assertFalse(
+        Arrays.stream(
+                com.windasoft.eam.repository.experience.EquipmentExperienceRepository.class
+                    .getDeclaredMethods())
+            .anyMatch(method -> method.getName().equals("listInstalled")));
+  }
+
+  @Test
   void installedSpareResponseIsTypedRatherThanMapBased() throws Exception {
     var field =
         com.windasoft.eam.dto.equipment.EquipmentHistoryView.class
