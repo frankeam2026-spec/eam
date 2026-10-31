@@ -1,12 +1,10 @@
 package com.windasoft.eam.repository.equipment;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.windasoft.eam.entity.equipment.EquipmentOwner;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 import org.springframework.asm.ClassReader;
