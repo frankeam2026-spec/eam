@@ -6,9 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery;
 import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
-import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.basedata.BaseItemMapper;
-import com.windasoft.eam.repository.repair.RepairOrderMapper;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -28,7 +26,6 @@ public class EquipmentQueryRepository {
   private final EquipmentMapper equipment;
   private final EquipmentMediaRepository media;
   private final BaseItemMapper baseItems;
-  private final RepairOrderMapper repairs;
   private final ObjectMapper json;
 
 
@@ -36,7 +33,6 @@ public class EquipmentQueryRepository {
       EquipmentMapper equipment,
       EquipmentMediaRepository media,
       BaseItemMapper baseItems,
-      RepairOrderMapper repairs,
       ObjectMapper json,
       EquipmentChildRepository childRelations,
       EquipmentBomRepository bomRelations,
@@ -47,7 +43,6 @@ public class EquipmentQueryRepository {
     this.equipment = equipment;
     this.media = media;
     this.baseItems = baseItems;
-    this.repairs = repairs;
     this.json = json;
   }
 
@@ -188,14 +183,6 @@ public class EquipmentQueryRepository {
     }
   }
 
-
-  public List<RepairOrder> repairs(long tenant, String code) {
-    return repairs.selectList(
-        new LambdaQueryWrapper<RepairOrder>()
-            .eq(RepairOrder::getTenantId, tenant)
-            .eq(RepairOrder::getEquipmentCode, code)
-            .orderByDesc(RepairOrder::getReportedAt));
-  }
 
   public List<Map<String, Object>> children(long tenant, long id) {
     var grouped = new HashMap<Long, List<Map<String, Object>>>();
