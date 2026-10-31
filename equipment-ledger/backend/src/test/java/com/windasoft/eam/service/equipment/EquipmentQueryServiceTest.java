@@ -36,8 +36,8 @@ import org.springframework.web.server.ResponseStatusException;
 class EquipmentQueryServiceTest {
   EquipmentQueryRepository repository;
   EquipmentOwnerRepository ownerRepository;
-  EquipmentInstalledSpareService installedSpares;
-  com.windasoft.eam.repository.equipment.EquipmentHistoryRepository historyRepository;
+  EquipmentHistoryQueryService historyQueries;
+  EquipmentAssistantQueryService assistantQueries;
   PermissionService permissions;
   EquipmentQueryService service;
 
@@ -45,8 +45,8 @@ class EquipmentQueryServiceTest {
   void setup() {
     repository = mock(EquipmentQueryRepository.class);
     ownerRepository = mock(EquipmentOwnerRepository.class);
-    installedSpares = mock(EquipmentInstalledSpareService.class);
-    historyRepository = mock(com.windasoft.eam.repository.equipment.EquipmentHistoryRepository.class);
+    historyQueries = mock(EquipmentHistoryQueryService.class);
+    assistantQueries = mock(EquipmentAssistantQueryService.class);
     permissions = mock(PermissionService.class);
     var auth = mock(AuthContext.class);
     when(auth.tenantId()).thenReturn(10001L);
@@ -61,10 +61,9 @@ class EquipmentQueryServiceTest {
             auth,
             permissions,
             new ObjectMapper(),
-            mock(com.windasoft.eam.repository.equipment.EquipmentAssistantRepository.class),
+            historyQueries,
+            assistantQueries,
             ownerRepository,
-            historyRepository,
-            installedSpares,
             mock(com.windasoft.eam.repository.basedata.BaseItemRepository.class),
             mock(com.windasoft.eam.repository.system.OrgUnitRepository.class),
             mock(com.windasoft.eam.repository.system.SystemUserRepository.class),
@@ -123,32 +122,24 @@ class EquipmentQueryServiceTest {
   }
 
   @Test
-  void historyDelegatesInstalledSpareAggregationToDedicatedService() throws Exception {
+  void historyDelegatesLifecycleAggregationAfterCheckingEquipmentAccess() {
     var equipment = new Equipment();
     equipment.setId(3L);
     equipment.setEquipmentCode("EQ-QA");
     when(repository.find(10001L, 3L)).thenReturn(equipment);
-    when(repository.repairs(10001L, "EQ-QA")).thenReturn(List.of());
-    when(historyRepository.list(10001L, 3L)).thenReturn(List.of());
     when(ownerRepository.list(10001L, 3L)).thenReturn(List.of());
     when(repository.children(10001L, 3L)).thenReturn(List.of());
     when(repository.bom(10001L, 3L)).thenReturn(List.of());
-    var installed = new com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView();
-    installed.setId("usage-1");
-    installed.setCode("MAT-01");
-    installed.setName("库存备件");
-    installed.setQuantity(new BigDecimal("2.50"));
-    installed.setStatus("在用");
-    installed.setInstalledAt("2026-10-31 10:20");
-    when(installedSpares.list(10001L, 3L)).thenReturn(List.of(installed));
+    var expected =
+        new com.windasoft.eam.dto.equipment.EquipmentHistoryView(
+            List.of(), service.view(equipment), List.of(), List.of(), List.of(), List.of());
+    when(historyQueries.history(any(Equipment.class), any())).thenReturn(expected);
 
     var result = service.history(3L);
 
-    assertEquals(List.of(installed), result.installedSpares());
-    var json = new ObjectMapper().readTree(new ObjectMapper().writeValueAsBytes(result));
-    assertEquals("usage-1", json.path("installedSpares").get(0).path("id").asText());
-    assertEquals(2.50, json.path("installedSpares").get(0).path("quantity").asDouble());
-    verify(installedSpares).list(10001L, 3L);
+    assertEquals(expected, result);
+    verify(permissions).checkEquipment(equipment, "查看");
+    verify(historyQueries).history(eq(equipment), any(com.windasoft.eam.dto.equipment.EquipmentView.class));
   }
 
   @Test
