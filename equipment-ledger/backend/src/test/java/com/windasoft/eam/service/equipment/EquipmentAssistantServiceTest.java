@@ -56,7 +56,7 @@ class EquipmentAssistantServiceTest {
   final EquipmentQueryRepository ledger = mock(EquipmentQueryRepository.class);
   final PermissionService permissions = mock(PermissionService.class);
   final AuthContext auth = mock(AuthContext.class);
-  EquipmentQueryService service;
+  EquipmentAssistantQueryService service;
 
   @BeforeEach
   void setup() {
@@ -67,15 +67,7 @@ class EquipmentAssistantServiceTest {
         .thenReturn(Optional.empty());
     when(queries.execute(anyLong(), anyLong(), any(), any(), any(), any()))
         .thenReturn(new EquipmentAssistantResult.Count(0, 0));
-    service = new EquipmentQueryService(ledger, auth, permissions, new ObjectMapper(), queries,
-        mock(com.windasoft.eam.repository.equipment.EquipmentOwnerRepository.class),
-        mock(com.windasoft.eam.repository.equipment.EquipmentHistoryRepository.class),
-        mock(EquipmentInstalledSpareService.class),
-        mock(com.windasoft.eam.repository.basedata.BaseItemRepository.class),
-            mock(com.windasoft.eam.repository.system.OrgUnitRepository.class),
-            mock(com.windasoft.eam.repository.system.SystemUserRepository.class),
-        mock(com.windasoft.eam.service.business.BusinessValueService.class),
-        mock(com.windasoft.eam.service.business.BusinessQueryService.class));
+    service = new EquipmentAssistantQueryService(queries, ledger, auth, permissions);
   }
 
   EquipmentAssistantQuery query(
@@ -128,7 +120,7 @@ class EquipmentAssistantServiceTest {
   @Test
   void validTypedPlanUsesTrustedScopeAndKeepsSqlInTheRepository() {
     var request = count(new Condition(Field.OWNER_ID, Comparison.EQ, List.of(Reference.ME)));
-    assertInstanceOf(EquipmentAssistantResult.Count.class, service.queryAssistant(request).data());
+    assertInstanceOf(EquipmentAssistantResult.Count.class, service.query(request).data());
     verify(permissions).require("equipment", "查看");
     var scope = permissions.equipment("查看");
     verify(queries).execute(eq(10001L), eq(73001L), eq(scope), same(request), any(), isNull());
