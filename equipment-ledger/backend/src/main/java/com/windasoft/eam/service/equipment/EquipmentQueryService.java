@@ -34,6 +34,9 @@ import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.equipment.EquipmentAssistantRepository;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
 import com.windasoft.eam.entity.equipment.EquipmentOwner;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -56,6 +59,9 @@ public class EquipmentQueryService {
 
   private final EquipmentQueryRepository repository;
   private final EquipmentOwnerRepository ownerRepository;
+  private final BaseItemRepository baseItems;
+  private final OrgUnitRepository organizations;
+  private final SystemUserRepository users;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper objectMapper;
@@ -67,9 +73,15 @@ public class EquipmentQueryService {
       PermissionService permissions,
       ObjectMapper objectMapper,
       EquipmentAssistantRepository assistantRepository,
-      EquipmentOwnerRepository ownerRepository) {
+      EquipmentOwnerRepository ownerRepository,
+      BaseItemRepository baseItems,
+      OrgUnitRepository organizations,
+      SystemUserRepository users) {
     this.repository = repository;
     this.ownerRepository = ownerRepository;
+    this.baseItems = baseItems;
+    this.organizations = organizations;
+    this.users = users;
     this.auth = auth;
     this.permissions = permissions;
     this.objectMapper = objectMapper;
@@ -444,7 +456,7 @@ public class EquipmentQueryService {
       if (e.getCompanyOrgId() != null) visible.add(e.getCompanyOrgId());
       if (e.getDepartmentOrgId() != null) visible.add(e.getDepartmentOrgId());
     }
-    var all = repository.organizations(auth.tenantId(), false);
+    var all = organizations.organizations(auth.tenantId(), false);
     boolean changed;
     do {
       changed = false;
@@ -469,7 +481,7 @@ public class EquipmentQueryService {
     if (!List.of("新增", "编辑").contains(action))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0029");
     permissions.require("equipment", action);
-    var page = repository.ownerCandidates(auth.tenantId(), query);
+    var page = users.ownerCandidates(auth.tenantId(), query);
     return new com.windasoft.eam.dto.common.PageResult<>(
         page.getRecords().stream()
             .map(
@@ -486,7 +498,7 @@ public class EquipmentQueryService {
     if (!List.of("新增", "编辑").contains(action))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0029");
     permissions.require("equipment", action);
-    var allOrgs = repository.organizations(auth.tenantId(), true);
+    var allOrgs = organizations.organizations(auth.tenantId(), true);
     var selectable =
         allOrgs.stream()
             .filter(
@@ -510,7 +522,7 @@ public class EquipmentQueryService {
       }
     }
     var departments =
-        repository.organizations(auth.tenantId(), true).stream()
+        allOrgs.stream()
             .filter(o -> visible.contains(o.getId()))
             .map(
                 o ->
@@ -522,7 +534,7 @@ public class EquipmentQueryService {
                         o.getParentId() == null ? "" : String.valueOf(o.getParentId())))
             .toList();
     var employees =
-        repository.employees(auth.tenantId()).stream()
+        users.employees(auth.tenantId()).stream()
             .map(
                 u ->
                     new EquipmentOptions.Employee(
@@ -610,7 +622,7 @@ public class EquipmentQueryService {
 
   private com.windasoft.eam.entity.basedata.BaseItem baseItem(
       Long id, EquipmentQueryRepository.PageRelations context) {
-    return context == null ? repository.baseItem(id) : context.dictionary().get(id);
+    return context == null ? baseItems.findById(id) : context.dictionary().get(id);
   }
 
   private String currentBaseName(
