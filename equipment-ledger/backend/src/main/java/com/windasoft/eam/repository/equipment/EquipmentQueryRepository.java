@@ -111,6 +111,21 @@ public class EquipmentQueryRepository {
                 .eq(Equipment::getId, id)));
   }
 
+  /** 批量读取设备关系所需的设备实体，避免逐个设备编号回表。 */
+  public Map<Long, Equipment> findByIds(long tenant, List<Long> ids) {
+    if (ids.isEmpty()) return Map.of();
+    var rows =
+        equipment.selectList(
+            new LambdaQueryWrapper<Equipment>()
+                .eq(Equipment::getTenantId, tenant)
+                .eq(Equipment::getDeleted, 0)
+                .in(Equipment::getId, ids));
+    media.hydrate(rows);
+    var result = new HashMap<Long, Equipment>();
+    for (var row : rows) result.put(row.getId(), row);
+    return Map.copyOf(result);
+  }
+
   public List<Equipment> visibleOrganizations(
       long tenant, Consumer<LambdaQueryWrapper<Equipment>> authorizedScope) {
     var q =
