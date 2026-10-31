@@ -19,29 +19,24 @@ public class EquipmentRelationsRepository {
   private final EquipmentChildRepository children;
   private final EquipmentBomRepository bom;
   private final EquipmentRelationLegacyRepository legacy;
-  private final JdbcTemplate db;
+
   private final EquipmentMapper equipment;
   private final EquipmentMediaRepository media;
   private final EquipmentQueryRepository queries;
-  private final MaterialRepository materials;
 
   public EquipmentRelationsRepository(
-      JdbcTemplate db,
       EquipmentMapper equipment,
       EquipmentMediaRepository media,
       EquipmentQueryRepository queries,
-      MaterialRepository materials,
       EquipmentChildRepository children,
       EquipmentBomRepository bom,
       EquipmentRelationLegacyRepository legacy) {
     this.children = children;
     this.bom = bom;
     this.legacy = legacy;
-    this.db = db;
     this.equipment = equipment;
     this.media = media;
     this.queries = queries;
-    this.materials = materials;
   }
 
   public Equipment find(long tenant, long id) {
@@ -60,44 +55,12 @@ public class EquipmentRelationsRepository {
     return children.parents(tenant, id);
   }
 
-  public void clearBom(long tenant, long id) {
-    bom.clear(tenant, id);
-  }
-
-  public void clearLegacy(long tenant, long id) {
-    legacy.clear(tenant, id);
-  }
-
-  public void removeLegacy(long tenant, long id, String kind, int index) {
-    legacy.remove(tenant, id, kind, index);
-  }
-
-  public List<EquipmentRelationLegacy> legacy(long tenant, long id, String kind) {
-    return legacy.list(tenant, id, kind);
-  }
-
-  public List<Map<String, Object>> lockMaterial(long tenant, long id) {
-    return db.queryForList(
-        "SELECT id,code,name,model,unit,enabled FROM inv_material WHERE tenant_id=? AND id=? FOR"
-            + " UPDATE",
-        tenant,
-        id);
-  }
-
-  public int bomCount(long tenant, long id, long material) {
-    return bom.count(tenant, id, material);
-  }
-
   public void clearChildren(long tenant, long id) {
     children.clear(tenant, id);
   }
 
   public void addChild(long tenant, long parent, long child, int sort) {
     children.add(new EquipmentChild(tenant, parent, child, sort));
-  }
-
-  public void addBom(EquipmentBom row) {
-    bom.add(row);
   }
 
   public List<Map<String, Object>> children(long tenant, long id) {
@@ -142,11 +105,4 @@ public class EquipmentRelationsRepository {
     return equipment.selectPage(new Page<>(Math.max(1, page), Math.max(1, Math.min(100, size))), q);
   }
 
-  public long materialTotal(long tenant, EquipmentBomMaterialQuery query) {
-    return materials.countEnabledCandidates(tenant, query.keyword());
-  }
-
-  public List<Material> materials(long tenant, EquipmentBomMaterialQuery query) {
-    return materials.enabledCandidates(tenant, query.keyword(), query.page(), query.size());
-  }
 }

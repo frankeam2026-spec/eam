@@ -6,7 +6,10 @@ import com.windasoft.eam.dto.equipment.EquipmentBomMaterialQuery;
 import com.windasoft.eam.dto.equipment.EquipmentBomMaterials;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.equipment.EquipmentBom;
+import com.windasoft.eam.repository.equipment.EquipmentBomRepository;
+import com.windasoft.eam.repository.equipment.EquipmentRelationLegacyRepository;
 import com.windasoft.eam.repository.equipment.EquipmentRelationsRepository;
+import com.windasoft.eam.repository.inventory.MaterialRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.inventory.InventoryMutex;
 import com.windasoft.eam.service.system.AuthContext;
@@ -23,20 +26,26 @@ public class EquipmentRelationsService {
   final ObjectMapper json;
   final InventoryMutex inventoryMutex;
   private final OrgUnitRepository organizations;
+  private final EquipmentBomRepository equipmentBomRepository;
+  private final EquipmentRelationLegacyRepository relationLegacyRepository;
+  private  final MaterialRepository materialRepository;
 
   public EquipmentRelationsService(
-      EquipmentRelationsRepository repository,
-      AuthContext auth,
-      PermissionService permissions,
-      ObjectMapper json,
-      InventoryMutex inventoryMutex,
-      OrgUnitRepository organizations) {
+    EquipmentRelationsRepository repository,
+    AuthContext auth,
+    PermissionService permissions,
+    ObjectMapper json,
+    InventoryMutex inventoryMutex,
+    OrgUnitRepository organizations, EquipmentBomRepository equipmentBomRepository, EquipmentRelationLegacyRepository relationLegacyRepository, MaterialRepository materialRepository) {
     this.repository = repository;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
     this.inventoryMutex = inventoryMutex;
     this.organizations = organizations;
+    this.equipmentBomRepository = equipmentBomRepository;
+    this.relationLegacyRepository = relationLegacyRepository;
+    this.materialRepository = materialRepository;
   }
 
   public void enter(Collection<Long> companies) {
@@ -73,8 +82,8 @@ public class EquipmentRelationsService {
   }
 
   public void cleanup(long id) {
-    repository.clearBom(auth.tenantId(), id);
-    repository.clearLegacy(auth.tenantId(), id);
+    equipmentBomRepository.clear(auth.tenantId(), id);
+    relationLegacyRepository.clear(auth.tenantId(), id);
   }
 
   public Object candidates(Long parentId, Long departmentId, String q, int page, int size) {
@@ -153,8 +162,9 @@ public class EquipmentRelationsService {
     if (!permissions.allowed("equipment", "新增")) {
       permissions.require("equipment", "编辑");
     }
-    long total = repository.materialTotal(auth.tenantId(), query);
-    var rows = repository.materials(auth.tenantId(), query);
+
+    long total = materialRepository.countEnabledCandidates(auth.tenantId(), query.keyword());
+    var rows = materialRepository.enabledCandidates(auth.tenantId(), query.keyword(), query.page(), query.size());
     return new EquipmentBomMaterials(
         rows.stream()
             .map(
@@ -185,7 +195,7 @@ public class EquipmentRelationsService {
   }
 
   void legacySelection(long equipmentId, String kind, List<JsonNode> nodes) {
-    var current = repository.legacy(auth.tenantId(), equipmentId, kind);
+    var current = relationLegacyRepository.list(auth.tenantId(), equipmentId, kind);
     var retained = new HashSet<Integer>();
     for (var n : nodes) {
       if (!n.path("legacy").asBoolean()) continue;
@@ -212,7 +222,7 @@ public class EquipmentRelationsService {
     }
     for (var r : current)
       if (!retained.contains(r.getSourceIndex()))
-        repository.removeLegacy(auth.tenantId(), equipmentId, kind, r.getSourceIndex());
+        relationLegacyRepository.remove(auth.tenantId(), equipmentId, kind, r.getSourceIndex());
   }
 
   public void save(Equipment parent, JsonNode children, JsonNode bom) {
@@ -273,12 +283,12 @@ public class EquipmentRelationsService {
       if (!materialIds.add(id))
         throw new com.windasoft.eam.common.LocalizedArgumentException(
             "server.equipment.message0023");
-      var rows = repository.lockMaterial(auth.tenantId(), id);
+      var rows = materialRepository.lockMaterial(auth.tenantId(), id);
       if (rows.isEmpty())
         throw new com.windasoft.eam.common.LocalizedArgumentException(
             "server.equipment.message0024");
       var m = rows.getFirst();
-      boolean existing = repository.bomCount(auth.tenantId(), parent.getId(), id) > 0;
+      boolean existing =equipmentBomRepository.count(auth.tenantId(), parent.getId(), id) > 0;
       if (((Number) m.get("enabled")).intValue() != 1 && !existing)
         throw new com.windasoft.eam.common.LocalizedArgumentException(
             "server.equipment.message0025");
@@ -308,10 +318,10 @@ public class EquipmentRelationsService {
     }
     if (replaceBom) {
       legacySelection(parent.getId(), "bom", bomNodes);
-      repository.clearBom(auth.tenantId(), parent.getId());
+      equipmentBomRepository.clear(auth.tenantId(), parent.getId());
       for (int i = 0; i < materials.size(); i++) {
         var m = materials.get(i);
-        repository.addBom(m);
+        equipmentBomRepository.add(m);
       }
     }
   }

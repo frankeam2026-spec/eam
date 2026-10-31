@@ -13,7 +13,10 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.repository.equipment.EquipmentBomRepository;
+import com.windasoft.eam.repository.equipment.EquipmentRelationLegacyRepository;
 import com.windasoft.eam.repository.equipment.EquipmentRelationsRepository;
+import com.windasoft.eam.repository.inventory.MaterialRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.inventory.InventoryMutex;
 import com.windasoft.eam.service.system.AuthContext;
@@ -26,11 +29,14 @@ import org.junit.jupiter.api.Test;
 class EquipmentCompanyLockTest {
   private final EquipmentRelationsRepository equipment = mock(EquipmentRelationsRepository.class);
   private final OrgUnitRepository organizations = mock(OrgUnitRepository.class);
+  private final EquipmentBomRepository bomRepository = mock(EquipmentBomRepository.class);
+  private final EquipmentRelationLegacyRepository relationLegacyRepository = mock(EquipmentRelationLegacyRepository.class);
+  private final MaterialRepository mR =   mock(MaterialRepository.class);
   private final InventoryMutex mutex = mock(InventoryMutex.class);
   private final AuthContext auth = mock(AuthContext.class);
   private final EquipmentRelationsService service =
       new EquipmentRelationsService(
-          equipment, auth, mock(PermissionService.class), new ObjectMapper(), mutex, organizations);
+          equipment, auth, mock(PermissionService.class), new ObjectMapper(), mutex, organizations,bomRepository,relationLegacyRepository,mR);
 
   @BeforeEach
   void identity() {

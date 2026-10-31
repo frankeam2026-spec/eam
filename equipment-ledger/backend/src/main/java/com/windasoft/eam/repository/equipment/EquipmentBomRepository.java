@@ -28,11 +28,11 @@ public class EquipmentBomRepository {
                 .eq(EquipmentBom::getMaterialId, material)));
   }
 
-  public void clear(long tenant, long equipment) {
+  public void clear(long tenant, long equipmentId) {
     mapper.delete(
         new LambdaQueryWrapper<EquipmentBom>()
             .eq(EquipmentBom::getTenantId, tenant)
-            .eq(EquipmentBom::getEquipmentId, equipment));
+            .eq(EquipmentBom::getEquipmentId, equipmentId));
   }
 
   public void add(EquipmentBom relation) {

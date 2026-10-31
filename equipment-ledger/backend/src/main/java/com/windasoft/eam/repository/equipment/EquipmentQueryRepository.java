@@ -43,6 +43,7 @@ public class EquipmentQueryRepository {
   private final JdbcTemplate db;
   private final ObjectMapper json;
 
+
   public EquipmentQueryRepository(
       EquipmentMapper equipment,
       EquipmentMediaRepository media,
@@ -226,6 +227,7 @@ public class EquipmentQueryRepository {
       var args = new ArrayList<Object>();
       args.add(tenant);
       args.addAll(batch);
+
       for (var row :
           db.queryForList(
               "SELECT equipment_id,user_id,owner_name FROM eam_equipment_owner WHERE tenant_id=?"
@@ -262,6 +264,7 @@ public class EquipmentQueryRepository {
 
   public List<EquipmentOwnerView> owners(long tenant, Long id) {
     if (id == null) return List.of();
+
     return db.query(
         "SELECT user_id,owner_name FROM eam_equipment_owner WHERE tenant_id=? AND equipment_id=?"
             + " ORDER BY sort_no,user_id",
