@@ -46,6 +46,11 @@ class EquipmentQueryServiceTest {
     permissions = mock(PermissionService.class);
     var auth = mock(AuthContext.class);
     when(auth.tenantId()).thenReturn(10001L);
+    var custom = mock(com.windasoft.eam.service.business.BusinessValueService.class);
+    when(custom.read(anyString(), anyLong()))
+        .thenReturn(
+            new com.windasoft.eam.service.business.BusinessValueService.Values(
+                Map.of(), Map.of(), 0));
     service =
         new EquipmentQueryService(
             repository,
@@ -56,13 +61,9 @@ class EquipmentQueryServiceTest {
             ownerRepository,
             mock(com.windasoft.eam.repository.basedata.BaseItemRepository.class),
             mock(com.windasoft.eam.repository.system.OrgUnitRepository.class),
-            mock(com.windasoft.eam.repository.system.SystemUserRepository.class));
-    var custom = mock(com.windasoft.eam.service.business.BusinessValueService.class);
-    when(custom.read(anyString(), anyLong()))
-        .thenReturn(
-            new com.windasoft.eam.service.business.BusinessValueService.Values(
-                Map.of(), Map.of(), 0));
-    org.springframework.test.util.ReflectionTestUtils.setField(service, "custom", custom);
+            mock(com.windasoft.eam.repository.system.SystemUserRepository.class),
+            custom,
+            mock(com.windasoft.eam.service.business.BusinessQueryService.class));
   }
 
   @Test
