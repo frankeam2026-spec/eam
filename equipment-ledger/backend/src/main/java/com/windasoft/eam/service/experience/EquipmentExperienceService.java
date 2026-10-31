@@ -241,9 +241,12 @@ public class EquipmentExperienceService {
     var installed =
         installedSpares.list(auth.tenantId(), id).stream()
             .sorted(
-                Comparator.comparing(EquipmentInstalledSpareView::getInstalledAt)
+                Comparator.comparing(
+                        (EquipmentInstalledSpareView spare) ->
+                            Objects.toString(spare.getInstalledAt(), ""))
                     .reversed()
-                    .thenComparing(EquipmentInstalledSpareView::getId, Comparator.reverseOrder()))
+                    .thenComparing(
+                        spare -> Objects.toString(spare.getId(), ""), Comparator.reverseOrder()))
             .map(EquipmentExperienceService::installedSpareRow)
             .toList();
     return Map.of(
