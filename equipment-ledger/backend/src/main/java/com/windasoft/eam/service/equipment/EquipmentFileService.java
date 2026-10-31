@@ -186,7 +186,7 @@ public class EquipmentFileService {
           com.windasoft.eam.common.MessageContext.text("server.equipment.message0067"));
       if (!seen.add(id)) continue;
       validateImage(id);
-      result.addObject().put("id", id).put("name", file(id).get("name").toString());
+      result.addObject().put("id", id).put("name", file(id).getName());
     }
     return result;
   }
