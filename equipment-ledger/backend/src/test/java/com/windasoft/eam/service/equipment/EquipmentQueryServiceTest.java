@@ -17,7 +17,6 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.equipment.EquipmentOwnerView;
-import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.equipment.EquipmentOwner;
 import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
@@ -37,8 +36,7 @@ import org.springframework.web.server.ResponseStatusException;
 class EquipmentQueryServiceTest {
   EquipmentQueryRepository repository;
   EquipmentOwnerRepository ownerRepository;
-  com.windasoft.eam.repository.repair.RepairWorkflowRepository repairWorkflow;
-  com.windasoft.eam.repository.inventory.InventoryUsageRepository inventoryUsage;
+  EquipmentInstalledSpareService installedSpares;
   com.windasoft.eam.repository.equipment.EquipmentHistoryRepository historyRepository;
   PermissionService permissions;
   EquipmentQueryService service;
@@ -47,8 +45,7 @@ class EquipmentQueryServiceTest {
   void setup() {
     repository = mock(EquipmentQueryRepository.class);
     ownerRepository = mock(EquipmentOwnerRepository.class);
-    repairWorkflow = mock(com.windasoft.eam.repository.repair.RepairWorkflowRepository.class);
-    inventoryUsage = mock(com.windasoft.eam.repository.inventory.InventoryUsageRepository.class);
+    installedSpares = mock(EquipmentInstalledSpareService.class);
     historyRepository = mock(com.windasoft.eam.repository.equipment.EquipmentHistoryRepository.class);
     permissions = mock(PermissionService.class);
     var auth = mock(AuthContext.class);
@@ -67,8 +64,7 @@ class EquipmentQueryServiceTest {
             mock(com.windasoft.eam.repository.equipment.EquipmentAssistantRepository.class),
             ownerRepository,
             historyRepository,
-            repairWorkflow,
-            inventoryUsage,
+            installedSpares,
             mock(com.windasoft.eam.repository.basedata.BaseItemRepository.class),
             mock(com.windasoft.eam.repository.system.OrgUnitRepository.class),
             mock(com.windasoft.eam.repository.system.SystemUserRepository.class),
@@ -127,7 +123,7 @@ class EquipmentQueryServiceTest {
   }
 
   @Test
-  void historyCoordinatesLegacyAndInventoryInstalledSparesInService() throws Exception {
+  void historyDelegatesInstalledSpareAggregationToDedicatedService() throws Exception {
     var equipment = new Equipment();
     equipment.setId(3L);
     equipment.setEquipmentCode("EQ-QA");
@@ -137,33 +133,22 @@ class EquipmentQueryServiceTest {
     when(ownerRepository.list(10001L, 3L)).thenReturn(List.of());
     when(repository.children(10001L, 3L)).thenReturn(List.of());
     when(repository.bom(10001L, 3L)).thenReturn(List.of());
-
-    var legacy = new EquipmentInstalledSpareView();
-    legacy.setId("legacy-1");
-    legacy.setCode("OLD-01");
-    legacy.setName("旧系统备件");
-    legacy.setQuantity(new BigDecimal("1.00"));
-    legacy.setStatus("在用");
-    legacy.setInstalledAt("2026-10-30 09:10");
-    var inventory = new EquipmentInstalledSpareView();
-    inventory.setId("usage-1");
-    inventory.setCode("MAT-01");
-    inventory.setName("库存备件");
-    inventory.setQuantity(new BigDecimal("2.50"));
-    inventory.setStatus("在用");
-    inventory.setInstalledAt("2026-10-31 10:20");
-    when(repairWorkflow.installed(10001L, 3L)).thenReturn(List.of(legacy));
-    when(inventoryUsage.installedForEquipment(10001L, 3L)).thenReturn(List.of(inventory));
+    var installed = new com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView();
+    installed.setId("usage-1");
+    installed.setCode("MAT-01");
+    installed.setName("库存备件");
+    installed.setQuantity(new BigDecimal("2.50"));
+    installed.setStatus("在用");
+    installed.setInstalledAt("2026-10-31 10:20");
+    when(installedSpares.list(10001L, 3L)).thenReturn(List.of(installed));
 
     var result = service.history(3L);
 
-    assertEquals(List.of(legacy, inventory), result.installedSpares());
+    assertEquals(List.of(installed), result.installedSpares());
     var json = new ObjectMapper().readTree(new ObjectMapper().writeValueAsBytes(result));
-    assertEquals("legacy-1", json.path("installedSpares").get(0).path("id").asText());
-    assertEquals("usage-1", json.path("installedSpares").get(1).path("id").asText());
-    assertEquals(2.50, json.path("installedSpares").get(1).path("quantity").asDouble());
-    verify(repairWorkflow).installed(10001L, 3L);
-    verify(inventoryUsage).installedForEquipment(10001L, 3L);
+    assertEquals("usage-1", json.path("installedSpares").get(0).path("id").asText());
+    assertEquals(2.50, json.path("installedSpares").get(0).path("quantity").asDouble());
+    verify(installedSpares).list(10001L, 3L);
   }
 
   @Test
