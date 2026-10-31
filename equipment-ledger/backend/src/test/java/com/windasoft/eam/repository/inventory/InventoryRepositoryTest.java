@@ -58,6 +58,21 @@ class InventoryRepositoryTest {
   }
 
   @Test
+  void installedEquipmentUsageReadDelegatesToItsMapper() {
+    var db = mock(JdbcTemplate.class);
+    var mapper = mock(InventoryUsageMapper.class);
+    var expected = List.of(new com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView());
+    when(mapper.installedForEquipment(10001L, 3L)).thenReturn(expected);
+    var repository =
+        new InventoryUsageRepository(db, mock(RepairOrderMapper.class), mapper);
+
+    assertSame(expected, repository.installedForEquipment(10001L, 3L));
+
+    verify(mapper).installedForEquipment(10001L, 3L);
+    verifyNoInteractions(db);
+  }
+
+  @Test
   void emptyBatchLookupDoesNotBuildInvalidInClause() {
     var db = mock(JdbcTemplate.class);
     var repository = new InventoryUsageRepository(db, mock(RepairOrderMapper.class), mock(InventoryUsageMapper.class));
