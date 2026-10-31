@@ -1,7 +1,8 @@
 package com.windasoft.eam.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.windasoft.eam.repository.equipment.EquipmentFileRepository;
 import java.util.UUID;
@@ -39,14 +40,13 @@ class EquipmentFileMySqlIT {
     String id = UUID.randomUUID().toString();
     files.insert(id, 994600001L, 994600101L, "测试文档.pdf",
         ".pdf", "application/pdf", 1024L);
-    var owned = files.file(994600001L, id);
-    assertEquals(1, owned.size());
-    var row = owned.getFirst();
-    assertEquals(id, row.get("id"));
-    assertEquals("测试文档.pdf", row.get("name"));
-    assertEquals("application/pdf", row.get("content_type"));
-    assertEquals(994600101L, row.get("user_id"));
-    assertEquals(1024L, row.get("size"));
-    assertTrue(files.file(994600002L, id).isEmpty());
+    var row = files.find(994600001L, id);
+    assertNotNull(row);
+    assertEquals(id, row.getId());
+    assertEquals("测试文档.pdf", row.getName());
+    assertEquals("application/pdf", row.getContentType());
+    assertEquals(994600101L, row.getUserId());
+    assertEquals(1024L, row.getSize());
+    assertNull(files.find(994600002L, id));
   }
 }
