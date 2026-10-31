@@ -41,7 +41,6 @@ import Undo from '@icon-park/vue-next/es/icons/Undo';
 import Redo from '@icon-park/vue-next/es/icons/Redo';
 import Transfer from '@icon-park/vue-next/es/icons/Transform';
 import QrCode from '@icon-park/vue-next/es/icons/TwoDimensionalCodeOne';
-import Barcode from '@icon-park/vue-next/es/icons/Barcode';
 import More from '@icon-park/vue-next/es/icons/More';
 import Return from '@icon-park/vue-next/es/icons/Undo';
 import HamburgerButton from '@icon-park/vue-next/es/icons/HamburgerButton';
@@ -93,7 +92,6 @@ const icons: Record<string, Component> = {
   Redo,
   Transfer,
   QrCode,
-  Barcode,
   More,
   Return,
   HamburgerButton,
