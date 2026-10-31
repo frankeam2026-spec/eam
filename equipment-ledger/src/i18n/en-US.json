@@ -3949,5 +3949,7 @@
   "workflow.repair.saved": "Approval settings saved",
   "workflow.repair.resubmit": "Resubmit for approval",
   "workflow.repair.pendingSubmit": "Awaiting resubmission",
-  "workflow.repair.reviewing": "Awaiting approval"
+  "workflow.repair.reviewing": "Awaiting approval",
+  "server.equipment.assistant.invalid": "Invalid equipment query plan or unsupported query capability",
+  "server.equipment.assistant.ambiguous": "Multiple objects share the selected {p0}. Specify a company, department, or code to distinguish them."
 }
