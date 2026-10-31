@@ -22,21 +22,11 @@ public class EquipmentFileRepository {
     this.media = media;
   }
 
-  public List<Map<String, Object>> file(long tenant, String id) {
-    var record = fileMapper.selectOne(
+  public EquipmentFile find(long tenant, String id) {
+    return fileMapper.selectOne(
         new LambdaQueryWrapper<EquipmentFile>()
             .eq(EquipmentFile::getTenantId, tenant)
             .eq(EquipmentFile::getId, id));
-    if (record == null) return List.of();
-    var row = new LinkedHashMap<String, Object>();
-    row.put("id", record.getId());
-    row.put("tenant_id", record.getTenantId());
-    row.put("user_id", record.getUserId());
-    row.put("name", record.getName());
-    row.put("extension", record.getExtension());
-    row.put("content_type", record.getContentType());
-    row.put("size", record.getSize());
-    return List.of(row);
   }
 
   public List<Equipment> attachedDevices(
