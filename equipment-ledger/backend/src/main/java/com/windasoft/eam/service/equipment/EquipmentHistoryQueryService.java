@@ -6,7 +6,6 @@ import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.equipment.EquipmentHistory;
 import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
 import com.windasoft.eam.repository.repair.RepairQueryRepository;
-import com.windasoft.eam.service.inventory.InventoryUsageService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.util.LinkedHashMap;
