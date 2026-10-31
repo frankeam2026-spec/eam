@@ -51,11 +51,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class EquipmentQueryService {
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.business.BusinessValueService custom;
-
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.business.BusinessQueryService customQueries;
+  private final com.windasoft.eam.service.business.BusinessValueService custom;
+  private final com.windasoft.eam.service.business.BusinessQueryService customQueries;
 
   private final EquipmentQueryRepository repository;
   private final EquipmentOwnerRepository ownerRepository;
@@ -76,12 +73,16 @@ public class EquipmentQueryService {
       EquipmentOwnerRepository ownerRepository,
       BaseItemRepository baseItems,
       OrgUnitRepository organizations,
-      SystemUserRepository users) {
+      SystemUserRepository users,
+      com.windasoft.eam.service.business.BusinessValueService custom,
+      com.windasoft.eam.service.business.BusinessQueryService customQueries) {
     this.repository = repository;
     this.ownerRepository = ownerRepository;
     this.baseItems = baseItems;
     this.organizations = organizations;
     this.users = users;
+    this.custom = custom;
+    this.customQueries = customQueries;
     this.auth = auth;
     this.permissions = permissions;
     this.objectMapper = objectMapper;
