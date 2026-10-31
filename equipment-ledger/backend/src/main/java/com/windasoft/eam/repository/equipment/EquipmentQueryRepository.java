@@ -7,13 +7,9 @@ import com.windasoft.eam.dto.equipment.EquipmentListQuery;
 import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
-import com.windasoft.eam.entity.system.OrgUnit;
-import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.basedata.BaseItemMapper;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
 import com.windasoft.eam.repository.repair.RepairWorkflowMapper;
-import com.windasoft.eam.repository.system.OrgUnitMapper;
-import com.windasoft.eam.repository.system.SystemUserMapper;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -34,8 +30,6 @@ public class EquipmentQueryRepository {
   private final EquipmentMapper equipment;
   private final EquipmentMediaRepository media;
   private final BaseItemMapper baseItems;
-  private final OrgUnitMapper organizations;
-  private final SystemUserMapper users;
   private final RepairOrderMapper repairs;
   private final RepairWorkflowMapper repairWorkflow;
   private final JdbcTemplate db;
@@ -46,8 +40,6 @@ public class EquipmentQueryRepository {
       EquipmentMapper equipment,
       EquipmentMediaRepository media,
       BaseItemMapper baseItems,
-      OrgUnitMapper organizations,
-      SystemUserMapper users,
       RepairOrderMapper repairs,
       RepairWorkflowMapper repairWorkflow,
       JdbcTemplate db,
@@ -61,8 +53,6 @@ public class EquipmentQueryRepository {
     this.equipment = equipment;
     this.media = media;
     this.baseItems = baseItems;
-    this.organizations = organizations;
-    this.users = users;
     this.repairs = repairs;
     this.repairWorkflow = repairWorkflow;
     this.db = db;
@@ -143,40 +133,6 @@ public class EquipmentQueryRepository {
             .select(Equipment::getCompanyOrgId, Equipment::getDepartmentOrgId);
     authorizedScope.accept(q);
     return equipment.selectList(q);
-  }
-
-  public List<OrgUnit> organizations(long tenant, boolean activeOnly) {
-    return organizations.selectList(
-        new LambdaQueryWrapper<OrgUnit>()
-            .eq(OrgUnit::getTenantId, tenant)
-            .eq(activeOnly, OrgUnit::getStatus, 1));
-  }
-
-  public Page<SystemUser> ownerCandidates(
-      long tenant, com.windasoft.eam.dto.common.ListQuery query) {
-    var where =
-        new LambdaQueryWrapper<SystemUser>()
-            .eq(SystemUser::getTenantId, tenant)
-            .eq(SystemUser::getStatus, 1);
-    if (!query.keyword().isBlank())
-      where.and(
-          w ->
-              w.like(SystemUser::getDisplayName, query.keyword())
-                  .or()
-                  .like(SystemUser::getAccount, query.keyword()));
-    where.orderByAsc(SystemUser::getDisplayName).orderByAsc(SystemUser::getId);
-    return users.selectPage(new Page<>(query.page(), query.size()), where);
-  }
-
-  public List<SystemUser> employees(long tenant) {
-    return users.selectList(
-        new LambdaQueryWrapper<SystemUser>()
-            .eq(SystemUser::getTenantId, tenant)
-            .eq(SystemUser::getStatus, 1));
-  }
-
-  public BaseItem baseItem(Long id) {
-    return baseItems.selectById(id);
   }
 
   public record PageRelations(
