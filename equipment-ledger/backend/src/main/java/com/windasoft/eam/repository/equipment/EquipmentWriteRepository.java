@@ -1,7 +1,6 @@
 package com.windasoft.eam.repository.equipment;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.windasoft.eam.dto.equipment.EquipmentOwnerSnapshot;
 import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.system.OrgUnit;
@@ -10,7 +9,6 @@ import com.windasoft.eam.repository.basedata.BaseItemMapper;
 import com.windasoft.eam.repository.system.OrgUnitMapper;
 import com.windasoft.eam.repository.system.SystemUserMapper;
 import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -164,27 +162,4 @@ public class EquipmentWriteRepository {
             .eq(SystemUser::getId, id));
   }
 
-  public List<EquipmentOwnerSnapshot> owners(long tenant, Long id) {
-    return db.query(
-        "SELECT user_id,owner_name FROM eam_equipment_owner WHERE tenant_id=? AND equipment_id=?"
-            + " ORDER BY sort_no,user_id",
-        (rs, row) -> new EquipmentOwnerSnapshot(rs.getLong("user_id"), rs.getString("owner_name")),
-        tenant,
-        id);
-  }
-
-  public void deleteOwners(long tenant, Long id) {
-    db.update("DELETE FROM eam_equipment_owner WHERE tenant_id=? AND equipment_id=?", tenant, id);
-  }
-
-  public void addOwner(long tenant, Long id, Long userId, String name, int sort) {
-    db.update(
-        "INSERT INTO eam_equipment_owner(tenant_id,equipment_id,user_id,owner_name,sort_no)"
-            + " VALUES(?,?,?,?,?)",
-        tenant,
-        id,
-        userId,
-        name,
-        sort);
-  }
 }

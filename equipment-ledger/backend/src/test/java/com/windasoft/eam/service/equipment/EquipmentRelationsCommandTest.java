@@ -17,6 +17,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.equipment.EquipmentBomRepository;
+import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.repository.equipment.EquipmentRelationLegacyRepository;
 import com.windasoft.eam.repository.equipment.EquipmentRelationsRepository;
 import com.windasoft.eam.repository.equipment.EquipmentWriteRepository;
@@ -51,7 +52,8 @@ class EquipmentRelationsCommandTest {
         auth,
         permissions,
         mock(com.windasoft.eam.service.business.BusinessValueService.class),
-        mock(EquipmentInputValidation.class));
+        mock(EquipmentInputValidation.class),
+        mock(EquipmentOwnerRepository.class));
   }
 
   @Test

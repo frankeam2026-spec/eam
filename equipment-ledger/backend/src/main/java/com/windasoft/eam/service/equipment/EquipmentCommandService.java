@@ -8,6 +8,8 @@ import com.windasoft.eam.dto.equipment.EquipmentForm;
 import com.windasoft.eam.dto.equipment.EquipmentOwnerSnapshot;
 import com.windasoft.eam.dto.equipment.EquipmentView;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.entity.equipment.EquipmentOwner;
+import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.repository.equipment.EquipmentWriteRepository;
 import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.system.AuthContext;
@@ -25,6 +27,7 @@ public class EquipmentCommandService {
   private final EquipmentFileService files;
   private final EquipmentQueryService queries;
   private final EquipmentWriteRepository repository;
+  private final EquipmentOwnerRepository ownerRepository;
   private final ObjectMapper objectMapper;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -38,11 +41,13 @@ public class EquipmentCommandService {
       AuthContext auth,
       PermissionService permissions,
       BusinessValueService custom,
-      EquipmentInputValidation inputValidation) {
+      EquipmentInputValidation inputValidation,
+      EquipmentOwnerRepository ownerRepository) {
     this.relations = relations;
     this.files = files;
     this.queries = queries;
     this.repository = repository;
+    this.ownerRepository = ownerRepository;
     this.objectMapper = objectMapper;
     this.auth = auth;
     this.permissions = permissions;
@@ -111,12 +116,13 @@ public class EquipmentCommandService {
       if (e.getOwnerIds() != null) {
         for (int i = 0; i < e.getOwnerIds().size(); i++) {
           // 复核时已锁定原系统账号并解析负责人名称。
-          repository.addOwner(
-              auth.tenantId(),
-              e.getId(),
-              e.getOwnerIds().get(i),
-              row.ownerNames().get(e.getOwnerIds().get(i)),
-              i);
+          ownerRepository.add(
+              new EquipmentOwner(
+                  auth.tenantId(),
+                  e.getId(),
+                  e.getOwnerIds().get(i),
+                  row.ownerNames().get(e.getOwnerIds().get(i)),
+                  i));
         }
       }
       custom.savePreparedNew("equipment", e.getId(), row.custom());
@@ -196,7 +202,7 @@ public class EquipmentCommandService {
     if (repository.delete(id) != 1) {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
     }
-    repository.deleteOwners(auth.tenantId(), id);
+    ownerRepository.clear(auth.tenantId(), id);
     return true;
   }
 
@@ -236,7 +242,7 @@ public class EquipmentCommandService {
           if (repository.delete(e.getId()) != 1) {
             throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0278");
           }
-          repository.deleteOwners(auth.tenantId(), e.getId());
+          ownerRepository.clear(auth.tenantId(), e.getId());
           continue;
         }
         case "category" -> {
@@ -494,7 +500,9 @@ public class EquipmentCommandService {
     if (id == null) {
       return List.of();
     }
-    return repository.owners(auth.tenantId(), id);
+    return ownerRepository.list(auth.tenantId(), id).stream()
+        .map(row -> new EquipmentOwnerSnapshot(row.getUserId(), row.getOwnerName()))
+        .toList();
   }
 
   private void assignOwners(Equipment e, List<Long> selected, Equipment previous) {
@@ -523,7 +531,7 @@ public class EquipmentCommandService {
 
   private void saveOwners(Equipment e) {
     var prior = ownerRows(e.getId());
-    repository.deleteOwners(auth.tenantId(), e.getId());
+    ownerRepository.clear(auth.tenantId(), e.getId());
     var ids = e.getOwnerIds();
     if (ids == null || ids.isEmpty()) {
       return;
@@ -539,7 +547,7 @@ public class EquipmentCommandService {
                   .orElseThrow()
                   .name()
               : user.getDisplayName();
-      repository.addOwner(auth.tenantId(), e.getId(), ids.get(i), name, i);
+      ownerRepository.add(new EquipmentOwner(auth.tenantId(), e.getId(), ids.get(i), name, i));
     }
   }
 
