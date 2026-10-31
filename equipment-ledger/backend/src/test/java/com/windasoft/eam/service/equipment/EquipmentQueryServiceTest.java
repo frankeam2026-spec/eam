@@ -59,6 +59,7 @@ class EquipmentQueryServiceTest {
             new ObjectMapper(),
             mock(com.windasoft.eam.repository.equipment.EquipmentAssistantRepository.class),
             ownerRepository,
+            mock(com.windasoft.eam.repository.equipment.EquipmentHistoryRepository.class),
             mock(com.windasoft.eam.repository.basedata.BaseItemRepository.class),
             mock(com.windasoft.eam.repository.system.OrgUnitRepository.class),
             mock(com.windasoft.eam.repository.system.SystemUserRepository.class),
