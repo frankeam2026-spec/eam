@@ -19,16 +19,19 @@ public class EquipmentFileService {
   private final AuthContext auth;
   private final PermissionService permissions;
   private final EquipmentFileRepository repository;
+  private final EquipmentFileStorage storage;
   private final ObjectMapper json;
 
   public EquipmentFileService(
       AuthContext auth,
       PermissionService permissions,
       EquipmentFileRepository repository,
+      EquipmentFileStorage storage,
       ObjectMapper json) {
     this.auth = auth;
     this.permissions = permissions;
     this.repository = repository;
+    this.storage = storage;
     this.json = json;
   }
 
@@ -99,7 +102,7 @@ public class EquipmentFileService {
         ext.matches("\\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv)"),
         com.windasoft.eam.common.MessageContext.text("server.equipment.message0060"));
     String id = UUID.randomUUID().toString();
-    Path path = repository.store(upload.content(), id, ext);
+    Path path = storage.store(upload.content(), id, ext);
     String contentType = "application/octet-stream";
     try {
       if (Set.of(".png", ".jpg", ".jpeg", ".gif").contains(ext)) {
@@ -129,7 +132,7 @@ public class EquipmentFileService {
       }
       repository.insert(id, auth.tenantId(), auth.userId(), name, ext, contentType, upload.size());
     } catch (Exception failure) {
-      repository.deleteContent(path);
+      storage.deleteContent(path);
       throw failure;
     }
     return Map.of(
@@ -203,7 +206,7 @@ public class EquipmentFileService {
     require(
         stored.get("content_type").toString().startsWith("image/"),
         com.windasoft.eam.common.MessageContext.text("server.equipment.message0069"));
-    Path path = repository.contentPath(id, stored.get("extension").toString());
+    Path path = storage.contentPath(id, stored.get("extension").toString());
     if (!Files.isRegularFile(path))
       throw new com.windasoft.eam.common.LocalizedStatusException(
           HttpStatus.NOT_FOUND, "server.equipment.message0036");
@@ -214,7 +217,7 @@ public class EquipmentFileService {
   public EquipmentDownload download(String id) {
     var stored = file(id);
     checkRead(stored);
-    Path path = repository.contentPath(id, stored.get("extension").toString());
+    Path path = storage.contentPath(id, stored.get("extension").toString());
     if (!Files.isRegularFile(path))
       throw new com.windasoft.eam.common.LocalizedStatusException(
           HttpStatus.NOT_FOUND, "server.equipment.message0037");
