@@ -3,26 +3,8 @@ package com.windasoft.eam.service.equipment;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Aggregate;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.All;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Comparison;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Condition;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.DateRange;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.DateTimeValue;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.DateValue;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Field;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.FieldSort;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Filter;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Identifier;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Junction;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Kind;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Logical;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Operation;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Period;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Reference;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.ResultSort;
-import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Text;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantResult;
+import com.windasoft.eam.dto.equipment.EquipmentHistoryView;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery;
 import com.windasoft.eam.dto.equipment.EquipmentNavigationNode;
 import com.windasoft.eam.dto.equipment.EquipmentOptions;
@@ -30,11 +12,12 @@ import com.windasoft.eam.dto.equipment.EquipmentOwnerView;
 import com.windasoft.eam.dto.equipment.EquipmentPage;
 import com.windasoft.eam.dto.equipment.EquipmentView;
 import com.windasoft.eam.entity.equipment.Equipment;
-import com.windasoft.eam.repository.equipment.EquipmentAssistantRepository;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
+import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
+import com.windasoft.eam.entity.equipment.EquipmentOwner;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.time.LocalDate;
@@ -52,34 +35,31 @@ public class EquipmentQueryService {
   private final com.windasoft.eam.service.business.BusinessQueryService customQueries;
 
   private final EquipmentQueryRepository repository;
+  private final EquipmentOwnerRepository ownerRepository;
+  private final EquipmentHistoryQueryService historyQueries;
+  private final EquipmentAssistantQueryService assistantQueries;
   private final BaseItemRepository baseItems;
   private final OrgUnitRepository organizations;
   private final SystemUserRepository users;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper objectMapper;
-  private final EquipmentViewAssembler views;
-  private final EquipmentHistoryQueryService historyQueries;
-  private final EquipmentAssistantQueryService assistantQueries;
 
   public EquipmentQueryService(
       EquipmentQueryRepository repository,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper objectMapper,
-      EquipmentViewAssembler views,
       EquipmentHistoryQueryService historyQueries,
       EquipmentAssistantQueryService assistantQueries,
-      EquipmentViewAssembler views,
-      EquipmentHistoryQueryService historyQueries,
-      EquipmentAssistantQueryService assistantQueries,
+      EquipmentOwnerRepository ownerRepository,
       BaseItemRepository baseItems,
       OrgUnitRepository organizations,
       SystemUserRepository users,
       com.windasoft.eam.service.business.BusinessValueService custom,
       com.windasoft.eam.service.business.BusinessQueryService customQueries) {
     this.repository = repository;
-    this.views = views;
+    this.ownerRepository = ownerRepository;
     this.historyQueries = historyQueries;
     this.assistantQueries = assistantQueries;
     this.baseItems = baseItems;
@@ -356,7 +336,7 @@ public class EquipmentQueryService {
   }
 
   @org.springframework.transaction.annotation.Transactional(readOnly = true)
-  public com.windasoft.eam.dto.equipment.EquipmentHistoryView history(long id) {
+  public EquipmentHistoryView history(long id) {
     var equipment = require(id);
     permissions.checkEquipment(equipment, "查看");
     return historyQueries.history(equipment, view(equipment));
@@ -436,6 +416,93 @@ public class EquipmentQueryService {
   }
 
   public EquipmentView view(Equipment e) {
-    return views.view(e);
+    return view(e, null, null);
+  }
+
+  private static List<EquipmentOwnerView> ownerViews(List<EquipmentOwner> rows) {
+    return rows.stream()
+        .map(row -> new EquipmentOwnerView(Long.toString(row.getUserId()), row.getOwnerName()))
+        .toList();
+  }
+
+  private EquipmentView view(
+      Equipment e,
+      EquipmentQueryRepository.PageRelations context,
+      Map<Long, List<EquipmentOwner>> ownersByEquipment) {
+    if (e.getCustomFields() == null) {
+      var v = custom.read("equipment", e.getId());
+      e.setCustomFields(v.customFields());
+      e.setCustomFieldLabels(v.customFieldLabels());
+      e.setCustomSchemaVersion(v.customSchemaVersion());
+    }
+    var owners =
+        ownerViews(
+            ownersByEquipment == null
+                ? ownerRepository.list(auth.tenantId(), e.getId())
+                : ownersByEquipment.getOrDefault(e.getId(), List.of()));
+    return new EquipmentView(
+        String.valueOf(e.getId()),
+        safe(e.getEquipmentCode()),
+        safe(e.getName()),
+        currentBaseName(e.getCategoryId(), "CATEGORY", e.getCategory(), context),
+        e.getCategoryId() == null ? "" : String.valueOf(e.getCategoryId()),
+        e.getUnitId() == null ? "" : String.valueOf(e.getUnitId()),
+        e.getUseStatusId() == null ? "" : String.valueOf(e.getUseStatusId()),
+        e.getSourceId() == null ? "" : String.valueOf(e.getSourceId()),
+        owners,
+        owners.stream().map(EquipmentOwnerView::id).toList(),
+        e.getOwnerUserId() == null ? "" : String.valueOf(e.getOwnerUserId()),
+        safe(e.getDepartmentPath()),
+        safe(e.getModel()),
+        safe(e.getSerialNo()),
+        safe(e.getCompany()),
+        e.getCompanyOrgId() == null ? "" : String.valueOf(e.getCompanyOrgId()),
+        safe(e.getDepartment()),
+        e.getDepartmentOrgId() == null ? "" : e.getDepartmentOrgId().toString(),
+        safe(e.getOwnerName()),
+        safe(e.getBrand()),
+        safe(e.getEquipmentStatus()),
+        currentBaseName(e.getUseStatusId(), "USE_STATUS", e.getUseStatus(), context),
+        currentBaseName(e.getSourceId(), "SOURCE", e.getSource(), context),
+        date(e.getPurchaseDate() != null ? e.getPurchaseDate() : e.getAcquiredAt()),
+        e.getAcquiredAmount() == null ? "" : e.getAcquiredAmount().toPlainString(),
+        e.getWarrantyUntil() == null ? "" : e.getWarrantyUntil().toString(),
+        safe(e.getDescription()),
+        e.getRowVersion() == null ? 0 : e.getRowVersion(),
+        safe(e.getAssetNo()),
+        safe(e.getTagCode()),
+        currentBaseName(e.getUnitId(), "UNIT", e.getUnitName(), context),
+        safe(e.getSupplier()),
+        date(e.getPurchaseDate()),
+        date(e.getInServiceDate()),
+        date(e.getExpectedRetirementDate()),
+        safe(e.getEquipmentLevel()),
+        e.getFunctionLocationId() == null ? "" : String.valueOf(e.getFunctionLocationId()),
+        safe(
+            e.getFunctionLocationId() == null
+                ? e.getFunctionLocation()
+                : java.util.Objects.requireNonNullElse(
+                    locationPath(e.getFunctionLocationId(), e.getCompanyOrgId(), false, context),
+                    safe(e.getFunctionLocation()))),
+        safe(e.getSpecialEquipment()),
+        safe(e.getMetrologyEquipment()),
+        safe(e.getDepreciationEnabled()),
+        safe(e.getTechnicalParams()),
+        date(e.getCalibrationDate()),
+        date(e.getCalibrationValidUntil()),
+        safe(e.getInspectorName()),
+        safe(e.getImageName()),
+        safe(e.getImageFileId()),
+        json(e.getImagesJson()),
+        json(e.getDocumentsJson()),
+        context == null
+            ? repository.children(auth.tenantId(), e.getId())
+            : context.children().getOrDefault(e.getId(), List.of()),
+        context == null
+            ? repository.bom(auth.tenantId(), e.getId())
+            : context.bom().getOrDefault(e.getId(), List.of()),
+        e.getCustomFields(),
+        e.getCustomFieldLabels(),
+        e.getCustomSchemaVersion());
   }
 }
