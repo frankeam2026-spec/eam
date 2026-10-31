@@ -36,7 +36,10 @@ class EquipmentCompanyLockTest {
   private final AuthContext auth = mock(AuthContext.class);
   private final EquipmentRelationsService service =
       new EquipmentRelationsService(
-          equipment, auth, mock(PermissionService.class), new ObjectMapper(), mutex, organizations,bomRepository,relationLegacyRepository,mR);
+          equipment,
+          mock(com.windasoft.eam.repository.equipment.EquipmentChildRepository.class),
+          mock(com.windasoft.eam.repository.equipment.EquipmentQueryRepository.class),
+          auth, mock(PermissionService.class), new ObjectMapper(), mutex, organizations,bomRepository,relationLegacyRepository,mR);
 
   @BeforeEach
   void identity() {
