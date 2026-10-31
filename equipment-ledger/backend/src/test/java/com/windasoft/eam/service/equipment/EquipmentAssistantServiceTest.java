@@ -71,7 +71,9 @@ class EquipmentAssistantServiceTest {
         mock(com.windasoft.eam.repository.equipment.EquipmentOwnerRepository.class),
         mock(com.windasoft.eam.repository.basedata.BaseItemRepository.class),
             mock(com.windasoft.eam.repository.system.OrgUnitRepository.class),
-            mock(com.windasoft.eam.repository.system.SystemUserRepository.class));
+            mock(com.windasoft.eam.repository.system.SystemUserRepository.class),
+        mock(com.windasoft.eam.service.business.BusinessValueService.class),
+        mock(com.windasoft.eam.service.business.BusinessQueryService.class));
   }
 
   EquipmentAssistantQuery query(
