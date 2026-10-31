@@ -2,73 +2,18 @@ package com.windasoft.eam.repository.equipment;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.windasoft.eam.dto.equipment.EquipmentBomMaterialQuery;
 import com.windasoft.eam.entity.equipment.Equipment;
-import com.windasoft.eam.entity.equipment.EquipmentBom;
-import com.windasoft.eam.entity.equipment.EquipmentChild;
-import com.windasoft.eam.entity.equipment.EquipmentRelationLegacy;
-import com.windasoft.eam.entity.inventory.Material;
-import com.windasoft.eam.repository.inventory.MaterialRepository;
-import java.util.*;
+import java.util.Set;
 import java.util.function.Consumer;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/** 设备层级候选项专用只读查询，关联关系的写入归属 EquipmentChildRepository。 */
 @Repository
 public class EquipmentRelationsRepository {
-  private final EquipmentChildRepository children;
-  private final EquipmentBomRepository bom;
-  private final EquipmentRelationLegacyRepository legacy;
-
   private final EquipmentMapper equipment;
-  private final EquipmentMediaRepository media;
-  private final EquipmentQueryRepository queries;
 
-  public EquipmentRelationsRepository(
-      EquipmentMapper equipment,
-      EquipmentMediaRepository media,
-      EquipmentQueryRepository queries,
-      EquipmentChildRepository children,
-      EquipmentBomRepository bom,
-      EquipmentRelationLegacyRepository legacy) {
-    this.children = children;
-    this.bom = bom;
-    this.legacy = legacy;
+  public EquipmentRelationsRepository(EquipmentMapper equipment) {
     this.equipment = equipment;
-    this.media = media;
-    this.queries = queries;
-  }
-
-  public Equipment find(long tenant, long id) {
-    return media.hydrate(
-        equipment.selectOne(
-            new LambdaQueryWrapper<Equipment>()
-                .eq(Equipment::getTenantId, tenant)
-                .eq(Equipment::getId, id)));
-  }
-
-  public int relationshipCount(long tenant, long id) {
-    return children.countRelations(tenant, id);
-  }
-
-  public List<EquipmentChild> parents(long tenant, Long id) {
-    return children.parents(tenant, id);
-  }
-
-  public void clearChildren(long tenant, long id) {
-    children.clear(tenant, id);
-  }
-
-  public void addChild(long tenant, long parent, long child, int sort) {
-    children.add(new EquipmentChild(tenant, parent, child, sort));
-  }
-
-  public List<Map<String, Object>> children(long tenant, long id) {
-    return queries.children(tenant, id);
-  }
-
-  public List<Map<String, Object>> bom(long tenant, long id) {
-    return queries.bom(tenant, id);
   }
 
   public Page<Equipment> candidates(
