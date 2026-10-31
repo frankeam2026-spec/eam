@@ -33,6 +33,13 @@ import com.windasoft.eam.dto.equipment.EquipmentView;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.equipment.EquipmentAssistantRepository;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
+import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
+import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
+import com.windasoft.eam.entity.equipment.EquipmentHistory;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
+import com.windasoft.eam.entity.equipment.EquipmentOwner;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.time.LocalDate;
@@ -46,13 +53,15 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class EquipmentQueryService {
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.business.BusinessValueService custom;
-
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.business.BusinessQueryService customQueries;
+  private final com.windasoft.eam.service.business.BusinessValueService custom;
+  private final com.windasoft.eam.service.business.BusinessQueryService customQueries;
 
   private final EquipmentQueryRepository repository;
+  private final EquipmentOwnerRepository ownerRepository;
+  private final EquipmentHistoryRepository historyRepository;
+  private final BaseItemRepository baseItems;
+  private final OrgUnitRepository organizations;
+  private final SystemUserRepository users;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper objectMapper;
@@ -63,8 +72,22 @@ public class EquipmentQueryService {
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper objectMapper,
-      EquipmentAssistantRepository assistantRepository) {
+      EquipmentAssistantRepository assistantRepository,
+      EquipmentOwnerRepository ownerRepository,
+      EquipmentHistoryRepository historyRepository,
+      BaseItemRepository baseItems,
+      OrgUnitRepository organizations,
+      SystemUserRepository users,
+      com.windasoft.eam.service.business.BusinessValueService custom,
+      com.windasoft.eam.service.business.BusinessQueryService customQueries) {
     this.repository = repository;
+    this.ownerRepository = ownerRepository;
+    this.historyRepository = historyRepository;
+    this.baseItems = baseItems;
+    this.organizations = organizations;
+    this.users = users;
+    this.custom = custom;
+    this.customQueries = customQueries;
     this.auth = auth;
     this.permissions = permissions;
     this.objectMapper = objectMapper;
@@ -316,8 +339,14 @@ public class EquipmentQueryService {
               e.setCustomSchemaVersion(v.customSchemaVersion());
             });
     var relations = repository.pageRelations(auth.tenantId(), result.getRecords());
+    var ownersByEquipment =
+        ownerRepository
+            .listByEquipmentIds(
+                auth.tenantId(), result.getRecords().stream().map(Equipment::getId).toList())
+            .stream()
+            .collect(java.util.stream.Collectors.groupingBy(EquipmentOwner::getEquipmentId));
     return new EquipmentPage(
-        result.getRecords().stream().map(row -> view(row, relations)).toList(),
+        result.getRecords().stream().map(row -> view(row, relations, ownersByEquipment)).toList(),
         new EquipmentPage.PageInfo(result.getCurrent(), result.getSize(), result.getTotal()));
   }
 
@@ -433,7 +462,7 @@ public class EquipmentQueryService {
       if (e.getCompanyOrgId() != null) visible.add(e.getCompanyOrgId());
       if (e.getDepartmentOrgId() != null) visible.add(e.getDepartmentOrgId());
     }
-    var all = repository.organizations(auth.tenantId(), false);
+    var all = organizations.organizations(auth.tenantId(), false);
     boolean changed;
     do {
       changed = false;
@@ -458,7 +487,7 @@ public class EquipmentQueryService {
     if (!List.of("新增", "编辑").contains(action))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0029");
     permissions.require("equipment", action);
-    var page = repository.ownerCandidates(auth.tenantId(), query);
+    var page = users.ownerCandidates(auth.tenantId(), query);
     return new com.windasoft.eam.dto.common.PageResult<>(
         page.getRecords().stream()
             .map(
@@ -475,7 +504,7 @@ public class EquipmentQueryService {
     if (!List.of("新增", "编辑").contains(action))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0029");
     permissions.require("equipment", action);
-    var allOrgs = repository.organizations(auth.tenantId(), true);
+    var allOrgs = organizations.organizations(auth.tenantId(), true);
     var selectable =
         allOrgs.stream()
             .filter(
@@ -499,7 +528,7 @@ public class EquipmentQueryService {
       }
     }
     var departments =
-        repository.organizations(auth.tenantId(), true).stream()
+        allOrgs.stream()
             .filter(o -> visible.contains(o.getId()))
             .map(
                 o ->
@@ -511,7 +540,7 @@ public class EquipmentQueryService {
                         o.getParentId() == null ? "" : String.valueOf(o.getParentId())))
             .toList();
     var employees =
-        repository.employees(auth.tenantId()).stream()
+        users.employees(auth.tenantId()).stream()
             .map(
                 u ->
                     new EquipmentOptions.Employee(
@@ -546,7 +575,8 @@ public class EquipmentQueryService {
                         Map.entry("status", safe(r.getStatus())),
                         Map.entry("result", safe(r.getRepairAction()))))
             .toList();
-    var records = repository.history(auth.tenantId(), id);
+    var records = historyRepository.list(auth.tenantId(), id).stream()
+        .map(EquipmentQueryService::historyRow).toList();
     return new EquipmentHistoryView(
         repository.installedSpares(auth.tenantId(), id),
         view(equipment),
@@ -554,6 +584,19 @@ public class EquipmentQueryService {
         records.stream().filter(r -> "MAINTENANCE".equals(r.get("type"))).toList(),
         records.stream().filter(r -> "INSPECTION".equals(r.get("type"))).toList(),
         records.stream().filter(r -> "SPARE_CHANGE".equals(r.get("type"))).toList());
+  }
+
+  private static Map<String, Object> historyRow(EquipmentHistory event) {
+    // 保留历史 API 已发布的字段与时间戳类型，避免存储重构改变响应契约。
+    var row = new java.util.LinkedHashMap<String, Object>();
+    row.put("type", event.getRecordType());
+    row.put("number", event.getRecordNo());
+    row.put("time", event.getOccurredAt());
+    row.put("description", event.getDescription());
+    row.put("person", event.getOperatorName());
+    row.put("status", event.getStatus());
+    row.put("result", event.getResult());
+    return row;
   }
 
   private Equipment require(long id) {
@@ -599,7 +642,7 @@ public class EquipmentQueryService {
 
   private com.windasoft.eam.entity.basedata.BaseItem baseItem(
       Long id, EquipmentQueryRepository.PageRelations context) {
-    return context == null ? repository.baseItem(id) : context.dictionary().get(id);
+    return context == null ? baseItems.findById(id) : context.dictionary().get(id);
   }
 
   private String currentBaseName(
@@ -630,10 +673,19 @@ public class EquipmentQueryService {
   }
 
   public EquipmentView view(Equipment e) {
-    return view(e, null);
+    return view(e, null, null);
   }
 
-  private EquipmentView view(Equipment e, EquipmentQueryRepository.PageRelations context) {
+  private static List<EquipmentOwnerView> ownerViews(List<EquipmentOwner> rows) {
+    return rows.stream()
+        .map(row -> new EquipmentOwnerView(Long.toString(row.getUserId()), row.getOwnerName()))
+        .toList();
+  }
+
+  private EquipmentView view(
+      Equipment e,
+      EquipmentQueryRepository.PageRelations context,
+      Map<Long, List<EquipmentOwner>> ownersByEquipment) {
     if (e.getCustomFields() == null) {
       var v = custom.read("equipment", e.getId());
       e.setCustomFields(v.customFields());
@@ -641,9 +693,10 @@ public class EquipmentQueryService {
       e.setCustomSchemaVersion(v.customSchemaVersion());
     }
     var owners =
-        context == null
-            ? repository.owners(auth.tenantId(), e.getId())
-            : context.owners().getOrDefault(e.getId(), List.of());
+        ownerViews(
+            ownersByEquipment == null
+                ? ownerRepository.list(auth.tenantId(), e.getId())
+                : ownersByEquipment.getOrDefault(e.getId(), List.of()));
     return new EquipmentView(
         String.valueOf(e.getId()),
         safe(e.getEquipmentCode()),

@@ -17,8 +17,11 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.equipment.EquipmentBomRepository;
+import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.repository.equipment.EquipmentRelationLegacyRepository;
 import com.windasoft.eam.repository.equipment.EquipmentRelationsRepository;
+import com.windasoft.eam.repository.equipment.EquipmentChildRepository;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.equipment.EquipmentWriteRepository;
 import com.windasoft.eam.repository.inventory.MaterialRepository;
 import com.windasoft.eam.service.inventory.InventoryMutex;
@@ -51,7 +54,14 @@ class EquipmentRelationsCommandTest {
         auth,
         permissions,
         mock(com.windasoft.eam.service.business.BusinessValueService.class),
-        mock(EquipmentInputValidation.class));
+        mock(EquipmentInputValidation.class),
+        mock(EquipmentOwnerRepository.class),
+        mock(com.windasoft.eam.repository.basedata.BaseItemRepository.class),
+        mock(com.windasoft.eam.repository.system.OrgUnitRepository.class),
+        mock(com.windasoft.eam.repository.system.SystemUserRepository.class),
+        mock(EquipmentCodeService.class),
+        mock(com.windasoft.eam.repository.equipment.EquipmentMediaRepository.class),
+        mock(com.windasoft.eam.repository.imports.ImportCodeIdentityRepository.class));
   }
 
   @Test
@@ -96,18 +106,20 @@ class EquipmentRelationsCommandTest {
   @Test
   void emptyBomCannotClearChildrenOrTheirLegacyRows() {
     var repo = mock(EquipmentRelationsRepository.class);
+    var childr = mock(EquipmentChildRepository.class);
+    var queryr = mock(EquipmentQueryRepository.class);
     var bomr = mock(EquipmentBomRepository.class);
     var reR  = mock(EquipmentRelationLegacyRepository.class);
     var mR =   mock(MaterialRepository.class);
     when(reR.list(anyLong(), anyLong(), anyString())).thenReturn(java.util.List.of());
     var service =
-        new EquipmentRelationsService(repo, auth, permissions, json, mock(InventoryMutex.class),
+        new EquipmentRelationsService(repo, childr, queryr, auth, permissions, json, mock(InventoryMutex.class),
             mock(com.windasoft.eam.repository.system.OrgUnitRepository.class), bomr,reR,mR);
     var parent = new Equipment();
     parent.setId(901L);
     service.saveBom(parent, json.createArrayNode());
     verify(bomr).clear(anyLong(), eq(901L));
-    verify(repo, never()).clearChildren(anyLong(), anyLong());
+    verify(childr, never()).clear(anyLong(), anyLong());
     verify(reR, never()).list(anyLong(), anyLong(), eq("child"));
     verify(reR, never()).clear(anyLong(), anyLong());
   }
@@ -115,17 +127,19 @@ class EquipmentRelationsCommandTest {
   @Test
   void emptyChildrenCannotClearBomOrItsLegacyRows() {
     var repo = mock(EquipmentRelationsRepository.class);
+    var childr = mock(EquipmentChildRepository.class);
+    var queryr = mock(EquipmentQueryRepository.class);
     var bomR = mock(EquipmentBomRepository.class);
     var reR =  mock(EquipmentRelationLegacyRepository.class);
     var mR =   mock(MaterialRepository.class);
     when(reR.list(anyLong(), anyLong(), anyString())).thenReturn(java.util.List.of());
     var service =
-        new EquipmentRelationsService(repo, auth, permissions, json, mock(InventoryMutex.class),
+        new EquipmentRelationsService(repo, childr, queryr, auth, permissions, json, mock(InventoryMutex.class),
             mock(com.windasoft.eam.repository.system.OrgUnitRepository.class), bomR, reR,mR);
     var parent = new Equipment();
     parent.setId(901L);
     service.saveChildren(parent, json.createArrayNode());
-    verify(repo).clearChildren(anyLong(), eq(901L));
+    verify(childr).clear(anyLong(), eq(901L));
     verify(bomR, never()).clear(anyLong(), anyLong());
     verify(reR, never()).list(anyLong(), anyLong(), eq("bom"));
   }

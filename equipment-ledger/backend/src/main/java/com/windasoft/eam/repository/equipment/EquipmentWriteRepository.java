@@ -1,17 +1,7 @@
 package com.windasoft.eam.repository.equipment;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.windasoft.eam.dto.equipment.EquipmentOwnerSnapshot;
-import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
-import com.windasoft.eam.entity.system.OrgUnit;
-import com.windasoft.eam.entity.system.SystemUser;
-import com.windasoft.eam.repository.basedata.BaseItemMapper;
-import com.windasoft.eam.repository.system.OrgUnitMapper;
-import com.windasoft.eam.repository.system.SystemUserMapper;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -19,39 +9,17 @@ import org.springframework.stereotype.Repository;
 public class EquipmentWriteRepository {
   private final EquipmentMapper equipment;
   private final EquipmentMediaRepository media;
-  private final BaseItemMapper base;
-  private final OrgUnitMapper orgs;
-  private final SystemUserMapper users;
-  private final NumberCounterMapper counter;
   private final JdbcTemplate db;
 
   public EquipmentWriteRepository(
-      EquipmentMapper equipment,
-      EquipmentMediaRepository media,
-      BaseItemMapper base,
-      OrgUnitMapper orgs,
-      SystemUserMapper users,
-      NumberCounterMapper counter,
-      JdbcTemplate db) {
+      EquipmentMapper equipment, EquipmentMediaRepository media, JdbcTemplate db) {
     this.equipment = equipment;
     this.media = media;
-    this.base = base;
-    this.orgs = orgs;
-    this.users = users;
-    this.counter = counter;
     this.db = db;
   }
 
   public int insert(Equipment e) {
-    int changed = equipment.insert(e);
-    if (changed > 0) {
-      media.save(e);
-    }
-    return changed;
-  }
-
-  public Map<String, String> importCodeKeys(Collection<String> codes) {
-    return com.windasoft.eam.repository.imports.ImportCodeIdentity.keys(db, codes);
+    return equipment.insert(e);
   }
 
   public int insertImported(Equipment e) {
@@ -59,11 +27,7 @@ public class EquipmentWriteRepository {
   }
 
   public int update(Equipment e) {
-    int changed = equipment.updateById(e);
-    if (changed > 0) {
-      media.save(e);
-    }
-    return changed;
+    return equipment.updateById(e);
   }
 
   public int delete(Long id) {
@@ -99,10 +63,6 @@ public class EquipmentWriteRepository {
     return equipment.selectCount(q);
   }
 
-  public void nextEquipmentNumber(String year, long minimum) {
-    counter.nextEquipmentNumber(year, minimum);
-  }
-
   public long maxEquipmentNumber(String year) {
     String prefix = "EQ-" + year + "-";
     // 编号计数器由当前数据库共享，推进时需计入历史设备编号。
@@ -117,74 +77,4 @@ public class EquipmentWriteRepository {
     return maximum == null ? 0L : maximum;
   }
 
-  public long currentValue() {
-    return counter.currentValue();
-  }
-
-  public BaseItem baseItem(Long id) {
-    return base.selectOne(
-        new LambdaQueryWrapper<BaseItem>().eq(BaseItem::getId, id).last("FOR SHARE"));
-  }
-
-  public BaseItem baseItemInTenant(long tenant, Long id) {
-    return base.selectOne(
-        new LambdaQueryWrapper<BaseItem>()
-            .eq(BaseItem::getTenantId, tenant)
-            .eq(BaseItem::getId, id)
-            .last("FOR SHARE"));
-  }
-
-  public BaseItem activeBase(long tenant, String id, String type) {
-    return base.selectOne(
-        new LambdaQueryWrapper<BaseItem>()
-            .eq(BaseItem::getTenantId, tenant)
-            .eq(BaseItem::getId, id)
-            .eq(BaseItem::getItemType, type)
-            .eq(BaseItem::getStatus, 1)
-            .last("FOR SHARE"));
-  }
-
-  public OrgUnit activeDepartment(long tenant, String id) {
-    return orgs.selectOne(
-        new LambdaQueryWrapper<OrgUnit>()
-            .eq(OrgUnit::getTenantId, tenant)
-            .eq(OrgUnit::getId, id)
-            .eq(OrgUnit::getOrgType, "部门")
-            .eq(OrgUnit::getStatus, 1));
-  }
-
-  public OrgUnit organization(Long id) {
-    return orgs.selectById(id);
-  }
-
-  public SystemUser user(long tenant, Long id) {
-    return users.selectOne(
-        new LambdaQueryWrapper<SystemUser>()
-            .eq(SystemUser::getTenantId, tenant)
-            .eq(SystemUser::getId, id));
-  }
-
-  public List<EquipmentOwnerSnapshot> owners(long tenant, Long id) {
-    return db.query(
-        "SELECT user_id,owner_name FROM eam_equipment_owner WHERE tenant_id=? AND equipment_id=?"
-            + " ORDER BY sort_no,user_id",
-        (rs, row) -> new EquipmentOwnerSnapshot(rs.getLong("user_id"), rs.getString("owner_name")),
-        tenant,
-        id);
-  }
-
-  public void deleteOwners(long tenant, Long id) {
-    db.update("DELETE FROM eam_equipment_owner WHERE tenant_id=? AND equipment_id=?", tenant, id);
-  }
-
-  public void addOwner(long tenant, Long id, Long userId, String name, int sort) {
-    db.update(
-        "INSERT INTO eam_equipment_owner(tenant_id,equipment_id,user_id,owner_name,sort_no)"
-            + " VALUES(?,?,?,?,?)",
-        tenant,
-        id,
-        userId,
-        name,
-        sort);
-  }
 }

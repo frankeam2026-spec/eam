@@ -23,4 +23,23 @@ public class OrgUnitRepository {
                 .last("FOR UPDATE"))
         != null;
   }
+ 
+  public OrgUnit activeDepartment(long tenant, String id) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<OrgUnit>()
+            .eq(OrgUnit::getTenantId, tenant)
+            .eq(OrgUnit::getId, id)
+            .eq(OrgUnit::getOrgType, "部门")
+            .eq(OrgUnit::getStatus, 1));
+  }
+
+  public OrgUnit organization(Long id) {
+    return mapper.selectById(id);
+  }
+
+  public java.util.List<OrgUnit> organizations(long tenant, boolean activeOnly) {
+    return mapper.selectList(new LambdaQueryWrapper<OrgUnit>()
+        .eq(OrgUnit::getTenantId, tenant)
+        .eq(activeOnly, OrgUnit::getStatus, 1));
+  }
 }

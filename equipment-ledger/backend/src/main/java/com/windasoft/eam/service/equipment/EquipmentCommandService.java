@@ -8,11 +8,17 @@ import com.windasoft.eam.dto.equipment.EquipmentForm;
 import com.windasoft.eam.dto.equipment.EquipmentOwnerSnapshot;
 import com.windasoft.eam.dto.equipment.EquipmentView;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.entity.equipment.EquipmentOwner;
+import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.repository.equipment.EquipmentWriteRepository;
+import com.windasoft.eam.repository.equipment.EquipmentMediaRepository;
+import com.windasoft.eam.repository.imports.ImportCodeIdentityRepository;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
 import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
-import java.time.LocalDate;
 import java.util.List;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +31,13 @@ public class EquipmentCommandService {
   private final EquipmentFileService files;
   private final EquipmentQueryService queries;
   private final EquipmentWriteRepository repository;
+  private final BaseItemRepository baseItems;
+  private final OrgUnitRepository organizations;
+  private final SystemUserRepository users;
+  private final EquipmentCodeService codes;
+  private final EquipmentMediaRepository media;
+  private final ImportCodeIdentityRepository importIdentities;
+  private final EquipmentOwnerRepository ownerRepository;
   private final ObjectMapper objectMapper;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -38,11 +51,25 @@ public class EquipmentCommandService {
       AuthContext auth,
       PermissionService permissions,
       BusinessValueService custom,
-      EquipmentInputValidation inputValidation) {
+      EquipmentInputValidation inputValidation,
+      EquipmentOwnerRepository ownerRepository,
+      BaseItemRepository baseItems,
+      OrgUnitRepository organizations,
+      SystemUserRepository users,
+      EquipmentCodeService codes,
+      EquipmentMediaRepository media,
+      ImportCodeIdentityRepository importIdentities) {
     this.relations = relations;
     this.files = files;
     this.queries = queries;
     this.repository = repository;
+    this.ownerRepository = ownerRepository;
+    this.baseItems = baseItems;
+    this.organizations = organizations;
+    this.users = users;
+    this.codes = codes;
+    this.media = media;
+    this.importIdentities = importIdentities;
     this.objectMapper = objectMapper;
     this.auth = auth;
     this.permissions = permissions;
@@ -60,14 +87,14 @@ public class EquipmentCommandService {
     setAccessFields(e, form);
     inputValidation.validateEntity(e);
     permissions.checkEquipment(e, "新增");
-    String code = has(form.code()) ? form.code().trim() : nextCode();
-    assertCodeAvailable(code, null);
+    String code = has(form.code()) ? form.code().trim() : codes.nextCode();
+    codes.assertAvailable(code, null);
     e.setEquipmentCode(code);
     e.setRowVersion(0);
     e.setDeleted(0);
     e.setCreatedBy(auth.userId());
     e.setUpdatedBy(auth.userId());
-    repository.insert(e);
+    if (repository.insert(e) > 0) media.save(e);
     saveOwners(e);
     relations.save(e, form.children(), form.relatedSpares());
     custom.save(
@@ -89,8 +116,8 @@ public class EquipmentCommandService {
     }
     var reserved =
         new java.util.HashSet<>(
-            repository
-                .importCodeKeys(
+            importIdentities
+                .keys(
                     rows.stream()
                         .map(r -> r.form().code())
                         .filter(c -> c != null && !c.isBlank())
@@ -101,8 +128,8 @@ public class EquipmentCommandService {
       String code = e.getEquipmentCode();
       if (!has(code)) {
         do {
-          code = nextCode();
-        } while (reserved.contains(repository.importCodeKeys(java.util.List.of(code)).get(code)));
+          code = codes.nextCode();
+        } while (reserved.contains(importIdentities.keys(java.util.List.of(code)).get(code)));
       }
       // 显式编号已在取得设备互斥锁后完成整批校验。
       e.setEquipmentCode(code);
@@ -111,12 +138,13 @@ public class EquipmentCommandService {
       if (e.getOwnerIds() != null) {
         for (int i = 0; i < e.getOwnerIds().size(); i++) {
           // 复核时已锁定原系统账号并解析负责人名称。
-          repository.addOwner(
-              auth.tenantId(),
-              e.getId(),
-              e.getOwnerIds().get(i),
-              row.ownerNames().get(e.getOwnerIds().get(i)),
-              i);
+          ownerRepository.add(
+              new EquipmentOwner(
+                  auth.tenantId(),
+                  e.getId(),
+                  e.getOwnerIds().get(i),
+                  row.ownerNames().get(e.getOwnerIds().get(i)),
+                  i));
         }
       }
       custom.savePreparedNew("equipment", e.getId(), row.custom());
@@ -150,11 +178,12 @@ public class EquipmentCommandService {
     permissions.checkEquipment(e, "编辑");
     relations.checkMove(old, e);
     String code = has(form.code()) ? form.code().trim() : old.getEquipmentCode();
-    assertCodeAvailable(code, id);
+    codes.assertAvailable(code, id);
     e.setEquipmentCode(code);
     e.setRowVersion(rowVersion);
     e.setUpdatedBy(auth.userId());
     VersionGuard.updated(repository.update(e));
+    media.save(e);
     saveOwners(e);
     if (replaceRelations) {
       relations.save(e, form.children(), form.relatedSpares());
@@ -196,7 +225,7 @@ public class EquipmentCommandService {
     if (repository.delete(id) != 1) {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
     }
-    repository.deleteOwners(auth.tenantId(), id);
+    ownerRepository.clear(auth.tenantId(), id);
     return true;
   }
 
@@ -222,7 +251,7 @@ public class EquipmentCommandService {
     }
     var base =
         (op.equals("location") || op.equals("category"))
-            ? repository.activeBase(
+            ? baseItems.activeForShare(
                 auth.tenantId(), value, op.equals("location") ? "LOCATION" : "CATEGORY")
             : null;
     if ((op.equals("location") || op.equals("category")) && base == null) {
@@ -236,7 +265,7 @@ public class EquipmentCommandService {
           if (repository.delete(e.getId()) != 1) {
             throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0278");
           }
-          repository.deleteOwners(auth.tenantId(), e.getId());
+          ownerRepository.clear(auth.tenantId(), e.getId());
           continue;
         }
         case "category" -> {
@@ -248,13 +277,13 @@ public class EquipmentCommandService {
           e.setFunctionLocation(locationPath(base.getId(), e.getCompanyOrgId(), true));
         }
         case "department" -> {
-          var dept = repository.activeDepartment(auth.tenantId(), value);
+          var dept = organizations.activeDepartment(auth.tenantId(), value);
           if (dept == null) {
             throw new com.windasoft.eam.common.LocalizedArgumentException(
                 "server.equipment.message0042");
           }
           permissions.checkEquipmentDepartment(dept.getId(), "编辑");
-          var company = repository.organization(permissions.companyOfOrganization(dept.getId()));
+          var company = organizations.organization(permissions.companyOfOrganization(dept.getId()));
           var original = require(e.getId());
           var moved = new Equipment();
           moved.setCompanyOrgId(company.getId());
@@ -288,6 +317,7 @@ public class EquipmentCommandService {
         throw new com.windasoft.eam.common.LocalizedArgumentException(
             "server.equipment.message0044");
       }
+      media.save(e);
       if (op.equals("owner")) {
         saveOwners(e);
       }
@@ -301,27 +331,6 @@ public class EquipmentCommandService {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
     }
     return e;
-  }
-
-  private void assertCodeAvailable(String code, Long currentId) {
-    if (repository.countCode(auth.tenantId(), code, currentId) > 0) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0045");
-    }
-  }
-
-  private String nextCode() {
-    String year = String.valueOf(LocalDate.now().getYear());
-    long minimum = 0;
-    while (true) {
-      repository.nextEquipmentNumber(year, minimum);
-      long sequence = repository.currentValue();
-      String code = "EQ-" + year + "-" + String.format("%04d", sequence);
-      if (repository.countCode(auth.tenantId(), code, null) == 0) {
-        return code;
-      }
-      // 在当前事务中修复缺失或落后的计数器，避免重复尝试相同编号。
-      minimum = Math.max(sequence, repository.maxEquipmentNumber(year));
-    }
   }
 
   private static boolean has(String s) {
@@ -345,7 +354,7 @@ public class EquipmentCommandService {
     }
     var parts = new java.util.ArrayList<String>();
     var visited = new java.util.HashSet<Long>();
-    var node = repository.baseItem(id);
+    var node = baseItems.findForShare(id);
     if (node == null) {
       if (required) {
         throw new com.windasoft.eam.common.LocalizedArgumentException(
@@ -369,7 +378,7 @@ public class EquipmentCommandService {
             "server.equipment.message0033");
       }
       parts.addFirst(node.getName());
-      node = node.getParentId() == null ? null : repository.baseItem(node.getParentId());
+      node = node.getParentId() == null ? null : baseItems.findForShare(node.getParentId());
     }
     return String.join(" > ", parts);
   }
@@ -382,7 +391,7 @@ public class EquipmentCommandService {
       }
       return "";
     }
-    var item = repository.baseItem(id);
+    var item = baseItems.findForShare(id);
     if (item == null
         || !java.util.Objects.equals(auth.tenantId(), item.getTenantId())
         || !type.equals(item.getItemType())
@@ -395,7 +404,7 @@ public class EquipmentCommandService {
   private String organizationPath(Long id) {
     var parts = new java.util.ArrayList<String>();
     var visited = new java.util.HashSet<Long>();
-    var node = repository.organization(id);
+    var node = organizations.organization(id);
     while (node != null) {
       if (!visited.add(node.getId())
           || !java.util.Objects.equals(auth.tenantId(), node.getTenantId())) {
@@ -403,7 +412,7 @@ public class EquipmentCommandService {
             "server.equipment.message0049");
       }
       parts.addFirst(node.getName());
-      node = node.getParentId() == null ? null : repository.organization(node.getParentId());
+      node = node.getParentId() == null ? null : organizations.organization(node.getParentId());
     }
     return String.join(" > ", parts);
   }
@@ -467,7 +476,7 @@ public class EquipmentCommandService {
             : permissions.requireDepartment(f.company(), f.department());
     e.setTenantId(auth.tenantId());
     e.setCompanyOrgId(permissions.companyOfOrganization(department.getId()));
-    e.setCompany(repository.organization(e.getCompanyOrgId()).getName());
+    e.setCompany(organizations.organization(e.getCompanyOrgId()).getName());
     e.setDepartment(department.getName());
     e.setDepartmentOrgId(department.getId());
     e.setDepartmentPath(organizationPath(department.getId()));
@@ -494,7 +503,9 @@ public class EquipmentCommandService {
     if (id == null) {
       return List.of();
     }
-    return repository.owners(auth.tenantId(), id);
+    return ownerRepository.list(auth.tenantId(), id).stream()
+        .map(row -> new EquipmentOwnerSnapshot(row.getUserId(), row.getOwnerName()))
+        .toList();
   }
 
   private void assignOwners(Equipment e, List<Long> selected, Equipment previous) {
@@ -509,7 +520,7 @@ public class EquipmentCommandService {
     var names = new java.util.ArrayList<String>();
     for (Long id : ids) {
       var prior = old.stream().filter(x -> java.util.Objects.equals(id, x.id())).findFirst();
-      var user = repository.user(auth.tenantId(), id);
+      var user = users.find(auth.tenantId(), id);
       if (prior.isEmpty() && (user == null || !Integer.valueOf(1).equals(user.getStatus()))) {
         throw new com.windasoft.eam.common.LocalizedArgumentException(
             "server.equipment.message0052");
@@ -523,13 +534,13 @@ public class EquipmentCommandService {
 
   private void saveOwners(Equipment e) {
     var prior = ownerRows(e.getId());
-    repository.deleteOwners(auth.tenantId(), e.getId());
+    ownerRepository.clear(auth.tenantId(), e.getId());
     var ids = e.getOwnerIds();
     if (ids == null || ids.isEmpty()) {
       return;
     }
     for (int i = 0; i < ids.size(); i++) {
-      var user = repository.user(auth.tenantId(), ids.get(i));
+      var user = users.find(auth.tenantId(), ids.get(i));
       Long ownerId = ids.get(i);
       String name =
           user == null
@@ -539,7 +550,7 @@ public class EquipmentCommandService {
                   .orElseThrow()
                   .name()
               : user.getDisplayName();
-      repository.addOwner(auth.tenantId(), e.getId(), ids.get(i), name, i);
+      ownerRepository.add(new EquipmentOwner(auth.tenantId(), e.getId(), ids.get(i), name, i));
     }
   }
 

@@ -18,6 +18,8 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.equipment.EquipmentOwnerView;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.entity.equipment.EquipmentOwner;
+import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -33,28 +35,36 @@ import org.springframework.web.server.ResponseStatusException;
 
 class EquipmentQueryServiceTest {
   EquipmentQueryRepository repository;
+  EquipmentOwnerRepository ownerRepository;
   PermissionService permissions;
   EquipmentQueryService service;
 
   @BeforeEach
   void setup() {
     repository = mock(EquipmentQueryRepository.class);
+    ownerRepository = mock(EquipmentOwnerRepository.class);
     permissions = mock(PermissionService.class);
     var auth = mock(AuthContext.class);
     when(auth.tenantId()).thenReturn(10001L);
+    var custom = mock(com.windasoft.eam.service.business.BusinessValueService.class);
+    when(custom.read(anyString(), anyLong()))
+        .thenReturn(
+            new com.windasoft.eam.service.business.BusinessValueService.Values(
+                Map.of(), Map.of(), 0));
     service =
         new EquipmentQueryService(
             repository,
             auth,
             permissions,
             new ObjectMapper(),
-            mock(com.windasoft.eam.repository.equipment.EquipmentAssistantRepository.class));
-    var custom = mock(com.windasoft.eam.service.business.BusinessValueService.class);
-    when(custom.read(anyString(), anyLong()))
-        .thenReturn(
-            new com.windasoft.eam.service.business.BusinessValueService.Values(
-                Map.of(), Map.of(), 0));
-    org.springframework.test.util.ReflectionTestUtils.setField(service, "custom", custom);
+            mock(com.windasoft.eam.repository.equipment.EquipmentAssistantRepository.class),
+            ownerRepository,
+            mock(com.windasoft.eam.repository.equipment.EquipmentHistoryRepository.class),
+            mock(com.windasoft.eam.repository.basedata.BaseItemRepository.class),
+            mock(com.windasoft.eam.repository.system.OrgUnitRepository.class),
+            mock(com.windasoft.eam.repository.system.SystemUserRepository.class),
+            custom,
+            mock(com.windasoft.eam.service.business.BusinessQueryService.class));
   }
 
   @Test
@@ -73,7 +83,7 @@ class EquipmentQueryServiceTest {
         .when(permissions)
         .checkEquipment(equipment, "查看");
     assertThrows(ResponseStatusException.class, () -> service.get(3L));
-    verify(repository, never()).owners(anyLong(), any());
+    verify(ownerRepository, never()).list(anyLong(), anyLong());
   }
 
   @Test
@@ -85,7 +95,8 @@ class EquipmentQueryServiceTest {
     equipment.setAcquiredAmount(new BigDecimal("12.30"));
     equipment.setRowVersion(2);
     when(repository.find(10001L, 3L)).thenReturn(equipment);
-    when(repository.owners(10001L, 3L)).thenReturn(List.of(new EquipmentOwnerView("73001", "负责人")));
+    when(ownerRepository.list(10001L, 3L))
+        .thenReturn(List.of(new EquipmentOwner(10001L, 3L, 73001L, "负责人", 0)));
     when(repository.children(10001L, 3L))
         .thenReturn(List.of(Map.of("equipmentId", "4", "code", "EQ-C")));
     when(repository.bom(10001L, 3L))
@@ -100,10 +111,10 @@ class EquipmentQueryServiceTest {
     assertEquals(List.of("73001"), view.ownerIds());
     assertEquals("4", view.children().getFirst().get("equipmentId"));
     assertEquals("1.00", view.relatedSpares().getFirst().get("quantity"));
-    InOrder order = inOrder(repository, permissions);
+    InOrder order = inOrder(repository, permissions, ownerRepository);
     order.verify(repository).find(10001L, 3L);
     order.verify(permissions).checkEquipment(equipment, "查看");
-    order.verify(repository).owners(10001L, 3L);
+    order.verify(ownerRepository).list(10001L, 3L);
   }
 
   @Test

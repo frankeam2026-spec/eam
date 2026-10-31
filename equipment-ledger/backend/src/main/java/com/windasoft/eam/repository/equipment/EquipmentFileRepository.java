@@ -2,35 +2,31 @@ package com.windasoft.eam.repository.equipment;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.windasoft.eam.entity.equipment.Equipment;
-import java.io.*;
-import java.nio.file.*;
+import com.windasoft.eam.entity.equipment.EquipmentFile;
 import java.util.*;
 import java.util.function.Consumer;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class EquipmentFileRepository {
-  private final JdbcTemplate db;
+  private final EquipmentFileMapper fileMapper;
   private final EquipmentMapper equipment;
   private final EquipmentMediaRepository media;
-  private final String directory;
 
   public EquipmentFileRepository(
-      JdbcTemplate db,
+      EquipmentFileMapper fileMapper,
       EquipmentMapper equipment,
-      EquipmentMediaRepository media,
-      @Value("${eam.upload.directory:./data/uploads}") String directory) {
-    this.db = db;
+      EquipmentMediaRepository media) {
+    this.fileMapper = fileMapper;
     this.equipment = equipment;
     this.media = media;
-    this.directory = directory;
   }
 
-  public List<Map<String, Object>> file(long tenant, String id) {
-    return db.queryForList(
-        "SELECT * FROM eam_equipment_file WHERE tenant_id=? AND id=?", tenant, id);
+  public EquipmentFile find(long tenant, String id) {
+    return fileMapper.selectOne(
+        new LambdaQueryWrapper<EquipmentFile>()
+            .eq(EquipmentFile::getTenantId, tenant)
+            .eq(EquipmentFile::getId, id));
   }
 
   public List<Equipment> attachedDevices(
@@ -56,31 +52,15 @@ public class EquipmentFileRepository {
       String extension,
       String contentType,
       long size) {
-    db.update(
-        "INSERT INTO eam_equipment_file(id,tenant_id,user_id,name,extension,content_type,size)"
-            + " VALUES(?,?,?,?,?,?,?)",
-        id,
-        tenant,
-        user,
-        name,
-        extension,
-        contentType,
-        size);
+    var record = new EquipmentFile();
+    record.setId(id);
+    record.setTenantId(tenant);
+    record.setUserId(user);
+    record.setName(name);
+    record.setExtension(extension);
+    record.setContentType(contentType);
+    record.setSize(size);
+    fileMapper.insert(record);
   }
 
-  public Path store(InputStream input, String id, String extension) throws IOException {
-    Path root = Path.of(directory, "equipment").toAbsolutePath().normalize();
-    Files.createDirectories(root);
-    Path path = root.resolve(id + extension);
-    Files.copy(input, path);
-    return path;
-  }
-
-  public Path contentPath(String id, String extension) {
-    return Path.of(directory, "equipment", id + extension).toAbsolutePath().normalize();
-  }
-
-  public void deleteContent(Path path) throws IOException {
-    Files.deleteIfExists(path);
-  }
 }

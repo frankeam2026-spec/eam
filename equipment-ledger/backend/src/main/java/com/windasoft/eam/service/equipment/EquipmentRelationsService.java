@@ -9,6 +9,8 @@ import com.windasoft.eam.entity.equipment.EquipmentBom;
 import com.windasoft.eam.repository.equipment.EquipmentBomRepository;
 import com.windasoft.eam.repository.equipment.EquipmentRelationLegacyRepository;
 import com.windasoft.eam.repository.equipment.EquipmentRelationsRepository;
+import com.windasoft.eam.repository.equipment.EquipmentChildRepository;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.inventory.MaterialRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.inventory.InventoryMutex;
@@ -21,6 +23,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class EquipmentRelationsService {
   final EquipmentRelationsRepository repository;
+  private final EquipmentChildRepository childRepository;
+  private final EquipmentQueryRepository queryRepository;
   final AuthContext auth;
   final PermissionService permissions;
   final ObjectMapper json;
@@ -32,12 +36,16 @@ public class EquipmentRelationsService {
 
   public EquipmentRelationsService(
     EquipmentRelationsRepository repository,
+    EquipmentChildRepository childRepository,
+    EquipmentQueryRepository queryRepository,
     AuthContext auth,
     PermissionService permissions,
     ObjectMapper json,
     InventoryMutex inventoryMutex,
     OrgUnitRepository organizations, EquipmentBomRepository equipmentBomRepository, EquipmentRelationLegacyRepository relationLegacyRepository, MaterialRepository materialRepository) {
     this.repository = repository;
+    this.childRepository = childRepository;
+    this.queryRepository = queryRepository;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
@@ -64,7 +72,7 @@ public class EquipmentRelationsService {
   }
 
   Equipment device(long id) {
-    var e = repository.find(auth.tenantId(), id);
+    var e = queryRepository.find(auth.tenantId(), id);
     if (e == null)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
     return e;
@@ -72,12 +80,12 @@ public class EquipmentRelationsService {
 
   public void checkMove(Equipment old, Equipment target) {
     if (!Objects.equals(old.getCompanyOrgId(), target.getCompanyOrgId())
-        && repository.relationshipCount(auth.tenantId(), old.getId()) > 0)
+        && childRepository.countRelations(auth.tenantId(), old.getId()) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0011");
   }
 
   public void checkDelete(long id) {
-    if (repository.relationshipCount(auth.tenantId(), id) > 0)
+    if (childRepository.countRelations(auth.tenantId(), id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0012");
   }
 
@@ -111,7 +119,7 @@ public class EquipmentRelationsService {
       excluded.add(parentId);
       Long next = parentId;
       while (next != null) {
-        var rows = repository.parents(auth.tenantId(), next);
+        var rows = childRepository.parents(auth.tenantId(), next);
         if (rows.isEmpty()) break;
         next = rows.getFirst().getParentId();
         if (!excluded.add(next))
@@ -258,7 +266,7 @@ public class EquipmentRelationsService {
       if (!Objects.equals(parent.getCompanyOrgId(), child.getCompanyOrgId()))
         throw new com.windasoft.eam.common.LocalizedArgumentException(
             "server.equipment.message0020");
-      var current = repository.parents(auth.tenantId(), id);
+      var current = childRepository.parents(auth.tenantId(), id);
       if (!current.isEmpty()
           && current.getFirst().getParentId() != parent.getId())
         throw new com.windasoft.eam.common.LocalizedArgumentException(
@@ -269,7 +277,7 @@ public class EquipmentRelationsService {
         if (ancestor == id || !seen.add(ancestor))
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.equipment.message0022");
-        var rows = repository.parents(auth.tenantId(), ancestor);
+        var rows = childRepository.parents(auth.tenantId(), ancestor);
         ancestor = rows.isEmpty() ? null : rows.getFirst().getParentId();
       }
       links.add(child);
@@ -312,9 +320,9 @@ public class EquipmentRelationsService {
     }
     if (replaceChildren) {
       legacySelection(parent.getId(), "child", childNodes);
-      repository.clearChildren(auth.tenantId(), parent.getId());
+      childRepository.clear(auth.tenantId(), parent.getId());
       for (int i = 0; i < links.size(); i++)
-        repository.addChild(auth.tenantId(), parent.getId(), links.get(i).getId(), i);
+        childRepository.add(new com.windasoft.eam.entity.equipment.EquipmentChild(auth.tenantId(), parent.getId(), links.get(i).getId(), i));
     }
     if (replaceBom) {
       legacySelection(parent.getId(), "bom", bomNodes);
@@ -332,25 +340,25 @@ public class EquipmentRelationsService {
         .isActualTransactionActive()) throw new IllegalStateException("设备关系必须在事务中执行");
     for (var entry : groups.entrySet()) {
       var parent = entry.getKey();
-      int sort = repository.children(auth.tenantId(), parent.getId()).size();
+      int sort = queryRepository.children(auth.tenantId(), parent.getId()).size();
       for (var child : entry.getValue()) {
         if (parent.getId().equals(child.getId())
             || !Objects.equals(parent.getCompanyOrgId(), child.getCompanyOrgId()))
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.equipment.message0026");
-        if (!repository.parents(auth.tenantId(), child.getId()).isEmpty())
+        if (!childRepository.parents(auth.tenantId(), child.getId()).isEmpty())
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.equipment.message0027");
-        repository.addChild(auth.tenantId(), parent.getId(), child.getId(), sort++);
+        childRepository.add(new com.windasoft.eam.entity.equipment.EquipmentChild(auth.tenantId(), parent.getId(), child.getId(), sort++));
       }
     }
   }
 
   public List<Map<String, Object>> children(long id) {
-    return repository.children(auth.tenantId(), id);
+    return queryRepository.children(auth.tenantId(), id);
   }
 
   public List<Map<String, Object>> bom(long id) {
-    return repository.bom(auth.tenantId(), id);
+    return queryRepository.bom(auth.tenantId(), id);
   }
 }

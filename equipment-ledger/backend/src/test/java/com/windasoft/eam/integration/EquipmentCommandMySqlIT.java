@@ -71,6 +71,7 @@ class EquipmentCommandMySqlIT {
   @Autowired EquipmentCommandService service;
   @Autowired EquipmentQueryService queries;
   @Autowired EquipmentWriteRepository writes;
+  @Autowired com.windasoft.eam.repository.system.OrgUnitRepository organizations;
   @Autowired JdbcTemplate db;
   @Autowired ObjectMapper json;
   @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
@@ -89,7 +90,7 @@ class EquipmentCommandMySqlIT {
     user.setDisplayName("equipment tester");
     when(auth.user()).thenReturn(user);
     when(permissions.requireDepartment(anyLong()))
-        .thenAnswer(c -> writes.organization(c.getArgument(0)));
+        .thenAnswer(c -> organizations.organization(c.getArgument(0)));
     when(permissions.companyOfOrganization(any()))
         .thenAnswer(
             c -> {

@@ -17,8 +17,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.dto.common.DataResponse;
 import com.windasoft.eam.dto.equipment.EquipmentForm;
-import com.windasoft.eam.dto.equipment.EquipmentOwnerSnapshot;
-import com.windasoft.eam.repository.equipment.EquipmentWriteRepository;
+import com.windasoft.eam.entity.equipment.EquipmentOwner;
+import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.service.equipment.EquipmentCommandService;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -100,11 +100,11 @@ class EquipmentCoreContractTest {
   @Test
   void ownerPersistenceAndControllerEnvelopesCannotRegressToMaps() throws Exception {
     Type owners =
-        EquipmentWriteRepository.class
-            .getMethod("owners", long.class, Long.class)
+        EquipmentOwnerRepository.class
+            .getMethod("list", long.class, long.class)
             .getGenericReturnType();
     assertEquals(
-        EquipmentOwnerSnapshot.class, ((ParameterizedType) owners).getActualTypeArguments()[0]);
+        EquipmentOwner.class, ((ParameterizedType) owners).getActualTypeArguments()[0]);
     for (var method : EquipmentController.class.getDeclaredMethods()) {
       assertTrue(typedEnvelope(method.getGenericReturnType()), method.getName());
     }

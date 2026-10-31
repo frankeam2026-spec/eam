@@ -1,10 +1,11 @@
 package com.windasoft.eam.controller.equipment;
 
 import com.windasoft.eam.dto.equipment.EquipmentUpload;
+import com.windasoft.eam.dto.equipment.EquipmentFileUploadResult;
+import com.windasoft.eam.dto.common.DataResponse;
 import com.windasoft.eam.service.equipment.EquipmentFileService;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -20,10 +21,9 @@ public class EquipmentFileController {
   }
 
   @PostMapping
-  public Object upload(@RequestPart("file") MultipartFile file) throws Exception {
+  public DataResponse<EquipmentFileUploadResult> upload(@RequestPart("file") MultipartFile file) throws Exception {
     try (var content = file.getInputStream()) {
-      return Map.of(
-          "data",
+      return new DataResponse<>(
           files.upload(
               new EquipmentUpload(
                   file.getOriginalFilename(), file.getSize(), file.isEmpty(), content)));
