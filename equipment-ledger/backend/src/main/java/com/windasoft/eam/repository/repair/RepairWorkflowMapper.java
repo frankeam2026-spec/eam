@@ -1,6 +1,7 @@
 package com.windasoft.eam.repository.repair;
 
 import com.windasoft.eam.entity.repair.RepairOrder;
+import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -190,7 +191,7 @@ public interface RepairWorkflowMapper {
           + " s.id=p.stock_id AND s.tenant_id=p.tenant_id WHERE p.tenant_id=#{tenant} AND"
           + " p.equipment_id=#{equipmentId} AND p.status='在用' ORDER BY p.installed_at DESC,p.id"
           + " DESC")
-  List<Map<String, Object>> installed(long tenant, long equipmentId);
+  List<EquipmentInstalledSpareView> installed(long tenant, long equipmentId);
 
   @Update(
       "UPDATE eam_equipment_spare SET status='已换下',removed_at=NOW() WHERE tenant_id=#{tenant} AND"
