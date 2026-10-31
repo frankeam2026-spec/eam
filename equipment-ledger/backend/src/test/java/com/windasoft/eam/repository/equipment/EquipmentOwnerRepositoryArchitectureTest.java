@@ -2,6 +2,7 @@ package com.windasoft.eam.repository.equipment;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.windasoft.eam.entity.equipment.EquipmentOwner;
 import java.lang.reflect.Method;
@@ -19,6 +20,8 @@ class EquipmentOwnerRepositoryArchitectureTest {
     var table = EquipmentOwner.class.getAnnotation(
         com.baomidou.mybatisplus.annotation.TableName.class);
     assertEquals("eam_equipment_owner", table.value());
+    assertTrue(com.baomidou.mybatisplus.core.mapper.BaseMapper.class
+        .isAssignableFrom(EquipmentOwnerMapper.class));
     assertFalse(Arrays.stream(EquipmentOwner.class.getDeclaredFields())
         .anyMatch(field -> field.isAnnotationPresent(
             com.baomidou.mybatisplus.annotation.TableId.class)));
