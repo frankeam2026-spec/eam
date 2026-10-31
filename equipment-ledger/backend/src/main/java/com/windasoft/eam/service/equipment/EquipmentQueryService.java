@@ -24,6 +24,7 @@ import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.ResultSort;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Text;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantResult;
 import com.windasoft.eam.dto.equipment.EquipmentHistoryView;
+import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery;
 import com.windasoft.eam.dto.equipment.EquipmentNavigationNode;
 import com.windasoft.eam.dto.equipment.EquipmentOptions;
@@ -35,6 +36,8 @@ import com.windasoft.eam.repository.equipment.EquipmentAssistantRepository;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
+import com.windasoft.eam.repository.repair.RepairWorkflowRepository;
+import com.windasoft.eam.repository.inventory.InventoryUsageRepository;
 import com.windasoft.eam.entity.equipment.EquipmentHistory;
 import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
@@ -59,6 +62,8 @@ public class EquipmentQueryService {
   private final EquipmentQueryRepository repository;
   private final EquipmentOwnerRepository ownerRepository;
   private final EquipmentHistoryRepository historyRepository;
+  private final RepairWorkflowRepository repairWorkflow;
+  private final InventoryUsageRepository inventoryUsage;
   private final BaseItemRepository baseItems;
   private final OrgUnitRepository organizations;
   private final SystemUserRepository users;
@@ -75,6 +80,8 @@ public class EquipmentQueryService {
       EquipmentAssistantRepository assistantRepository,
       EquipmentOwnerRepository ownerRepository,
       EquipmentHistoryRepository historyRepository,
+      RepairWorkflowRepository repairWorkflow,
+      InventoryUsageRepository inventoryUsage,
       BaseItemRepository baseItems,
       OrgUnitRepository organizations,
       SystemUserRepository users,
@@ -83,6 +90,8 @@ public class EquipmentQueryService {
     this.repository = repository;
     this.ownerRepository = ownerRepository;
     this.historyRepository = historyRepository;
+    this.repairWorkflow = repairWorkflow;
+    this.inventoryUsage = inventoryUsage;
     this.baseItems = baseItems;
     this.organizations = organizations;
     this.users = users;
@@ -577,8 +586,12 @@ public class EquipmentQueryService {
             .toList();
     var records = historyRepository.list(auth.tenantId(), id).stream()
         .map(EquipmentQueryService::historyRow).toList();
+    var installedSpares =
+        new java.util.ArrayList<EquipmentInstalledSpareView>(
+            repairWorkflow.installed(auth.tenantId(), id));
+    installedSpares.addAll(inventoryUsage.installedForEquipment(auth.tenantId(), id));
     return new EquipmentHistoryView(
-        repository.installedSpares(auth.tenantId(), id),
+        List.copyOf(installedSpares),
         view(equipment),
         repairHistory,
         records.stream().filter(r -> "MAINTENANCE".equals(r.get("type"))).toList(),
