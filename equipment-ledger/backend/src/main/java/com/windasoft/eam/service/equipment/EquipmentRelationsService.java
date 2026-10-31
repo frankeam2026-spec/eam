@@ -268,7 +268,7 @@ public class EquipmentRelationsService {
             "server.equipment.message0020");
       var current = childRepository.parents(auth.tenantId(), id);
       if (!current.isEmpty()
-          && current.getFirst().getParentId() != parent.getId())
+          && !Objects.equals(current.getFirst().getParentId(), parent.getId()))
         throw new com.windasoft.eam.common.LocalizedArgumentException(
             "server.equipment.message0021");
       Long ancestor = parent.getId();
