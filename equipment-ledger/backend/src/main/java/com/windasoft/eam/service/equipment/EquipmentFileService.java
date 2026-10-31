@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.equipment.EquipmentDownload;
 import com.windasoft.eam.dto.equipment.EquipmentUpload;
+import com.windasoft.eam.dto.equipment.EquipmentFileUploadResult;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.entity.equipment.EquipmentFile;
 import com.windasoft.eam.repository.equipment.EquipmentFileRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -39,23 +41,23 @@ public class EquipmentFileService {
     if (!valid) throw new IllegalArgumentException(message);
   }
 
-  private Map<String, Object> file(String id) {
+  private EquipmentFile file(String id) {
     require(
         id.matches("[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}"),
         com.windasoft.eam.common.MessageContext.text("server.equipment.message0057"));
-    var list = repository.file(auth.tenantId(), id);
-    if (list.isEmpty())
+    var stored = repository.find(auth.tenantId(), id);
+    if (stored == null)
       throw new com.windasoft.eam.common.LocalizedStatusException(
           HttpStatus.NOT_FOUND, "server.repair.message0011");
-    return list.getFirst();
+    return stored;
   }
 
-  private boolean mayRead(Map<String, Object> file) {
-    String id = file.get("id").toString();
+  private boolean mayRead(EquipmentFile file) {
+    String id = file.getId();
     boolean attached =
         repository.attachedDevices(auth.tenantId(), id, q -> {}).stream()
             .anyMatch(e -> references(e, id));
-    if (!attached) return ((Number) file.get("user_id")).longValue() == auth.userId();
+    if (!attached) return file.getUserId() == auth.userId();
     return repository.attachedDevices(auth.tenantId(), id, permissions::filterEquipment).stream()
         .anyMatch(e -> references(e, id));
   }
@@ -74,7 +76,7 @@ public class EquipmentFileService {
     return false;
   }
 
-  private void checkRead(Map<String, Object> file) {
+  private void checkRead(EquipmentFile file) {
     if (!mayRead(file))
       throw new com.windasoft.eam.common.LocalizedStatusException(
           HttpStatus.FORBIDDEN, "server.equipment.message0034");
@@ -84,7 +86,7 @@ public class EquipmentFileService {
     return "/api/v1/equipment/files/" + id;
   }
 
-  public Map<String, Object> upload(EquipmentUpload upload) throws Exception {
+  public EquipmentFileUploadResult upload(EquipmentUpload upload) throws Exception {
     if (!permissions.allowed("equipment", "新增") && !permissions.allowed("equipment", "编辑"))
       throw new com.windasoft.eam.common.LocalizedStatusException(
           HttpStatus.FORBIDDEN, "server.equipment.message0035");
@@ -135,8 +137,7 @@ public class EquipmentFileService {
       storage.deleteContent(path);
       throw failure;
     }
-    return Map.of(
-        "id", id, "name", name, "contentType", contentType, "size", upload.size(), "url", url(id));
+    return new EquipmentFileUploadResult(id, name, contentType, upload.size(), url(id));
   }
 
   public JsonNode validate(JsonNode documents) {
@@ -158,8 +159,8 @@ public class EquipmentFileService {
       checkRead(stored);
       var object = (com.fasterxml.jackson.databind.node.ObjectNode) doc;
       object.put("url", url(id));
-      object.put("size", ((Number) stored.get("size")).longValue());
-      object.put("originalName", stored.get("name").toString());
+      object.put("size", stored.getSize());
+      object.put("originalName", stored.getName());
     }
     return copy;
   }
@@ -195,7 +196,7 @@ public class EquipmentFileService {
     var stored = file(id);
     checkRead(stored);
     require(
-        stored.get("content_type").toString().startsWith("image/"),
+        stored.getContentType().startsWith("image/"),
         com.windasoft.eam.common.MessageContext.text("server.equipment.message0068"));
     return id;
   }
@@ -204,24 +205,24 @@ public class EquipmentFileService {
     var stored = file(id);
     checkRead(stored);
     require(
-        stored.get("content_type").toString().startsWith("image/"),
+        stored.getContentType().startsWith("image/"),
         com.windasoft.eam.common.MessageContext.text("server.equipment.message0069"));
-    Path path = storage.contentPath(id, stored.get("extension").toString());
+    Path path = storage.contentPath(id, stored.getExtension());
     if (!Files.isRegularFile(path))
       throw new com.windasoft.eam.common.LocalizedStatusException(
           HttpStatus.NOT_FOUND, "server.equipment.message0036");
     return new EquipmentDownload(
-        path, stored.get("content_type").toString(), stored.get("name").toString());
+        path, stored.getContentType(), stored.getName());
   }
 
   public EquipmentDownload download(String id) {
     var stored = file(id);
     checkRead(stored);
-    Path path = storage.contentPath(id, stored.get("extension").toString());
+    Path path = storage.contentPath(id, stored.getExtension());
     if (!Files.isRegularFile(path))
       throw new com.windasoft.eam.common.LocalizedStatusException(
           HttpStatus.NOT_FOUND, "server.equipment.message0037");
     return new EquipmentDownload(
-        path, stored.get("content_type").toString(), stored.get("name").toString());
+        path, stored.getContentType(), stored.getName());
   }
 }
