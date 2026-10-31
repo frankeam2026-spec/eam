@@ -33,10 +33,10 @@ public class EquipmentInstalledSpareService {
 
   private static EquipmentInstalledSpareView legacyView(Map<String, Object> row) {
     var view = new EquipmentInstalledSpareView();
-    view.setId(text(row.get("id")));
-    view.setCode(text(row.get("code")));
-    view.setName(text(row.get("name")));
-    view.setModel(text(row.get("model")));
+    view.setId(nullableText(row.get("id")));
+    view.setCode(nullableText(row.get("code")));
+    view.setName(nullableText(row.get("name")));
+    view.setModel(nullableText(row.get("model")));
     view.setQuantity(decimal(row.get("quantity")));
     view.setStatus(nullableText(row.get("status")));
     view.setInstalledAt(nullableText(row.get("installedAt")));
