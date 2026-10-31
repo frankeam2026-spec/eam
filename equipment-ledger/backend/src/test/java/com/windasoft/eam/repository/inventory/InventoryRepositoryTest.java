@@ -60,7 +60,7 @@ class InventoryRepositoryTest {
   @Test
   void emptyBatchLookupDoesNotBuildInvalidInClause() {
     var db = mock(JdbcTemplate.class);
-    var repository = new InventoryUsageRepository(db, mock(RepairOrderMapper.class));
+    var repository = new InventoryUsageRepository(db, mock(RepairOrderMapper.class), mock(InventoryUsageMapper.class));
     assertEquals(List.of(), repository.listEquipmentUsage(10001L, List.of()));
     verifyNoInteractions(db);
   }
