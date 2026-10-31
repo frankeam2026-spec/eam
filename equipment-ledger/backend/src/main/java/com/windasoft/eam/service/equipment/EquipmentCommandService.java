@@ -118,8 +118,8 @@ public class EquipmentCommandService {
     }
     var reserved =
         new java.util.HashSet<>(
-            repository
-                .importCodeKeys(
+            importIdentities
+                .keys(
                     rows.stream()
                         .map(r -> r.form().code())
                         .filter(c -> c != null && !c.isBlank())
