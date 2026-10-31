@@ -12,6 +12,8 @@ import com.windasoft.eam.entity.equipment.EquipmentOwner;
 import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.repository.equipment.EquipmentWriteRepository;
 import com.windasoft.eam.repository.equipment.EquipmentNumberRepository;
+import com.windasoft.eam.repository.equipment.EquipmentMediaRepository;
+import com.windasoft.eam.repository.imports.ImportCodeIdentityRepository;
 import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
@@ -35,6 +37,8 @@ public class EquipmentCommandService {
   private final OrgUnitRepository organizations;
   private final SystemUserRepository users;
   private final EquipmentNumberRepository numbers;
+  private final EquipmentMediaRepository media;
+  private final ImportCodeIdentityRepository importIdentities;
   private final EquipmentOwnerRepository ownerRepository;
   private final ObjectMapper objectMapper;
   private final AuthContext auth;
@@ -54,7 +58,9 @@ public class EquipmentCommandService {
       BaseItemRepository baseItems,
       OrgUnitRepository organizations,
       SystemUserRepository users,
-      EquipmentNumberRepository numbers) {
+      EquipmentNumberRepository numbers,
+      EquipmentMediaRepository media,
+      ImportCodeIdentityRepository importIdentities) {
     this.relations = relations;
     this.files = files;
     this.queries = queries;
@@ -64,6 +70,8 @@ public class EquipmentCommandService {
     this.organizations = organizations;
     this.users = users;
     this.numbers = numbers;
+    this.media = media;
+    this.importIdentities = importIdentities;
     this.objectMapper = objectMapper;
     this.auth = auth;
     this.permissions = permissions;
@@ -88,7 +96,7 @@ public class EquipmentCommandService {
     e.setDeleted(0);
     e.setCreatedBy(auth.userId());
     e.setUpdatedBy(auth.userId());
-    repository.insert(e);
+    if (repository.insert(e) > 0) media.save(e);
     saveOwners(e);
     relations.save(e, form.children(), form.relatedSpares());
     custom.save(
@@ -123,7 +131,7 @@ public class EquipmentCommandService {
       if (!has(code)) {
         do {
           code = nextCode();
-        } while (reserved.contains(repository.importCodeKeys(java.util.List.of(code)).get(code)));
+        } while (reserved.contains(importIdentities.keys(java.util.List.of(code)).get(code)));
       }
       // 显式编号已在取得设备互斥锁后完成整批校验。
       e.setEquipmentCode(code);
@@ -177,6 +185,7 @@ public class EquipmentCommandService {
     e.setRowVersion(rowVersion);
     e.setUpdatedBy(auth.userId());
     VersionGuard.updated(repository.update(e));
+    media.save(e);
     saveOwners(e);
     if (replaceRelations) {
       relations.save(e, form.children(), form.relatedSpares());
@@ -310,6 +319,7 @@ public class EquipmentCommandService {
         throw new com.windasoft.eam.common.LocalizedArgumentException(
             "server.equipment.message0044");
       }
+      media.save(e);
       if (op.equals("owner")) {
         saveOwners(e);
       }
