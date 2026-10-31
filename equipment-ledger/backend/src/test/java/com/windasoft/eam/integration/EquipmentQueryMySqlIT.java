@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.equipment.*;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
+import com.windasoft.eam.repository.repair.RepairQueryRepository;
 import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
 import com.windasoft.eam.service.system.*;
@@ -54,6 +55,7 @@ class EquipmentQueryMySqlIT {
   @MockitoSpyBean EquipmentOwnerRepository owners;
   @MockitoSpyBean com.windasoft.eam.repository.basedata.BaseItemRepository baseItems;
   @Autowired EquipmentQueryService service;
+  @Autowired RepairQueryRepository repairQueries;
   @Autowired JdbcTemplate db;
   @Autowired ObjectMapper json;
 
@@ -219,6 +221,27 @@ class EquipmentQueryMySqlIT {
     var detail = service.get(FIRST);
     assertEquals(detail, row);
     assertEquals("厂区 · 车间", row.functionLocation());
+  }
+
+  @Test
+  void repairHistoryUsesEquipmentIdAfterCodeChangesAndOnlyFallsBackForLegacyRows() {
+    insertRepair(990310001L, "QA-REPAIR-OLD-CODE", "2026-10-30 10:00:00.000", FIRST);
+    insertRepair(990310002L, "QA-REPAIR-NEW-CODE", "2026-10-31 10:00:00.000", null);
+    insertRepair(990310003L, "QA-REPAIR-NEW-CODE", "2026-10-31 11:00:00.000", FIRST + 1);
+    insertRepair(990310004L, "QA-REPAIR-NEW-CODE", "2026-10-31 10:00:00.000", FIRST);
+
+    var rows = repairQueries.historyByEquipment(10001L, FIRST, "QA-REPAIR-NEW-CODE");
+
+    assertEquals(List.of(990310004L, 990310002L, 990310001L),
+        rows.stream().map(com.windasoft.eam.entity.repair.RepairOrder::getId).toList());
+  }
+
+  private void insertRepair(long id, String code, String reportedAt, Long equipmentId) {
+    db.update(
+        "INSERT INTO eam_repair_order(id,tenant_id,order_no,equipment_code,equipment_name,"
+            + "department,fault_type,severity,description,reporter,status,reported_at,equipment_id)"
+            + " VALUES(?,10001,?,?,?,'测试部门','机械故障','一般','测试维修','测试人员','已完成',?,?)",
+        id, "QA-REPAIR-" + id, code, "测试设备", java.sql.Timestamp.valueOf(reportedAt), equipmentId);
   }
 
   @Test
