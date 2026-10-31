@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
-import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.basedata.BaseItemMapper;
 import com.windasoft.eam.repository.equipment.EquipmentMapper;
@@ -252,7 +251,7 @@ public class RepairWorkflowRepository {
     mapper.install(id, tenant, equipmentId, stockId, orderId, quantity);
   }
 
-  public List<EquipmentInstalledSpareView> installed(long tenant, long equipmentId) {
+  public List<Map<String, Object>> installed(long tenant, long equipmentId) {
     return mapper.installed(tenant, equipmentId);
   }
 
