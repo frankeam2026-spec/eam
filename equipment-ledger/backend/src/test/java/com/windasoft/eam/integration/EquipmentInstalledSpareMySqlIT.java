@@ -3,6 +3,8 @@ package com.windasoft.eam.integration;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.windasoft.eam.entity.inventory.InventoryUsage;
 import com.windasoft.eam.repository.inventory.InventoryUsageRepository;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -60,6 +62,24 @@ class EquipmentInstalledSpareMySqlIT {
             + " VALUES(?,?,?,?,?,?,?,'安装','',?,?,?,?)",
         id, tenant, id + 1000, id + 2000, equipment, material, new BigDecimal(quantity),
         key, status, "测试人员", createdAt);
+  }
+
+  @Test
+  void inventoryUsageEntityMapsEveryCurrentTableColumn() {
+    var table = TableInfoHelper.getTableInfo(InventoryUsage.class);
+    var mapped =
+        table.getFieldList().stream()
+            .map(field -> field.getColumn())
+            .collect(java.util.stream.Collectors.toSet());
+    mapped.add(table.getKeyColumn());
+    var actual =
+        new java.util.HashSet<>(
+            db.queryForList(
+                "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()"
+                    + " AND TABLE_NAME=?",
+                String.class,
+                "inv_usage"));
+    assertEquals(actual, mapped);
   }
 
   @Test
