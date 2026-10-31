@@ -38,13 +38,13 @@ public class EquipmentInstalledSpareService {
     view.setName(text(row.get("name")));
     view.setModel(text(row.get("model")));
     view.setQuantity(decimal(row.get("quantity")));
-    view.setStatus(text(row.get("status")));
-    view.setInstalledAt(text(row.get("installedAt")));
+    view.setStatus(nullableText(row.get("status")));
+    view.setInstalledAt(nullableText(row.get("installedAt")));
     return view;
   }
 
-  private static String text(Object value) {
-    return Objects.toString(value, "");
+  private static String nullableText(Object value) {
+    return Objects.toString(value, null);
   }
 
   private static BigDecimal decimal(Object value) {
