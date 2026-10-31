@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.equipment.*;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
+import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
 import com.windasoft.eam.service.system.*;
 import java.io.*;
@@ -50,6 +51,7 @@ class EquipmentQueryMySqlIT {
   @MockitoBean com.windasoft.eam.scheduler.experience.RepairPlanScheduler repairScheduler;
   @MockitoBean com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler knowledgeScheduler;
   @MockitoSpyBean EquipmentQueryRepository repository;
+  @MockitoSpyBean EquipmentOwnerRepository owners;
   @Autowired EquipmentQueryService service;
   @Autowired JdbcTemplate db;
   @Autowired ObjectMapper json;
@@ -205,9 +207,10 @@ class EquipmentQueryMySqlIT {
             + " eam_equipment_relation_legacy(tenant_id,equipment_id,kind,source_index,snapshot_json,reason)"
             + " VALUES(10001,?,'bom',0,'{\"code\":\"QA-OLD\"}','test')",
         FIRST);
-    clearInvocations(repository);
+    clearInvocations(repository, owners);
     var row = service.list(query(Map.of())).data().getFirst();
-    verify(repository, never()).owners(anyLong(), any());
+    verify(owners, never()).list(anyLong(), anyLong());
+    verify(owners).listByEquipmentIds(eq(10001L), argThat(ids -> ids.size() == 20));
     verify(repository, never()).baseItem(any());
     verify(repository, never()).children(anyLong(), anyLong());
     verify(repository, never()).bom(anyLong(), anyLong());

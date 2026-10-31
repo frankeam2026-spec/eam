@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.equipment.EquipmentBomMaterialQuery;
 import com.windasoft.eam.dto.equipment.EquipmentBomMaterials;
 import com.windasoft.eam.entity.inventory.Material;
-import com.windasoft.eam.repository.equipment.EquipmentRelationsRepository;
+import com.windasoft.eam.repository.inventory.MaterialRepository;
 import com.windasoft.eam.service.equipment.EquipmentRelationsService;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -51,8 +51,8 @@ class EquipmentBomMaterialsContractTest {
     explicit(EquipmentBomMaterialQuery.class);
     var internalRows =
         (ParameterizedType)
-            EquipmentRelationsRepository.class
-                .getMethod("materials", long.class, EquipmentBomMaterialQuery.class)
+            MaterialRepository.class
+                .getMethod("enabledCandidates", long.class, String.class, int.class, int.class)
                 .getGenericReturnType();
     assertEquals(Material.class, internalRows.getActualTypeArguments()[0]);
     assertThrows(AssertionError.class, () -> explicit(DynamicResponse.class));

@@ -67,7 +67,8 @@ class EquipmentAssistantServiceTest {
         .thenReturn(Optional.empty());
     when(queries.execute(anyLong(), anyLong(), any(), any(), any(), any()))
         .thenReturn(new EquipmentAssistantResult.Count(0, 0));
-    service = new EquipmentQueryService(ledger, auth, permissions, new ObjectMapper(), queries);
+    service = new EquipmentQueryService(ledger, auth, permissions, new ObjectMapper(), queries,
+        mock(com.windasoft.eam.repository.equipment.EquipmentOwnerRepository.class));
   }
 
   EquipmentAssistantQuery query(
