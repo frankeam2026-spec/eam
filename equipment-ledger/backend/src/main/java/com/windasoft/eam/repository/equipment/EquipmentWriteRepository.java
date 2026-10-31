@@ -2,8 +2,6 @@ package com.windasoft.eam.repository.equipment;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.windasoft.eam.entity.equipment.Equipment;
-import java.util.Collection;
-import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -21,15 +19,7 @@ public class EquipmentWriteRepository {
   }
 
   public int insert(Equipment e) {
-    int changed = equipment.insert(e);
-    if (changed > 0) {
-      media.save(e);
-    }
-    return changed;
-  }
-
-  public Map<String, String> importCodeKeys(Collection<String> codes) {
-    return com.windasoft.eam.repository.imports.ImportCodeIdentity.keys(db, codes);
+    return equipment.insert(e);
   }
 
   public int insertImported(Equipment e) {
@@ -37,11 +27,7 @@ public class EquipmentWriteRepository {
   }
 
   public int update(Equipment e) {
-    int changed = equipment.updateById(e);
-    if (changed > 0) {
-      media.save(e);
-    }
-    return changed;
+    return equipment.updateById(e);
   }
 
   public int delete(Long id) {
