@@ -3949,5 +3949,7 @@
   "workflow.repair.saved": "審批設定已儲存",
   "workflow.repair.resubmit": "重新提交審批",
   "workflow.repair.pendingSubmit": "待提交",
-  "workflow.repair.reviewing": "審批中"
+  "workflow.repair.reviewing": "審批中",
+  "server.equipment.assistant.invalid": "設備查詢計畫無效或包含未開放的查詢能力",
+  "server.equipment.assistant.ambiguous": "所選{p0}存在同名物件，請補充公司、部門或編號限定，不能將同名物件合併"
 }

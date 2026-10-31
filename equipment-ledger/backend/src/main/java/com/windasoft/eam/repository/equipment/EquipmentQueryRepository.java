@@ -6,10 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery;
 import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
-import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.basedata.BaseItemMapper;
-import com.windasoft.eam.repository.repair.RepairOrderMapper;
-import com.windasoft.eam.repository.repair.RepairWorkflowMapper;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -18,7 +15,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** 台账只读数据访问，不授予权限，也不写入业务状态。 */
@@ -30,9 +26,6 @@ public class EquipmentQueryRepository {
   private final EquipmentMapper equipment;
   private final EquipmentMediaRepository media;
   private final BaseItemMapper baseItems;
-  private final RepairOrderMapper repairs;
-  private final RepairWorkflowMapper repairWorkflow;
-  private final JdbcTemplate db;
   private final ObjectMapper json;
 
 
@@ -40,9 +33,6 @@ public class EquipmentQueryRepository {
       EquipmentMapper equipment,
       EquipmentMediaRepository media,
       BaseItemMapper baseItems,
-      RepairOrderMapper repairs,
-      RepairWorkflowMapper repairWorkflow,
-      JdbcTemplate db,
       ObjectMapper json,
       EquipmentChildRepository childRelations,
       EquipmentBomRepository bomRelations,
@@ -53,9 +43,6 @@ public class EquipmentQueryRepository {
     this.equipment = equipment;
     this.media = media;
     this.baseItems = baseItems;
-    this.repairs = repairs;
-    this.repairWorkflow = repairWorkflow;
-    this.db = db;
     this.json = json;
   }
 
@@ -122,6 +109,21 @@ public class EquipmentQueryRepository {
             new LambdaQueryWrapper<Equipment>()
                 .eq(Equipment::getTenantId, tenant)
                 .eq(Equipment::getId, id)));
+  }
+
+  /** 批量读取设备关系所需的设备实体，避免逐个设备编号回表。 */
+  public Map<Long, Equipment> findByIds(long tenant, List<Long> ids) {
+    if (ids.isEmpty()) return Map.of();
+    var rows =
+        equipment.selectList(
+            new LambdaQueryWrapper<Equipment>()
+                .eq(Equipment::getTenantId, tenant)
+                .eq(Equipment::getDeleted, 0)
+                .in(Equipment::getId, ids));
+    media.hydrate(rows);
+    var result = new HashMap<Long, Equipment>();
+    for (var row : rows) result.put(row.getId(), row);
+    return Map.copyOf(result);
   }
 
   public List<Equipment> visibleOrganizations(
@@ -196,27 +198,6 @@ public class EquipmentQueryRepository {
     }
   }
 
-
-  public List<RepairOrder> repairs(long tenant, String code) {
-    return repairs.selectList(
-        new LambdaQueryWrapper<RepairOrder>()
-            .eq(RepairOrder::getTenantId, tenant)
-            .eq(RepairOrder::getEquipmentCode, code)
-            .orderByDesc(RepairOrder::getReportedAt));
-  }
-
-  public List<Map<String, Object>> installedSpares(long tenant, long id) {
-    var result = new ArrayList<Map<String, Object>>(repairWorkflow.installed(tenant, id));
-    result.addAll(
-        db.queryForList(
-            "SELECT CAST(u.id AS CHAR)"
-                + " id,m.code,m.name,m.model,u.quantity,u.status,DATE_FORMAT(u.created_at,'%Y-%m-%d"
-                + " %H:%i') installedAt FROM inv_usage u JOIN inv_material m ON"
-                + " m.tenant_id=u.tenant_id AND m.id=u.material_id WHERE u.tenant_id=? AND"
-                + " u.equipment_id=? AND u.status='在用' ORDER BY u.created_at DESC,u.id DESC",
-            tenant, id));
-    return result;
-  }
 
   public List<Map<String, Object>> children(long tenant, long id) {
     var grouped = new HashMap<Long, List<Map<String, Object>>>();

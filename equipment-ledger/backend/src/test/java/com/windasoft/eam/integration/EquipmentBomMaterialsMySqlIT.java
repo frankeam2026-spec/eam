@@ -211,7 +211,7 @@ class EquipmentBomMaterialsMySqlIT {
     parent.setId(993980001L);
     long before = selects();
     var batch = equipmentQueries.pageRelations(TENANT, java.util.List.of(parent));
-    assertEquals(4L, selects() - before);
+    assertEquals(3L, selects() - before);
     assertEquals(
         equipmentQueries.children(TENANT, parent.getId()), batch.children().get(parent.getId()));
     assertEquals(equipmentQueries.bom(TENANT, parent.getId()), batch.bom().get(parent.getId()));
