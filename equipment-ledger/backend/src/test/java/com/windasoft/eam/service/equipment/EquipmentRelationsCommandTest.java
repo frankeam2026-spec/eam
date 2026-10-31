@@ -59,7 +59,9 @@ class EquipmentRelationsCommandTest {
         mock(com.windasoft.eam.repository.basedata.BaseItemRepository.class),
         mock(com.windasoft.eam.repository.system.OrgUnitRepository.class),
         mock(com.windasoft.eam.repository.system.SystemUserRepository.class),
-        mock(com.windasoft.eam.repository.equipment.EquipmentNumberRepository.class));
+        mock(com.windasoft.eam.repository.equipment.EquipmentNumberRepository.class),
+        mock(com.windasoft.eam.repository.equipment.EquipmentMediaRepository.class),
+        mock(com.windasoft.eam.repository.imports.ImportCodeIdentityRepository.class));
   }
 
   @Test
