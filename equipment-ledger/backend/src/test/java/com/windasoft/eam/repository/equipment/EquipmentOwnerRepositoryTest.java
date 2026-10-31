@@ -97,15 +97,16 @@ class EquipmentOwnerRepositoryTest {
     assertEquals(2, chunks.size());
     var first = lambdaCondition(chunks.get(0));
     var second = lambdaCondition(chunks.get(1));
-    assertEquals(501, first.getParamNameValuePairs().size());
-    assertEquals(2, second.getParamNameValuePairs().size());
     for (var condition : List.of(first, second)) {
-      assertTrue(condition.getSqlSegment().contains("tenant_id"));
-      assertTrue(condition.getSqlSegment().contains("equipment_id IN"));
-      assertTrue(condition.getSqlSegment().contains(
-          "ORDER BY equipment_id ASC,sort_no ASC,user_id ASC"));
+      // IN 列表的参数在 SQL 片段解析时展开；先解析再检查绑定值。
+      String sql = condition.getSqlSegment();
+      assertTrue(sql.contains("tenant_id"));
+      assertTrue(sql.contains("equipment_id IN"));
+      assertTrue(sql.contains("ORDER BY equipment_id ASC,sort_no ASC,user_id ASC"));
       assertTrue(condition.getParamNameValuePairs().containsValue(10001L));
     }
+    assertEquals(501, first.getParamNameValuePairs().size());
+    assertEquals(2, second.getParamNameValuePairs().size());
     assertTrue(first.getParamNameValuePairs().containsValue(1L));
     assertTrue(first.getParamNameValuePairs().containsValue(500L));
     assertTrue(second.getParamNameValuePairs().containsValue(501L));
