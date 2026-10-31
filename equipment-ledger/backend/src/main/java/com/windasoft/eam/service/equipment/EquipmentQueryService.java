@@ -34,6 +34,8 @@ import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.equipment.EquipmentAssistantRepository;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
+import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
+import com.windasoft.eam.entity.equipment.EquipmentHistory;
 import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
@@ -56,6 +58,7 @@ public class EquipmentQueryService {
 
   private final EquipmentQueryRepository repository;
   private final EquipmentOwnerRepository ownerRepository;
+  private final EquipmentHistoryRepository historyRepository;
   private final BaseItemRepository baseItems;
   private final OrgUnitRepository organizations;
   private final SystemUserRepository users;
@@ -71,6 +74,7 @@ public class EquipmentQueryService {
       ObjectMapper objectMapper,
       EquipmentAssistantRepository assistantRepository,
       EquipmentOwnerRepository ownerRepository,
+      EquipmentHistoryRepository historyRepository,
       BaseItemRepository baseItems,
       OrgUnitRepository organizations,
       SystemUserRepository users,
@@ -78,6 +82,7 @@ public class EquipmentQueryService {
       com.windasoft.eam.service.business.BusinessQueryService customQueries) {
     this.repository = repository;
     this.ownerRepository = ownerRepository;
+    this.historyRepository = historyRepository;
     this.baseItems = baseItems;
     this.organizations = organizations;
     this.users = users;
@@ -570,7 +575,8 @@ public class EquipmentQueryService {
                         Map.entry("status", safe(r.getStatus())),
                         Map.entry("result", safe(r.getRepairAction()))))
             .toList();
-    var records = repository.history(auth.tenantId(), id);
+    var records = historyRepository.list(auth.tenantId(), id).stream()
+        .map(EquipmentQueryService::historyRow).toList();
     return new EquipmentHistoryView(
         repository.installedSpares(auth.tenantId(), id),
         view(equipment),
@@ -578,6 +584,19 @@ public class EquipmentQueryService {
         records.stream().filter(r -> "MAINTENANCE".equals(r.get("type"))).toList(),
         records.stream().filter(r -> "INSPECTION".equals(r.get("type"))).toList(),
         records.stream().filter(r -> "SPARE_CHANGE".equals(r.get("type"))).toList());
+  }
+
+  private static Map<String, Object> historyRow(EquipmentHistory event) {
+    // 保留历史 API 已发布的字段与时间戳类型，避免存储重构改变响应契约。
+    var row = new java.util.LinkedHashMap<String, Object>();
+    row.put("type", event.getRecordType());
+    row.put("number", event.getRecordNo());
+    row.put("time", event.getOccurredAt());
+    row.put("description", event.getDescription());
+    row.put("person", event.getOperatorName());
+    row.put("status", event.getStatus());
+    row.put("result", event.getResult());
+    return row;
   }
 
   private Equipment require(long id) {
