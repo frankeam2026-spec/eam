@@ -3,11 +3,8 @@ package com.windasoft.eam.repository.equipment;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.equipment.EquipmentFile;
-import java.io.*;
-import java.nio.file.*;
 import java.util.*;
 import java.util.function.Consumer;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -15,17 +12,14 @@ public class EquipmentFileRepository {
   private final EquipmentFileMapper fileMapper;
   private final EquipmentMapper equipment;
   private final EquipmentMediaRepository media;
-  private final String directory;
 
   public EquipmentFileRepository(
       EquipmentFileMapper fileMapper,
       EquipmentMapper equipment,
-      EquipmentMediaRepository media,
-      @Value("${eam.upload.directory:./data/uploads}") String directory) {
+      EquipmentMediaRepository media) {
     this.fileMapper = fileMapper;
     this.equipment = equipment;
     this.media = media;
-    this.directory = directory;
   }
 
   public List<Map<String, Object>> file(long tenant, String id) {
@@ -79,19 +73,4 @@ public class EquipmentFileRepository {
     fileMapper.insert(record);
   }
 
-  public Path store(InputStream input, String id, String extension) throws IOException {
-    Path root = Path.of(directory, "equipment").toAbsolutePath().normalize();
-    Files.createDirectories(root);
-    Path path = root.resolve(id + extension);
-    Files.copy(input, path);
-    return path;
-  }
-
-  public Path contentPath(String id, String extension) {
-    return Path.of(directory, "equipment", id + extension).toAbsolutePath().normalize();
-  }
-
-  public void deleteContent(Path path) throws IOException {
-    Files.deleteIfExists(path);
-  }
 }
