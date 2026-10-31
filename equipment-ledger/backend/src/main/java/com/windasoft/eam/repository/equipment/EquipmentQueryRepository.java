@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery;
-import com.windasoft.eam.dto.equipment.EquipmentOwnerView;
 import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
@@ -17,7 +16,6 @@ import com.windasoft.eam.repository.system.OrgUnitMapper;
 import com.windasoft.eam.repository.system.SystemUserMapper;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -183,16 +181,14 @@ public class EquipmentQueryRepository {
 
   public record PageRelations(
       Map<Long, BaseItem> dictionary,
-      Map<Long, List<EquipmentOwnerView>> owners,
       Map<Long, List<Map<String, Object>>> children,
       Map<Long, List<Map<String, Object>>> bom) {}
 
   public PageRelations pageRelations(long tenant, List<Equipment> rows) {
     var dictionary = new HashMap<Long, BaseItem>();
-    var owners = new HashMap<Long, List<EquipmentOwnerView>>();
     var children = new HashMap<Long, List<Map<String, Object>>>();
     var bom = new HashMap<Long, List<Map<String, Object>>>();
-    if (rows.isEmpty()) return new PageRelations(dictionary, owners, children, bom);
+    if (rows.isEmpty()) return new PageRelations(dictionary, children, bom);
     var ids = rows.stream().map(Equipment::getId).toList();
     var requested = new HashSet<Long>();
     var pending = new HashSet<Long>();
@@ -223,24 +219,6 @@ public class EquipmentQueryRepository {
     }
     for (int start = 0; start < ids.size(); start += 500) {
       var batch = ids.subList(start, Math.min(start + 500, ids.size()));
-      String marks = String.join(",", Collections.nCopies(batch.size(), "?"));
-      var args = new ArrayList<Object>();
-      args.add(tenant);
-      args.addAll(batch);
-
-      for (var row :
-          db.queryForList(
-              "SELECT equipment_id,user_id,owner_name FROM eam_equipment_owner WHERE tenant_id=?"
-                  + " AND equipment_id IN ("
-                  + marks
-                  + ") ORDER BY equipment_id,sort_no,user_id",
-              args.toArray()))
-        owners
-            .computeIfAbsent(
-                ((Number) row.get("equipment_id")).longValue(), key -> new ArrayList<>())
-            .add(
-                new EquipmentOwnerView(
-                    row.get("user_id").toString(), (String) row.get("owner_name")));
       group(children, childRelations.viewRows(tenant, batch));
       group(bom, bomRelations.viewRows(tenant, batch));
       for (var row : legacyRelations.list(tenant, batch)) {
@@ -250,7 +228,7 @@ public class EquipmentQueryRepository {
             .add(legacyRelations.view(row));
       }
     }
-    return new PageRelations(dictionary, owners, children, bom);
+    return new PageRelations(dictionary, children, bom);
   }
 
   private static void group(
@@ -262,16 +240,6 @@ public class EquipmentQueryRepository {
     }
   }
 
-  public List<EquipmentOwnerView> owners(long tenant, Long id) {
-    if (id == null) return List.of();
-
-    return db.query(
-        "SELECT user_id,owner_name FROM eam_equipment_owner WHERE tenant_id=? AND equipment_id=?"
-            + " ORDER BY sort_no,user_id",
-        (rs, row) -> new EquipmentOwnerView(rs.getString("user_id"), rs.getString("owner_name")),
-        tenant,
-        id);
-  }
 
   public List<RepairOrder> repairs(long tenant, String code) {
     return repairs.selectList(

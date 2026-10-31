@@ -33,6 +33,8 @@ import com.windasoft.eam.dto.equipment.EquipmentView;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.equipment.EquipmentAssistantRepository;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
+import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
+import com.windasoft.eam.entity.equipment.EquipmentOwner;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.time.LocalDate;
@@ -53,6 +55,7 @@ public class EquipmentQueryService {
   private com.windasoft.eam.service.business.BusinessQueryService customQueries;
 
   private final EquipmentQueryRepository repository;
+  private final EquipmentOwnerRepository ownerRepository;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper objectMapper;
@@ -63,8 +66,10 @@ public class EquipmentQueryService {
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper objectMapper,
-      EquipmentAssistantRepository assistantRepository) {
+      EquipmentAssistantRepository assistantRepository,
+      EquipmentOwnerRepository ownerRepository) {
     this.repository = repository;
+    this.ownerRepository = ownerRepository;
     this.auth = auth;
     this.permissions = permissions;
     this.objectMapper = objectMapper;
@@ -316,8 +321,14 @@ public class EquipmentQueryService {
               e.setCustomSchemaVersion(v.customSchemaVersion());
             });
     var relations = repository.pageRelations(auth.tenantId(), result.getRecords());
+    var ownersByEquipment =
+        ownerRepository
+            .listByEquipmentIds(
+                auth.tenantId(), result.getRecords().stream().map(Equipment::getId).toList())
+            .stream()
+            .collect(java.util.stream.Collectors.groupingBy(EquipmentOwner::getEquipmentId));
     return new EquipmentPage(
-        result.getRecords().stream().map(row -> view(row, relations)).toList(),
+        result.getRecords().stream().map(row -> view(row, relations, ownersByEquipment)).toList(),
         new EquipmentPage.PageInfo(result.getCurrent(), result.getSize(), result.getTotal()));
   }
 
@@ -630,10 +641,19 @@ public class EquipmentQueryService {
   }
 
   public EquipmentView view(Equipment e) {
-    return view(e, null);
+    return view(e, null, null);
   }
 
-  private EquipmentView view(Equipment e, EquipmentQueryRepository.PageRelations context) {
+  private static List<EquipmentOwnerView> ownerViews(List<EquipmentOwner> rows) {
+    return rows.stream()
+        .map(row -> new EquipmentOwnerView(Long.toString(row.getUserId()), row.getOwnerName()))
+        .toList();
+  }
+
+  private EquipmentView view(
+      Equipment e,
+      EquipmentQueryRepository.PageRelations context,
+      Map<Long, List<EquipmentOwner>> ownersByEquipment) {
     if (e.getCustomFields() == null) {
       var v = custom.read("equipment", e.getId());
       e.setCustomFields(v.customFields());
@@ -641,9 +661,10 @@ public class EquipmentQueryService {
       e.setCustomSchemaVersion(v.customSchemaVersion());
     }
     var owners =
-        context == null
-            ? repository.owners(auth.tenantId(), e.getId())
-            : context.owners().getOrDefault(e.getId(), List.of());
+        ownerViews(
+            ownersByEquipment == null
+                ? ownerRepository.list(auth.tenantId(), e.getId())
+                : ownersByEquipment.getOrDefault(e.getId(), List.of()));
     return new EquipmentView(
         String.valueOf(e.getId()),
         safe(e.getEquipmentCode()),
