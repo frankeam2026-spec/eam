@@ -261,7 +261,7 @@ class EquipmentAssistantServiceTest {
                 1,
                 20));
     for (var request : requests) {
-      assertThrows(LocalizedArgumentException.class, () -> service.queryAssistant(request));
+      assertThrows(LocalizedArgumentException.class, () -> service.query(request));
     }
     verifyNoInteractions(queries);
   }
@@ -279,14 +279,14 @@ class EquipmentAssistantServiceTest {
             new Junction(Logical.OR, List.of()),
             new Condition(Field.NAME, Comparison.EQ, null));
     for (var filter : filters) {
-      assertThrows(LocalizedArgumentException.class, () -> service.queryAssistant(count(filter)));
+      assertThrows(LocalizedArgumentException.class, () -> service.query(count(filter)));
     }
     Filter deep = new Condition(Field.NAME, Comparison.EQ, List.of(new Text("x")));
     for (int i = 0; i < 6; i++) {
       deep = new Junction(Logical.NOT, List.of(deep));
     }
     var request = count(deep);
-    assertThrows(LocalizedArgumentException.class, () -> service.queryAssistant(request));
+    assertThrows(LocalizedArgumentException.class, () -> service.query(request));
     verifyNoInteractions(queries);
   }
 
@@ -295,7 +295,7 @@ class EquipmentAssistantServiceTest {
     doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN))
         .when(permissions)
         .require("equipment", "查看");
-    assertThrows(ResponseStatusException.class, () -> service.queryAssistant(count(new All())));
+    assertThrows(ResponseStatusException.class, () -> service.query(count(new All())));
     verifyNoInteractions(queries);
   }
 
@@ -306,7 +306,7 @@ class EquipmentAssistantServiceTest {
     assertThrows(
         LocalizedArgumentException.class,
         () ->
-            service.queryAssistant(
+            service.query(
                 count(new Condition(Field.NAME, Comparison.EQ, List.of(new Text("同名设备"))))));
     verify(queries, never()).execute(anyLong(), anyLong(), any(), any(), any(), any());
   }
