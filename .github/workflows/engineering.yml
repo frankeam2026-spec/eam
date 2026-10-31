@@ -78,3 +78,43 @@ jobs:
             equipment-ledger/backend/target/surefire-reports/
             equipment-ledger/backend/target/engineering-query-plans.jsonl
             equipment-ledger/backend/target/selector-query-plans.jsonl
+
+  equipment-isolated:
+    name: equipment-${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: command
+            database: eam_equipment_command_test_20261030
+            test: EquipmentCommandMySqlIT
+          - suite: query
+            database: eam_equipment_query_test_20261030
+            test: EquipmentQueryMySqlIT
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: ${{ matrix.database }}
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+        ports: ['3308:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+    env:
+      EAM_EQUIPMENT_COMMAND_TEST_URL: jdbc:mysql://127.0.0.1:3308/eam_equipment_command_test_20261030?connectionTimeZone=UTC
+      EAM_EQUIPMENT_QUERY_TEST_URL: jdbc:mysql://127.0.0.1:3308/eam_equipment_query_test_20261030?connectionTimeZone=UTC
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - run: mvn -B -f equipment-ledger/backend/pom.xml "-Dtest=${{ matrix.test }}" test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: equipment-${{ matrix.suite }}-tests
+          path: equipment-ledger/backend/target/surefire-reports/
