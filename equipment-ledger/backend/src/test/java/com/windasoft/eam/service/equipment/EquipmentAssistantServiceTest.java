@@ -68,7 +68,10 @@ class EquipmentAssistantServiceTest {
     when(queries.execute(anyLong(), anyLong(), any(), any(), any(), any()))
         .thenReturn(new EquipmentAssistantResult.Count(0, 0));
     service = new EquipmentQueryService(ledger, auth, permissions, new ObjectMapper(), queries,
-        mock(com.windasoft.eam.repository.equipment.EquipmentOwnerRepository.class));
+        mock(com.windasoft.eam.repository.equipment.EquipmentOwnerRepository.class),
+        mock(com.windasoft.eam.repository.basedata.BaseItemRepository.class),
+            mock(com.windasoft.eam.repository.system.OrgUnitRepository.class),
+            mock(com.windasoft.eam.repository.system.SystemUserRepository.class));
   }
 
   EquipmentAssistantQuery query(
