@@ -11,7 +11,6 @@ import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.equipment.EquipmentOwner;
 import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.repository.equipment.EquipmentWriteRepository;
-import com.windasoft.eam.repository.equipment.EquipmentNumberRepository;
 import com.windasoft.eam.repository.equipment.EquipmentMediaRepository;
 import com.windasoft.eam.repository.imports.ImportCodeIdentityRepository;
 import com.windasoft.eam.repository.basedata.BaseItemRepository;
@@ -20,7 +19,6 @@ import com.windasoft.eam.repository.system.SystemUserRepository;
 import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
-import java.time.LocalDate;
 import java.util.List;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,7 +34,7 @@ public class EquipmentCommandService {
   private final BaseItemRepository baseItems;
   private final OrgUnitRepository organizations;
   private final SystemUserRepository users;
-  private final EquipmentNumberRepository numbers;
+  private final EquipmentCodeService codes;
   private final EquipmentMediaRepository media;
   private final ImportCodeIdentityRepository importIdentities;
   private final EquipmentOwnerRepository ownerRepository;
@@ -58,7 +56,7 @@ public class EquipmentCommandService {
       BaseItemRepository baseItems,
       OrgUnitRepository organizations,
       SystemUserRepository users,
-      EquipmentNumberRepository numbers,
+      EquipmentCodeService codes,
       EquipmentMediaRepository media,
       ImportCodeIdentityRepository importIdentities) {
     this.relations = relations;
@@ -69,7 +67,7 @@ public class EquipmentCommandService {
     this.baseItems = baseItems;
     this.organizations = organizations;
     this.users = users;
-    this.numbers = numbers;
+    this.codes = codes;
     this.media = media;
     this.importIdentities = importIdentities;
     this.objectMapper = objectMapper;
@@ -89,8 +87,8 @@ public class EquipmentCommandService {
     setAccessFields(e, form);
     inputValidation.validateEntity(e);
     permissions.checkEquipment(e, "新增");
-    String code = has(form.code()) ? form.code().trim() : nextCode();
-    assertCodeAvailable(code, null);
+    String code = has(form.code()) ? form.code().trim() : codes.nextCode();
+    codes.assertAvailable(code, null);
     e.setEquipmentCode(code);
     e.setRowVersion(0);
     e.setDeleted(0);
@@ -130,7 +128,7 @@ public class EquipmentCommandService {
       String code = e.getEquipmentCode();
       if (!has(code)) {
         do {
-          code = nextCode();
+          code = codes.nextCode();
         } while (reserved.contains(importIdentities.keys(java.util.List.of(code)).get(code)));
       }
       // 显式编号已在取得设备互斥锁后完成整批校验。
@@ -180,7 +178,7 @@ public class EquipmentCommandService {
     permissions.checkEquipment(e, "编辑");
     relations.checkMove(old, e);
     String code = has(form.code()) ? form.code().trim() : old.getEquipmentCode();
-    assertCodeAvailable(code, id);
+    codes.assertAvailable(code, id);
     e.setEquipmentCode(code);
     e.setRowVersion(rowVersion);
     e.setUpdatedBy(auth.userId());
@@ -333,27 +331,6 @@ public class EquipmentCommandService {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
     }
     return e;
-  }
-
-  private void assertCodeAvailable(String code, Long currentId) {
-    if (repository.countCode(auth.tenantId(), code, currentId) > 0) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0045");
-    }
-  }
-
-  private String nextCode() {
-    String year = String.valueOf(LocalDate.now().getYear());
-    long minimum = 0;
-    while (true) {
-      numbers.nextEquipmentNumber(year, minimum);
-      long sequence = numbers.currentValue();
-      String code = "EQ-" + year + "-" + String.format("%04d", sequence);
-      if (repository.countCode(auth.tenantId(), code, null) == 0) {
-        return code;
-      }
-      // 在当前事务中修复缺失或落后的计数器，避免重复尝试相同编号。
-      minimum = Math.max(sequence, repository.maxEquipmentNumber(year));
-    }
   }
 
   private static boolean has(String s) {
