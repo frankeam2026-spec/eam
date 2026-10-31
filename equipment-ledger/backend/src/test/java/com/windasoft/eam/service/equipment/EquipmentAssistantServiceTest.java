@@ -70,6 +70,8 @@ class EquipmentAssistantServiceTest {
     service = new EquipmentQueryService(ledger, auth, permissions, new ObjectMapper(), queries,
         mock(com.windasoft.eam.repository.equipment.EquipmentOwnerRepository.class),
         mock(com.windasoft.eam.repository.equipment.EquipmentHistoryRepository.class),
+        mock(com.windasoft.eam.repository.repair.RepairWorkflowRepository.class),
+        mock(com.windasoft.eam.repository.inventory.InventoryUsageRepository.class),
         mock(com.windasoft.eam.repository.basedata.BaseItemRepository.class),
             mock(com.windasoft.eam.repository.system.OrgUnitRepository.class),
             mock(com.windasoft.eam.repository.system.SystemUserRepository.class),
