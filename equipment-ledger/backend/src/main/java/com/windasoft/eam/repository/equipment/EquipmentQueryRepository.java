@@ -205,15 +205,6 @@ public class EquipmentQueryRepository {
             .orderByDesc(RepairOrder::getReportedAt));
   }
 
-  public List<Map<String, Object>> history(long tenant, long id) {
-    return db.queryForList(
-        "SELECT record_type AS type,record_no AS number,occurred_at AS"
-            + " time,description,operator_name AS person,status,result FROM eam_equipment_history"
-            + " WHERE tenant_id=? AND equipment_id=? ORDER BY occurred_at DESC,id DESC",
-        tenant,
-        id);
-  }
-
   public List<Map<String, Object>> installedSpares(long tenant, long id) {
     var result = new ArrayList<Map<String, Object>>(repairWorkflow.installed(tenant, id));
     result.addAll(
