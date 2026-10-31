@@ -69,7 +69,7 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-      - run: mvn -B -f equipment-ledger/backend/pom.xml '-Dtest=EngineeringQueryMySqlIT,SelectorMySqlIT,InspectionQualityMySqlIT,EquipmentBomMaterialsMySqlIT,EquipmentOwnerMySqlIT,EquipmentFileMySqlIT' test
+      - run: mvn -B -f equipment-ledger/backend/pom.xml '-Dtest=EngineeringQueryMySqlIT,SelectorMySqlIT,InspectionQualityMySqlIT,EquipmentBomMaterialsMySqlIT,EquipmentOwnerMySqlIT,EquipmentFileMySqlIT,EquipmentHistoryMySqlIT' test
       - uses: actions/upload-artifact@v4
         if: always()
         with:
