@@ -7,6 +7,9 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/equipment")
+/**
+ * 设备选择接口：供业务表单复用设备候选项，返回结果必须遵守租户和当前操作的数据权限。
+ */
 public class EquipmentSelectionController {
   private final EquipmentRelationsService relations;
 
