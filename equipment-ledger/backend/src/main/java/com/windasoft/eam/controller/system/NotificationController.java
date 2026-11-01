@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 
+/** 通知接口：向当前用户提供消息查询与操作，投递规则由通知服务负责。 */
 @RestController
 @RequestMapping("/api/v1/notifications")
 public class NotificationController {
