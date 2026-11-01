@@ -3,6 +3,7 @@ package com.windasoft.eam.dto.repair;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.constraints.*;
 
+/** 报修创建与编辑输入；自定义字段和附件为受专用校验流程约束的扩展结构。 */
 public record RepairForm(
     @NotBlank(message = "{server.repair.message0001}") String equipmentCode,
     @NotBlank(message = "{server.equipment.message0003}") String equipmentName,
