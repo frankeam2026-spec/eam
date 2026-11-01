@@ -250,7 +250,7 @@ public class EquipmentCommandService {
       permissions.checkEquipment(e, operation == EquipmentBatchOperation.DELETE ? "删除" : "编辑");
     }
     String value = form.value() == null ? "" : form.value().trim();
-    if (!operation == EquipmentBatchOperation.DELETE && !operation == EquipmentBatchOperation.OWNER && value.isEmpty()) {
+    if (operation != EquipmentBatchOperation.DELETE && operation != EquipmentBatchOperation.OWNER && value.isEmpty()) {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0040");
     }
     var base =
