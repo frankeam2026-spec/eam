@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.system.SystemUser;
+import com.windasoft.eam.dto.system.UserStatusForm;
 import com.windasoft.eam.repository.system.AuthenticationRepository;
 import com.windasoft.eam.repository.system.RoleManagementRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
@@ -19,7 +20,7 @@ class UserManagementServiceTest {
   void statusChangeHasTransactionBoundaryAndPropagatesSessionRevocationFailure() throws Exception {
     assertNotNull(
         UserManagementService.class
-            .getMethod("userStatus", Long.class, Map.class)
+            .getMethod("userStatus", Long.class, UserStatusForm.class)
             .getAnnotation(Transactional.class));
 
     var sessions = mock(AuthenticationRepository.class);
@@ -37,7 +38,7 @@ class UserManagementServiceTest {
     doThrow(new IllegalStateException("session delete failed"))
         .when(sessions).revokeSessions(7L, 21L);
 
-    assertThrows(IllegalStateException.class, () -> service.userStatus(21L, Map.of("status", 0)));
+    assertThrows(IllegalStateException.class, () -> service.userStatus(21L, new UserStatusForm(0)));
     var order = inOrder(sessions);
     verify(users).user(7L, 21L);
     verify(users).updateUser(user);
