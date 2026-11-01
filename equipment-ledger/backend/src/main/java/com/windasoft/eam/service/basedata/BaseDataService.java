@@ -88,7 +88,7 @@ public class BaseDataService {
   @org.springframework.transaction.annotation.Transactional
   public Map<String, Object> status(String resource, Long id, Map<String, Integer> body) {
     requireDataAccess(resource, "编辑");
-    var item = requireLocked(type(resource), id);
+    var item = requireLocked(BaseDataType.fromResource(resource).code(), id);
     protectFixed(item);
     item.setStatus(body.getOrDefault("status", 0));
     repository.update(item);
