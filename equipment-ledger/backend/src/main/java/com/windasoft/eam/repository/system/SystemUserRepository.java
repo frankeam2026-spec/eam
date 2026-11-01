@@ -38,4 +38,45 @@ public class SystemUserRepository {
         .eq(SystemUser::getTenantId, tenant)
         .eq(SystemUser::getStatus, 1));
   }
+  public List<SystemUser> users(long tenant) {
+    return mapper.selectList(
+        new LambdaQueryWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .orderByAsc(SystemUser::getId));
+  }
+
+  public SystemUser user(long tenant, Long id) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getId, id));
+  }
+
+  public int insertUser(SystemUser x) {
+    return mapper.insert(x);
+  }
+
+  public int updateUser(SystemUser x) {
+    return mapper.updateById(x);
+  }
+
+  public int deleteUser(Long id) {
+    return mapper.deleteById(id);
+  }
+
+  public long organizationUserCount(long tenant, Long id) {
+    return mapper.selectCount(
+        new LambdaQueryWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getOrgId, id));
+  }
+
+  public long accountCount(long tenant, String account, Long current) {
+    var q =
+        new LambdaQueryWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getAccount, account.trim());
+    if (current != null) q.ne(SystemUser::getId, current);
+    return mapper.selectCount(q);
+  }
 }
