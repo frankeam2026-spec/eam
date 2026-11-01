@@ -267,6 +267,7 @@ public class RoleManagementService {
         "all", "company", "companyTree", "companies", "department", "departmentTree", "selected");
   }
 
+  /** 重写角色菜单授权时先移除旧关联，再保存新配置；调用方的事务保护整个变更。 */
   private void saveMenuPermissions(Long roleId, Map<String, MenuGrantForm> grants) {
     repository.deleteMenuPermissions(auth.tenantId(), roleId);
     for (var entry : grants.entrySet()) {
