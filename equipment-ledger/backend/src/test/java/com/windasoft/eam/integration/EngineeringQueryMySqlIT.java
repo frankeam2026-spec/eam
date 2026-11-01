@@ -1584,6 +1584,8 @@ class EngineeringQueryMySqlIT {
                         List.of(),
                         "personMode",
                         "specified",
+                        "followUpUserId",
+                        "73001",
                         "owners",
                         List.of("73001"),
                         "equipmentIds",
