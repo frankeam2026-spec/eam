@@ -67,6 +67,13 @@ public class DailyArrangementService {
       a.put("frequency", "shift");
       // Existing column remains a compatibility mirror, never an independent timing rule.
       a.put("anchorDate", text(plan, "startDate"));
+      // 当前检查安排按班次生成任务；以下旧列仅为关系表兼容字段。
+      // 老客户端未传时间或间隔时不能写入 0/空值，否则违反 MySQL 的非空及 CHECK 约束。
+      // 实际班次时间仍以计划中的 shifts 为准，不能用兼容列替代任务调度规则。
+      a.put("intervalCount", Math.max(1, number(a.get("intervalCount"))));
+      a.put("windowMinutes", Math.max(1, number(a.get("windowMinutes"))));
+      if (text(a, "startTime").isBlank()) a.put("startTime", "00:00");
+      if (text(a, "endTime").isBlank()) a.put("endTime", "23:59");
       if (Set.of("shift", "slots").contains(f)) {
         var slots = rows(a.get("slots"));
         check(slots.size() <= 24, path + "slots", "slots");
