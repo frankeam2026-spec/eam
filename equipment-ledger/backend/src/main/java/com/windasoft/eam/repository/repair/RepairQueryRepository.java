@@ -1,7 +1,8 @@
 package com.windasoft.eam.repository.repair;
 
 import com.windasoft.eam.domain.repair.RepairOrderStatus;
-import com.windasoft.eam.domain.repair.RepairQueue;import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.windasoft.eam.domain.repair.RepairQueue;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -102,7 +103,7 @@ public class RepairQueryRepository {
   }
 
   private static final List<String> QUEUES =
-      List.of("pending", "owned", "mine", "accept", "created", "dispatch", "all");
+      java.util.Arrays.stream(RepairQueue.values()).map(RepairQueue::code).toList();
   private static final Map<String, SFunction<RepairOrder, ?>> FIELDS =
       Map.ofEntries(
           Map.entry("orderNo", RepairOrder::getOrderNo),
