@@ -263,25 +263,6 @@ public class SystemManagementRepository {
             .in(OrgUnit::getId, ids));
   }
 
-  public void lockOrganizations(long tenant) {
-    db.queryForList(
-        "SELECT id FROM eam_org_unit WHERE tenant_id=? AND deleted=0 ORDER BY id FOR UPDATE",
-        tenant);
-  }
-
-  public void orgEvent(
-      long tenant, Long id, long actor, String action, String before, String after) {
-    db.update(
-        "INSERT INTO eam_org_event(tenant_id,org_id,actor_id,action,before_json,after_json)"
-            + " VALUES(?,?,?,?,?,?)",
-        tenant,
-        id,
-        actor,
-        action,
-        before,
-        after);
-  }
-
   public boolean businessReferences(long tenant, Long id) {
 
     for (String query :
