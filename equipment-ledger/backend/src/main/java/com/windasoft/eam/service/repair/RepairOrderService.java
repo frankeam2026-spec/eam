@@ -1,7 +1,8 @@
 package com.windasoft.eam.service.repair;
 
 import com.windasoft.eam.domain.repair.RepairOrderStatus;
-import com.windasoft.eam.domain.repair.RepairApprovalGate;import com.fasterxml.jackson.databind.*;
+import com.windasoft.eam.domain.repair.RepairApprovalGate;
+import com.fasterxml.jackson.databind.*;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.dto.repair.RepairAction;
 import com.windasoft.eam.dto.repair.RepairForm;
