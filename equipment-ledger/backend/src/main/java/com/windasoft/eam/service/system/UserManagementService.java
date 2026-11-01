@@ -7,6 +7,7 @@ import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
 import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.system.RoleManagementRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import java.util.*;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class UserManagementService {
   private final SystemManagementRepository repository;
+  private final RoleManagementRepository roleRepository;
   private final SystemUserRepository systemUsers;
   private final OrgUnitRepository orgUnits;
   private final AuthContext auth;
@@ -26,12 +28,14 @@ public class UserManagementService {
 
   public UserManagementService(
       SystemManagementRepository repository,
+      RoleManagementRepository roleRepository,
       SystemUserRepository systemUsers,
       OrgUnitRepository orgUnits,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json) {
     this.repository = repository;
+    this.roleRepository = roleRepository;
     this.systemUsers = systemUsers;
     this.orgUnits = orgUnits;
     this.auth = auth;
@@ -64,7 +68,7 @@ public class UserManagementService {
     var x = requireUser(id);
     permissions.checkUser("user", "编辑", x);
     var oldRoles =
-        repository.userRoles(auth.tenantId(), id).stream()
+        roleRepository.userRoles(auth.tenantId(), id).stream()
             .map(UserRoleLink::getRoleId)
             .collect(java.util.stream.Collectors.toSet());
     if (!oldRoles.equals(new HashSet<>(f.roleIds() == null ? List.of() : f.roleIds()))) {
@@ -83,7 +87,7 @@ public class UserManagementService {
       com.windasoft.eam.common.VersionGuard.updated(repository.updateEmail(auth.tenantId(),id,f.email().trim(),f.emailVersion()));
     }
     if (f.password() != null && !f.password().isBlank() || x.getStatus() == 0) revokeSessions(id);
-    repository.deleteUserRoles(auth.tenantId(), id);
+    roleRepository.deleteUserRoles(auth.tenantId(), id);
     saveRoleLinks(id, f.roleIds());
     return Map.of("data", userView(x));
   }
@@ -138,7 +142,7 @@ public class UserManagementService {
     var x = requireUser(id);
     permissions.checkUser("user", "删除", x);
     revokeSessions(id);
-    repository.deleteUserRoles(auth.tenantId(), id);
+    roleRepository.deleteUserRoles(auth.tenantId(), id);
     systemUsers.deleteUser(id);
     return Map.of("data", Map.of("deleted", true));
   }
@@ -175,13 +179,13 @@ public class UserManagementService {
       link.setTenantId(auth.tenantId());
       link.setUserId(userId);
       link.setRoleId(id);
-      repository.insertUserRole(link);
+      roleRepository.insertUserRole(link);
     }
   }
 
   private void validateRoleIds(List<Long> ids) {
     if (ids == null || ids.isEmpty()) return;
-    long count = repository.roleCount(auth.tenantId(), ids);
+    long count = roleRepository.roleCount(auth.tenantId(), ids);
     if (count != new HashSet<>(ids).size())
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0042");
   }
@@ -213,7 +217,7 @@ public class UserManagementService {
 
   private Map<String, Object> userView(SystemUser x) {
     var ids =
-        repository.userRoles(auth.tenantId(), x.getId()).stream()
+        roleRepository.userRoles(auth.tenantId(), x.getId()).stream()
             .map(UserRoleLink::getRoleId)
             .map(String::valueOf)
             .toList();
