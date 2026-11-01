@@ -8,6 +8,10 @@ import com.windasoft.eam.repository.equipment.NumberCounterMapper;
 import java.util.*;
 import org.springframework.stereotype.Repository;
 
+/**
+ * 维修工单数据库访问：读写主表并协调既有关系表读写。
+ * 附件磁盘存储由 RepairFileStorage 负责，本类不管理文件路径或文件内容。
+ */
 @Repository
 public class RepairOrderRepository {
   private final RepairRelationsRepository collaborators;
