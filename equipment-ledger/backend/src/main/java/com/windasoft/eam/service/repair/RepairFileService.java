@@ -13,16 +13,19 @@ import org.springframework.stereotype.Service;
 @Service
 public class RepairFileService {
   private final RepairOrderRepository repository;
+  private final RepairFileStorage storage;
   private final RepairWorkflowService workflow;
   private final AuthContext auth;
   private final PermissionService permissions;
 
   public RepairFileService(
       RepairOrderRepository repository,
+      RepairFileStorage storage,
       RepairWorkflowService workflow,
       AuthContext auth,
       PermissionService permissions) {
     this.repository = repository;
+    this.storage = storage;
     this.workflow = workflow;
     this.auth = auth;
     this.permissions = permissions;
@@ -44,7 +47,7 @@ public class RepairFileService {
     if (!extension.matches("\\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv)?"))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0049");
     String id = UUID.randomUUID().toString();
-    repository.store(file.content(), id, extension);
+    storage.store(file.content(), id, extension);
     return Map.of(
         "data",
         Map.of(
@@ -76,7 +79,7 @@ public class RepairFileService {
               }
             }))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
-    Path file = repository.attachmentPath(id);
+    Path file = storage.attachmentPath(id);
     String ext = file.getFileName().toString().substring(id.length() + 1);
     String type =
         switch (ext) {
