@@ -7,6 +7,7 @@ import com.windasoft.eam.dto.system.RoleForm;
 import com.windasoft.eam.entity.system.RoleMenuPermission;
 import com.windasoft.eam.entity.system.SystemRole;
 import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,16 +15,19 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class RoleManagementService {
   private final SystemManagementRepository repository;
+  private final InventoryQueryRepository inventoryQueries;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
 
   public RoleManagementService(
       SystemManagementRepository repository,
+      InventoryQueryRepository inventoryQueries,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json) {
     this.repository = repository;
+    this.inventoryQueries = inventoryQueries;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
@@ -31,7 +35,7 @@ public class RoleManagementService {
 
   public Object roleWarehouses() {
     permissions.require("role", "授权");
-    return Map.of("data", repository.warehouseChoices(auth.tenantId()));
+    return Map.of("data", inventoryQueries.warehouseChoices(auth.tenantId()));
   }
 
   public Map<String, Object> roles() {
@@ -124,7 +128,7 @@ public class RoleManagementService {
         if (ids.isEmpty() || ids.size() != new HashSet<>(ids).size())
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.system.message0059");
-        long warehouses = repository.warehouseCount(auth.tenantId(), ids);
+        long warehouses = inventoryQueries.warehouseCount(auth.tenantId(), ids);
         if (warehouses != ids.size())
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.system.message0060");
