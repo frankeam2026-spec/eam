@@ -19,6 +19,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/equipment")
+/**
+ * 设备台账读操作接口：提供列表、详情、履历、导航和导出等查询入口，数据可见范围由查询服务及权限服务共同约束。
+ */
 public class EquipmentQueryController {
   private final EquipmentQueryService service;
   private final ObjectMapper json;
