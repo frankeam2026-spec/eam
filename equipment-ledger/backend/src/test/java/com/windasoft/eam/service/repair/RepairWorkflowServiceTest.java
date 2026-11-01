@@ -202,4 +202,39 @@ class RepairWorkflowServiceTest {
     verify(flow, never()).closeIssueTodos(anyLong(), anyLong());
   }
 
+  @Test
+  void staleDispatchCannotReplaceCandidatesOrTodos() throws Exception {
+    row.setStatus("待派工");
+    var error = assertThrows(ResponseStatusException.class,
+        () -> service.action(1L, 3,
+            json.readTree("{\"action\":\"dispatch\",\"userIds\":[73002]}")));
+    assertEquals(409, error.getStatusCode().value());
+    verify(flow, never()).clearCandidates(anyLong(), anyLong());
+    verify(flow, never()).closeTodos(anyLong(), anyLong());
+    verify(flow, never()).addCandidate(anyLong(), anyLong(), anyLong(), anyLong());
+    verify(orders, never()).updateById(any(RepairOrder.class));
+  }
+
+  @Test
+  void invalidDispatchStateCannotReplaceCandidates() throws Exception {
+    row.setStatus("处理中");
+    assertThrows(IllegalArgumentException.class,
+        () -> service.action(1L, 4,
+            json.readTree("{\"action\":\"dispatch\",\"userIds\":[73002]}")));
+    verify(flow, never()).clearCandidates(anyLong(), anyLong());
+    verify(flow, never()).addCandidate(anyLong(), anyLong(), anyLong(), anyLong());
+  }
+
+  @Test
+  void staleAcceptanceDoesNotCloseTodosOrChangeStatus() throws Exception {
+    row.setStatus("待验收");
+    var error = assertThrows(ResponseStatusException.class,
+        () -> service.action(1L, 3,
+            json.readTree("{\"action\":\"accept\",\"score\":5,\"comment\":\"通过\"}")));
+    assertEquals(409, error.getStatusCode().value());
+    assertEquals("待验收", row.getStatus());
+    verify(flow, never()).closeTodos(anyLong(), anyLong());
+    verify(orders, never()).updateById(any(RepairOrder.class));
+  }
+
 }
