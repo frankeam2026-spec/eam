@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/** 报修与审批引擎的业务适配：维护报修审批门禁及回调状态，流程状态由审批运行时管理。 */
 @Service
 public class RepairApprovalService {
   private final RepairWorkflowRepository repository;
@@ -51,6 +52,7 @@ public class RepairApprovalService {
       runtime.start("repair_report", row.getId(), row.getCompanyOrgId(), row.getReporterUserId());
   }
 
+  /** 需要审批的报修必须获得实际审批通过；历史与豁免记录按现有策略放行。 */
   public void requireReleased(RepairOrder row) {
     if (!Set.of("LEGACY", "EXEMPT").contains(Objects.toString(row.getApprovalGate(), ""))
         && !("REQUIRED".equals(row.getApprovalGate())
@@ -83,6 +85,7 @@ public class RepairApprovalService {
       throw new IllegalArgumentException("报修已不处于审批中");
   }
 
+  /** 审批运行时回调：审批通过后释放工单至待派工，并写入事件及通知。 */
   public void approved(long id) {
     var row = lock(id);
     requireActive(id);
@@ -93,6 +96,7 @@ public class RepairApprovalService {
     notifyReporter(row, "报修审批通过", false);
   }
 
+  /** 审批运行时回调：退回至待提交，并更新关联待办及通知。 */
   public void returned(long id, String reason) {
     var row = lock(id);
     requireActive(id);
