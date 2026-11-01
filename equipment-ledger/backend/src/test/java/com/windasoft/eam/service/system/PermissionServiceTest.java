@@ -58,6 +58,7 @@ class PermissionServiceTest {
     service =
         new PermissionService(
             auth,
+            mock(com.windasoft.eam.repository.inventory.InventoryQueryRepository.class),
             repository,
             new ObjectMapper(),
             new com.windasoft.eam.service.system.OrganizationScopeService(auth, repository));
@@ -80,10 +81,18 @@ class PermissionServiceTest {
 
   private RoleMenuPermission grant(String actions, String scopes, String departments) {
     RoleMenuPermission grant = new RoleMenuPermission();
+    grant.setRoleId(1L);
     grant.setActionsJson(actions);
     grant.setDataScopesJson(scopes);
     grant.setOrgIdsJson(departments);
     return grant;
+  }
+
+  private RoleMenuPermission grantForRole(
+      long roleId, String actions, String scopes, String departments) {
+    var row = grant(actions, scopes, departments);
+    row.setRoleId(roleId);
+    return row;
   }
 
   @Test
@@ -100,9 +109,9 @@ class PermissionServiceTest {
   void viewAllDoesNotGrantDeleteAll() {
     assignTwoRoles();
     when(grants.selectList(any()))
-        .thenReturn(
-            List.of(grant("[\"查看\"]", "[\"all\"]", "[]")),
-            List.of(grant("[\"删除\"]", "[\"department\"]", "[]")));
+        .thenReturn(List.of(
+            grantForRole(1L, "[\"查看\"]", "[\"all\"]", "[]"),
+            grantForRole(2L, "[\"删除\"]", "[\"department\"]", "[]")));
     com.windasoft.eam.dto.system.PermissionScope scope = service.equipment("删除");
     assertFalse(scope.all());
     assertTrue(scope.matches(null, 30L, null, 10L));
@@ -113,9 +122,9 @@ class PermissionServiceTest {
   void matchingRoleScopesAreCombined() {
     assignTwoRoles();
     when(grants.selectList(any()))
-        .thenReturn(
-            List.of(grant("[\"查看\"]", "[\"department\"]", "[]")),
-            List.of(grant("[\"查看\"]", "[\"selected\",\"owner\"]", "[40]")));
+        .thenReturn(List.of(
+            grantForRole(1L, "[\"查看\"]", "[\"department\"]", "[]"),
+            grantForRole(2L, "[\"查看\"]", "[\"selected\",\"owner\"]", "[40]")));
     com.windasoft.eam.dto.system.PermissionScope scope = service.equipment("查看");
     assertTrue(scope.matches(null, 30L, null, 10L));
     assertTrue(scope.matches(null, 40L, null, 10L));
@@ -240,9 +249,9 @@ class PermissionServiceTest {
     hierarchy();
     assignTwoRoles();
     when(grants.selectList(any()))
-        .thenReturn(
-            List.of(grant("[\"查看\"]", "[\"companyTree\"]", "[]")),
-            List.of(grant("[\"编辑\"]", "[\"company\"]", "[]")));
+        .thenReturn(List.of(
+            grantForRole(1L, "[\"查看\"]", "[\"companyTree\"]", "[]"),
+            grantForRole(2L, "[\"编辑\"]", "[\"company\"]", "[]")));
     var s = service.equipment("编辑");
     assertTrue(s.matches(2L, 30L, null, 10L));
     assertFalse(s.matches(3L, 32L, null, 10L));

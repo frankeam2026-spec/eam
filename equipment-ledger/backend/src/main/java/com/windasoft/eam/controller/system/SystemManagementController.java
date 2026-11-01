@@ -4,6 +4,7 @@ import com.windasoft.eam.dto.system.OrgForm;
 import com.windasoft.eam.dto.system.RoleForm;
 import com.windasoft.eam.dto.system.UserBatchForm;
 import com.windasoft.eam.dto.system.UserForm;
+import com.windasoft.eam.dto.system.UserStatusForm;
 import com.windasoft.eam.service.system.OrganizationService;
 import com.windasoft.eam.service.system.RoleManagementService;
 import com.windasoft.eam.service.system.UserManagementService;
@@ -16,17 +17,18 @@ import org.springframework.web.bind.annotation.*;
 public class SystemManagementController {
   private final OrganizationService organizations;
 
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.system.UserListService userLists;
+  private final com.windasoft.eam.service.system.UserListService userLists;
 
   private final UserManagementService users;
   private final RoleManagementService roles;
 
   public SystemManagementController(
-      OrganizationService organizations, UserManagementService users, RoleManagementService roles) {
+      OrganizationService organizations, UserManagementService users, RoleManagementService roles,
+      com.windasoft.eam.service.system.UserListService userLists) {
     this.organizations = organizations;
     this.users = users;
     this.roles = roles;
+    this.userLists = userLists;
   }
 
   @GetMapping("/roles/warehouse-choices")
@@ -82,7 +84,7 @@ public class SystemManagementController {
 
   @PatchMapping("/users/{id}/status")
   public Map<String, Object> userStatus(
-      @PathVariable Long id, @RequestBody Map<String, Integer> body) {
+      @PathVariable Long id, @Valid @RequestBody UserStatusForm body) {
     return users.userStatus(id, body);
   }
 

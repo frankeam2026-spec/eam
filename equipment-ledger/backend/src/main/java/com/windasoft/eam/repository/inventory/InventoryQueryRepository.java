@@ -31,6 +31,11 @@ public class InventoryQueryRepository {
     }
   }
 
+  public List<Map<String, Object>> warehouseCompany(long tenant, long id) {
+    return db.queryForList(
+        "SELECT company_id FROM inv_warehouse WHERE tenant_id=? AND id=?", tenant, id);
+  }
+
   public List<Map<String, Object>> warehouseIds(long tenant) {
     return db.queryForList(
         "SELECT id,company_id FROM inv_warehouse WHERE tenant_id=? ORDER BY id", tenant);

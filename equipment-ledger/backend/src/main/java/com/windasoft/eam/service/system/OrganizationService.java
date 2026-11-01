@@ -2,6 +2,7 @@ package com.windasoft.eam.service.system;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.OrgForm;
+import com.windasoft.eam.dto.system.OrganizationView;
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.system.OrganizationReferenceRepository;
@@ -179,21 +180,14 @@ public class OrganizationService {
     return x;
   }
 
-  private Map<String, Object> orgView(OrgUnit x) {
-    return Map.of(
-        "id",
+  private OrganizationView orgView(OrgUnit x) {
+    return new OrganizationView(
         String.valueOf(x.getId()),
-        "name",
         x.getName(),
-        "code",
         x.getCode(),
-        "type",
         x.getDisplayType() == null ? x.getOrgType() : x.getDisplayType(),
-        "parentId",
         x.getParentId() == null ? "" : String.valueOf(x.getParentId()),
-        "manager",
         x.getManager() == null ? "" : x.getManager(),
-        "status",
         x.getStatus() == 1 ? "启用" : "停用");
   }
 

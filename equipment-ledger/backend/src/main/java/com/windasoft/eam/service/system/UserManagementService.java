@@ -3,6 +3,8 @@ package com.windasoft.eam.service.system;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.UserBatchForm;
 import com.windasoft.eam.dto.system.UserForm;
+import com.windasoft.eam.dto.system.UserStatusForm;
+import com.windasoft.eam.dto.system.UserView;
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
@@ -93,10 +95,12 @@ public class UserManagementService {
   }
 
   @Transactional
-  public Map<String, Object> userStatus(Long id, Map<String, Integer> body) {
+  public Map<String, Object> userStatus(Long id, UserStatusForm body) {
     var x = requireUser(id);
     permissions.checkUser("user", "停用", x);
-    int status = body.getOrDefault("status", 0);
+    if (body == null || body.status() == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0037");
+    int status = body.status();
     if (status != 0 && status != 1)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0037");
     if (id.equals(auth.userId()) && status == 0)
@@ -134,7 +138,15 @@ public class UserManagementService {
       systemUsers.updateUser(user);
       revokeSessions(user.getId());
     }
-    return Map.of("data", users.stream().map(this::userView).toList());
+    var ids = users.stream().map(SystemUser::getId).toList();
+    var rolesByUser = roleRepository.userRolesForUsers(auth.tenantId(), ids);
+    var emailsByUser = systemUsers.emailProfiles(auth.tenantId(), ids);
+    return Map.of("data", users.stream()
+        .map(user -> userView(
+            user,
+            rolesByUser.getOrDefault(user.getId(), List.of()),
+            emailsByUser.get(user.getId())))
+        .toList());
   }
 
   @Transactional
@@ -215,32 +227,26 @@ public class UserManagementService {
     return x;
   }
 
-  private Map<String, Object> userView(SystemUser x) {
-    var ids =
-        roleRepository.userRoles(auth.tenantId(), x.getId()).stream()
-            .map(UserRoleLink::getRoleId)
-            .map(String::valueOf)
-            .toList();
-    var result = new LinkedHashMap<String,Object>(Map.of(
-        "id",
-        String.valueOf(x.getId()),
-        "account",
-        x.getAccount(),
-        "name",
-        x.getDisplayName(),
-        "employeeNo",
+  private UserView userView(SystemUser x) {
+    return userView(
+        x,
+        roleRepository.userRoles(auth.tenantId(), x.getId()),
+        systemUsers.emailProfile(auth.tenantId(), x.getId()));
+  }
+
+  private UserView userView(
+      SystemUser x, List<UserRoleLink> roles, Map<String, Object> emailProfile) {
+    var ids = roles.stream()
+        .map(UserRoleLink::getRoleId)
+        .map(String::valueOf)
+        .toList();
+    return new UserView(
+        String.valueOf(x.getId()), x.getAccount(), x.getDisplayName(),
         x.getEmployeeNo() == null ? "" : x.getEmployeeNo(),
-        "phone",
         x.getPhone() == null ? "" : x.getPhone(),
-        "orgId",
-        String.valueOf(x.getOrgId()),
-        "roleIds",
-        ids,
-        "status",
-        x.getStatus() == 1 ? "启用" : "停用"));
-    var emailProfile=systemUsers.emailProfile(auth.tenantId(),x.getId());
-    result.put("email", Objects.toString(emailProfile.get("email"),Objects.toString(x.getEmail(),"")));
-    result.put("emailVersion", emailProfile.getOrDefault("email_version",0));
-    return result;
+        String.valueOf(x.getOrgId()), ids,
+        x.getStatus() == 1 ? "启用" : "停用",
+        Objects.toString(emailProfile.get("email"), Objects.toString(x.getEmail(), "")),
+        emailProfile.getOrDefault("email_version", 0));
   }
 }

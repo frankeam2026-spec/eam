@@ -9,6 +9,8 @@ import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
+import com.windasoft.eam.entity.system.SystemRole;
+import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
 import java.util.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -18,15 +20,18 @@ import org.springframework.web.server.ResponseStatusException;
 public class PermissionService {
   private final com.windasoft.eam.repository.system.AuthorizationRepository repository;
   private final AuthContext auth;
+  private final InventoryQueryRepository inventoryQueries;
   private final com.windasoft.eam.service.system.OrganizationScopeService organizationScopes;
   private final ObjectMapper json;
 
   public PermissionService(
       AuthContext auth,
+      InventoryQueryRepository inventoryQueries,
       com.windasoft.eam.repository.system.AuthorizationRepository repository,
       ObjectMapper json,
       com.windasoft.eam.service.system.OrganizationScopeService organizationScopes) {
     this.auth = auth;
+    this.inventoryQueries = inventoryQueries;
     this.repository = repository;
     this.json = json;
     this.organizationScopes = organizationScopes;
@@ -55,32 +60,31 @@ public class PermissionService {
       result.put("inventoryRequisition",new HashSet<>(Set.of("查看")));
       result.put("workspace",new HashSet<>(Set.of("查看")));
     }
-    if (repository.hasWorkflow()
-        && repository.personalRepairAccess(auth.tenantId(), auth.userId())) {
+    if (repository.personalRepairAccess(auth.tenantId(), auth.userId())) {
       result.put("repair", new HashSet<>(Set.of("查看")));
       result.put("workspace", new HashSet<>(Set.of("查看")));
     }
-    if (repository.hasTaskDatabase()
-        && repository.maintenanceParticipation(auth.tenantId(), auth.userId()) > 0) {
+    if (repository.maintenanceParticipation(auth.tenantId(), auth.userId()) > 0) {
       result.computeIfAbsent("maintenanceTask", k -> new HashSet<>()).add("查看");
       result.computeIfAbsent("workspace", k -> new HashSet<>()).add("查看");
     }
-    if (repository.hasTaskDatabase()
-        && repository.inspectionParticipation(auth.tenantId(), auth.userId(), null) > 0) {
+    if (repository.inspectionParticipation(auth.tenantId(), auth.userId(), null) > 0) {
       for (String taskKind : List.of("daily", "periodic")) {
         if (repository.inspectionParticipation(auth.tenantId(), auth.userId(), taskKind) > 0)
           result.computeIfAbsent(inspectionMenu(taskKind), k -> new HashSet<>()).add("查看");
       }
       result.computeIfAbsent("workspace", k -> new HashSet<>()).add("查看");
     }
-    if (repository.hasTaskDatabase()
-        && repository.repairPlanParticipation(auth.tenantId(), auth.userId()) > 0) {
+    if (repository.repairPlanParticipation(auth.tenantId(), auth.userId()) > 0) {
       result.computeIfAbsent("repairPlan", k -> new HashSet<>()).add("查看");
       result.computeIfAbsent("workspace", k -> new HashSet<>()).add("查看");
     }
     if (roleIds.isEmpty()) return result;
-    for (var role : repository.activeRoles(auth.tenantId(), roleIds)) {
-      var rows = repository.grants(auth.tenantId(), role.getId(), null);
+    var activeRoles = repository.activeRoles(auth.tenantId(), roleIds);
+    var grantsByRole = repository.grantsForRoles(
+        auth.tenantId(), activeRoles.stream().map(SystemRole::getId).toList(), null);
+    for (var role : activeRoles) {
+      var rows = grantsByRole.getOrDefault(role.getId(), List.of());
       if (!rows.isEmpty())
         for (var row : rows)
           result
@@ -292,8 +296,7 @@ public class PermissionService {
     boolean responsible =
         e.getOwnerIds() != null
             ? e.getOwnerIds().contains(auth.userId())
-            : repository.hasTaskDatabase()
-                && e.getId() != null
+            : e.getId() != null
                 && repository.equipmentResponsibility(auth.tenantId(), e.getId(), auth.userId())
                     > 0;
     if (!Objects.equals(e.getTenantId(), auth.tenantId())
@@ -464,8 +467,11 @@ public class PermissionService {
             .toList();
     if (roleIds.isEmpty()) deny();
     var matches = new ArrayList<Grant>();
-    for (var role : repository.activeRoles(auth.tenantId(), roleIds)) {
-      var rows = repository.grants(auth.tenantId(), role.getId(), menu);
+    var activeRoles = repository.activeRoles(auth.tenantId(), roleIds);
+    var grantsByRole = repository.grantsForRoles(
+        auth.tenantId(), activeRoles.stream().map(SystemRole::getId).toList(), menu);
+    for (var role : activeRoles) {
+      var rows = grantsByRole.getOrDefault(role.getId(), List.of());
       if (!rows.isEmpty())
         for (var row : rows) {
           var grant =
@@ -533,7 +539,7 @@ public class PermissionService {
 
   public boolean inventoryWarehouseUser(long userId, String menu, long warehouse, String action) {
     var users = repository.userOrganization(auth.tenantId(), userId);
-    var warehouses = repository.warehouse(auth.tenantId(), warehouse);
+    var warehouses = inventoryQueries.warehouseCompany(auth.tenantId(), warehouse);
     if (users.size() != 1
         || warehouses.size() != 1
         || ((Number) users.getFirst().get("status")).intValue() != 1) return false;
@@ -554,7 +560,7 @@ public class PermissionService {
   }
 
   public void checkInventoryWarehouse(String menu, long warehouseId, String action) {
-    var w = repository.warehouse(auth.tenantId(), warehouseId);
+    var w = inventoryQueries.warehouseCompany(auth.tenantId(), warehouseId);
     if (w.size() != 1) deny();
     long company = ((Number) w.getFirst().get("company_id")).longValue();
     for (var grant : scopes(menu, action))

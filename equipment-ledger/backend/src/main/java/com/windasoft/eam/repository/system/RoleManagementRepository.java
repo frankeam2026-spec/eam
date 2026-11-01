@@ -74,6 +74,17 @@ public class RoleManagementRepository {
         new QueryWrapper<UserRoleLink>().eq("tenant_id", tenant).eq("role_id", id));
   }
 
+  public Map<Long, List<UserRoleLink>> userRolesForUsers(
+      long tenant, Collection<Long> userIds) {
+    if (userIds.isEmpty()) return Map.of();
+    var linksForUsers = links.selectList(
+        new QueryWrapper<UserRoleLink>()
+            .eq("tenant_id", tenant)
+            .in("user_id", userIds));
+    return linksForUsers.stream().collect(
+        java.util.stream.Collectors.groupingBy(UserRoleLink::getUserId));
+  }
+
   public List<UserRoleLink> userRoles(long tenant, Long id) {
     return links.selectList(
         new QueryWrapper<UserRoleLink>().eq("tenant_id", tenant).eq("user_id", id));
@@ -85,6 +96,19 @@ public class RoleManagementRepository {
 
   public void insertUserRole(UserRoleLink link) {
     links.insert(link);
+  }
+
+  public Map<Long, List<RoleMenuPermission>> menuPermissionsForRoles(
+      long tenant, Collection<Long> roleIds) {
+    if (roleIds.isEmpty()) return Map.of();
+    var rows = relations.grants(
+        grants.selectList(
+            new LambdaQueryWrapper<RoleMenuPermission>()
+                .eq(RoleMenuPermission::getTenantId, tenant)
+                .in(RoleMenuPermission::getRoleId, roleIds)
+                .orderByAsc(RoleMenuPermission::getId)));
+    return rows.stream().collect(java.util.stream.Collectors.groupingBy(
+        RoleMenuPermission::getRoleId));
   }
 
   public List<RoleMenuPermission> menuPermissions(long tenant, Long id) {

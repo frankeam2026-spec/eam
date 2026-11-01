@@ -44,14 +44,6 @@ public class AuthorizationRepository {
     this.db = db;
   }
 
-  public boolean hasWorkflow() {
-    return workflow != null;
-  }
-
-  public boolean hasTaskDatabase() {
-    return db != null;
-  }
-
   public boolean personalRepairAccess(long tenant, long user) {
     return workflow.personalAccess(tenant, user);
   }
@@ -68,6 +60,18 @@ public class AuthorizationRepository {
                 .eq(SystemRole::getTenantId, tenant)
                 .eq(SystemRole::getStatus, 1)
                 .in(SystemRole::getId, ids)));
+  }
+
+  public Map<Long, List<RoleMenuPermission>> grantsForRoles(
+      long tenant, Collection<Long> roleIds, String menu) {
+    if (roleIds.isEmpty()) return Map.of();
+    var q = new LambdaQueryWrapper<RoleMenuPermission>()
+        .eq(RoleMenuPermission::getTenantId, tenant)
+        .in(RoleMenuPermission::getRoleId, roleIds);
+    if (menu != null) q.eq(RoleMenuPermission::getMenuKey, menu);
+    var rows = relations.grants(grants.selectList(q));
+    return rows.stream().collect(java.util.stream.Collectors.groupingBy(
+        RoleMenuPermission::getRoleId));
   }
 
   public List<RoleMenuPermission> grants(long tenant, Long role, String menu) {
@@ -184,8 +188,4 @@ public class AuthorizationRepository {
         user);
   }
 
-  public List<Map<String, Object>> warehouse(long tenant, long id) {
-    return db.queryForList(
-        "SELECT company_id FROM inv_warehouse WHERE tenant_id=? AND id=?", tenant, id);
-  }
 }
