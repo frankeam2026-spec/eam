@@ -6,7 +6,10 @@ import com.windasoft.eam.dto.system.UserForm;
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
-import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.system.AuthenticationRepository;
+import com.windasoft.eam.repository.system.RoleManagementRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import java.util.*;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -14,18 +17,27 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class UserManagementService {
-  private final SystemManagementRepository repository;
+  private final AuthenticationRepository sessions;
+  private final RoleManagementRepository roleRepository;
+  private final SystemUserRepository systemUsers;
+  private final OrgUnitRepository orgUnits;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
   private final BCryptPasswordEncoder passwords = new BCryptPasswordEncoder();
 
   public UserManagementService(
-      SystemManagementRepository repository,
+      AuthenticationRepository sessions,
+      RoleManagementRepository roleRepository,
+      SystemUserRepository systemUsers,
+      OrgUnitRepository orgUnits,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json) {
-    this.repository = repository;
+    this.sessions = sessions;
+    this.roleRepository = roleRepository;
+    this.systemUsers = systemUsers;
+    this.orgUnits = orgUnits;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
@@ -46,7 +58,7 @@ public class UserManagementService {
     applyUser(x, f);
     permissions.checkUser("user", "新增", x);
     setPassword(x, f.password(), true);
-    repository.insertUser(x);
+    systemUsers.insertUser(x);
     saveRoleLinks(x.getId(), f.roleIds());
     return Map.of("data", userView(x));
   }
@@ -56,7 +68,7 @@ public class UserManagementService {
     var x = requireUser(id);
     permissions.checkUser("user", "编辑", x);
     var oldRoles =
-        repository.userRoles(auth.tenantId(), id).stream()
+        roleRepository.userRoles(auth.tenantId(), id).stream()
             .map(UserRoleLink::getRoleId)
             .collect(java.util.stream.Collectors.toSet());
     if (!oldRoles.equals(new HashSet<>(f.roleIds() == null ? List.of() : f.roleIds()))) {
@@ -69,17 +81,18 @@ public class UserManagementService {
     applyUser(x, f);
     permissions.checkUser("user", "编辑", x);
     setPassword(x, f.password(), false);
-    repository.updateUser(x);
+    systemUsers.updateUser(x);
     if(f.email()!=null) {
       if(f.emailVersion()==null)throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0018");
-      com.windasoft.eam.common.VersionGuard.updated(repository.updateEmail(auth.tenantId(),id,f.email().trim(),f.emailVersion()));
+      com.windasoft.eam.common.VersionGuard.updated(systemUsers.updateEmail(auth.tenantId(),id,f.email().trim(),f.emailVersion()));
     }
     if (f.password() != null && !f.password().isBlank() || x.getStatus() == 0) revokeSessions(id);
-    repository.deleteUserRoles(auth.tenantId(), id);
+    roleRepository.deleteUserRoles(auth.tenantId(), id);
     saveRoleLinks(id, f.roleIds());
     return Map.of("data", userView(x));
   }
 
+  @Transactional
   public Map<String, Object> userStatus(Long id, Map<String, Integer> body) {
     var x = requireUser(id);
     permissions.checkUser("user", "停用", x);
@@ -89,7 +102,7 @@ public class UserManagementService {
     if (id.equals(auth.userId()) && status == 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0038");
     x.setStatus(status);
-    repository.updateUser(x);
+    systemUsers.updateUser(x);
     if (status == 0) revokeSessions(id);
     return Map.of("data", userView(x));
   }
@@ -118,7 +131,7 @@ public class UserManagementService {
     }
     for (var user : users) {
       if ("password".equals(f.operation())) setPassword(user, f.password(), true);
-      repository.updateUser(user);
+      systemUsers.updateUser(user);
       revokeSessions(user.getId());
     }
     return Map.of("data", users.stream().map(this::userView).toList());
@@ -129,8 +142,8 @@ public class UserManagementService {
     var x = requireUser(id);
     permissions.checkUser("user", "删除", x);
     revokeSessions(id);
-    repository.deleteUserRoles(auth.tenantId(), id);
-    repository.deleteUser(id);
+    roleRepository.deleteUserRoles(auth.tenantId(), id);
+    systemUsers.deleteUser(id);
     return Map.of("data", Map.of("deleted", true));
   }
 
@@ -156,7 +169,7 @@ public class UserManagementService {
   }
 
   private void revokeSessions(Long userId) {
-    repository.revokeSessions(auth.tenantId(), userId);
+    sessions.revokeSessions(auth.tenantId(), userId);
   }
 
   private void saveRoleLinks(Long userId, List<Long> ids) {
@@ -166,13 +179,13 @@ public class UserManagementService {
       link.setTenantId(auth.tenantId());
       link.setUserId(userId);
       link.setRoleId(id);
-      repository.insertUserRole(link);
+      roleRepository.insertUserRole(link);
     }
   }
 
   private void validateRoleIds(List<Long> ids) {
     if (ids == null || ids.isEmpty()) return;
-    long count = repository.roleCount(auth.tenantId(), ids);
+    long count = roleRepository.roleCount(auth.tenantId(), ids);
     if (count != new HashSet<>(ids).size())
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0042");
   }
@@ -184,19 +197,19 @@ public class UserManagementService {
   }
 
   private void checkAccount(String account, Long id) {
-    if (repository.accountCount(auth.tenantId(), account, id) > 0)
+    if (systemUsers.accountCount(auth.tenantId(), account, id) > 0)
       throw new com.windasoft.eam.common.FieldValidationException("account", "登录账号已存在");
   }
 
   private SystemUser requireUser(Long id) {
-    var x = repository.user(auth.tenantId(), id);
+    var x = systemUsers.user(auth.tenantId(), id);
     if (x == null)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0044");
     return x;
   }
 
   private OrgUnit requireOrg(Long id) {
-    var x = repository.organization(auth.tenantId(), id);
+    var x = orgUnits.organization(auth.tenantId(), id);
     if (x == null)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0031");
     return x;
@@ -204,7 +217,7 @@ public class UserManagementService {
 
   private Map<String, Object> userView(SystemUser x) {
     var ids =
-        repository.userRoles(auth.tenantId(), x.getId()).stream()
+        roleRepository.userRoles(auth.tenantId(), x.getId()).stream()
             .map(UserRoleLink::getRoleId)
             .map(String::valueOf)
             .toList();
@@ -225,7 +238,7 @@ public class UserManagementService {
         ids,
         "status",
         x.getStatus() == 1 ? "启用" : "停用"));
-    var emailProfile=repository.emailProfile(auth.tenantId(),x.getId());
+    var emailProfile=systemUsers.emailProfile(auth.tenantId(),x.getId());
     result.put("email", Objects.toString(emailProfile.get("email"),Objects.toString(x.getEmail(),"")));
     result.put("emailVersion", emailProfile.getOrDefault("email_version",0));
     return result;

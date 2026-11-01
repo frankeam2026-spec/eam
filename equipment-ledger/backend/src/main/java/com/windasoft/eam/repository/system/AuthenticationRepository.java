@@ -80,4 +80,7 @@ public class AuthenticationRepository {
             .eq(SystemUser::getTenantId, tenant)
             .eq(SystemUser::getAccount, "admin"));
   }
+  public void revokeSessions(long tenant, Long id) {
+    sessions.delete(new QueryWrapper<AuthSession>().eq("tenant_id", tenant).eq("user_id", id));
+  }
 }

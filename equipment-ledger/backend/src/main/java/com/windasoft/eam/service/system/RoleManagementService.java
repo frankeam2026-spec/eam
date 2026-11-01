@@ -6,26 +6,32 @@ import com.windasoft.eam.dto.system.MenuGrantForm;
 import com.windasoft.eam.dto.system.RoleForm;
 import com.windasoft.eam.entity.system.RoleMenuPermission;
 import com.windasoft.eam.entity.system.SystemRole;
-import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.system.RoleManagementRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
 import java.util.*;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RoleManagementService {
-  private final SystemManagementRepository repository;
+  private final RoleManagementRepository repository;
+  private final OrgUnitRepository orgUnits;
+  private final InventoryQueryRepository inventoryQueries;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
-  private final BCryptPasswordEncoder passwords = new BCryptPasswordEncoder();
 
   public RoleManagementService(
-      SystemManagementRepository repository,
+      RoleManagementRepository repository,
+      OrgUnitRepository orgUnits,
+      InventoryQueryRepository inventoryQueries,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json) {
     this.repository = repository;
+    this.orgUnits = orgUnits;
+    this.inventoryQueries = inventoryQueries;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
@@ -33,7 +39,7 @@ public class RoleManagementService {
 
   public Object roleWarehouses() {
     permissions.require("role", "授权");
-    return Map.of("data", repository.warehouseChoices(auth.tenantId()));
+    return Map.of("data", inventoryQueries.warehouseChoices(auth.tenantId()));
   }
 
   public Map<String, Object> roles() {
@@ -126,7 +132,7 @@ public class RoleManagementService {
         if (ids.isEmpty() || ids.size() != new HashSet<>(ids).size())
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.system.message0059");
-        long warehouses = repository.warehouseCount(auth.tenantId(), ids);
+        long warehouses = inventoryQueries.warehouseCount(auth.tenantId(), ids);
         if (warehouses != ids.size())
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.system.message0060");
@@ -135,7 +141,7 @@ public class RoleManagementService {
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.system.message0061", menu);
         long count =
-            repository.organizationCount(
+            orgUnits.organizationCount(
                 auth.tenantId(), scopes.contains("companies") ? "公司" : "部门", ids);
         if (count != ids.size())
           throw new com.windasoft.eam.common.LocalizedArgumentException(

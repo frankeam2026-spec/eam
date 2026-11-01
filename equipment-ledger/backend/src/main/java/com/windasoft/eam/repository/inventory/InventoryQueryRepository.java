@@ -36,6 +36,26 @@ public class InventoryQueryRepository {
         "SELECT id,company_id FROM inv_warehouse WHERE tenant_id=? ORDER BY id", tenant);
   }
 
+  /** 仓库授权目标的存在性校验；保持租户约束及原有计数语义。 */
+  public long warehouseCount(long tenant, List<Long> ids) {
+    if (ids.isEmpty()) return 0;
+    return db.queryForObject(
+        "SELECT COUNT(*) FROM inv_warehouse WHERE tenant_id=? AND id IN ("
+            + String.join(",", Collections.nCopies(ids.size(), "?"))
+            + ")",
+        Long.class,
+        java.util.stream.Stream.concat(java.util.stream.Stream.of(tenant), ids.stream()).toArray());
+  }
+
+  /** 角色权限配置的仓库候选项：保留现有 id/name JSON 字段和排序。 */
+  public List<Map<String, Object>> warehouseChoices(long tenant) {
+    return db.queryForList(
+        "SELECT CAST(w.id AS CHAR) id,CONCAT(o.name,' / ',w.name) name FROM inv_warehouse w JOIN"
+            + " eam_org_unit o ON o.tenant_id=w.tenant_id AND o.id=w.company_id WHERE w.tenant_id=?"
+            + " ORDER BY o.name,w.name",
+        tenant);
+  }
+
   public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(Query query,long tenant){
     var args=new ArrayList<Object>();args.add(tenant);args.addAll(query.args());
     return new com.windasoft.eam.repository.common.AssistantReadSource("SELECT CAST(id AS CHAR) id,material_code code,material_name name,model,unit,company_name company,CAST((SELECT company_id FROM inv_warehouse w WHERE w.tenant_id=? AND w.id=stock.warehouse_id) AS CHAR) companyId,warehouse_name warehouse,CAST(warehouse_id AS CHAR) warehouseId,bin_name bin,batch_code batch,stock_status status,quantity,reserved_quantity reserved,available_quantity available,expiry_date expiryDate FROM ("+query.sql()+") stock",args);

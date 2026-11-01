@@ -3,33 +3,43 @@ package com.windasoft.eam.service.system;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.OrgForm;
 import com.windasoft.eam.entity.system.OrgUnit;
-import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
+import com.windasoft.eam.repository.system.OrganizationReferenceRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
 import java.util.*;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class OrganizationService {
-  private final SystemManagementRepository repository;
+  private final BaseItemRepository locations;
+  private final OrganizationReferenceRepository references;
+  private final OrgUnitRepository orgUnits;
+  private final SystemUserRepository systemUsers;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
-  private final BCryptPasswordEncoder passwords = new BCryptPasswordEncoder();
 
   public OrganizationService(
-      SystemManagementRepository repository,
+      BaseItemRepository locations,
+      OrganizationReferenceRepository references,
+      OrgUnitRepository orgUnits,
+      SystemUserRepository systemUsers,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json) {
-    this.repository = repository;
+    this.locations = locations;
+    this.references = references;
+    this.orgUnits = orgUnits;
+    this.systemUsers = systemUsers;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
   }
 
   public Map<String, Object> organizations() {
-    var rows = repository.organizations(auth.tenantId());
+    var rows = orgUnits.organizations(auth.tenantId());
     return Map.of(
         "data", permissions.visibleOrganizations(rows).stream().map(this::orgView).toList());
   }
@@ -46,7 +56,7 @@ public class OrganizationService {
     if (f.parentId() != null) permissions.checkOrg("org", "新增", requireOrg(f.parentId()));
     else if (!permissions.scope("org", "新增").all())
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0018");
-    repository.insertOrganization(x);
+    orgUnits.insertOrganization(x);
     orgEvent(x.getId(), "新增", null, orgView(x));
     return Map.of("data", orgView(x));
   }
@@ -72,7 +82,7 @@ public class OrganizationService {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0022");
     applyOrg(x, f);
     permissions.checkOrg("org", "编辑", x);
-    repository.updateOrganization(x);
+    orgUnits.updateOrganization(x);
     orgEvent(id, "编辑", before, orgView(x));
     return Map.of("data", orgView(x));
   }
@@ -82,21 +92,21 @@ public class OrganizationService {
     lockOrganizations();
     var x = requireOrg(id);
     permissions.checkOrg("org", "删除", x);
-    if (repository.childOrganizationCount(auth.tenantId(), id) > 0)
+    if (orgUnits.childOrganizationCount(auth.tenantId(), id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0904");
-    if (repository.organizationUserCount(auth.tenantId(), id) > 0)
+    if (systemUsers.organizationUserCount(auth.tenantId(), id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0905");
     if (hasLocations(id))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0023");
     if (businessReferences(id))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0024");
     orgEvent(id, "删除", orgView(x), null);
-    repository.deleteOrganization(x.getId());
+    orgUnits.deleteOrganization(x.getId());
     return Map.of("data", Map.of("deleted", true));
   }
 
   private boolean hasLocations(Long id) {
-    return repository.locationCount(auth.tenantId(), id) > 0;
+    return locations.locationCount(auth.tenantId(), id) > 0;
   }
 
   private void applyOrg(OrgUnit x, OrgForm f) {
@@ -110,11 +120,11 @@ public class OrganizationService {
   }
 
   private void lockOrganizations() {
-    repository.lockOrganizations(auth.tenantId());
+    orgUnits.lockOrganizations(auth.tenantId());
   }
 
   private void orgEvent(Long id, String action, Object before, Object after) {
-    repository.orgEvent(
+    orgUnits.orgEvent(
         auth.tenantId(),
         id,
         auth.userId(),
@@ -124,7 +134,7 @@ public class OrganizationService {
   }
 
   private boolean businessReferences(Long id) {
-    return repository.businessReferences(auth.tenantId(), id);
+    return references.businessReferences(auth.tenantId(), id);
   }
 
   private void validateOrg(String type, Long parentId, Long current) {
@@ -133,7 +143,7 @@ public class OrganizationService {
     if (parentId == null) {
       if ("部门".equals(type))
         throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0026");
-      if (repository.rootCount(auth.tenantId(), current) > 0)
+      if (orgUnits.rootCount(auth.tenantId(), current) > 0)
         throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0027");
     } else {
       var parent = requireOrg(parentId);
@@ -148,22 +158,22 @@ public class OrganizationService {
   }
 
   private boolean isDescendant(Long candidate, Long parent) {
-    var n = repository.organizationById(candidate);
+    var n = orgUnits.organizationById(candidate);
     var seen = new HashSet<Long>();
     while (n != null && n.getParentId() != null && seen.add(n.getId())) {
       if (parent.equals(n.getParentId())) return true;
-      n = repository.organizationById(n.getParentId());
+      n = orgUnits.organizationById(n.getParentId());
     }
     return false;
   }
 
   private void checkOrgCode(String code, Long id) {
-    if (repository.orgCodeCount(auth.tenantId(), code, id) > 0)
+    if (orgUnits.orgCodeCount(auth.tenantId(), code, id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0900");
   }
 
   private OrgUnit requireOrg(Long id) {
-    var x = repository.organization(auth.tenantId(), id);
+    var x = orgUnits.organization(auth.tenantId(), id);
     if (x == null)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0031");
     return x;
