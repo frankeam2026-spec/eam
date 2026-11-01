@@ -57,9 +57,12 @@ public class RepairQueryService {
   }
 
   private void hydrate(List<RepairOrder> rows) {
-    var categories = custom.repairCategories(rows.stream().map(RepairOrder::getId).toList());
-    var values = custom.batch("repair_report", rows.stream().map(RepairOrder::getId).toList());
-    var processing = custom.batch("repair_process", rows.stream().map(RepairOrder::getId).toList());
+    // 空页无需查询自定义字段；复用一次构造的工单 ID 列表。
+    if (rows.isEmpty()) return;
+    var ids = rows.stream().map(RepairOrder::getId).toList();
+    var categories = custom.repairCategories(ids);
+    var values = custom.batch("repair_report", ids);
+    var processing = custom.batch("repair_process", ids);
     for (var row : rows) {
       row.setEquipmentCategoryId(categories.get(row.getId()));
       var v = values.get(row.getId());
@@ -89,8 +92,10 @@ public class RepairQueryService {
 
   public record Result(Page<RepairOrder> page, Map<String, Long> counts) {}
 
-  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(){
-    permissions.require("repair","查看");var params=Map.<String,String>of();return repository.assistantSource(query(params,filters(params),"all",false));
+  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource() {
+    permissions.require("repair", "查看");
+    var params = Map.<String, String>of();
+    return repository.assistantSource(query(params, filters(params), "all", false));
   }
 
   @Transactional(readOnly = true)

@@ -98,7 +98,7 @@ public class RepairOrderService {
     permissions.checkRepair(row, ownReturned ? "报修" : "编辑");
     VersionGuard.check(row.getRowVersion(), rowVersion);
     Long originalCompany = row.getCompanyOrgId();
-    if (!(RepairOrderStatus.PENDING_SUBMISSION.code().equals(row.getStatus()) && Objects.equals(row.getReporterUserId(), auth.userId()))
+    if (!ownReturned
         && !(RepairOrderStatus.PENDING_DISPATCH.code().equals(row.getStatus()) && !RepairApprovalGate.REQUIRED.code().equals(row.getApprovalGate())))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0041");
     copy(form, row);

@@ -71,6 +71,15 @@ class RepairQueryServiceTest {
   }
 
   @Test
+  void emptyPageDoesNotQueryCustomFields() {
+    var custom = (com.windasoft.eam.service.business.BusinessValueService)
+        org.springframework.test.util.ReflectionTestUtils.getField(service, "custom");
+    service.list(Map.of());
+    verify(custom, never()).batch(anyString(), anyCollection());
+    verify(custom, never()).repairCategories(anyCollection());
+  }
+
+  @Test
   void oversizedPageIsRejected() {
     assertThrows(IllegalArgumentException.class, () -> service.list(Map.of("size", "10000")));
   }

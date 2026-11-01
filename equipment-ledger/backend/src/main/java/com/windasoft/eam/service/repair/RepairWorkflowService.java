@@ -294,8 +294,7 @@ public class RepairWorkflowService {
                 "attachments",
                 read(row.getProcessAttachmentsJson())));
         if (resolved) {
-          if (flow.materials(auth.tenantId(), id).stream()
-              .anyMatch(x -> "待出库".equals(x.get("status"))))
+          if (hasPendingIssue(id))
             throw new com.windasoft.eam.common.LocalizedArgumentException(
                 "server.repair.message0015");
           row.setCompletedAt(LocalDateTime.now());
@@ -384,8 +383,7 @@ public class RepairWorkflowService {
               "server.repair.message0020");
         details.put("materialId", String.valueOf(materialId));
         label = "撤回领料";
-        if (flow.materials(auth.tenantId(), id).stream()
-            .noneMatch(x -> "待出库".equals(x.get("status"))))
+        if (!hasPendingIssue(id))
           flow.closeIssueTodos(auth.tenantId(), id);
       }
       case ISSUE ->
@@ -509,6 +507,12 @@ public class RepairWorkflowService {
   @Transactional
   public void addStock(JsonNode body) {
     throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0027");
+  }
+
+  /** 维修工单有待出库领料时不得提交验收；撤回最后一笔待出库领料后关闭出库待办。 */
+  private boolean hasPendingIssue(long orderId) {
+    return flow.materials(auth.tenantId(), orderId).stream()
+        .anyMatch(material -> "待出库".equals(material.get("status")));
   }
 
   private void todo(RepairOrder row, Long userId, String kind, boolean todo) {
