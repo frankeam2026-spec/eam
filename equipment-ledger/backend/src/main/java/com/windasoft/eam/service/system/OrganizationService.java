@@ -5,7 +5,6 @@ import com.windasoft.eam.dto.system.OrgForm;
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.repository.system.SystemManagementRepository;
 import java.util.*;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,7 +14,6 @@ public class OrganizationService {
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
-  private final BCryptPasswordEncoder passwords = new BCryptPasswordEncoder();
 
   public OrganizationService(
       SystemManagementRepository repository,
