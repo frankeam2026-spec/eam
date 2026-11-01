@@ -79,8 +79,11 @@ public class PermissionService {
       result.computeIfAbsent("workspace", k -> new HashSet<>()).add("查看");
     }
     if (roleIds.isEmpty()) return result;
-    for (var role : repository.activeRoles(auth.tenantId(), roleIds)) {
-      var rows = repository.grants(auth.tenantId(), role.getId(), null);
+    var activeRoles = repository.activeRoles(auth.tenantId(), roleIds);
+    var grantsByRole = repository.grantsForRoles(
+        auth.tenantId(), activeRoles.stream().map(SystemRole::getId).toList(), null);
+    for (var role : activeRoles) {
+      var rows = grantsByRole.getOrDefault(role.getId(), List.of());
       if (!rows.isEmpty())
         for (var row : rows)
           result
@@ -464,8 +467,11 @@ public class PermissionService {
             .toList();
     if (roleIds.isEmpty()) deny();
     var matches = new ArrayList<Grant>();
-    for (var role : repository.activeRoles(auth.tenantId(), roleIds)) {
-      var rows = repository.grants(auth.tenantId(), role.getId(), menu);
+    var activeRoles = repository.activeRoles(auth.tenantId(), roleIds);
+    var grantsByRole = repository.grantsForRoles(
+        auth.tenantId(), activeRoles.stream().map(SystemRole::getId).toList(), menu);
+    for (var role : activeRoles) {
+      var rows = grantsByRole.getOrDefault(role.getId(), List.of());
       if (!rows.isEmpty())
         for (var row : rows) {
           var grant =
