@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** 组织删除前的跨领域只读引用检查，不负责业务删除或授权决策。 */
+/** 组织引用检查：删除组织前只读查询关联业务记录，不承担跨领域删除操作。 */
 @Repository
 public class OrganizationReferenceRepository {
   private final JdbcTemplate db;
