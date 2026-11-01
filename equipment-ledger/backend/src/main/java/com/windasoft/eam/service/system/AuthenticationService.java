@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
+/** 身份认证服务：负责凭据校验和登录流程，不能绕过会话安全规则。 */
 @Service
 public class AuthenticationService {
   private final AuthenticationRepository repository;
