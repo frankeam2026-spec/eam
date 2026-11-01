@@ -1580,8 +1580,9 @@ class EngineeringQueryMySqlIT {
                         "全天安排",
                         "frequency",
                         "shift",
+                        // 每个检查安排必须显式绑定班次；计划级 shifts 不会自动替代安排的 slots。
                         "slots",
-                        List.of(),
+                        List.of(Map.of("id", "qa-shift", "name", "全天", "start", "00:00", "end", "23:59")),
                         "personMode",
                         "specified",
                         "followUpUserId",
