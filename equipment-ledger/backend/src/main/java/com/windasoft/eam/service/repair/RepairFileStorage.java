@@ -30,6 +30,7 @@ public class RepairFileStorage {
   public Path attachmentPath(String id) throws IOException {
     if (!Files.isDirectory(root))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
+    // 附件写入使用 UUID 加扩展名；只匹配完整的“ID.”前缀，避免误取同前缀文件。
     List<Path> matches;
     try (var stream = Files.list(root)) {
       matches = stream.filter(p -> p.getFileName().toString().startsWith(id + ".")).limit(1).toList();
