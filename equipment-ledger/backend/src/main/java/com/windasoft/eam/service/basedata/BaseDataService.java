@@ -149,7 +149,7 @@ public class BaseDataService {
   }
 
   private void validateCompany(BaseDataType type, Long companyId) {
-    if (!type == BaseDataType.LOCATION) return;
+    if (type != BaseDataType.LOCATION) return;
     if (companyId == null)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0040");
     var company = repository.company(auth.tenantId(), companyId);
