@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 /**
  * 设备文件业务服务：处理附件与设备的关联和权限约束，底层文件读写交由存储组件。
  */
+/** 设备附件业务：校验设备与附件的关联及访问资格，具体文件读写委托存储组件。 */
 @Service
 public class EquipmentFileService {
   private final AuthContext auth;
