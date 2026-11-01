@@ -6,7 +6,6 @@ import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.equipment.EquipmentMapper;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
 import java.util.*;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -22,7 +21,6 @@ public class RepairOrderRepository {
       EquipmentMapper equipment,
       com.windasoft.eam.repository.basedata.BaseItemMapper base,
       NumberCounterMapper counter,
-      @Value("${eam.upload.directory:./data/uploads}") String directory,
       RepairRelationsRepository collaborators) {
     this.collaborators = collaborators;
     this.orders = orders;
