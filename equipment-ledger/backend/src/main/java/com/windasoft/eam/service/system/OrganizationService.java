@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.OrgForm;
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,16 +12,19 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrganizationService {
   private final SystemManagementRepository repository;
+  private final OrgUnitRepository orgUnits;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
 
   public OrganizationService(
       SystemManagementRepository repository,
+      OrgUnitRepository orgUnits,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json) {
     this.repository = repository;
+    this.orgUnits = orgUnits;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
@@ -108,11 +112,11 @@ public class OrganizationService {
   }
 
   private void lockOrganizations() {
-    repository.lockOrganizations(auth.tenantId());
+    orgUnits.lockOrganizations(auth.tenantId());
   }
 
   private void orgEvent(Long id, String action, Object before, Object after) {
-    repository.orgEvent(
+    orgUnits.orgEvent(
         auth.tenantId(),
         id,
         auth.userId(),
