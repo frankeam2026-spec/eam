@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Component;
 
 @Component
+/** 请求身份上下文：提供可信的用户及租户身份，客户端参数不能替代服务端身份。 */
 public class AuthContext {
   public static final String ATTRIBUTE = AuthContext.class.getName() + ".user";
   private final HttpServletRequest request;
