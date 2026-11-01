@@ -1615,14 +1615,22 @@ class EngineeringQueryMySqlIT {
               assertTrue(Objects.toString(compatibility.get("start_time")).startsWith("00:00"));
               assertTrue(Objects.toString(compatibility.get("end_time")).startsWith("23:59"));
             }
+            // 日常点检的任务级 type_id 按领域规则为空；周期巡检才直接记录计划类型 ID。
+            // 两者都要生成任务，不应以同一个 type_id 条件误判日常任务未生成。
             int count =
-                db.queryForObject(
-                    "SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001 AND plan_id=?"
-                        + " AND type_id=?",
-                    Integer.class,
-                    planId,
-                    Long.parseLong(inspectionType.get("id").toString()));
-            assertEquals(1, count);
+                kind.equals("daily-plans")
+                    ? db.queryForObject(
+                        "SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001"
+                            + " AND plan_id=? AND type_id IS NULL",
+                        Integer.class,
+                        planId)
+                    : db.queryForObject(
+                        "SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001"
+                            + " AND plan_id=? AND type_id=?",
+                        Integer.class,
+                        planId,
+                        Long.parseLong(inspectionType.get("id").toString()));
+            assertEquals(1, count, "计划应生成一条类型归属正确的任务：" + kind);
             inspectionDefinitions.generate(10001, planId);
             assertEquals(
                 count,
