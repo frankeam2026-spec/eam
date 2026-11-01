@@ -10,6 +10,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.dto.inventory.RequisitionDetail;
+import com.windasoft.eam.dto.inventory.RequisitionStatus;
 import com.windasoft.eam.dto.inventory.RequisitionDraftForm;
 import com.windasoft.eam.dto.workflow.WorkflowHistoryRound;
 import com.windasoft.eam.entity.inventory.RequisitionHeader;
@@ -41,6 +42,22 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class RequisitionService {
+  /** 审批提交后的可重复提交状态：保持原有幂等返回语义，不把已取消或已关闭纳入。 */
+  private static final Set<String> SUBMITTED_STATUSES = Set.of(
+      RequisitionStatus.APPROVING.value(),
+      RequisitionStatus.AWAITING_RESERVATION.value(),
+      RequisitionStatus.PARTIALLY_RESERVED.value(),
+      RequisitionStatus.RESERVED.value(),
+      RequisitionStatus.PARTIALLY_ISSUED.value(),
+      RequisitionStatus.COMPLETED.value());
+
+  /** 允许继续分配或确认领料的状态范围；所有调用点必须使用同一口径。 */
+  private static final Set<String> FULFILLABLE_STATUSES = Set.of(
+      RequisitionStatus.AWAITING_RESERVATION.value(),
+      RequisitionStatus.PARTIALLY_RESERVED.value(),
+      RequisitionStatus.RESERVED.value(),
+      RequisitionStatus.PARTIALLY_ISSUED.value());
+
   private final WorkflowRuntimeService workflow;
   private final InventoryListService listQueries;
   private final InventoryMutex mutex;
@@ -642,7 +659,7 @@ public class RequisitionService {
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0226"));
     if (!text(raw, "status").equals("草稿")) {
       require(
-          Set.of("审批中", "待预留", "部分预留", "已预留", "部分发料", "已完成").contains(text(raw, "status")),
+          SUBMITTED_STATUSES.contains(text(raw, "status")),
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0227"));
       return detail(requestId);
     }
@@ -684,7 +701,7 @@ public class RequisitionService {
     var raw = row(requestId, true, "预留");
     requireApproval(raw);
     require(
-        Set.of("待预留", "部分预留", "已预留", "部分发料").contains(text(raw, "status")),
+        FULFILLABLE_STATUSES.contains(text(raw, "status")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0229"));
     if (text(raw, "status").equals("已预留")) return detail(requestId);
     VersionGuard.checkPayload((Number) raw.get("row_version"), body);
@@ -802,7 +819,7 @@ public class RequisitionService {
     mutex.enter();
     var raw = row(requestId, true, "释放预留");
     require(
-        Set.of("待预留", "部分预留", "已预留", "部分发料").contains(text(raw, "status")),
+        FULFILLABLE_STATUSES.contains(text(raw, "status")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0236"));
     var rows = repository.lockReservations(auth.tenantId(), requestId);
     if (rows.isEmpty()) return detail(requestId);
@@ -877,7 +894,7 @@ public class RequisitionService {
     var r = row(requestId, lock, action);
     requireApproval(r);
     require(
-        Set.of("待预留", "部分预留", "已预留", "部分发料").contains(text(r, "status")),
+        FULFILLABLE_STATUSES.contains(text(r, "status")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0239"));
     var t = task(text(r, "task_kind"), id(r.get("task_id")), false, lock);
     require(
@@ -980,7 +997,7 @@ public class RequisitionService {
     if (id(r.get("applicant_id")) != auth.userId())
       permissions.checkInventoryWarehouse("inventoryOutbound", id(r.get("warehouse_id")), "关闭剩余需求");
     require(
-        Set.of("待预留", "部分预留", "已预留", "部分发料").contains(text(r, "status")),
+        FULFILLABLE_STATUSES.contains(text(r, "status")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0242"));
     VersionGuard.checkPayload((Number) r.get("row_version"), body);
     require(
