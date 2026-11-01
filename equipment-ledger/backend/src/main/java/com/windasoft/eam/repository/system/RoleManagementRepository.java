@@ -87,6 +87,19 @@ public class RoleManagementRepository {
     links.insert(link);
   }
 
+  public Map<Long, List<RoleMenuPermission>> menuPermissionsForRoles(
+      long tenant, Collection<Long> roleIds) {
+    if (roleIds.isEmpty()) return Map.of();
+    var rows = relations.grants(
+        grants.selectList(
+            new LambdaQueryWrapper<RoleMenuPermission>()
+                .eq(RoleMenuPermission::getTenantId, tenant)
+                .in(RoleMenuPermission::getRoleId, roleIds)
+                .orderByAsc(RoleMenuPermission::getId)));
+    return rows.stream().collect(java.util.stream.Collectors.groupingBy(
+        RoleMenuPermission::getRoleId));
+  }
+
   public List<RoleMenuPermission> menuPermissions(long tenant, Long id) {
     return relations.grants(
         grants.selectList(
