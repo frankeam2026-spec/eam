@@ -41,7 +41,7 @@ public class OrganizationReferenceRepository {
       int count =
           query.hasDepartmentColumn()
               ? db.queryForObject(query.sql(), Integer.class, tenant, id, id)
-              : db.queryForObject(query, Integer.class, tenant, id);
+              : db.queryForObject(query.sql(), Integer.class, tenant, id);
       if (count > 0) return true;
     }
     return false;
