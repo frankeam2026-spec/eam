@@ -1,5 +1,7 @@
 package com.windasoft.eam.service.experience;
 
+import com.windasoft.eam.domain.experience.AnomalyAction;
+import com.windasoft.eam.domain.experience.AnomalyStatus;
 import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
@@ -132,7 +134,7 @@ public class AnomalyService {
         encode(json, details));
     if (kind.equals("anomaly")) {
       var row = repository.loadAnomalyState(auth.tenantId(), id);
-      if (text(row, "status").equals("待处理"))
+      if (text(row, "status").equals(AnomalyStatus.PENDING.code()))
         notify(
             "anomaly",
             id,
@@ -140,7 +142,7 @@ public class AnomalyService {
             "异常待处理",
             text(row, "description"),
             true);
-      repository.syncAnomalyTodos(text(row, "status").equals("待处理") ? 0 : 1, auth.tenantId(), id);
+      repository.syncAnomalyTodos(text(row, "status").equals(AnomalyStatus.PENDING.code()) ? 0 : 1, auth.tenantId(), id);
     } else if (kind.equals("repairPlan")) {
       var row = repository.loadPlanState(auth.tenantId(), id);
       if (text(row, "status").equals("待生成"))
@@ -415,34 +417,36 @@ public class AnomalyService {
   public Object action(long aid, Map<String, Object> b) {
     var r = raw(aid, true);
     String action = required(b, "action", 30);
+    // 请求动作受控解析，但权限范围和业务状态校验仍由现有流程独立决定。
+    var operation = AnomalyAction.parse(action);
     String grant =
-        switch (action) {
-          case "resolve" -> "消除";
-          case "report", "link" -> "报修";
-          case "void" -> "作废";
+        switch (operation) {
+          case RESOLVE -> "消除";
+          case REPORT, LINK -> "报修";
+          case VOID -> "作废";
           default ->
               throw new com.windasoft.eam.common.LocalizedArgumentException(
                   "server.experience.message0022");
         };
     checkAction(r, grant);
     if (id(r.get("row_version")) != id(b.get("rowVersion"))) conflict();
-    check(!Set.of("已消除", "已作废").contains(r.get("status")), "异常已结束");
+    check(!Set.of(AnomalyStatus.RESOLVED.code(), AnomalyStatus.VOIDED.code()).contains(r.get("status")), "异常已结束");
     check(r.get("repair_id") == null && r.get("plan_id") == null, "异常已有处理安排，请先在关联单据处理");
-    if (action.equals("resolve") || action.equals("void")) {
+    if (operation == AnomalyAction.RESOLVE || operation == AnomalyAction.VOID) {
       String reason = required(b, "reason", 4000);
       var evidence = new ArrayList<>(rows(decode(json, r.get("attachments"))));
       evidence.addAll(ownFiles(b.get("attachments")));
       repository.updateEvidence(encode(json, evidence), auth.tenantId(), aid);
       repository.resolveAnomaly(
-          action.equals("resolve") ? "已消除" : "已作废",
+          operation == AnomalyAction.RESOLVE ? AnomalyStatus.RESOLVED.code() : AnomalyStatus.VOIDED.code(),
           reason,
           LocalDateTime.now(ZoneId.of("Asia/Shanghai")),
           auth.tenantId(),
           aid);
-      event("anomaly", aid, action.equals("resolve") ? "直接消除" : "作废异常", Map.of("reason", reason));
+      event("anomaly", aid, operation == AnomalyAction.RESOLVE ? "直接消除" : "作废异常", Map.of("reason", reason));
     } else {
       long repair;
-      if (action.equals("link")) {
+      if (operation == AnomalyAction.LINK) {
         repair = id(b.get("repairId"));
         var order = workflow.require(repair);
         workflow.viewAllowed(order);
@@ -457,7 +461,7 @@ public class AnomalyService {
       event(
           "anomaly",
           aid,
-          action.equals("link") ? "关联维修工单" : "发起维修",
+          operation == AnomalyAction.LINK ? "关联维修工单" : "发起维修",
           Map.of("repairId", Long.toString(repair)));
     }
     return detail(aid);
@@ -751,7 +755,7 @@ public class AnomalyService {
       check(
           a.get("repair_id") == null
               && (a.get("plan_id") == null || id(a.get("plan_id")) == pid)
-              && !Set.of("已消除", "已作废").contains(a.get("status")),
+              && !Set.of(AnomalyStatus.RESOLVED.code(), AnomalyStatus.VOIDED.code()).contains(a.get("status")),
           "异常已有安排或已结束");
       repository.attachPlanAnomaly(pid, auth.tenantId(), aid);
       event("anomaly", aid, "安排维修计划", Map.of("planId", pid.toString()));
