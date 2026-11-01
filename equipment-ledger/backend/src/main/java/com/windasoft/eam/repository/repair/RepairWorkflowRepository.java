@@ -13,6 +13,7 @@ import java.util.*;
 import org.springframework.stereotype.Repository;
 
 /** Owns workflow persistence, including legacy allocations needed for historical compatibility. */
+/** 工作流持久化访问：提供工单锁、候选人、待办、材料及事件操作，不决定业务权限。 */
 @Repository
 public class RepairWorkflowRepository {
   @org.springframework.beans.factory.annotation.Autowired
