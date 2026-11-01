@@ -14,6 +14,7 @@ public class OrganizationReferenceRepository {
     this.db = db;
   }
 
+  /** 跨领域只读引用检查用于阻止组织删除，不在这里维护被引用业务的数据。 */
   public boolean businessReferences(long tenant, Long id) {
 
     record ReferenceQuery(String sql, boolean hasDepartmentColumn) {}
