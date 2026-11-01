@@ -56,26 +56,22 @@ public class PermissionService {
       result.put("inventoryRequisition",new HashSet<>(Set.of("查看")));
       result.put("workspace",new HashSet<>(Set.of("查看")));
     }
-    if (repository.hasWorkflow()
-        && repository.personalRepairAccess(auth.tenantId(), auth.userId())) {
+    if (repository.personalRepairAccess(auth.tenantId(), auth.userId())) {
       result.put("repair", new HashSet<>(Set.of("查看")));
       result.put("workspace", new HashSet<>(Set.of("查看")));
     }
-    if (repository.hasTaskDatabase()
-        && repository.maintenanceParticipation(auth.tenantId(), auth.userId()) > 0) {
+    if (repository.maintenanceParticipation(auth.tenantId(), auth.userId()) > 0) {
       result.computeIfAbsent("maintenanceTask", k -> new HashSet<>()).add("查看");
       result.computeIfAbsent("workspace", k -> new HashSet<>()).add("查看");
     }
-    if (repository.hasTaskDatabase()
-        && repository.inspectionParticipation(auth.tenantId(), auth.userId(), null) > 0) {
+    if (repository.inspectionParticipation(auth.tenantId(), auth.userId(), null) > 0) {
       for (String taskKind : List.of("daily", "periodic")) {
         if (repository.inspectionParticipation(auth.tenantId(), auth.userId(), taskKind) > 0)
           result.computeIfAbsent(inspectionMenu(taskKind), k -> new HashSet<>()).add("查看");
       }
       result.computeIfAbsent("workspace", k -> new HashSet<>()).add("查看");
     }
-    if (repository.hasTaskDatabase()
-        && repository.repairPlanParticipation(auth.tenantId(), auth.userId()) > 0) {
+    if (repository.repairPlanParticipation(auth.tenantId(), auth.userId()) > 0) {
       result.computeIfAbsent("repairPlan", k -> new HashSet<>()).add("查看");
       result.computeIfAbsent("workspace", k -> new HashSet<>()).add("查看");
     }
@@ -296,8 +292,7 @@ public class PermissionService {
     boolean responsible =
         e.getOwnerIds() != null
             ? e.getOwnerIds().contains(auth.userId())
-            : repository.hasTaskDatabase()
-                && e.getId() != null
+            : e.getId() != null
                 && repository.equipmentResponsibility(auth.tenantId(), e.getId(), auth.userId())
                     > 0;
     if (!Objects.equals(e.getTenantId(), auth.tenantId())
