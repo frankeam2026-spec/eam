@@ -150,11 +150,11 @@ public class OrganizationService {
   }
 
   private boolean isDescendant(Long candidate, Long parent) {
-    var n = repository.organizationById(candidate);
+    var n = orgUnits.organizationById(candidate);
     var seen = new HashSet<Long>();
     while (n != null && n.getParentId() != null && seen.add(n.getId())) {
       if (parent.equals(n.getParentId())) return true;
-      n = repository.organizationById(n.getParentId());
+      n = orgUnits.organizationById(n.getParentId());
     }
     return false;
   }
