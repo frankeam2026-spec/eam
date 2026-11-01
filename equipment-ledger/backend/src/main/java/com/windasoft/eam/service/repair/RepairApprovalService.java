@@ -3,6 +3,7 @@ package com.windasoft.eam.service.repair;
 import com.windasoft.eam.domain.repair.RepairOrderStatus;
 import com.windasoft.eam.domain.repair.RepairApprovalGate;
 import com.windasoft.eam.domain.repair.RepairNoticeKind;
+import com.windasoft.eam.domain.repair.RepairEventLabel;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.repair.RepairWorkflowRepository;
@@ -95,7 +96,7 @@ public class RepairApprovalService {
     row.setStatus(RepairOrderStatus.PENDING_DISPATCH.code());
     row.setApprovalReadyAt(LocalDateTime.now());
     VersionGuard.updated(repository.updateOrder(row));
-    record(row, "报修审批通过");
+    record(row, RepairEventLabel.APPROVAL_APPROVED.code());
     notifyReporter(row, RepairNoticeKind.APPROVAL_APPROVED.code(), false);
   }
 
@@ -122,7 +123,7 @@ public class RepairApprovalService {
     VersionGuard.updated(repository.updateOrder(row));
     start(row);
     repository.closeApprovalReturnTodos(auth.tenantId(), id);
-    record(row, "重新提交报修审批");
+    record(row, RepairEventLabel.APPROVAL_RESUBMITTED.code());
   }
 
   public Object history(long id) {
