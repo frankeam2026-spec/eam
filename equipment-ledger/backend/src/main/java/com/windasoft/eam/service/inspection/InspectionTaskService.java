@@ -267,7 +267,7 @@ public class InspectionTaskService {
         result.put("scannedEquipmentIds", scanned);
         label = "校验设备";
       }
-      case DRAFT, "submit" -> {
+      case DRAFT, SUBMIT -> {
         require(
             state.equals(InspectionTaskStatus.IN_PROGRESS.code()) && Objects.equals(owner, user),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0030"));
@@ -466,7 +466,7 @@ public class InspectionTaskService {
         label = "批准免检";
         journal.closeTodos(tenant, id);
       }
-      case VOID, "delete" -> {
+      case VOID, DELETE -> {
         if (!access(row, "删除")) deny();
         if (operation == InspectionTaskAction.DELETE && text(row, "kind").equals("daily"))
           require(taskAccess.canDelete(row),
