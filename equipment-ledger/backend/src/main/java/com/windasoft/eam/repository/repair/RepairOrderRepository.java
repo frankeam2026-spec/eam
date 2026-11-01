@@ -69,6 +69,10 @@ public class RepairOrderRepository {
     return counter.currentValue();
   }
 
+  /**
+   * 只接受关系表或维修事件 attachments 数组中的精确附件 ID。
+   * 不使用全文 LIKE，避免将备注等无关文本中的相同 ID 误判为附件关联。
+   */
   public List<RepairOrder> attachmentOrders(long tenant, String id) {
     return collaborators.hydrate(
         orders.selectList(
@@ -86,8 +90,9 @@ public class RepairOrderRepository {
                             .or()
                             .apply(
                                 "id IN (SELECT order_id FROM eam_repair_event WHERE tenant_id={0}"
-                                    + " AND details_json LIKE {1})",
-                                tenant, "%" + id + "%"))));
+                                    + " AND JSON_SEARCH(details_json, 'one', {1}, NULL,"
+                                    + " '$.attachments[*].id') IS NOT NULL)",
+                                tenant, id))));
   }
 
   public void store(InputStream input, String id, String extension) throws IOException {
