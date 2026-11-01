@@ -31,7 +31,7 @@ public class OrganizationService {
   }
 
   public Map<String, Object> organizations() {
-    var rows = repository.organizations(auth.tenantId());
+    var rows = orgUnits.organizations(auth.tenantId());
     return Map.of(
         "data", permissions.visibleOrganizations(rows).stream().map(this::orgView).toList());
   }
@@ -48,7 +48,7 @@ public class OrganizationService {
     if (f.parentId() != null) permissions.checkOrg("org", "新增", requireOrg(f.parentId()));
     else if (!permissions.scope("org", "新增").all())
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0018");
-    repository.insertOrganization(x);
+    orgUnits.insertOrganization(x);
     orgEvent(x.getId(), "新增", null, orgView(x));
     return Map.of("data", orgView(x));
   }
@@ -74,7 +74,7 @@ public class OrganizationService {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0022");
     applyOrg(x, f);
     permissions.checkOrg("org", "编辑", x);
-    repository.updateOrganization(x);
+    orgUnits.updateOrganization(x);
     orgEvent(id, "编辑", before, orgView(x));
     return Map.of("data", orgView(x));
   }
@@ -84,7 +84,7 @@ public class OrganizationService {
     lockOrganizations();
     var x = requireOrg(id);
     permissions.checkOrg("org", "删除", x);
-    if (repository.childOrganizationCount(auth.tenantId(), id) > 0)
+    if (orgUnits.childOrganizationCount(auth.tenantId(), id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0904");
     if (repository.organizationUserCount(auth.tenantId(), id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0905");
@@ -93,7 +93,7 @@ public class OrganizationService {
     if (businessReferences(id))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0024");
     orgEvent(id, "删除", orgView(x), null);
-    repository.deleteOrganization(x.getId());
+    orgUnits.deleteOrganization(x.getId());
     return Map.of("data", Map.of("deleted", true));
   }
 
@@ -135,7 +135,7 @@ public class OrganizationService {
     if (parentId == null) {
       if ("部门".equals(type))
         throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0026");
-      if (repository.rootCount(auth.tenantId(), current) > 0)
+      if (orgUnits.rootCount(auth.tenantId(), current) > 0)
         throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0027");
     } else {
       var parent = requireOrg(parentId);
@@ -160,12 +160,12 @@ public class OrganizationService {
   }
 
   private void checkOrgCode(String code, Long id) {
-    if (repository.orgCodeCount(auth.tenantId(), code, id) > 0)
+    if (orgUnits.orgCodeCount(auth.tenantId(), code, id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0900");
   }
 
   private OrgUnit requireOrg(Long id) {
-    var x = repository.organization(auth.tenantId(), id);
+    var x = orgUnits.organization(auth.tenantId(), id);
     if (x == null)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0031");
     return x;
