@@ -28,5 +28,15 @@ class SystemManagementOwnershipTest {
     assertFalse(managementMethods.contains("orgCodeCount"));
     assertFalse(managementMethods.contains("warehouseCount"));
     assertFalse(managementMethods.contains("warehouseChoices"));
+    var userMethods = Arrays.stream(SystemUserRepository.class.getDeclaredMethods())
+        .map(java.lang.reflect.Method::getName).toList();
+    assertTrue(userMethods.contains("insertUser"));
+    assertTrue(userMethods.contains("updateUser"));
+    assertTrue(userMethods.contains("deleteUser"));
+    assertTrue(userMethods.contains("accountCount"));
+    assertFalse(managementMethods.contains("insertUser"));
+    assertFalse(managementMethods.contains("updateUser"));
+    assertFalse(managementMethods.contains("deleteUser"));
+    assertFalse(managementMethods.contains("accountCount"));
   }
 }
