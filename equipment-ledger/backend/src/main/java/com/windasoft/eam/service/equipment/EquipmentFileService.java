@@ -16,6 +16,9 @@ import javax.imageio.ImageIO;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+/**
+ * 设备文件业务服务：处理附件与设备的关联和权限约束，底层文件读写交由存储组件。
+ */
 @Service
 public class EquipmentFileService {
   private final AuthContext auth;
