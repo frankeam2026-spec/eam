@@ -14,6 +14,7 @@ import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/** 角色管理服务：验证菜单动作与数据范围配置，角色授权须与普通编辑权限区分。 */
 @Service
 public class RoleManagementService {
   private final RoleManagementRepository repository;
