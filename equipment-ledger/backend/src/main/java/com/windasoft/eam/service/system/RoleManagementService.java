@@ -8,7 +8,6 @@ import com.windasoft.eam.entity.system.RoleMenuPermission;
 import com.windasoft.eam.entity.system.SystemRole;
 import com.windasoft.eam.repository.system.SystemManagementRepository;
 import java.util.*;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,7 +17,6 @@ public class RoleManagementService {
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
-  private final BCryptPasswordEncoder passwords = new BCryptPasswordEncoder();
 
   public RoleManagementService(
       SystemManagementRepository repository,
