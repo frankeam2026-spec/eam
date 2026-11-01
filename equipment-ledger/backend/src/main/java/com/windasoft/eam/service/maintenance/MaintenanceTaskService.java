@@ -7,6 +7,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.AcceptanceDecision;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.domain.maintenance.MaintenanceTaskAction;
+import com.windasoft.eam.domain.maintenance.MaintenanceTaskStatus;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.service.system.*;
 import java.math.BigDecimal;
@@ -73,12 +75,15 @@ public class MaintenanceTaskService {
     var owners = ids(snap.get("owners"));
     var reviewers = ids(snap.get("reviewers"));
     Long owner = r.get("owner_id") == null ? null : number(r.get("owner_id"));
-    if (Set.of("start", "process", "suspend", "resume").contains(action)) {
+    // 动作参数先解析为受控编码，权限和状态校验仍保留在当前完整事务内。
+    var operation = MaintenanceTaskAction.parse(action);
+    if (Set.of(MaintenanceTaskAction.START, MaintenanceTaskAction.PROCESS,
+            MaintenanceTaskAction.SUSPEND, MaintenanceTaskAction.RESUME).contains(operation)) {
       if (!owners.contains(user) || (owner != null && owner != user)) deny();
     }
-    if (action.equals("start")) {
+    if (operation == MaintenanceTaskAction.START) {
       require(
-          state.equals("待执行"),
+          state.equals(MaintenanceTaskStatus.PENDING.code()),
           com.windasoft.eam.common.MessageContext.text("server.maintenance.message0048"));
       require(
           !((java.sql.Date) r.get("due_date"))
@@ -90,13 +95,13 @@ public class MaintenanceTaskService {
             text(snap, "equipmentCode").equals(text(body, "equipmentCode")),
             com.windasoft.eam.common.MessageContext.text("server.maintenance.message0050"));
       owner = user;
-      next = "执行中";
+      next = MaintenanceTaskStatus.IN_PROGRESS.code();
       result.put("startedAt", LocalDateTime.now(ZoneId.of("Asia/Shanghai")).toString());
       journal.closeTodos(tenant, id);
       journal.notify(tenant, id, List.of(user), "保养待处理", text(snap, "equipmentName"), true);
-    } else if (action.equals("process")) {
+    } else if (operation == MaintenanceTaskAction.PROCESS) {
       require(
-          state.equals("执行中") && Objects.equals(owner, user),
+          state.equals(MaintenanceTaskStatus.IN_PROGRESS.code()) && Objects.equals(owner, user),
           com.windasoft.eam.common.MessageContext.text("server.maintenance.message0051"));
       validation.validUsers(body.get("collaborators"), false);
       validation.validAttachments(body.get("attachments"), false);
@@ -155,7 +160,7 @@ public class MaintenanceTaskService {
       result.put("items", checked);
       materialCustody.finishTask("保养", id, body);
       boolean needsAcceptance = !text(snap, "reviewMode").equals("无需验收");
-      next = needsAcceptance ? "待验收" : "已完成";
+      next = needsAcceptance ? MaintenanceTaskStatus.PENDING_ACCEPTANCE.code() : MaintenanceTaskStatus.COMPLETED.code();
       journal.closeTodos(tenant, id);
       journal.notify(
           tenant,
@@ -164,9 +169,9 @@ public class MaintenanceTaskService {
           needsAcceptance ? "保养待验收" : "保养已完成",
           text(snap, "equipmentName"),
           needsAcceptance);
-    } else if (action.equals("accept")) {
+    } else if (operation == MaintenanceTaskAction.ACCEPT) {
       require(
-          state.equals("待验收"),
+          state.equals(MaintenanceTaskStatus.PENDING_ACCEPTANCE.code()),
           com.windasoft.eam.common.MessageContext.text("server.maintenance.message0058"));
       if (!reviewers.contains(user) || !taskAccess(r, "验收")) deny();
       var decision = AcceptanceDecision.parse(body.get("decision"));
@@ -174,7 +179,7 @@ public class MaintenanceTaskService {
           number(body.get("score")) >= 1 && number(body.get("score")) <= 5,
           com.windasoft.eam.common.MessageContext.text("server.maintenance.message0059"));
       validation.validAttachments(body.get("attachments"), false);
-      next = decision == AcceptanceDecision.ACCEPT ? "已完成" : "执行中";
+      next = decision == AcceptanceDecision.ACCEPT ? MaintenanceTaskStatus.COMPLETED.code() : MaintenanceTaskStatus.IN_PROGRESS.code();
       var acceptance = new LinkedHashMap<String, Object>(body);
       acceptance.put("decision", decision.code());
       acceptance.put("reviewerId", Long.toString(user));
@@ -186,50 +191,50 @@ public class MaintenanceTaskService {
           tenant,
           id,
           owner == null ? owners : List.of(owner),
-          next.equals("已完成") ? "保养已验收" : "保养待处理",
+          next.equals(MaintenanceTaskStatus.COMPLETED.code()) ? "保养已验收" : "保养待处理",
           text(snap, "equipmentName"),
-          !next.equals("已完成"));
-    } else if (action.equals("suspend")) {
+          !next.equals(MaintenanceTaskStatus.COMPLETED.code()));
+    } else if (operation == MaintenanceTaskAction.SUSPEND) {
       require(
-          state.equals("执行中"),
+          state.equals(MaintenanceTaskStatus.IN_PROGRESS.code()),
           com.windasoft.eam.common.MessageContext.text("server.maintenance.message0060"));
       require(
           !text(body, "description").isEmpty(),
           com.windasoft.eam.common.MessageContext.text("server.inspection.message0036"));
-      next = "挂起";
+      next = MaintenanceTaskStatus.SUSPENDED.code();
       journal.closeTodos(tenant, id);
-    } else if (action.equals("resume")) {
+    } else if (operation == MaintenanceTaskAction.RESUME) {
       require(
-          state.equals("挂起"),
+          state.equals(MaintenanceTaskStatus.SUSPENDED.code()),
           com.windasoft.eam.common.MessageContext.text("server.maintenance.message0061"));
-      next = "执行中";
+      next = MaintenanceTaskStatus.IN_PROGRESS.code();
       journal.notify(tenant, id, List.of(user), "保养待处理", text(snap, "equipmentName"), true);
-    } else if (action.equals("transfer")) {
+    } else if (operation == MaintenanceTaskAction.TRANSFER) {
       if (!taskAccess(r, "编辑")) deny();
       require(
-          Set.of("待执行", "执行中", "挂起").contains(state),
+          Set.of(MaintenanceTaskStatus.PENDING.code(), MaintenanceTaskStatus.IN_PROGRESS.code(), MaintenanceTaskStatus.SUSPENDED.code()).contains(state),
           com.windasoft.eam.common.MessageContext.text("server.inspection.message0038"));
       validation.validUsers(body.get("owners"), true);
       snap.put("owners", ids(body.get("owners")).stream().map(Object::toString).toList());
       owner = null;
-      next = "待执行";
+      next = MaintenanceTaskStatus.PENDING.code();
       journal.closeTodos(tenant, id);
       journal.notify(
           tenant, id, ids(body.get("owners")), "保养待执行", text(snap, "equipmentName"), true);
-    } else if (action.equals("void")) {
+    } else if (operation == MaintenanceTaskAction.VOID) {
       if (!taskAccess(r, "删除")) deny();
       require(
-          !Set.of("已完成", "已作废").contains(state),
+          !Set.of(MaintenanceTaskStatus.COMPLETED.code(), MaintenanceTaskStatus.CANCELLED.code()).contains(state),
           com.windasoft.eam.common.MessageContext.text("server.maintenance.message0062"));
       require(
           !text(body, "description").isEmpty(),
           com.windasoft.eam.common.MessageContext.text("server.maintenance.message0063"));
-      next = "已作废";
+      next = MaintenanceTaskStatus.CANCELLED.code();
       journal.closeTodos(tenant, id);
     } else
       throw new com.windasoft.eam.common.LocalizedArgumentException(
           "server.inspection.message0011");
-    if (next.equals("已完成") && !state.equals("已完成")) {
+    if (next.equals(MaintenanceTaskStatus.COMPLETED.code()) && !state.equals(MaintenanceTaskStatus.COMPLETED.code())) {
       repository.insertEquipmentHistory(
           IdWorker.getId(),
           tenant,
@@ -237,7 +242,7 @@ public class MaintenanceTaskService {
           r.get("code"),
           text(result, "description"),
           userName(tenant, owner),
-          "已完成",
+          MaintenanceTaskStatus.COMPLETED.code(),
           text(body, "description"));
       if ("完成时间".equals(text(snap, "calculation"))) {
         var cycle = decode(snap.get("cycle"));
@@ -249,23 +254,23 @@ public class MaintenanceTaskService {
         repository.resetScheduleDate(date, date, tenant, r.get("schedule_id"));
       }
     }
-    if (action.equals("process")) custom.save("maintenance_task", id, body, false);
+    if (operation == MaintenanceTaskAction.PROCESS) custom.save("maintenance_task", id, body, false);
     repository.updateTask(next, owner, encode(snap), encode(result), tenant, id);
     String label =
-        switch (action) {
-          case "start" -> "开始保养";
-          case "process" -> "提交保养";
-          case "accept" ->
+        switch (operation) {
+          case START -> "开始保养";
+          case PROCESS -> "提交保养";
+          case ACCEPT ->
               AcceptanceDecision.parse(body.get("decision")) == AcceptanceDecision.ACCEPT
                   ? "验收通过"
                   : "验收打回";
-          case "suspend" -> "挂起";
-          case "resume" -> "恢复";
-          case "transfer" -> "转派";
+          case SUSPEND -> "挂起";
+          case RESUME -> "恢复";
+          case TRANSFER -> "转派";
           default -> "作废";
         };
     journal.event(tenant, id, label, user, auth.user().getDisplayName(), body);
-    if (action.equals("process"))
+    if (operation == MaintenanceTaskAction.PROCESS)
       experiencePublisher.publishEvent(
           new com.windasoft.eam.event.experience.ExperienceEvents.TaskResult("保养", id));
     return task(id);
