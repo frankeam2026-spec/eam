@@ -7,6 +7,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.AcceptanceDecision;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.domain.inspection.InspectionTaskAction;
+import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.system.*;
 import java.math.BigDecimal;
@@ -221,14 +223,18 @@ public class InspectionTaskService {
     var result =
         row.get("result") == null ? new LinkedHashMap<String, Object>() : decode(row.get("result"));
     String state = text(row, "status"), next = state, label = "";
-    String previousResult = action.equals("amend-result") ? encode(result) : "";
+    // 外部动作码统一解析为受控类型，具体状态与权限仍在各动作分支独立校验。
+    var operation = InspectionTaskAction.parse(action);
+    String previousResult = operation == InspectionTaskAction.AMEND_RESULT ? encode(result) : "";
     Long owner = nullable(row.get("owner_id"));
-    if (Set.of("start", "draft", "submit", "suspend", "resume", "scan").contains(action)
+    if (Set.of(InspectionTaskAction.START, InspectionTaskAction.DRAFT,
+            InspectionTaskAction.SUBMIT, InspectionTaskAction.SUSPEND,
+            InspectionTaskAction.RESUME, InspectionTaskAction.SCAN).contains(operation)
         && !execute(row)) deny();
-    switch (action) {
-      case "start" -> {
+    switch (operation) {
+      case START -> {
         require(
-            Set.of("待执行", "未开始", "已过期", "审核不通过").contains(state),
+            Set.of(InspectionTaskStatus.PENDING.code(), InspectionTaskStatus.NOT_STARTED.code(), InspectionTaskStatus.EXPIRED.code(), InspectionTaskStatus.REVIEW_REJECTED.code()).contains(state),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0026"));
         require(
             !now().isBefore(dateTime(row.get("due_at"))),
@@ -237,16 +243,16 @@ public class InspectionTaskService {
             !now().isAfter(dateTime(row.get("expires_at"))) || yes(snap.get("allowLate")),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0028"));
         owner = user;
-        next = "执行中";
+        next = InspectionTaskStatus.IN_PROGRESS.code();
         if (text(result, "startedAt").isBlank()) result.put("startedAt", now().toString());
         journal.closeTodos(tenant, id);
         journal.notify(
             tenant, id, List.of(user), "点巡检待处理", text(snap, "equipmentName"), true, false);
         label = "开始点巡检";
       }
-      case "scan" -> {
+      case SCAN -> {
         require(
-            state.equals("执行中") && Objects.equals(owner, user),
+            state.equals(InspectionTaskStatus.IN_PROGRESS.code()) && Objects.equals(owner, user),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0029"));
         var eq =
             rows(snap.get("equipment")).stream()
@@ -261,11 +267,11 @@ public class InspectionTaskService {
         result.put("scannedEquipmentIds", scanned);
         label = "校验设备";
       }
-      case "draft", "submit" -> {
+      case DRAFT, SUBMIT -> {
         require(
-            state.equals("执行中") && Objects.equals(owner, user),
+            state.equals(InspectionTaskStatus.IN_PROGRESS.code()) && Objects.equals(owner, user),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0030"));
-        boolean complete = action.equals("submit");
+        boolean complete = operation == InspectionTaskAction.SUBMIT;
         var values = checkedResults(tenant, snap, body, complete);
         validation.attachments(tenant, body.get("attachments"), false);
         if (complete && !text(snap, "scanMode").equals("无需扫码")) {
@@ -292,8 +298,8 @@ public class InspectionTaskService {
           result.put("finishedAt", now().toString());
           if (text(row, "kind").equals("daily")) dailyStorage.submission(tenant, id, user, result);
           journal.closeTodos(tenant, id);
-          next = text(snap, "reviewMode").equals("无需验收") ? "已完成" : "待审核";
-          if (next.equals("已完成")) history(tenant, row, result, next);
+          next = text(snap, "reviewMode").equals("无需验收") ? InspectionTaskStatus.COMPLETED.code() : InspectionTaskStatus.PENDING_REVIEW.code();
+          if (next.equals(InspectionTaskStatus.COMPLETED.code())) history(tenant, row, result, next);
           else
             journal.notify(
                 tenant,
@@ -305,7 +311,7 @@ public class InspectionTaskService {
                 false);
         }
       }
-      case "amend-result" -> {
+      case AMEND_RESULT -> {
         if (!taskAccess.canAmendResult(row)) deny();
         // Correct the recorded results without reopening execution or changing its scope.
         var correction = new LinkedHashMap<String, Object>(body);
@@ -326,9 +332,9 @@ public class InspectionTaskService {
         }
         label = "修改检查结果";
       }
-      case "review" -> {
+      case REVIEW -> {
         require(
-            state.equals("待审核"),
+            state.equals(InspectionTaskStatus.PENDING_REVIEW.code()),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0032"));
         if (!review(row)) deny();
         var decision = AcceptanceDecision.parse(body.get("decision"));
@@ -390,7 +396,7 @@ public class InspectionTaskService {
         if (text(row, "kind").equals("daily"))
           dailyStorage.submissionReview(
               tenant, id, user, pass ? "accept" : "reject", text(body, "description"));
-        next = pass ? "已审核" : "审核不通过";
+        next = pass ? InspectionTaskStatus.REVIEWED.code() : InspectionTaskStatus.REVIEW_REJECTED.code();
         journal.closeTodos(tenant, id);
         if (pass) history(tenant, row, result, next);
         journal.notify(
@@ -403,30 +409,30 @@ public class InspectionTaskService {
             false);
         label = pass ? "审核通过" : "审核打回";
       }
-      case "suspend" -> {
+      case SUSPEND -> {
         require(
-            state.equals("执行中") && Objects.equals(owner, user),
+            state.equals(InspectionTaskStatus.IN_PROGRESS.code()) && Objects.equals(owner, user),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0035"));
         require(
             !text(body, "description").isBlank(),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0036"));
-        next = "挂起";
+        next = InspectionTaskStatus.SUSPENDED.code();
         journal.closeTodos(tenant, id);
         label = "挂起";
       }
-      case "resume" -> {
+      case RESUME -> {
         require(
-            state.equals("挂起") && Objects.equals(owner, user),
+            state.equals(InspectionTaskStatus.SUSPENDED.code()) && Objects.equals(owner, user),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0037"));
-        next = "执行中";
+        next = InspectionTaskStatus.IN_PROGRESS.code();
         journal.notify(
             tenant, id, List.of(user), "点巡检待处理", text(snap, "equipmentName"), true, false);
         label = "恢复";
       }
-      case "transfer" -> {
+      case TRANSFER -> {
         if (!access(row, "转派")) deny();
         require(
-            Set.of("未开始", "待执行", "执行中", "挂起", "已过期", "审核不通过").contains(state),
+            Set.of(InspectionTaskStatus.NOT_STARTED.code(), InspectionTaskStatus.PENDING.code(), InspectionTaskStatus.IN_PROGRESS.code(), InspectionTaskStatus.SUSPENDED.code(), InspectionTaskStatus.EXPIRED.code(), InspectionTaskStatus.REVIEW_REJECTED.code()).contains(state),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0038"));
         require(
             !text(row, "kind").equals("daily") || !text(body, "description").isBlank(),
@@ -435,7 +441,7 @@ public class InspectionTaskService {
         snap.put("owners", strings(body.get("owners")));
         snap.put("personMode", "指定负责人");
         owner = null;
-        next = now().isBefore(dateTime(row.get("due_at"))) ? "未开始" : "待执行";
+        next = now().isBefore(dateTime(row.get("due_at"))) ? InspectionTaskStatus.NOT_STARTED.code() : InspectionTaskStatus.PENDING.code();
         journal.closeTodos(tenant, id);
         journal.notify(
             tenant,
@@ -447,57 +453,57 @@ public class InspectionTaskService {
             false);
         label = "转派";
       }
-      case "exempt" -> {
+      case EXEMPT -> {
         if (!text(row, "kind").equals("daily") || !access(row, "免检")) deny();
         require(
-            Set.of("未开始", "待执行", "已过期").contains(state) && text(result, "startedAt").isBlank(),
+            Set.of(InspectionTaskStatus.NOT_STARTED.code(), InspectionTaskStatus.PENDING.code(), InspectionTaskStatus.EXPIRED.code()).contains(state) && text(result, "startedAt").isBlank(),
             com.windasoft.eam.common.MessageContext.text("daily.error.exemptState"));
         require(
             !text(body, "description").isBlank() && text(body, "description").length() <= 1000,
             com.windasoft.eam.common.MessageContext.text("daily.error.reason"));
         dailyStorage.exempt(tenant, id, user, text(body, "description"));
-        next = "已免检";
+        next = InspectionTaskStatus.EXEMPT.code();
         label = "批准免检";
         journal.closeTodos(tenant, id);
       }
-      case "void", "delete" -> {
+      case VOID, DELETE -> {
         if (!access(row, "删除")) deny();
-        if (action.equals("delete") && text(row, "kind").equals("daily"))
+        if (operation == InspectionTaskAction.DELETE && text(row, "kind").equals("daily"))
           require(taskAccess.canDelete(row),
               com.windasoft.eam.common.MessageContext.text("daily.error.deleteState"));
         require(
-            !Set.of("已审核", "已完成", "已作废", "过期作废", "已免检").contains(state) || action.equals("delete"),
+            !Set.of(InspectionTaskStatus.REVIEWED.code(), InspectionTaskStatus.COMPLETED.code(), InspectionTaskStatus.CANCELLED.code(), InspectionTaskStatus.EXPIRED_CANCELLED.code(), InspectionTaskStatus.EXEMPT.code()).contains(state) || operation == InspectionTaskAction.DELETE,
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0039"));
         require(
             !text(body, "description").isBlank() && text(body, "description").length() <= 1000,
             com.windasoft.eam.common.MessageContext.text("ui.equipment.text0461"));
-        next = "已作废";
+        next = InspectionTaskStatus.CANCELLED.code();
         journal.closeTodos(tenant, id);
-        label = action.equals("delete") ? "删除任务" : "作废";
+        label = operation == InspectionTaskAction.DELETE ? "删除任务" : "作废";
       }
       default ->
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.inspection.message0011");
     }
-    if (action.equals("draft"))
+    if (operation == InspectionTaskAction.DRAFT)
       custom.saveDraft(
           com.windasoft.eam.service.business.BusinessObjects.inspection(text(row, "kind")),
           id,
           body);
-    if (action.equals("submit"))
+    if (operation == InspectionTaskAction.SUBMIT)
       custom.save(
           com.windasoft.eam.service.business.BusinessObjects.inspection(text(row, "kind")),
           id,
           body,
           false);
-    if (action.equals("delete"))
+    if (operation == InspectionTaskAction.DELETE)
       custom.remove(
           com.windasoft.eam.service.business.BusinessObjects.inspection(text(row, "kind")), id);
     repository.updateTask(
-        next, owner, encode(snap), encode(result), action.equals("delete") ? 1 : 0, tenant, id);
+        next, owner, encode(snap), encode(result), operation == InspectionTaskAction.DELETE ? 1 : 0, tenant, id);
     var details = new LinkedHashMap<String, Object>();
     details.put("说明", text(body, "description"));
-    if (action.equals("amend-result")) {
+    if (operation == InspectionTaskAction.AMEND_RESULT) {
       details.put("修改前", previousResult);
       details.put("修改后", encode(result));
       var previous = decode(previousResult);
@@ -514,14 +520,14 @@ public class InspectionTaskService {
         changes.add("附件已更新");
       details.put("变更内容", changes);
     }
-    if (action.equals("scan")) details.put("设备编号", text(body, "equipmentCode"));
-    if (action.equals("transfer"))
+    if (operation == InspectionTaskAction.SCAN) details.put("设备编号", text(body, "equipmentCode"));
+    if (operation == InspectionTaskAction.TRANSFER)
       details.put("负责人", ids(body.get("owners")).stream().map(u -> userName(tenant, u)).toList());
     journal.event(tenant, id, label, user, auth.user().getDisplayName(), details);
-    if (action.equals("submit"))
+    if (operation == InspectionTaskAction.SUBMIT)
       experiencePublisher.publishEvent(
           new com.windasoft.eam.event.experience.ExperienceEvents.TaskResult("点巡检", id));
-    return action.equals("delete") ? Map.of("deleted", true) : task(id);
+    return operation == InspectionTaskAction.DELETE ? Map.of("deleted", true) : task(id);
   }
 
   @Transactional
@@ -531,7 +537,7 @@ public class InspectionTaskService {
         com.windasoft.eam.common.MessageContext.text("server.inspection.message0040"));
     tasks.stream()
         .sorted(Comparator.comparingLong(t -> number(t.get("id"))))
-        .forEach(t -> action(number(t.get("id")), "review", t));
+        .forEach(t -> action(number(t.get("id")), InspectionTaskAction.REVIEW.code(), t));
   }
 
   Map<String, Object> decode(Object value) {
