@@ -237,4 +237,35 @@ class RepairWorkflowServiceTest {
     verify(orders, never()).updateById(any(RepairOrder.class));
   }
 
+  @Test
+  void installRejectsUnissuedMaterialWithoutEquipmentHistory() throws Exception {
+    row.setStatus("处理中");
+    row.setAssigneeUserId(73001L);
+    when(flow.lockMaterial(10001L, 12L, 1L)).thenReturn(null);
+
+    assertThrows(IllegalArgumentException.class,
+        () -> service.action(1L, 4,
+            json.readTree("{\"action\":\"install\",\"materialId\":12,\"quantity\":1}")));
+
+    verify(flow, never()).install(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), any());
+    verify(flow, never()).history(anyLong(), anyLong(), anyLong(), anyString(),
+        anyString(), anyString(), anyString(), anyString());
+    verify(orders, never()).updateById(any(RepairOrder.class));
+  }
+
+  @Test
+  void cancelMaterialWithInvalidIdDoesNotCloseIssueTodos() throws Exception {
+    row.setStatus("处理中");
+    row.setAssigneeUserId(73001L);
+    when(flow.cancelMaterial(10001L, 12L, 1L)).thenReturn(0);
+
+    assertThrows(IllegalArgumentException.class,
+        () -> service.action(1L, 4,
+            json.readTree("{\"action\":\"cancelMaterial\",\"materialId\":12}")));
+
+    verify(flow, never()).closeIssueTodos(anyLong(), anyLong());
+    verify(flow, never()).materials(anyLong(), anyLong());
+    verify(orders, never()).updateById(any(RepairOrder.class));
+  }
+
 }
