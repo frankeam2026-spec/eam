@@ -137,7 +137,15 @@ public class UserManagementService {
       systemUsers.updateUser(user);
       revokeSessions(user.getId());
     }
-    return Map.of("data", users.stream().map(this::userView).toList());
+    var ids = users.stream().map(SystemUser::getId).toList();
+    var rolesByUser = roleRepository.userRolesForUsers(auth.tenantId(), ids);
+    var emailsByUser = systemUsers.emailProfiles(auth.tenantId(), ids);
+    return Map.of("data", users.stream()
+        .map(user -> userView(
+            user,
+            rolesByUser.getOrDefault(user.getId(), List.of()),
+            emailsByUser.get(user.getId())))
+        .toList());
   }
 
   @Transactional
@@ -219,11 +227,18 @@ public class UserManagementService {
   }
 
   private Map<String, Object> userView(SystemUser x) {
-    var ids =
-        roleRepository.userRoles(auth.tenantId(), x.getId()).stream()
-            .map(UserRoleLink::getRoleId)
-            .map(String::valueOf)
-            .toList();
+    return userView(
+        x,
+        roleRepository.userRoles(auth.tenantId(), x.getId()),
+        systemUsers.emailProfile(auth.tenantId(), x.getId()));
+  }
+
+  private Map<String, Object> userView(
+      SystemUser x, List<UserRoleLink> roles, Map<String, Object> emailProfile) {
+    var ids = roles.stream()
+        .map(UserRoleLink::getRoleId)
+        .map(String::valueOf)
+        .toList();
     var result = new LinkedHashMap<String,Object>(Map.of(
         "id",
         String.valueOf(x.getId()),
@@ -241,7 +256,6 @@ public class UserManagementService {
         ids,
         "status",
         x.getStatus() == 1 ? "启用" : "停用"));
-    var emailProfile=systemUsers.emailProfile(auth.tenantId(),x.getId());
     result.put("email", Objects.toString(emailProfile.get("email"),Objects.toString(x.getEmail(),"")));
     result.put("emailVersion", emailProfile.getOrDefault("email_version",0));
     return result;
