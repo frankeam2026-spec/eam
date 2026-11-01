@@ -10,26 +10,6 @@ import java.util.Map;
 
 @org.springframework.stereotype.Service
 public class BaseDataService {
-  private static final Map<String, String> TYPES =
-      Map.of(
-          "categories",
-          "CATEGORY",
-          "material-categories",
-          "MATERIAL_CATEGORY",
-          "units",
-          "UNIT",
-          "locations",
-          "LOCATION",
-          "use-statuses",
-          "USE_STATUS",
-          "sources",
-          "SOURCE",
-          "fault-types",
-          "FAULT_TYPE",
-          "processing-results",
-          "PROCESS_RESULT",
-          "fault-causes",
-          "FAULT_CAUSE");
   private final BaseDataRepository repository;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -42,28 +22,28 @@ public class BaseDataService {
   }
 
   public Map<String, Object> list(String resource, Long companyId) {
-    if (!permissions.allowed(menu(resource), "查看")
-        && !("categories".equals(resource) && permissions.allowed("base", "查看"))
+    var type = BaseDataType.fromResource(resource);
+    if (!permissions.allowed(type.menu(), "查看")
+        && !(type == BaseDataType.CATEGORY && permissions.allowed("base", "查看"))
         && !permissions.allowed("equipment", "查看")
-        && !(("material-categories".equals(resource) || "units".equals(resource))
+        && !((type == BaseDataType.MATERIAL_CATEGORY || type == BaseDataType.UNIT)
             && permissions.menuActions().entrySet().stream()
                 .anyMatch(e -> e.getKey().startsWith("inventory") && !e.getValue().isEmpty()))
-        && !(("fault-types".equals(resource) || "fault-causes".equals(resource))
-            && permissions.allowed("repair", "查看"))) permissions.require(menu(resource), "查看");
-    String type = type(resource);
-    var rows = repository.list(auth.tenantId(), type, companyId);
+        && !((type == BaseDataType.FAULT_TYPE || type == BaseDataType.FAULT_CAUSE)
+            && permissions.allowed("repair", "查看"))) permissions.require(type.menu(), "查看");
+    var rows = repository.list(auth.tenantId(), type.code(), companyId);
     return Map.of("data", rows.stream().map(BaseDataService::view).toList());
   }
 
   public Map<String, Object> create(String resource, BaseItemForm f) {
     requireDataAccess(resource, "新增");
-    String type = type(resource);
+    BaseDataType type = BaseDataType.fromResource(resource);
     f = withCode(type, f);
-    if (type.equals("PROCESS_RESULT")
+    if (type == BaseDataType.PROCESS_RESULT
         && (f.name().trim().equals("已解决")
             || BaseDataReferenceService.RESOLVED_CODE.equalsIgnoreCase(f.code())))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0032");
-    if (repository.codeCount(auth.tenantId(), type, f.code(), null) > 0)
+    if (repository.codeCount(auth.tenantId(), type.code(), f.code(), null) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0033");
     validateCompany(type, f.companyId());
     validateParent(type, f.parentId(), null, f.companyId());
@@ -76,24 +56,24 @@ public class BaseDataService {
   @org.springframework.transaction.annotation.Transactional
   public Map<String, Object> update(String resource, Long id, BaseItemForm f) {
     requireDataAccess(resource, "编辑");
-    String type = type(resource);
-    var old = requireLocked(type, id);
+    BaseDataType type = BaseDataType.fromResource(resource);
+    var old = requireLocked(type.code(), id);
     protectFixed(old);
     f = withCode(type, f);
-    if (type.equals("PROCESS_RESULT")
+    if (type == BaseDataType.PROCESS_RESULT
         && (f.name().trim().equals("已解决")
             || BaseDataReferenceService.RESOLVED_CODE.equalsIgnoreCase(f.code())))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0032");
-    if (repository.codeCount(auth.tenantId(), type, f.code(), id) > 0)
+    if (repository.codeCount(auth.tenantId(), type.code(), f.code(), id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0033");
     validateCompany(type, f.companyId());
-    if ("LOCATION".equals(type) && !java.util.Objects.equals(old.getCompanyOrgId(), f.companyId()))
+    if (type == BaseDataType.LOCATION && !java.util.Objects.equals(old.getCompanyOrgId(), f.companyId()))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0034");
     validateParent(type, f.parentId(), id, f.companyId());
     old.setCode(f.code().trim());
     if (!old.getName().equals(f.name().trim())
-        && (type.equals("MATERIAL_CATEGORY") || type.equals("UNIT"))) {
-      String field = type.equals("UNIT") ? "unit" : "category";
+        && (type == BaseDataType.MATERIAL_CATEGORY || type == BaseDataType.UNIT)) {
+      String field = type == BaseDataType.UNIT ? "unit" : "category";
       repository.renameMaterialField(field, old.getId(), f.name().trim(), auth.tenantId());
     }
     old.setName(f.name().trim());
@@ -108,7 +88,7 @@ public class BaseDataService {
   @org.springframework.transaction.annotation.Transactional
   public Map<String, Object> status(String resource, Long id, Map<String, Integer> body) {
     requireDataAccess(resource, "编辑");
-    var item = requireLocked(type(resource), id);
+    var item = requireLocked(BaseDataType.fromResource(resource).code(), id);
     protectFixed(item);
     item.setStatus(body.getOrDefault("status", 0));
     repository.update(item);
@@ -119,38 +99,23 @@ public class BaseDataService {
       isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
   public Map<String, Object> delete(String resource, Long id) {
     requireDataAccess(resource, "删除");
-    String type = type(resource);
-    var item = requireLocked(type, id);
+    BaseDataType type = BaseDataType.fromResource(resource);
+    var item = requireLocked(type.code(), id);
     protectFixed(item);
-    if (repository.dictionaryReferenceCount(auth.tenantId(), type, id, item.getName()) > 0)
+    if (repository.dictionaryReferenceCount(auth.tenantId(), type.code(), id, item.getName()) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0035");
-    if (type.equals("CATEGORY")
-        || type.equals("MATERIAL_CATEGORY")
-        || type.equals("LOCATION")
-        || type.equals("FAULT_TYPE")) {
-      if (repository.childCount(auth.tenantId(), type, id) > 0)
+    if (type.hierarchical()) {
+      if (repository.childCount(auth.tenantId(), type.code(), id) > 0)
         throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0036");
     }
-    var equipmentReference =
-        Map.of(
-                "CATEGORY",
-                "category_id",
-                "UNIT",
-                "unit_id",
-                "USE_STATUS",
-                "use_status_id",
-                "SOURCE",
-                "source_id",
-                "LOCATION",
-                "function_location_id")
-            .get(type);
+    var equipmentReference = type.equipmentReferenceColumn();
     if (equipmentReference != null
         && repository.equipmentReferenceCount(auth.tenantId(), equipmentReference, id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0037");
-    if (type.equals("CATEGORY")
+    if (type == BaseDataType.CATEGORY
         && repository.categoryEquipmentCount(auth.tenantId(), item.getName()) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0038");
-    if (type.equals("LOCATION") && repository.locationEquipmentCount(auth.tenantId(), item) > 0)
+    if (type == BaseDataType.LOCATION && repository.locationEquipmentCount(auth.tenantId(), item) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0039");
     repository.delete(id);
     return Map.of("data", Map.of("deleted", true));
@@ -183,8 +148,8 @@ public class BaseDataService {
             .toList());
   }
 
-  private void validateCompany(String type, Long companyId) {
-    if (!"LOCATION".equals(type)) return;
+  private void validateCompany(BaseDataType type, Long companyId) {
+    if (type != BaseDataType.LOCATION) return;
     if (companyId == null)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0040");
     var company = repository.company(auth.tenantId(), companyId);
@@ -192,23 +157,10 @@ public class BaseDataService {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0041");
   }
 
-  private String type(String resource) {
-    var type = TYPES.get(resource);
-    if (type == null)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0042");
-    return type;
-  }
-
   private void requireDataAccess(String resource, String action) {
-    if ("categories".equals(resource) && permissions.allowed("base", action)) return;
-    permissions.require(menu(resource), action);
-  }
-
-  private String menu(String resource) {
-    type(resource);
-    return "locations".equals(resource)
-        ? "location"
-        : "categories".equals(resource) ? "category" : "base";
+    var type = BaseDataType.fromResource(resource);
+    if (type == BaseDataType.CATEGORY && permissions.allowed("base", action)) return;
+    permissions.require(type.menu(), action);
   }
 
   private BaseItem requireLocked(String type, Long id) {
@@ -230,55 +182,35 @@ public class BaseDataService {
     return item;
   }
 
-  private void validateParent(String type, Long parentId, Long currentId, Long companyId) {
+  private void validateParent(BaseDataType type, Long parentId, Long currentId, Long companyId) {
     if (parentId == null) return;
-    var p = repository.find(auth.tenantId(), type, parentId);
+    var p = repository.find(auth.tenantId(), type.code(), parentId);
     if (p == null)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0045");
-    if ("LOCATION".equals(type) && !java.util.Objects.equals(p.getCompanyOrgId(), companyId))
+    if (type == BaseDataType.LOCATION && !java.util.Objects.equals(p.getCompanyOrgId(), companyId))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0046");
     java.util.Set<Long> seen = new java.util.HashSet<>();
     while (p != null) {
       if (!seen.add(p.getId()) || java.util.Objects.equals(currentId, p.getId()))
         throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0047");
-      p = p.getParentId() == null ? null : require(type, p.getParentId());
+      p = p.getParentId() == null ? null : require(type.code(), p.getParentId());
     }
     if (parentId.equals(currentId))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0048");
   }
 
-  private static BaseItemForm withCode(String type, BaseItemForm form) {
+  private static BaseItemForm withCode(BaseDataType type, BaseItemForm form) {
     String code = form.code() == null ? "" : form.code().trim();
-    if (code.isBlank()) {
-      String prefix =
-          switch (type) {
-            case "CATEGORY" -> "CAT";
-            case "MATERIAL_CATEGORY" -> "MC";
-            case "UNIT" -> "UNIT";
-            case "LOCATION" -> "LOC";
-            case "USE_STATUS" -> "USE";
-            case "SOURCE" -> "SRC";
-            case "FAULT_TYPE" -> "FT";
-            case "FAULT_CAUSE" -> "FC";
-            case "PROCESS_RESULT" -> "PR";
-            default -> "BASE";
-          };
-      code = prefix + "-" + IdWorker.getIdStr();
-    }
+    if (code.isBlank()) code = type.prefix() + "-" + IdWorker.getIdStr();
     return new BaseItemForm(
-        code,
-        form.name(),
-        form.parentId(),
-        form.precision(),
-        form.status(),
-        form.sortNo(),
-        form.companyId());
+        code, form.name(), form.parentId(), form.precision(),
+        form.status(), form.sortNo(), form.companyId());
   }
 
-  private static BaseItem fromForm(String type, BaseItemForm f) {
+  private static BaseItem fromForm(BaseDataType type, BaseItemForm f) {
     var x = new BaseItem();
-    x.setItemType(type);
-    x.setCompanyOrgId("LOCATION".equals(type) ? f.companyId() : null);
+    x.setItemType(type.code());
+    x.setCompanyOrgId(type == BaseDataType.LOCATION ? f.companyId() : null);
     x.setCode(f.code().trim());
     x.setName(f.name().trim());
     x.setParentId(f.parentId());
