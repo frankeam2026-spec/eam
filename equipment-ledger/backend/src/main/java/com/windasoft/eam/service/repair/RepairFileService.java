@@ -61,6 +61,9 @@ public class RepairFileService {
   }
 
   public RepairDownload download(String id) throws IOException {
+    // 在关联查询和文件定位之前校验附件 ID，避免无效输入触发数据库访问。
+    if (id == null || !id.matches("[0-9a-fA-F-]{36}"))
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
     var matches = repository.attachmentOrders(auth.tenantId(), id);
     if (matches.stream()
         .noneMatch(
@@ -72,8 +75,6 @@ public class RepairFileService {
                 return false;
               }
             }))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
-    if (!id.matches("[0-9a-fA-F-]{36}"))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
     Path file = repository.attachmentPath(id);
     String ext = file.getFileName().toString().substring(id.length() + 1);
