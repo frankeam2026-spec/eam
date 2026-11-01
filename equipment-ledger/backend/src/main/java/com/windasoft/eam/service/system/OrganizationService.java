@@ -12,6 +12,7 @@ import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/** 组织管理服务：验证组织层级与业务引用，避免删除仍被业务使用的组织。 */
 @Service
 public class OrganizationService {
   private final BaseItemRepository locations;
