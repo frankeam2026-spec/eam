@@ -90,6 +90,7 @@ public class OrganizationService {
   }
 
   @Transactional
+  /** 组织删除需要同时检查下级组织、人员、功能位置和其他业务引用，阻止悬空关联。 */
   public Map<String, Object> deleteOrg(Long id) {
     lockOrganizations();
     var x = requireOrg(id);
