@@ -74,6 +74,17 @@ public class RoleManagementRepository {
         new QueryWrapper<UserRoleLink>().eq("tenant_id", tenant).eq("role_id", id));
   }
 
+  public Map<Long, List<UserRoleLink>> userRolesForUsers(
+      long tenant, Collection<Long> userIds) {
+    if (userIds.isEmpty()) return Map.of();
+    var linksForUsers = links.selectList(
+        new QueryWrapper<UserRoleLink>()
+            .eq("tenant_id", tenant)
+            .in("user_id", userIds));
+    return linksForUsers.stream().collect(
+        java.util.stream.Collectors.groupingBy(UserRoleLink::getUserId));
+  }
+
   public List<UserRoleLink> userRoles(long tenant, Long id) {
     return links.selectList(
         new QueryWrapper<UserRoleLink>().eq("tenant_id", tenant).eq("user_id", id));
