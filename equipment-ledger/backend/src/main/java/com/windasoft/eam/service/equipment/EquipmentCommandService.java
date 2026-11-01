@@ -7,6 +7,7 @@ import com.windasoft.eam.dto.equipment.EquipmentBatchForm;
 import com.windasoft.eam.dto.equipment.EquipmentForm;
 import com.windasoft.eam.dto.equipment.EquipmentOwnerSnapshot;
 import com.windasoft.eam.dto.equipment.EquipmentView;
+import com.windasoft.eam.domain.equipment.EquipmentBatchOperation;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.equipment.EquipmentOwner;
 import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
@@ -240,31 +241,29 @@ public class EquipmentCommandService {
     if (ids.size() > 1000) {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0038");
     }
-    String op = form.operation();
-    if (!List.of("location", "category", "department", "owner", "state", "delete").contains(op)) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0039");
-    }
+    // 先校验固定批量动作；设备状态值仍由现有动态字典校验，不创建静态设备状态枚举。
+    var operation = EquipmentBatchOperation.parse(form.operation());
     var targets = ids.stream().map(this::require).toList();
     relations.enter(targets.stream().map(Equipment::getCompanyOrgId).toList());
     targets = ids.stream().map(this::require).toList();
     for (var e : targets) {
-      permissions.checkEquipment(e, op.equals("delete") ? "删除" : "编辑");
+      permissions.checkEquipment(e, operation == EquipmentBatchOperation.DELETE ? "删除" : "编辑");
     }
     String value = form.value() == null ? "" : form.value().trim();
-    if (!op.equals("delete") && !op.equals("owner") && value.isEmpty()) {
+    if (!operation == EquipmentBatchOperation.DELETE && !operation == EquipmentBatchOperation.OWNER && value.isEmpty()) {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0040");
     }
     var base =
-        (op.equals("location") || op.equals("category"))
+        (operation == EquipmentBatchOperation.LOCATION || operation == EquipmentBatchOperation.CATEGORY)
             ? baseItems.activeForShare(
-                auth.tenantId(), value, op.equals("location") ? "LOCATION" : "CATEGORY")
+                auth.tenantId(), value, operation == EquipmentBatchOperation.LOCATION ? "LOCATION" : "CATEGORY")
             : null;
-    if ((op.equals("location") || op.equals("category")) && base == null) {
+    if ((operation == EquipmentBatchOperation.LOCATION || operation == EquipmentBatchOperation.CATEGORY) && base == null) {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0041");
     }
     for (var e : targets) {
-      switch (op) {
-        case "delete" -> {
+      switch (operation) {
+        case DELETE -> {
           relations.checkDelete(e.getId());
           relations.cleanup(e.getId());
           if (repository.delete(e.getId()) != 1) {
@@ -273,15 +272,15 @@ public class EquipmentCommandService {
           ownerRepository.clear(auth.tenantId(), e.getId());
           continue;
         }
-        case "category" -> {
+        case CATEGORY -> {
           e.setCategoryId(base.getId());
           e.setCategory(base.getName());
         }
-        case "location" -> {
+        case LOCATION -> {
           e.setFunctionLocationId(base.getId());
           e.setFunctionLocation(locationPath(base.getId(), e.getCompanyOrgId(), true));
         }
-        case "department" -> {
+        case DEPARTMENT -> {
           var dept = organizations.activeDepartment(auth.tenantId(), value);
           if (dept == null) {
             throw new com.windasoft.eam.common.LocalizedArgumentException(
@@ -304,14 +303,14 @@ public class EquipmentCommandService {
           e.setDepartmentOrgId(dept.getId());
           e.setDepartmentPath(organizationPath(dept.getId()));
         }
-        case "owner" -> {
+        case OWNER -> {
           var ownerIds =
               form.ownerIds() != null
                   ? form.ownerIds()
                   : (value.isEmpty() ? List.<Long>of() : List.of(Long.valueOf(value)));
           assignOwners(e, ownerIds, e);
         }
-        case "state" -> {
+        case STATE -> {
           validateState(value);
           e.setEquipmentStatus(value);
         }
@@ -323,7 +322,7 @@ public class EquipmentCommandService {
             "server.equipment.message0044");
       }
       media.save(e);
-      if (op.equals("owner")) {
+      if (operation == EquipmentBatchOperation.OWNER) {
         saveOwners(e);
       }
     }
