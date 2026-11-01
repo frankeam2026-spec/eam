@@ -14,6 +14,7 @@ import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/** 维修列表、统计与导出查询编排：共用可见范围，分页后批量装配业务扩展数据。 */
 @Service
 public class RepairQueryService {
   @org.springframework.beans.factory.annotation.Autowired
@@ -271,6 +272,7 @@ public class RepairQueryService {
         });
   }
 
+  /** 查询按用户数据范围过滤；导出需要叠加独立的导出权限范围。 */
   private void scope(LambdaQueryWrapper<RepairOrder> query, Boolean export) {
     permissions.filterRepair(query);
     if (export) permissions.filterRepair(query, "导出");
