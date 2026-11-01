@@ -5,6 +5,7 @@ import com.windasoft.eam.entity.equipment.Equipment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/** 设备台账写仓储：负责设备主体的持久化及版本更新，业务校验在上层完成。 */
 @Repository
 public class EquipmentWriteRepository {
   private final EquipmentMapper equipment;
