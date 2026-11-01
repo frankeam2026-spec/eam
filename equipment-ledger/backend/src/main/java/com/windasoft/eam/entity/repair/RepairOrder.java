@@ -10,6 +10,7 @@ import lombok.Data;
 
 @Data
 @TableName("eam_repair_order")
+/** 维修工单持久化实体：包含审批、处理和验收状态；关联展示字段不应直接作为数据库更新依据。 */
 public class RepairOrder {
   @TableId(type = IdType.ASSIGN_ID)
   private Long id;
