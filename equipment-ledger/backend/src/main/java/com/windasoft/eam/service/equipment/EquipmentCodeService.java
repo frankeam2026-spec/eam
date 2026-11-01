@@ -8,6 +8,9 @@ import java.time.LocalDate;
 import org.springframework.stereotype.Service;
 
 /** 设备编号校验与生成；由调用方的业务事务保证计数器及设备写入一致性。 */
+/**
+ * 设备编号规则：负责生成及核对设备编号，业务服务不直接拼接或推断编号。
+ */
 @Service
 public class EquipmentCodeService {
   private final EquipmentWriteRepository equipment;
