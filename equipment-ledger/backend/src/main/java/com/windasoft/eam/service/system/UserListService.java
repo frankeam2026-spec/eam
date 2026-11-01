@@ -11,19 +11,19 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class UserListService {
   private final UserListRepository repository;
-  private final SystemManagementRepository metadata;
+  private final OrgUnitRepository orgUnits;
   private final PermissionService permissions;
   private final OrganizationScopeService organizationScopes;
   private final AuthContext auth;
 
   public UserListService(
       UserListRepository repository,
-      SystemManagementRepository metadata,
+      OrgUnitRepository orgUnits,
       PermissionService permissions,
       OrganizationScopeService organizationScopes,
       AuthContext auth) {
     this.repository = repository;
-    this.metadata = metadata;
+    this.orgUnits = orgUnits;
     this.permissions = permissions;
     this.organizationScopes = organizationScopes;
     this.auth = auth;
@@ -32,7 +32,7 @@ public class UserListService {
   private UserListRepository.Selection select(ListQuery query, boolean export) {
     var scope = permissions.scope("user", "查看");
     var visible = new HashSet<>(scope.departmentIds());
-    for (var org : metadata.organizations(auth.tenantId()))
+    for (var org : orgUnits.organizations(auth.tenantId()))
       if (permissions.companyOfOrganization(org.getId()) != null
           && scope.companyIds().contains(permissions.companyOfOrganization(org.getId())))
         visible.add(org.getId());
@@ -51,7 +51,7 @@ public class UserListService {
       var exportScope = permissions.scope("user", "导出");
       if (!exportScope.all()) {
         var exportOrgs = new HashSet<>(exportScope.departmentIds());
-        for (var org : metadata.organizations(auth.tenantId()))
+        for (var org : orgUnits.organizations(auth.tenantId()))
           if (permissions.companyOfOrganization(org.getId()) != null
               && exportScope.companyIds().contains(permissions.companyOfOrganization(org.getId())))
             exportOrgs.add(org.getId());
