@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.MenuGrantForm;
 import com.windasoft.eam.dto.system.RoleForm;
+import com.windasoft.eam.dto.system.RoleView;
 import com.windasoft.eam.entity.system.RoleMenuPermission;
 import com.windasoft.eam.entity.system.SystemRole;
 import com.windasoft.eam.repository.system.RoleManagementRepository;
@@ -293,11 +294,11 @@ public class RoleManagementService {
     return x;
   }
 
-  private Map<String, Object> roleView(SystemRole x) {
+  private RoleView roleView(SystemRole x) {
     return roleView(x, repository.menuPermissions(auth.tenantId(), x.getId()));
   }
 
-  private Map<String, Object> roleView(SystemRole x, List<RoleMenuPermission> rows) {
+  private RoleView roleView(SystemRole x, List<RoleMenuPermission> rows) {
     Map<String, Object> grants = new LinkedHashMap<>();
     for (var row : rows)
       grants.put(
@@ -350,19 +351,10 @@ public class RoleManagementService {
                     : List.of()));
       }
     }
-    return Map.of(
-        "id",
-        String.valueOf(x.getId()),
-        "code",
-        x.getCode(),
-        "name",
-        x.getName(),
-        "description",
+    return new RoleView(
+        String.valueOf(x.getId()), x.getCode(), x.getName(),
         x.getDescription() == null ? "" : x.getDescription(),
-        "status",
-        x.getStatus() == 1 ? "启用" : "停用",
-        "menuPermissions",
-        grants);
+        x.getStatus() == 1 ? "启用" : "停用", grants);
   }
 
   private String legacyAction(String action) {
