@@ -159,7 +159,7 @@ public class RepairWorkflowService {
     details.put("before", previous);
     String label;
     switch (RepairWorkflowAction.parse(action)) {
-      case DISPATCH, "transfer" -> {
+      case DISPATCH, TRANSFER -> {
         if (action.equals("dispatch")) {
           permissions.checkRepair(row, "派工");
           state(row, RepairOrderStatus.PENDING_DISPATCH.code());
@@ -309,7 +309,7 @@ public class RepairWorkflowService {
         }
         label = resolved ? "提交验收" : "记录处理";
       }
-      case SUSPEND, "resume" -> {
+      case SUSPEND, RESUME -> {
         owner(row);
         state(row, action.equals("suspend") ? RepairOrderStatus.PROCESSING.code() : RepairOrderStatus.SUSPENDED.code());
         String reason = text(body, "reason", 2000);
@@ -333,7 +333,7 @@ public class RepairWorkflowService {
         details.put("reason", text(body, "reason", 2000));
         label = "委外";
       }
-      case ACCEPT, "reject", "return" -> {
+      case ACCEPT, REJECT, RETURN -> {
         var decision = AcceptanceDecision.parse(action);
         state(row, RepairOrderStatus.PENDING_ACCEPTANCE.code());
         if (!canAccept(row)) deny();
