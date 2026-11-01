@@ -188,8 +188,4 @@ public class AuthorizationRepository {
         user);
   }
 
-  public List<Map<String, Object>> warehouse(long tenant, long id) {
-    return db.queryForList(
-        "SELECT company_id FROM inv_warehouse WHERE tenant_id=? AND id=?", tenant, id);
-  }
 }
