@@ -10,6 +10,7 @@ import java.util.Map;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.*;
 
+/** 认证接口：提供登录与会话管理入口，密码和会话校验由认证服务处理。 */
 @RestController
 @RequestMapping("/api/v1/auth")
 public class AuthController {
