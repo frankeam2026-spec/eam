@@ -47,7 +47,7 @@ public enum BaseDataType {
   public String equipmentReferenceColumn() { return equipmentReferenceColumn; }
 
   public static BaseDataType fromResource(String resource) {
-    var type = BY_RESOURCE.get(resource);
+    var type = resource == null ? null : BY_RESOURCE.get(resource);
     if (type == null)
       throw new LocalizedArgumentException("server.common.message0042");
     return type;
