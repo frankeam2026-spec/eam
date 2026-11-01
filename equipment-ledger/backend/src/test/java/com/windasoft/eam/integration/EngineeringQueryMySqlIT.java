@@ -1599,8 +1599,21 @@ class EngineeringQueryMySqlIT {
                                 "qa-ins-item")))));
             inspectionPlan.put("customFields", Map.of());
             inspectionPlan.put("customSchemaVersion", 0);
+            // 不传旧版间隔/时间窗口字段，验证班次安排按现有 API 可以直接保存。
             var created = inspectionDefinitions.save(kind, null, mutable(inspectionPlan));
             long planId = Long.parseLong(created.get("id").toString());
+            if (kind.equals("daily-plans")) {
+              var compatibility =
+                  db.queryForMap(
+                      "SELECT interval_count,window_minutes,CAST(start_time AS CHAR) start_time,"
+                          + " CAST(end_time AS CHAR) end_time FROM eam_inspection_daily_arrangement"
+                          + " WHERE tenant_id=10001 AND plan_id=?",
+                      planId);
+              assertEquals(1, ((Number) compatibility.get("interval_count")).intValue());
+              assertEquals(1, ((Number) compatibility.get("window_minutes")).intValue());
+              assertTrue(Objects.toString(compatibility.get("start_time")).startsWith("00:00"));
+              assertTrue(Objects.toString(compatibility.get("end_time")).startsWith("23:59"));
+            }
             int count =
                 db.queryForObject(
                     "SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001 AND plan_id=?"
