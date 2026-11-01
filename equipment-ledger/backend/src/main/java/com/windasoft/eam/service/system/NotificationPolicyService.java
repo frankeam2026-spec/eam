@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/** 通知策略服务：依据业务事件和用户偏好决定通知规则，不修改原始业务状态。 */
 @Service
 public class NotificationPolicyService {
   public static final Set<String> KINDS=Set.of("repair","daily","periodic","maintenance");
