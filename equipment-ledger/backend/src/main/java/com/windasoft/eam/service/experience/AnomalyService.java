@@ -502,16 +502,17 @@ public class AnomalyService {
   public void repairChanged(ExperienceEvents.RepairState ev) {
     String status =
         ev.status().equals("已完成")
-            ? "已消除"
+            ? AnomalyStatus.RESOLVED.code()
             : ev.status().equals("已撤销")
-                ? "待处理"
-                : Set.of("处理中", "挂起", "待验收").contains(ev.status()) ? "处理中" : "已安排";
+                ? AnomalyStatus.PENDING.code()
+                : Set.of("处理中", "挂起", "待验收").contains(ev.status())
+                    ? AnomalyStatus.IN_PROGRESS.code() : AnomalyStatus.ARRANGED.code();
     var rows = repository.lockRepairAnomalies(auth.tenantId(), ev.repairId());
     for (var r : rows) {
       repository.updateRepairAnomaly(
           status,
-          status.equals("已消除") ? LocalDateTime.now(ZoneId.of("Asia/Shanghai")) : null,
-          status.equals("待处理") ? null : ev.repairId(),
+          status.equals(AnomalyStatus.RESOLVED.code()) ? LocalDateTime.now(ZoneId.of("Asia/Shanghai")) : null,
+          status.equals(AnomalyStatus.PENDING.code()) ? null : ev.repairId(),
           status,
           status,
           auth.tenantId(),
@@ -579,7 +580,8 @@ public class AnomalyService {
               discoveredBy,
               discoveredName,
               discoveredAt,
-              Boolean.TRUE.equals(answer.get("resolved")) ? "已消除" : "待处理",
+              Boolean.TRUE.equals(answer.get("resolved"))
+                   ? AnomalyStatus.RESOLVED.code() : AnomalyStatus.PENDING.code(),
               text(answer, "measure"),
               Boolean.TRUE.equals(answer.get("resolved")) ? discoveredAt : null);
       if (inserted == 1)
