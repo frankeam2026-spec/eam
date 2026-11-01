@@ -13,6 +13,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
+/** 维修报修的创建、编辑与旧接口兼容入口；新版维修动作的状态权威由工作流服务维护。 */
 @Service
 public class RepairOrderService {
   @org.springframework.beans.factory.annotation.Autowired private RepairApprovalService approvals;
@@ -125,6 +126,10 @@ public class RepairOrderService {
     return Map.of("data", views.view(require(id)));
   }
 
+  /**
+   * 旧接口兼容：除撤回以外的动作转交新版工作流；撤回沿用既有路径。
+   * 删除兼容分支前必须核对实际调用方、权限和历史工单状态。
+   */
   @org.springframework.transaction.annotation.Transactional
   public Map<String, Object> action(Long id, RepairAction request, int rowVersion) {
     if (workflow != null) {
