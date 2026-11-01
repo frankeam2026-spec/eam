@@ -8,6 +8,7 @@ import com.windasoft.eam.repository.common.*;
 import java.util.*;
 import org.springframework.stereotype.Repository;
 
+/** 用户列表仓储：执行分页、筛选及角色关联查询，不改变用户状态。 */
 @Repository
 public class UserListRepository {
   private final JdbcListRepository lists;
