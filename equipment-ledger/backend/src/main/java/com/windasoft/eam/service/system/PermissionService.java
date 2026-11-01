@@ -461,6 +461,7 @@ public class PermissionService {
     return scopesFor(auth.userId(), menu, action);
   }
 
+  /** 分别读取当前用户的有效角色授权，并合并匹配动作的数据范围；不能用宽读权限替代窄写权限。 */
   private List<Grant> scopesFor(long userId, String menu, String action) {
     var roleIds =
         repository.userRoles(auth.tenantId(), userId).stream()
