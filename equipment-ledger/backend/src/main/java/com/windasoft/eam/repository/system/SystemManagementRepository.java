@@ -263,23 +263,6 @@ public class SystemManagementRepository {
             .in(OrgUnit::getId, ids));
   }
 
-  public long warehouseCount(long tenant, List<Long> ids) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM inv_warehouse WHERE tenant_id=? AND id IN ("
-            + String.join(",", Collections.nCopies(ids.size(), "?"))
-            + ")",
-        Long.class,
-        java.util.stream.Stream.concat(java.util.stream.Stream.of(tenant), ids.stream()).toArray());
-  }
-
-  public List<Map<String, Object>> warehouseChoices(long tenant) {
-    return db.queryForList(
-        "SELECT CAST(w.id AS CHAR) id,CONCAT(o.name,' / ',w.name) name FROM inv_warehouse w JOIN"
-            + " eam_org_unit o ON o.tenant_id=w.tenant_id AND o.id=w.company_id WHERE w.tenant_id=?"
-            + " ORDER BY o.name,w.name",
-        tenant);
-  }
-
   public void lockOrganizations(long tenant) {
     db.queryForList(
         "SELECT id FROM eam_org_unit WHERE tenant_id=? AND deleted=0 ORDER BY id FOR UPDATE",
