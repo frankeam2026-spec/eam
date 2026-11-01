@@ -5,6 +5,7 @@ import com.windasoft.eam.dto.system.OrgForm;
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.repository.system.SystemManagementRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrganizationService {
   private final SystemManagementRepository repository;
   private final OrgUnitRepository orgUnits;
+  private final SystemUserRepository systemUsers;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
@@ -20,11 +22,13 @@ public class OrganizationService {
   public OrganizationService(
       SystemManagementRepository repository,
       OrgUnitRepository orgUnits,
+      SystemUserRepository systemUsers,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json) {
     this.repository = repository;
     this.orgUnits = orgUnits;
+    this.systemUsers = systemUsers;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
@@ -86,7 +90,7 @@ public class OrganizationService {
     permissions.checkOrg("org", "删除", x);
     if (orgUnits.childOrganizationCount(auth.tenantId(), id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0904");
-    if (repository.organizationUserCount(auth.tenantId(), id) > 0)
+    if (systemUsers.organizationUserCount(auth.tenantId(), id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0905");
     if (hasLocations(id))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0023");
