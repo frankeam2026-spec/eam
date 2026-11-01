@@ -67,6 +67,7 @@ public class UserManagementService {
   }
 
   @Transactional
+  /** 先比较角色关联：只有角色发生变化时才要求额外的角色分配和授权权限。 */
   public Map<String, Object> updateUser(Long id, UserForm f) {
     var x = requireUser(id);
     permissions.checkUser("user", "编辑", x);
@@ -113,6 +114,7 @@ public class UserManagementService {
   }
 
   @Transactional
+  /** 批量用户修改先对所有目标执行权限和数据校验，再逐个写入，避免部分合法部分越权。 */
   public Map<String, Object> batchUsers(UserBatchForm f) {
     if (f.ids().isEmpty() || f.ids().size() > 200 || f.ids().contains(null))
       throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text1182");
