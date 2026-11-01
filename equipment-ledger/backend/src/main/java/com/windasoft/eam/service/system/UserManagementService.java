@@ -7,6 +7,7 @@ import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
 import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import java.util.*;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class UserManagementService {
   private final SystemManagementRepository repository;
+  private final SystemUserRepository systemUsers;
   private final OrgUnitRepository orgUnits;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -24,11 +26,13 @@ public class UserManagementService {
 
   public UserManagementService(
       SystemManagementRepository repository,
+      SystemUserRepository systemUsers,
       OrgUnitRepository orgUnits,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json) {
     this.repository = repository;
+    this.systemUsers = systemUsers;
     this.orgUnits = orgUnits;
     this.auth = auth;
     this.permissions = permissions;
@@ -50,7 +54,7 @@ public class UserManagementService {
     applyUser(x, f);
     permissions.checkUser("user", "新增", x);
     setPassword(x, f.password(), true);
-    repository.insertUser(x);
+    systemUsers.insertUser(x);
     saveRoleLinks(x.getId(), f.roleIds());
     return Map.of("data", userView(x));
   }
@@ -73,7 +77,7 @@ public class UserManagementService {
     applyUser(x, f);
     permissions.checkUser("user", "编辑", x);
     setPassword(x, f.password(), false);
-    repository.updateUser(x);
+    systemUsers.updateUser(x);
     if(f.email()!=null) {
       if(f.emailVersion()==null)throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0018");
       com.windasoft.eam.common.VersionGuard.updated(repository.updateEmail(auth.tenantId(),id,f.email().trim(),f.emailVersion()));
@@ -94,7 +98,7 @@ public class UserManagementService {
     if (id.equals(auth.userId()) && status == 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0038");
     x.setStatus(status);
-    repository.updateUser(x);
+    systemUsers.updateUser(x);
     if (status == 0) revokeSessions(id);
     return Map.of("data", userView(x));
   }
@@ -123,7 +127,7 @@ public class UserManagementService {
     }
     for (var user : users) {
       if ("password".equals(f.operation())) setPassword(user, f.password(), true);
-      repository.updateUser(user);
+      systemUsers.updateUser(user);
       revokeSessions(user.getId());
     }
     return Map.of("data", users.stream().map(this::userView).toList());
@@ -135,7 +139,7 @@ public class UserManagementService {
     permissions.checkUser("user", "删除", x);
     revokeSessions(id);
     repository.deleteUserRoles(auth.tenantId(), id);
-    repository.deleteUser(id);
+    systemUsers.deleteUser(id);
     return Map.of("data", Map.of("deleted", true));
   }
 
@@ -189,12 +193,12 @@ public class UserManagementService {
   }
 
   private void checkAccount(String account, Long id) {
-    if (repository.accountCount(auth.tenantId(), account, id) > 0)
+    if (systemUsers.accountCount(auth.tenantId(), account, id) > 0)
       throw new com.windasoft.eam.common.FieldValidationException("account", "登录账号已存在");
   }
 
   private SystemUser requireUser(Long id) {
-    var x = repository.user(auth.tenantId(), id);
+    var x = systemUsers.user(auth.tenantId(), id);
     if (x == null)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0044");
     return x;
