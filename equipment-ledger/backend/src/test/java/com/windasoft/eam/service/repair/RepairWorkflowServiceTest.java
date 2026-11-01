@@ -31,7 +31,15 @@ class RepairWorkflowServiceTest {
   void setUp() {
     flow = mock(RepairWorkflowMapper.class);
     orders = mock(RepairOrderMapper.class);
+    com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+        new org.apache.ibatis.builder.MapperBuilderAssistant(
+            new com.baomidou.mybatisplus.core.MybatisConfiguration(), "repair-workflow-test"),
+        com.windasoft.eam.entity.equipment.Equipment.class);
     permissions = mock(PermissionService.class);
+    var equipmentMapper = mock(EquipmentMapper.class);
+    var equipmentRow = new com.windasoft.eam.entity.equipment.Equipment();
+    equipmentRow.setId(501L);
+    when(equipmentMapper.selectOne(any())).thenReturn(equipmentRow);
     var auth = mock(AuthContext.class);
     var user = new SystemUser();
     user.setId(73001L);
@@ -45,7 +53,7 @@ class RepairWorkflowServiceTest {
             new com.windasoft.eam.repository.repair.RepairWorkflowRepository(
                 flow,
                 orders,
-                mock(EquipmentMapper.class),
+                equipmentMapper,
                 mock(SystemUserMapper.class),
                 mock(BaseItemMapper.class),
                 com.windasoft.eam.support.RelationStubs.repair()),
