@@ -22,6 +22,9 @@ import com.windasoft.eam.service.system.PermissionService;
 import java.util.List;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 设备台账写入用例入口：协调输入校验、数据权限、编号、关联关系及持久化；跨多表写入的业务一致性由事务保证。
+ */
 @org.springframework.stereotype.Service
 public class EquipmentCommandService {
   private final BusinessValueService custom;
