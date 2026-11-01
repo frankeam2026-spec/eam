@@ -30,7 +30,6 @@ class RepairAttachmentQueryTest {
             mock(EquipmentMapper.class),
             mock(com.windasoft.eam.repository.basedata.BaseItemMapper.class),
             mock(NumberCounterMapper.class),
-            "./data/uploads",
             mock(RepairRelationsRepository.class));
 
     repository.attachmentOrders(10001L, "01234567-89ab-4cde-8012-3456789abcde");
