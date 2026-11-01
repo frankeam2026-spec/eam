@@ -5,8 +5,6 @@ import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.equipment.EquipmentMapper;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
-import java.io.*;
-import java.nio.file.*;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
@@ -18,7 +16,6 @@ public class RepairOrderRepository {
   private final EquipmentMapper equipment;
   private final com.windasoft.eam.repository.basedata.BaseItemMapper base;
   private final NumberCounterMapper counter;
-  private final String directory;
 
   public RepairOrderRepository(
       RepairOrderMapper orders,
@@ -32,7 +29,6 @@ public class RepairOrderRepository {
     this.equipment = equipment;
     this.base = base;
     this.counter = counter;
-    this.directory = directory;
   }
 
   public RepairOrder find(long tenant, Long id) {
@@ -95,25 +91,4 @@ public class RepairOrderRepository {
                                 tenant, id))));
   }
 
-  public void store(InputStream input, String id, String extension) throws IOException {
-    Path root = Path.of(directory).toAbsolutePath().normalize();
-    Files.createDirectories(root);
-    Path target = root.resolve(id + extension).normalize();
-    if (!target.getParent().equals(root))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0010");
-    Files.copy(input, target);
-  }
-
-  public Path attachmentPath(String id) throws IOException {
-    Path root = Path.of(directory).toAbsolutePath().normalize();
-    if (!Files.isDirectory(root))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
-    List<Path> files;
-    try (var stream = Files.list(root)) {
-      files = stream.filter(p -> p.getFileName().toString().startsWith(id + ".")).limit(1).toList();
-    }
-    if (files.isEmpty())
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
-    return files.getFirst();
-  }
 }
