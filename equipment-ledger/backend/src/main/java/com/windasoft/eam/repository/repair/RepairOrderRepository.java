@@ -5,12 +5,13 @@ import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.equipment.EquipmentMapper;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
-import java.io.*;
-import java.nio.file.*;
 import java.util.*;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 
+/**
+ * 维修工单数据库访问：读写主表并协调既有关系表读写。
+ * 附件磁盘存储由 RepairFileStorage 负责，本类不管理文件路径或文件内容。
+ */
 @Repository
 public class RepairOrderRepository {
   private final RepairRelationsRepository collaborators;
@@ -18,21 +19,18 @@ public class RepairOrderRepository {
   private final EquipmentMapper equipment;
   private final com.windasoft.eam.repository.basedata.BaseItemMapper base;
   private final NumberCounterMapper counter;
-  private final String directory;
 
   public RepairOrderRepository(
       RepairOrderMapper orders,
       EquipmentMapper equipment,
       com.windasoft.eam.repository.basedata.BaseItemMapper base,
       NumberCounterMapper counter,
-      @Value("${eam.upload.directory:./data/uploads}") String directory,
       RepairRelationsRepository collaborators) {
     this.collaborators = collaborators;
     this.orders = orders;
     this.equipment = equipment;
     this.base = base;
     this.counter = counter;
-    this.directory = directory;
   }
 
   public RepairOrder find(long tenant, Long id) {
@@ -69,6 +67,10 @@ public class RepairOrderRepository {
     return counter.currentValue();
   }
 
+  /**
+   * 只接受关系表或维修事件 attachments 数组中的精确附件 ID。
+   * 不使用全文 LIKE，避免将备注等无关文本中的相同 ID 误判为附件关联。
+   */
   public List<RepairOrder> attachmentOrders(long tenant, String id) {
     return collaborators.hydrate(
         orders.selectList(
@@ -86,29 +88,9 @@ public class RepairOrderRepository {
                             .or()
                             .apply(
                                 "id IN (SELECT order_id FROM eam_repair_event WHERE tenant_id={0}"
-                                    + " AND details_json LIKE {1})",
-                                tenant, "%" + id + "%"))));
+                                    + " AND JSON_SEARCH(details_json, 'one', {1}, NULL,"
+                                    + " '$.attachments[*].id') IS NOT NULL)",
+                                tenant, id))));
   }
 
-  public void store(InputStream input, String id, String extension) throws IOException {
-    Path root = Path.of(directory).toAbsolutePath().normalize();
-    Files.createDirectories(root);
-    Path target = root.resolve(id + extension).normalize();
-    if (!target.getParent().equals(root))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0010");
-    Files.copy(input, target);
-  }
-
-  public Path attachmentPath(String id) throws IOException {
-    Path root = Path.of(directory).toAbsolutePath().normalize();
-    if (!Files.isDirectory(root))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
-    List<Path> files;
-    try (var stream = Files.list(root)) {
-      files = stream.filter(p -> p.getFileName().toString().startsWith(id + ".")).limit(1).toList();
-    }
-    if (files.isEmpty())
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
-    return files.getFirst();
-  }
 }

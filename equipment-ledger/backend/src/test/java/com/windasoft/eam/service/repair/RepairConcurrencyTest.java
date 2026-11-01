@@ -33,7 +33,7 @@ class RepairConcurrencyTest {
                 mock(EquipmentMapper.class),
                 mock(com.windasoft.eam.repository.basedata.BaseItemMapper.class),
                 mock(NumberCounterMapper.class),
-                "./data/uploads", com.windasoft.eam.support.RelationStubs.repair()),
+                com.windasoft.eam.support.RelationStubs.repair()),
             null,
             json,
             auth,
