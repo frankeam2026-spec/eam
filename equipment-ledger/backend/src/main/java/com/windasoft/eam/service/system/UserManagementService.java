@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.UserBatchForm;
 import com.windasoft.eam.dto.system.UserForm;
 import com.windasoft.eam.dto.system.UserStatusForm;
+import com.windasoft.eam.dto.system.UserView;
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
@@ -226,38 +227,26 @@ public class UserManagementService {
     return x;
   }
 
-  private Map<String, Object> userView(SystemUser x) {
+  private UserView userView(SystemUser x) {
     return userView(
         x,
         roleRepository.userRoles(auth.tenantId(), x.getId()),
         systemUsers.emailProfile(auth.tenantId(), x.getId()));
   }
 
-  private Map<String, Object> userView(
+  private UserView userView(
       SystemUser x, List<UserRoleLink> roles, Map<String, Object> emailProfile) {
     var ids = roles.stream()
         .map(UserRoleLink::getRoleId)
         .map(String::valueOf)
         .toList();
-    var result = new LinkedHashMap<String,Object>(Map.of(
-        "id",
-        String.valueOf(x.getId()),
-        "account",
-        x.getAccount(),
-        "name",
-        x.getDisplayName(),
-        "employeeNo",
+    return new UserView(
+        String.valueOf(x.getId()), x.getAccount(), x.getDisplayName(),
         x.getEmployeeNo() == null ? "" : x.getEmployeeNo(),
-        "phone",
         x.getPhone() == null ? "" : x.getPhone(),
-        "orgId",
-        String.valueOf(x.getOrgId()),
-        "roleIds",
-        ids,
-        "status",
-        x.getStatus() == 1 ? "启用" : "停用"));
-    result.put("email", Objects.toString(emailProfile.get("email"),Objects.toString(x.getEmail(),"")));
-    result.put("emailVersion", emailProfile.getOrDefault("email_version",0));
-    return result;
+        String.valueOf(x.getOrgId()), ids,
+        x.getStatus() == 1 ? "启用" : "停用",
+        Objects.toString(emailProfile.get("email"), Objects.toString(x.getEmail(), "")),
+        emailProfile.getOrDefault("email_version", 0));
   }
 }
