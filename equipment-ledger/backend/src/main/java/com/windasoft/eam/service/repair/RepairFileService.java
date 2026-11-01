@@ -10,6 +10,10 @@ import java.nio.file.Path;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
+/**
+ * 维修附件业务入口：校验上传文件及下载者对关联工单的可见权限。
+ * 文件读写交给 RepairFileStorage，工单与附件关系由 Repository 查询。
+ */
 @Service
 public class RepairFileService {
   private final RepairOrderRepository repository;
@@ -31,6 +35,10 @@ public class RepairFileService {
     this.permissions = permissions;
   }
 
+  /**
+   * 附件上传只生成文件标识；附件是否属于某张工单，在后续保存报修或维修记录时建立关联。
+   * 不允许仅凭上传返回的 URL 绕过工单权限下载文件。
+   */
   public Map<String, Object> upload(RepairUpload file) throws IOException {
     if (!permissions.allowed("repair", "报修")
         && !permissions.allowed("repair", "处理")
@@ -63,6 +71,10 @@ public class RepairFileService {
             "/api/v1/repairs/attachments/" + id));
   }
 
+  /**
+   * 下载前同时核实附件关联和工单可见性；任一关联工单可见才允许读取文件。
+   * 无有效关联、无可见工单或文件不存在均拒绝返回文件，避免裸文件 ID 成为访问凭证。
+   */
   public RepairDownload download(String id) throws IOException {
     // 在关联查询和文件定位之前校验附件 ID，避免无效输入触发数据库访问。
     if (id == null || !id.matches("[0-9a-fA-F-]{36}"))
