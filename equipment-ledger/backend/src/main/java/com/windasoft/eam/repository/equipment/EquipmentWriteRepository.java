@@ -35,6 +35,7 @@ public class EquipmentWriteRepository {
     return equipment.deleteById(id);
   }
 
+  /** 使用版本条件进行受控更新，防止并发修改直接覆盖已有结果。 */
   public int advanceVersion(long tenant, Long id, int version, long user) {
     return db.update(
         "UPDATE eam_equipment SET row_version=row_version+1, updated_by=?"
