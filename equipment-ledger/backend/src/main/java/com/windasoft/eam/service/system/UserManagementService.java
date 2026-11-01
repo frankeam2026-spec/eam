@@ -7,6 +7,7 @@ import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
 import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import java.util.*;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class UserManagementService {
   private final SystemManagementRepository repository;
+  private final OrgUnitRepository orgUnits;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
@@ -22,10 +24,12 @@ public class UserManagementService {
 
   public UserManagementService(
       SystemManagementRepository repository,
+      OrgUnitRepository orgUnits,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json) {
     this.repository = repository;
+    this.orgUnits = orgUnits;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
@@ -197,7 +201,7 @@ public class UserManagementService {
   }
 
   private OrgUnit requireOrg(Long id) {
-    var x = repository.organization(auth.tenantId(), id);
+    var x = orgUnits.organization(auth.tenantId(), id);
     if (x == null)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0031");
     return x;
