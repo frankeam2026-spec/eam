@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 /** 设备履历用例：协调维修、生命周期事件和已安装备件三个数据来源。 */
+/** 设备履历用例：聚合历史事件、维修和已安装备件等数据，不改变业务记录。 */
 @Service
 public class EquipmentHistoryQueryService {
   private final RepairQueryRepository repairs;

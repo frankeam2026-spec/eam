@@ -5,6 +5,7 @@ import com.windasoft.eam.entity.equipment.Equipment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/** 设备台账写仓储：负责设备主体的持久化及版本更新，业务校验在上层完成。 */
 @Repository
 public class EquipmentWriteRepository {
   private final EquipmentMapper equipment;
@@ -34,6 +35,7 @@ public class EquipmentWriteRepository {
     return equipment.deleteById(id);
   }
 
+  /** 使用版本条件进行受控更新，防止并发修改直接覆盖已有结果。 */
   public int advanceVersion(long tenant, Long id, int version, long user) {
     return db.update(
         "UPDATE eam_equipment SET row_version=row_version+1, updated_by=?"

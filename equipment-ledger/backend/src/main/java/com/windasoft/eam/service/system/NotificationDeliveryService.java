@@ -8,6 +8,7 @@ import com.windasoft.eam.repository.system.*;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
+/** 通知投递服务：负责投递处理及结果记录，和待办业务状态保持解耦。 */
 @Service
 public class NotificationDeliveryService {
   private final ReminderRepository repo;

@@ -7,6 +7,7 @@ import com.windasoft.eam.repository.common.AttachmentRelationsRepository;
 import java.util.*;
 import org.springframework.stereotype.Repository;
 
+/** 设备媒体数据访问：按租户与设备读取或维护媒体记录。 */
 @Repository
 public class EquipmentMediaRepository {
   private final AttachmentRelationsRepository files;

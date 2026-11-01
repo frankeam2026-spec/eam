@@ -22,6 +22,9 @@ import com.windasoft.eam.service.system.PermissionService;
 import java.util.List;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 设备台账写入用例入口：协调输入校验、数据权限、编号、关联关系及持久化；跨多表写入的业务一致性由事务保证。
+ */
 @org.springframework.stereotype.Service
 public class EquipmentCommandService {
   private final BusinessValueService custom;
@@ -78,6 +81,7 @@ public class EquipmentCommandService {
   }
 
   @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+  /** 新增设备是完整业务用例：创建主体前执行输入、组织与权限校验，关联记录在同一业务流程内维护。 */
   public EquipmentView create(EquipmentForm form) {
     inputValidation.validate(form);
     relations.enter(
@@ -152,6 +156,7 @@ public class EquipmentCommandService {
   }
 
   @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+  /** 更新必须复核原设备及目标归属的数据权限；关联和主体变更不能只依赖前端校验。 */
   public EquipmentView update(Long id, EquipmentForm form, int rowVersion) {
     return updateInternal(id, form, rowVersion, true);
   }

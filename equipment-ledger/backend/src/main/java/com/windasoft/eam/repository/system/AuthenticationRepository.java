@@ -7,6 +7,7 @@ import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.SystemUser;
 import org.springframework.stereotype.Repository;
 
+/** 认证数据仓储：负责会话与认证数据存取，密码校验和会话策略由服务层负责。 */
 @Repository
 public class AuthenticationRepository {
   private final SystemUserMapper users;

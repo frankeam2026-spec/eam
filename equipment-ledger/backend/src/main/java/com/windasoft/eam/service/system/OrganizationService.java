@@ -12,6 +12,7 @@ import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/** 组织管理服务：验证组织层级与业务引用，避免删除仍被业务使用的组织。 */
 @Service
 public class OrganizationService {
   private final BaseItemRepository locations;
@@ -89,6 +90,7 @@ public class OrganizationService {
   }
 
   @Transactional
+  /** 组织删除需要同时检查下级组织、人员、功能位置和其他业务引用，阻止悬空关联。 */
   public Map<String, Object> deleteOrg(Long id) {
     lockOrganizations();
     var x = requireOrg(id);

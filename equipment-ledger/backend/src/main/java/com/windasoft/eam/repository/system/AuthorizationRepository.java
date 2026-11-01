@@ -11,6 +11,7 @@ import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/** 授权数据只读仓储：查询用户角色、组织范围及参与资格，不修改业务状态。 */
 @Repository
 public class AuthorizationRepository {
   public boolean approvalParticipation(long tenant,long user) {

@@ -7,6 +7,7 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/** 通知保留服务：负责过期通知清理，保留期限与投递策略分离。 */
 @Service
 public class NotificationRetentionService {
   private final NotificationRetentionRepository repo;

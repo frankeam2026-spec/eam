@@ -18,6 +18,7 @@ import java.util.function.Consumer;
 import org.springframework.stereotype.Repository;
 
 /** 台账只读数据访问，不授予权限，也不写入业务状态。 */
+/** 设备台账只读仓储：集中查询设备主体和关联数据，权限判断由业务服务承担。 */
 @Repository
 public class EquipmentQueryRepository {
   private final EquipmentRelationLegacyRepository legacyRelations;

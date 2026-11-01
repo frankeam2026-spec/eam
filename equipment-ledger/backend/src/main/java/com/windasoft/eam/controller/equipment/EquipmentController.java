@@ -19,6 +19,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/equipment")
+/**
+ * 设备台账写操作接口：接收并校验请求，将新增、修改、删除及关联维护委托给命令服务；不在接口层执行持久化。
+ */
 public class EquipmentController {
   private final EquipmentCommandService service;
 

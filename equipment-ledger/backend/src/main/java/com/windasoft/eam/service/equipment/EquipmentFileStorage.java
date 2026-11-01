@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 /** 设备文件的磁盘读写，不属于数据库 Repository 的职责。 */
 @Component
+/** 设备附件存储适配：封装文件流与存储路径，不承担设备业务权限判断。 */
 public class EquipmentFileStorage {
   private final Path directory;
 

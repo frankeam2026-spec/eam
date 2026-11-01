@@ -11,6 +11,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /** 手工录入和文件导入共用的基础字段校验，不产生业务写入。 */
+/**
+ * 设备输入校验：集中判断业务字段与对象关联的有效性，避免控制器和数据访问层各自重复校验。
+ */
 @Service
 public class EquipmentInputValidation {
   private final Validator validator;

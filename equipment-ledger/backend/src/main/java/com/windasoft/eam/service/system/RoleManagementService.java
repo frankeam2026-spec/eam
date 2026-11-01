@@ -14,6 +14,7 @@ import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/** 角色管理服务：验证菜单动作与数据范围配置，角色授权须与普通编辑权限区分。 */
 @Service
 public class RoleManagementService {
   private final RoleManagementRepository repository;
@@ -266,6 +267,7 @@ public class RoleManagementService {
         "all", "company", "companyTree", "companies", "department", "departmentTree", "selected");
   }
 
+  /** 重写角色菜单授权时先移除旧关联，再保存新配置；调用方的事务保护整个变更。 */
   private void saveMenuPermissions(Long roleId, Map<String, MenuGrantForm> grants) {
     repository.deleteMenuPermissions(auth.tenantId(), roleId);
     for (var entry : grants.entrySet()) {

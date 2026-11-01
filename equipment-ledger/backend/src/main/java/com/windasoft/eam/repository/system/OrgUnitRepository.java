@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /** 组织表的数据访问，业务事务和多组织加锁顺序由调用Service编排。 */
+/** 组织单元仓储：保存组织层级和状态，层级合法性由组织业务服务决定。 */
 @Repository
 public class OrgUnitRepository {
   private final OrgUnitMapper mapper;

@@ -5,6 +5,7 @@ import com.windasoft.eam.repository.system.AuthorizationRepository;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
+/** 组织权限范围计算：按照有效组织层级计算可访问集合，不单独授予操作权限。 */
 @Service
 public class OrganizationScopeService {
   private final AuthContext auth;

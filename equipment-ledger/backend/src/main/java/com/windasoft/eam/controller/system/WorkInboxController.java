@@ -4,6 +4,7 @@ import com.windasoft.eam.service.system.WorkInboxService;
 import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 
+/** 统一待办接口：展示待办视图，不作为业务单据状态的权威来源。 */
 @RestController
 @RequestMapping("/api/v1/work-inbox")
 public class WorkInboxController {

@@ -9,6 +9,7 @@ import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/** 设备物料清单仓储：管理设备与物料适配关系，不负责实际库存出入库。 */
 @Repository
 public class EquipmentBomRepository {
   private final JdbcTemplate db;

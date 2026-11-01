@@ -9,6 +9,7 @@ import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/** 父子设备关系仓储：处理设备层级关系的持久化和查询；业务层负责关系合法性。 */
 @Repository
 public class EquipmentChildRepository {
   private final JdbcTemplate db;

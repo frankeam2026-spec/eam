@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 
+/** 系统管理接口：组织、用户和角色的 HTTP 入口；业务授权与状态变更交由服务层。 */
 @RestController
 @RequestMapping("/api/v1/system")
 public class SystemManagementController {

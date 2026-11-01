@@ -7,6 +7,7 @@ import java.util.*;
 import java.util.function.Consumer;
 import org.springframework.stereotype.Repository;
 
+/** 设备附件元数据仓储：维护设备与附件记录的关联，文件内容由存储组件管理。 */
 @Repository
 public class EquipmentFileRepository {
   private final EquipmentFileMapper fileMapper;

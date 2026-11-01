@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/** 用户列表查询：统一筛选、分页、汇总及导出，不执行账号状态变更。 */
 @Service
 public class UserListService {
   private final UserListRepository repository;

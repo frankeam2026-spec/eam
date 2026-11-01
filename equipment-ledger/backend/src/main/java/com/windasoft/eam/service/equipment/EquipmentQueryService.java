@@ -29,6 +29,9 @@ import java.util.Objects;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 
+/**
+ * 设备台账读取用例入口：组织筛选、数据范围、分页以及关联资料组装；不承担台账状态修改。
+ */
 @Service
 public class EquipmentQueryService {
   private final com.windasoft.eam.service.business.BusinessValueService custom;

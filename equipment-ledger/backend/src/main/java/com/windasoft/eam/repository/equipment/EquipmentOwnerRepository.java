@@ -7,6 +7,7 @@ import java.util.List;
 import org.springframework.stereotype.Repository;
 
 /** 设备负责人关联表的数据访问。跨对象校验、事务及更新顺序由业务 Service 负责。 */
+/** 设备负责人仓储：维护负责人关联，为台账显示和负责人范围判断提供数据。 */
 @Repository
 public class EquipmentOwnerRepository {
   private final EquipmentOwnerMapper mapper;

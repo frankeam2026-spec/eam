@@ -6,6 +6,7 @@ import com.windasoft.eam.entity.system.*;
 import java.util.*;
 import org.springframework.stereotype.Repository;
 
+/** 角色管理仓储：维护角色主体及授权关联，权限配置有效性由服务端校验。 */
 @Repository
 public class RoleManagementRepository {
   private final RoleRelationsRepository relations;

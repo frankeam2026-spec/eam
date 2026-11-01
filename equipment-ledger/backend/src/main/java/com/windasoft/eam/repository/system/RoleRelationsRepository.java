@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** JSON strings below are legacy in-memory DTO adapters, never database storage. */
+/** 角色关联适配：组装权限关系数据；兼容字段中的 JSON 不代表底层采用 JSON 存储。 */
 @Repository
 public class RoleRelationsRepository {
   private final JdbcTemplate db;
