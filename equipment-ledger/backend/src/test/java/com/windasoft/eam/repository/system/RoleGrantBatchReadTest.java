@@ -6,9 +6,19 @@ import static org.mockito.Mockito.*;
 
 import com.windasoft.eam.entity.system.RoleMenuPermission;
 import java.util.List;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class RoleGrantBatchReadTest {
+  @BeforeEach
+  void initializeMapperMetadata() {
+    TableInfoHelper.initTableInfo(
+        new MapperBuilderAssistant(new MybatisConfiguration(), "role-batch-test"),
+        RoleMenuPermission.class);
+  }
   @Test
   void grantsForMultipleRolesAreReadOnceAndGrouped() {
     var mapper = mock(RoleMenuPermissionMapper.class);
