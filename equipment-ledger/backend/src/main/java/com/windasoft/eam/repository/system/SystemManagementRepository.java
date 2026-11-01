@@ -64,12 +64,7 @@ public class SystemManagementRepository {
     this.db = db;
   }
 
-  public List<OrgUnit> organizations(long tenant) {
-    return orgs.selectList(
-        new LambdaQueryWrapper<OrgUnit>()
-            .eq(OrgUnit::getTenantId, tenant)
-            .orderByAsc(OrgUnit::getId));
-  }
+
 
   public List<SystemUser> users(long tenant) {
     return users.selectList(
@@ -86,14 +81,9 @@ public class SystemManagementRepository {
                 .orderByAsc(SystemRole::getId)));
   }
 
-  public OrgUnit organization(long tenant, Long id) {
-    return orgs.selectOne(
-        new LambdaQueryWrapper<OrgUnit>().eq(OrgUnit::getTenantId, tenant).eq(OrgUnit::getId, id));
-  }
 
-  public OrgUnit organizationById(Long id) {
-    return orgs.selectById(id);
-  }
+
+
 
   public SystemUser user(long tenant, Long id) {
     return users.selectOne(
@@ -110,17 +100,11 @@ public class SystemManagementRepository {
                 .eq(SystemRole::getId, id)));
   }
 
-  public int insertOrganization(OrgUnit x) {
-    return orgs.insert(x);
-  }
 
-  public int updateOrganization(OrgUnit x) {
-    return orgs.updateById(x);
-  }
 
-  public int deleteOrganization(Long id) {
-    return orgs.deleteById(id);
-  }
+
+
+
 
   public int insertUser(SystemUser x) {
     return users.insert(x);
@@ -150,12 +134,7 @@ public class SystemManagementRepository {
     return roles.deleteById(id);
   }
 
-  public long childOrganizationCount(long tenant, Long id) {
-    return orgs.selectCount(
-        new LambdaQueryWrapper<OrgUnit>()
-            .eq(OrgUnit::getTenantId, tenant)
-            .eq(OrgUnit::getParentId, id));
-  }
+
 
   public long organizationUserCount(long tenant, Long id) {
     return users.selectCount(
@@ -172,23 +151,9 @@ public class SystemManagementRepository {
             .eq(BaseItem::getCompanyOrgId, id));
   }
 
-  public long rootCount(long tenant, Long current) {
-    var q =
-        new LambdaQueryWrapper<OrgUnit>()
-            .eq(OrgUnit::getTenantId, tenant)
-            .isNull(OrgUnit::getParentId);
-    if (current != null) q.ne(OrgUnit::getId, current);
-    return orgs.selectCount(q);
-  }
 
-  public long orgCodeCount(long tenant, String code, Long current) {
-    var q =
-        new LambdaQueryWrapper<OrgUnit>()
-            .eq(OrgUnit::getTenantId, tenant)
-            .eq(OrgUnit::getCode, code.trim());
-    if (current != null) q.ne(OrgUnit::getId, current);
-    return orgs.selectCount(q);
-  }
+
+
 
   public long accountCount(long tenant, String account, Long current) {
     var q =
@@ -255,13 +220,7 @@ public class SystemManagementRepository {
     relations.saveGrant(row);
   }
 
-  public long organizationCount(long tenant, String type, List<Long> ids) {
-    return orgs.selectCount(
-        new LambdaQueryWrapper<OrgUnit>()
-            .eq(OrgUnit::getTenantId, tenant)
-            .eq(OrgUnit::getOrgType, type)
-            .in(OrgUnit::getId, ids));
-  }
+
 
   public boolean businessReferences(long tenant, Long id) {
 
