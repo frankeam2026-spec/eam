@@ -39,6 +39,11 @@ public class EquipmentBomRepository {
     mapper.insert(relation);
   }
 
+  public void addBatch(List<EquipmentBom> relations) {
+    if (relations.isEmpty()) return;
+    mapper.insertBatch(relations);
+  }
+
   /** 关联展示查询集中于所属Repository，单条与批量调用共用。 */
   public List<Map<String, Object>> viewRows(long tenant, List<Long> ids) {
     if (ids.isEmpty()) return List.of();
