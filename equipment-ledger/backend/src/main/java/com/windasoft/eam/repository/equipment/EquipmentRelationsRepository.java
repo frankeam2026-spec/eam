@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 import org.springframework.stereotype.Repository;
 
 /** 设备层级候选项专用只读查询，关联关系的写入归属 EquipmentChildRepository。 */
+/** 设备关联数据访问：统一读取及维护设备关联，不在仓储层作权限授予。 */
 @Repository
 public class EquipmentRelationsRepository {
   private final EquipmentMapper equipment;
