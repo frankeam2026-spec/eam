@@ -80,6 +80,7 @@ public class UserManagementService {
     return Map.of("data", userView(x));
   }
 
+  @Transactional
   public Map<String, Object> userStatus(Long id, Map<String, Integer> body) {
     var x = requireUser(id);
     permissions.checkUser("user", "停用", x);
