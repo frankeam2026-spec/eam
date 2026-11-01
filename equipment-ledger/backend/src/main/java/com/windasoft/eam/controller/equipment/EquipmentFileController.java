@@ -13,6 +13,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1/equipment/files")
+/**
+ * 设备附件接口：统一处理文件上传、访问和删除请求，存储和设备关联规则交由文件服务处理。
+ */
 public class EquipmentFileController {
   private final EquipmentFileService files;
 
