@@ -83,6 +83,22 @@ public class SystemUserRepository {
     if (current != null) q.ne(SystemUser::getId, current);
     return mapper.selectCount(q);
   }
+  public Map<Long, Map<String, Object>> emailProfiles(
+      long tenant, java.util.Collection<Long> ids) {
+    if (ids.isEmpty()) return Map.of();
+    var args = new java.util.ArrayList<Object>();
+    args.add(tenant);
+    args.addAll(ids);
+    var result = new java.util.HashMap<Long, Map<String, Object>>();
+    for (var row : db.queryForList(
+        "SELECT id,email,email_version FROM eam_sys_user WHERE tenant_id=? AND id IN ("
+            + String.join(",", java.util.Collections.nCopies(ids.size(), "?")) + ")",
+        args.toArray())) {
+      result.put(((Number) row.get("id")).longValue(), row);
+    }
+    return result;
+  }
+
   public Map<String, Object> emailProfile(long tenant, long user) {
     return db.queryForMap(
         "SELECT email,email_version FROM eam_sys_user WHERE tenant_id=? AND id=?",
