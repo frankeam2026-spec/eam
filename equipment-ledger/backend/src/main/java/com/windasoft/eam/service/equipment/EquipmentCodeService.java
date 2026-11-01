@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 /**
  * 设备编号规则：负责生成及核对设备编号，业务服务不直接拼接或推断编号。
  */
+/** 设备编号规则：集中处理编号生成与校验，调用方不应自行拼接编号。 */
 @Service
 public class EquipmentCodeService {
   private final EquipmentWriteRepository equipment;
