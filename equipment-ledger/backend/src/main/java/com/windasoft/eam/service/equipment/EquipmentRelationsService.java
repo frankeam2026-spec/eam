@@ -81,12 +81,14 @@ public class EquipmentRelationsService {
     return e;
   }
 
+  /** 变更设备归属前检查现有关联约束，避免移动后留下不一致的业务关系。 */
   public void checkMove(Equipment old, Equipment target) {
     if (!Objects.equals(old.getCompanyOrgId(), target.getCompanyOrgId())
         && childRepository.countRelations(auth.tenantId(), old.getId()) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0011");
   }
 
+  /** 删除设备前检查业务关联；不能仅因为设备主体可删除就级联删除其他领域数据。 */
   public void checkDelete(long id) {
     if (childRepository.countRelations(auth.tenantId(), id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0012");
