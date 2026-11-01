@@ -7,6 +7,7 @@ import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/** 维修工单关联数据的持久化装配：批量读写附件和协同人员关系，不负责审批或状态流转。 */
 @Repository
 public class RepairRelationsRepository {
   private final JdbcTemplate db;
