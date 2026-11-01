@@ -2,7 +2,8 @@ package com.windasoft.eam.service.repair;
 
 import com.windasoft.eam.domain.repair.RepairOrderStatus;
 import com.windasoft.eam.domain.repair.RepairApprovalGate;
-import com.windasoft.eam.domain.repair.RepairNoticeKind;import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.domain.repair.RepairNoticeKind;
+import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.repair.RepairWorkflowRepository;
 import com.windasoft.eam.service.inventory.InventoryMutex;
