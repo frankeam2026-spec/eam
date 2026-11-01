@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 设备自然语言助手查询的参数约束、时间范围解析和只读查询编排。 */
+/** 设备智能查询入口：向助手提供受租户及权限约束的设备查询能力。 */
 @Service
 public class EquipmentAssistantQueryService {
   private final EquipmentAssistantRepository assistantRepository;
