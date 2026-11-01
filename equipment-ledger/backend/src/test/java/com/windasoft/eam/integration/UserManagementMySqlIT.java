@@ -9,7 +9,7 @@ import com.windasoft.eam.repository.system.AuthenticationRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import com.windasoft.eam.service.system.UserManagementService;
-import java.util.Map;
+import com.windasoft.eam.dto.system.UserStatusForm;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,7 +61,7 @@ class UserManagementMySqlIT {
 
     assertThrows(
         IllegalStateException.class,
-        () -> users.userStatus(id, Map.of("status", 0)));
+        () -> users.userStatus(id, new UserStatusForm(0)));
     Integer actual = db.queryForObject(
         "SELECT status FROM eam_sys_user WHERE tenant_id=? AND id=?",
         Integer.class,
