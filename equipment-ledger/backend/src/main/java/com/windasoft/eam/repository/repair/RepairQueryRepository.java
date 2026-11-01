@@ -10,6 +10,7 @@ import java.util.*;
 import java.util.function.*;
 import org.springframework.stereotype.Repository;
 
+/** 维修数据库查询：负责查询条件、稳定排序与分页，权限范围由上层传入。 */
 @Repository
 public class RepairQueryRepository {
   private final RepairRelationsRepository collaborators;

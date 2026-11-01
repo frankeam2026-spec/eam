@@ -19,6 +19,7 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+/** 维修工单 HTTP 入口：负责协议转换与请求分发；状态、权限及业务校验由 Service 执行。 */
 @RestController
 @RequestMapping("/api/v1/repairs")
 public class RepairOrderController {
@@ -147,6 +148,7 @@ public class RepairOrderController {
     return Map.of("data", result);
   }
 
+  /** 兼容现有按 action 区分的请求结构，具体动作字段由工作流服务校验。 */
   @PostMapping("/{id}/workflow")
   public Map<String, Object> workflowAction(
       @PathVariable long id, @RequestParam int rowVersion, @RequestBody JsonNode body) {

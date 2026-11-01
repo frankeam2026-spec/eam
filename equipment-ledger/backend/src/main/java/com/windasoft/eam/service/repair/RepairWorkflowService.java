@@ -18,6 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * 维修状态流转的事务编排入口：协调派工、接单、处理、验收、材料及履历。
+ * 跨工单、待办和库存的写入保持同一事务，不按代码行数机械拆分职责。
+ */
 @Service
 public class RepairWorkflowService {
   @org.springframework.beans.factory.annotation.Autowired private RepairApprovalService approvals;
@@ -134,6 +138,10 @@ public class RepairWorkflowService {
         .toList();
   }
 
+  /**
+   * 执行动作前先获取互斥锁与工单数据库锁，再校验客户端版本。
+   * 后续任一业务校验失败时依靠事务回滚，避免状态和领料记录部分写入。
+   */
   @Transactional
   public RepairOrder action(long id, int version, JsonNode body) {
     experienceInventoryMutex.enter();
@@ -457,6 +465,7 @@ public class RepairWorkflowService {
   @org.springframework.beans.factory.annotation.Autowired
   private com.windasoft.eam.service.experience.MaterialCustodyService custody;
 
+  /** 写入维修审计事件并发布状态事件；调用者负责保持业务事务边界。 */
   public void record(RepairOrder row, String action, Object details) {
     experiencePublisher.publishEvent(
         new com.windasoft.eam.event.experience.ExperienceEvents.RepairState(

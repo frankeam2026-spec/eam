@@ -6,7 +6,10 @@ import java.util.List;
 import java.util.Map;
 import org.apache.ibatis.annotations.*;
 
-/** Fixed, parameterized workflow queries. No mapper XML or user supplied SQL. */
+/**
+ * 维修工作流专用 SQL：执行工单行锁、派工候选人、待办与材料的受租户约束的数据操作。
+ * SQL 只负责持久化条件，不在 Mapper 内决定业务状态或用户权限。
+ */
 @Mapper
 public interface RepairWorkflowMapper {
   @Select(
@@ -16,6 +19,7 @@ public interface RepairWorkflowMapper {
           + " status='待接单'))")
   boolean personalAccess(long tenant, long userId);
 
+  /** 对同一工单的并发状态操作加行锁；上层必须在事务内调用并检查行版本。 */
   @Select(
       "SELECT * FROM eam_repair_order WHERE tenant_id=#{tenant} AND id=#{id} AND deleted=0 FOR"
           + " UPDATE")
@@ -135,6 +139,7 @@ public interface RepairWorkflowMapper {
   @Select("SELECT * FROM eam_spare_stock WHERE tenant_id=#{tenant} AND id=#{id} FOR UPDATE")
   Map<String, Object> lockStock(long tenant, long id);
 
+  /** 扣减库存时同时检查余额，防止并发请求产生负库存。 */
   @Update(
       "UPDATE eam_spare_stock SET quantity=quantity-#{quantity} WHERE tenant_id=#{tenant} AND"
           + " id=#{id} AND quantity>=#{quantity}")

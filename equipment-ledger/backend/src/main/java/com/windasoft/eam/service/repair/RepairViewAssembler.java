@@ -8,6 +8,7 @@ import java.util.Map;
 import org.springframework.stereotype.Component;
 
 @Component
+/** 维修工单对外视图装配器：只转换显示字段，不决定权限或改变业务状态。 */
 public class RepairViewAssembler {
   @org.springframework.beans.factory.annotation.Autowired
   private com.windasoft.eam.service.business.BusinessValueService custom;
