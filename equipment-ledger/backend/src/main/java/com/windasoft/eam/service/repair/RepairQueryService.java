@@ -1,5 +1,6 @@
 package com.windasoft.eam.service.repair;
 
+import com.windasoft.eam.domain.repair.RepairQueue;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -24,7 +25,7 @@ public class RepairQueryService {
   private com.windasoft.eam.service.business.BusinessQueryService customQueries;
 
   private static final List<String> QUEUES =
-      List.of("pending", "owned", "mine", "accept", "created", "dispatch", "all");
+      java.util.Arrays.stream(RepairQueue.values()).map(RepairQueue::code).toList();
   private static final List<String> EXPORT_FIELDS =
       List.of(
           "orderNo",

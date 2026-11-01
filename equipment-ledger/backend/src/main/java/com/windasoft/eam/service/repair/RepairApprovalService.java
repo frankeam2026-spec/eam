@@ -1,5 +1,9 @@
 package com.windasoft.eam.service.repair;
 
+import com.windasoft.eam.domain.repair.RepairOrderStatus;
+import com.windasoft.eam.domain.repair.RepairApprovalGate;
+import com.windasoft.eam.domain.repair.RepairNoticeKind;
+import com.windasoft.eam.domain.repair.RepairEventLabel;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.repair.RepairWorkflowRepository;
@@ -42,20 +46,20 @@ public class RepairApprovalService {
   public void prepare(RepairOrder row) {
     if (row.getCompanyOrgId() == null) throw new IllegalArgumentException("报修设备尚未设置所属公司");
     boolean required = runtime.repairApprovalRequired(row.getCompanyOrgId());
-    row.setApprovalGate(required ? "REQUIRED" : "EXEMPT");
-    row.setStatus(required ? "审批中" : "待派工");
+    row.setApprovalGate(required ? RepairApprovalGate.REQUIRED.code() : RepairApprovalGate.EXEMPT.code());
+    row.setStatus(required ? RepairOrderStatus.PENDING_APPROVAL.code() : RepairOrderStatus.PENDING_DISPATCH.code());
     if (!required) row.setApprovalReadyAt(row.getReportedAt());
   }
 
   public void start(RepairOrder row) {
-    if ("REQUIRED".equals(row.getApprovalGate()))
+    if (RepairApprovalGate.REQUIRED.code().equals(row.getApprovalGate()))
       runtime.start("repair_report", row.getId(), row.getCompanyOrgId(), row.getReporterUserId());
   }
 
   /** 需要审批的报修必须获得实际审批通过；历史与豁免记录按现有策略放行。 */
   public void requireReleased(RepairOrder row) {
-    if (!Set.of("LEGACY", "EXEMPT").contains(Objects.toString(row.getApprovalGate(), ""))
-        && !("REQUIRED".equals(row.getApprovalGate())
+    if (!Set.of(RepairApprovalGate.LEGACY.code(), RepairApprovalGate.EXEMPT.code()).contains(Objects.toString(row.getApprovalGate(), ""))
+        && !(RepairApprovalGate.REQUIRED.code().equals(row.getApprovalGate())
             && runtime.approved("repair_report", row.getId())))
       throw new IllegalArgumentException("报修尚未审批通过，不能进入维修处理流程");
   }
@@ -63,7 +67,7 @@ public class RepairApprovalService {
   public void requireCompanyChangeAllowed(Long originalCompany, RepairOrder row) {
     if (Objects.equals(originalCompany, row.getCompanyOrgId())) return;
     if (row.getCompanyOrgId() == null) throw new IllegalArgumentException("报修设备尚未设置所属公司");
-    if ("REQUIRED".equals(row.getApprovalGate())
+    if (RepairApprovalGate.REQUIRED.code().equals(row.getApprovalGate())
         || runtime.repairApprovalRequired(row.getCompanyOrgId()))
       throw new IllegalArgumentException("涉及审批的报修不能通过更换设备改变所属公司");
   }
@@ -80,8 +84,8 @@ public class RepairApprovalService {
     var row = repository.findOrder(auth.tenantId(), id);
     if (row == null
         || Integer.valueOf(1).equals(row.getDeleted())
-        || !"审批中".equals(row.getStatus())
-        || !"REQUIRED".equals(row.getApprovalGate()))
+        || !RepairOrderStatus.PENDING_APPROVAL.code().equals(row.getStatus())
+        || !RepairApprovalGate.REQUIRED.code().equals(row.getApprovalGate()))
       throw new IllegalArgumentException("报修已不处于审批中");
   }
 
@@ -89,22 +93,22 @@ public class RepairApprovalService {
   public void approved(long id) {
     var row = lock(id);
     requireActive(id);
-    row.setStatus("待派工");
+    row.setStatus(RepairOrderStatus.PENDING_DISPATCH.code());
     row.setApprovalReadyAt(LocalDateTime.now());
     VersionGuard.updated(repository.updateOrder(row));
-    record(row, "报修审批通过");
-    notifyReporter(row, "报修审批通过", false);
+    record(row, RepairEventLabel.APPROVAL_APPROVED.code());
+    notifyReporter(row, RepairNoticeKind.APPROVAL_APPROVED.code(), false);
   }
 
   /** 审批运行时回调：退回至待提交，并更新关联待办及通知。 */
   public void returned(long id, String reason) {
     var row = lock(id);
     requireActive(id);
-    row.setStatus("待提交");
+    row.setStatus(RepairOrderStatus.PENDING_SUBMISSION.code());
     VersionGuard.updated(repository.updateOrder(row));
     record(row, reason);
     repository.closeApprovalReturnTodos(auth.tenantId(), id);
-    notifyReporter(row, "报修待修改", true);
+    notifyReporter(row, RepairNoticeKind.REPORT_REVISION.code(), true);
   }
 
   @Transactional
@@ -114,12 +118,12 @@ public class RepairApprovalService {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅报修人可以重新提交");
     permissions.checkRepair(row, "报修");
     VersionGuard.check(row.getRowVersion(), version);
-    if (!"待提交".equals(row.getStatus())) throw new IllegalArgumentException("只有退回的报修可以重新提交");
-    row.setStatus("审批中");
+    if (!RepairOrderStatus.PENDING_SUBMISSION.code().equals(row.getStatus())) throw new IllegalArgumentException("只有退回的报修可以重新提交");
+    row.setStatus(RepairOrderStatus.PENDING_APPROVAL.code());
     VersionGuard.updated(repository.updateOrder(row));
     start(row);
     repository.closeApprovalReturnTodos(auth.tenantId(), id);
-    record(row, "重新提交报修审批");
+    record(row, RepairEventLabel.APPROVAL_RESUBMITTED.code());
   }
 
   public Object history(long id) {

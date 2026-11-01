@@ -1,5 +1,9 @@
 package com.windasoft.eam.service.repair;
 
+import com.windasoft.eam.domain.repair.RepairOrderStatus;
+import com.windasoft.eam.domain.repair.RepairMethod;
+import com.windasoft.eam.domain.repair.RepairNoticeKind;
+import com.windasoft.eam.domain.repair.RepairWorkflowAction;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -111,7 +115,7 @@ public class RepairWorkflowService {
     result.put("installed", flow.installed(auth.tenantId(), eq.getId()));
     result.put(
         "canClaim",
-        "待接单".equals(row.getStatus()) && flow.candidate(auth.tenantId(), id, auth.userId()) > 0);
+        RepairOrderStatus.PENDING_CLAIM.code().equals(row.getStatus()) && flow.candidate(auth.tenantId(), id, auth.userId()) > 0);
     result.put("canProcess", isOwner(row));
     result.put("canAccept", canAccept(row));
     result.put("canDispatch", canDispatch(row));
@@ -120,7 +124,7 @@ public class RepairWorkflowService {
     result.put("approvalRounds", approvals.history(id));
     result.put(
         "canResubmit",
-        "待提交".equals(row.getStatus()) && Objects.equals(row.getReporterUserId(), auth.userId()));
+        RepairOrderStatus.PENDING_SUBMISSION.code().equals(row.getStatus()) && Objects.equals(row.getReporterUserId(), auth.userId()));
     return result;
   }
 
@@ -154,14 +158,14 @@ public class RepairWorkflowService {
     Map<String, Object> details = new LinkedHashMap<>();
     details.put("before", previous);
     String label;
-    switch (action) {
-      case "dispatch", "transfer" -> {
+    switch (RepairWorkflowAction.parse(action)) {
+      case DISPATCH, TRANSFER -> {
         if (action.equals("dispatch")) {
           permissions.checkRepair(row, "派工");
-          state(row, "待派工");
+          state(row, RepairOrderStatus.PENDING_DISPATCH.code());
         } else {
           if (!isOwner(row)) permissions.checkRepair(row, "派工");
-          state(row, "处理中", "挂起", "待接单");
+          state(row, RepairOrderStatus.PROCESSING.code(), RepairOrderStatus.SUSPENDED.code(), RepairOrderStatus.PENDING_CLAIM.code());
           String reason = text(body, "reason", 2000);
           details.put("reason", reason);
         }
@@ -175,28 +179,28 @@ public class RepairWorkflowService {
         flow.clearCandidates(auth.tenantId(), id);
         for (long userId : ids) {
           flow.addCandidate(IdWorker.getId(), auth.tenantId(), id, userId);
-          todo(row, userId, "待接单", true);
+          todo(row, userId, RepairNoticeKind.PENDING_CLAIM.code(), true);
         }
         row.setDispatcherUserId(auth.userId());
         row.setAssigneeUserId(null); // Explicit SQL clears the previous owner (MP skips nulls).
         row.setAssignee(String.join("、", names));
         if (action.equals("dispatch")) row.setDispatchedAt(LocalDateTime.now());
-        row.setStatus("待接单");
+        row.setStatus(RepairOrderStatus.PENDING_CLAIM.code());
         flow.clearOwner(auth.tenantId(), id);
         if (!ids.contains(auth.userId())) todo(row, auth.userId(), "等待接单", true);
         details.put("recipients", names);
         label = action.equals("dispatch") ? "派工" : "转派";
       }
-      case "claim" -> {
+      case CLAIM -> {
         row.setClaimedAt(LocalDateTime.now());
-        state(row, "待接单");
+        state(row, RepairOrderStatus.PENDING_CLAIM.code());
         if (flow.candidate(auth.tenantId(), id, auth.userId()) == 0) deny();
         row.setAssigneeUserId(auth.userId());
         row.setAssignee(auth.user().getDisplayName());
-        row.setStatus("处理中");
+        row.setStatus(RepairOrderStatus.PROCESSING.code());
         flow.claim(auth.tenantId(), id, auth.userId());
         flow.closeTodos(auth.tenantId(), id);
-        todo(row, auth.userId(), "待处理", true);
+        todo(row, auth.userId(), RepairNoticeKind.PENDING_PROCESS.code(), true);
         for (var candidate : flow.candidates(auth.tenantId(), id))
           if (!String.valueOf(auth.userId()).equals(candidate.get("id")))
             todo(
@@ -206,12 +210,12 @@ public class RepairWorkflowService {
                 false);
         if (row.getDispatcherUserId() != null
             && !Objects.equals(row.getDispatcherUserId(), auth.userId()))
-          todo(row, row.getDispatcherUserId(), "已接单", false);
+          todo(row, row.getDispatcherUserId(), RepairNoticeKind.CLAIMED.code(), false);
         label = "接单";
       }
-      case "process" -> {
+      case PROCESS -> {
         owner(row);
-        state(row, "处理中");
+        state(row, RepairOrderStatus.PROCESSING.code());
         custom.save(
             "repair_process",
             id,
@@ -222,7 +226,7 @@ public class RepairWorkflowService {
         String content = text(body, "content", 20000), method = text(body, "repairMethod", 20);
         if (content.isBlank())
           throw new com.windasoft.eam.common.FieldValidationException("content", "请填写处理内容");
-        if (!Set.of("自修", "外协").contains(method))
+        if (!Set.of(RepairMethod.INTERNAL.code(), RepairMethod.EXTERNAL.code()).contains(method))
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.repair.message0014");
         var typeItem =
@@ -295,30 +299,30 @@ public class RepairWorkflowService {
             throw new com.windasoft.eam.common.LocalizedArgumentException(
                 "server.repair.message0015");
           row.setCompletedAt(LocalDateTime.now());
-          row.setStatus("待验收");
+          row.setStatus(RepairOrderStatus.PENDING_ACCEPTANCE.code());
           flow.closeTodos(auth.tenantId(), id);
           Set<Long> recipients = new HashSet<>();
           recipients.add(row.getReporterUserId());
           for (var candidate : flow.activeUsers(auth.tenantId()))
             if (permissions.canAccept(candidate, row)) recipients.add(candidate.getId());
-          for (long userId : recipients) todo(row, userId, "待验收", true);
+          for (long userId : recipients) todo(row, userId, RepairNoticeKind.PENDING_ACCEPTANCE.code(), true);
         }
         label = resolved ? "提交验收" : "记录处理";
       }
-      case "suspend", "resume" -> {
+      case SUSPEND, RESUME -> {
         owner(row);
-        state(row, action.equals("suspend") ? "处理中" : "挂起");
+        state(row, action.equals("suspend") ? RepairOrderStatus.PROCESSING.code() : RepairOrderStatus.SUSPENDED.code());
         String reason = text(body, "reason", 2000);
         if (reason.isBlank())
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.repair.message0016");
-        row.setStatus(action.equals("suspend") ? "挂起" : "处理中");
+        row.setStatus(action.equals("suspend") ? RepairOrderStatus.SUSPENDED.code() : RepairOrderStatus.PROCESSING.code());
         details.put("reason", reason);
-        label = action.equals("suspend") ? "挂起" : "恢复处理";
+        label = action.equals("suspend") ? RepairOrderStatus.SUSPENDED.code() : "恢复处理";
       }
-      case "outsource" -> {
+      case OUTSOURCE -> {
         owner(row);
-        state(row, "处理中", "挂起");
+        state(row, RepairOrderStatus.PROCESSING.code(), RepairOrderStatus.SUSPENDED.code());
         String vendor = text(body, "vendor", 200);
         if (vendor.isBlank())
           throw new com.windasoft.eam.common.LocalizedArgumentException(
@@ -329,9 +333,9 @@ public class RepairWorkflowService {
         details.put("reason", text(body, "reason", 2000));
         label = "委外";
       }
-      case "accept", "reject", "return" -> {
+      case ACCEPT, REJECT, RETURN -> {
         var decision = AcceptanceDecision.parse(action);
-        state(row, "待验收");
+        state(row, RepairOrderStatus.PENDING_ACCEPTANCE.code());
         if (!canAccept(row)) deny();
         int score = body.path("score").asInt(0);
         if (score < 1 || score > 5)
@@ -352,7 +356,7 @@ public class RepairWorkflowService {
         details.put("comment", comment);
         details.put("attachments", read(attachments(body.get("attachments"))));
         row.setAcceptanceComment(comment);
-        row.setStatus(decision == AcceptanceDecision.ACCEPT ? "已完成" : "处理中");
+        row.setStatus(decision == AcceptanceDecision.ACCEPT ? RepairOrderStatus.COMPLETED.code() : RepairOrderStatus.PROCESSING.code());
         flow.closeTodos(auth.tenantId(), id);
         todo(
             row,
@@ -368,12 +372,12 @@ public class RepairWorkflowService {
               false);
         label = decision == AcceptanceDecision.ACCEPT ? "验收通过" : "验收打回";
       }
-      case "material" ->
+      case MATERIAL ->
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.repair.message0019");
-      case "cancelMaterial" -> {
+      case CANCEL_MATERIAL -> {
         owner(row);
-        state(row, "处理中", "挂起");
+        state(row, RepairOrderStatus.PROCESSING.code(), RepairOrderStatus.SUSPENDED.code());
         long materialId = id(body, "materialId");
         if (flow.cancelMaterial(auth.tenantId(), materialId, id) != 1)
           throw new com.windasoft.eam.common.LocalizedArgumentException(
@@ -384,12 +388,12 @@ public class RepairWorkflowService {
             .noneMatch(x -> "待出库".equals(x.get("status"))))
           flow.closeIssueTodos(auth.tenantId(), id);
       }
-      case "issue" ->
+      case ISSUE ->
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.repair.message0021");
-      case "install" -> {
+      case INSTALL -> {
         owner(row);
-        state(row, "处理中");
+        state(row, RepairOrderStatus.PROCESSING.code());
         var eq = equipment(row);
         long materialId = id(body, "materialId");
         var material = flow.lockMaterial(auth.tenantId(), materialId, id);
@@ -413,9 +417,9 @@ public class RepairWorkflowService {
         details.putAll(Map.of("name", name, "quantity", quantity));
         label = "换上备件";
       }
-      case "remove" -> {
+      case REMOVE -> {
         owner(row);
-        state(row, "处理中");
+        state(row, RepairOrderStatus.PROCESSING.code());
         var eq = equipment(row);
         long installedId = id(body, "installedId");
         var installed =

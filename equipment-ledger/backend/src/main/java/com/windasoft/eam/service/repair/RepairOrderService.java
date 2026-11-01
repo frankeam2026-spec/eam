@@ -1,5 +1,7 @@
 package com.windasoft.eam.service.repair;
 
+import com.windasoft.eam.domain.repair.RepairOrderStatus;
+import com.windasoft.eam.domain.repair.RepairApprovalGate;
 import com.fasterxml.jackson.databind.*;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.dto.repair.RepairAction;
@@ -57,7 +59,7 @@ public class RepairOrderService {
             .format(DateTimeFormatter.ofPattern("yyyyMM"));
     repository.nextMonthlyNumber("repair-" + auth.tenantId(), month);
     row.setOrderNo("wx-" + month + "-" + String.format("%04d", repository.currentValue()));
-    row.setStatus("待派工");
+    row.setStatus(RepairOrderStatus.PENDING_DISPATCH.code());
     row.setReportedAt(LocalDateTime.now());
     row.setRowVersion(0);
     row.setDeleted(0);
@@ -92,12 +94,12 @@ public class RepairOrderService {
   public Map<String, Object> update(Long id, RepairForm form, int rowVersion) {
     var row = require(id);
     boolean ownReturned =
-        "待提交".equals(row.getStatus()) && Objects.equals(row.getReporterUserId(), auth.userId());
+        RepairOrderStatus.PENDING_SUBMISSION.code().equals(row.getStatus()) && Objects.equals(row.getReporterUserId(), auth.userId());
     permissions.checkRepair(row, ownReturned ? "报修" : "编辑");
     VersionGuard.check(row.getRowVersion(), rowVersion);
     Long originalCompany = row.getCompanyOrgId();
-    if (!("待提交".equals(row.getStatus()) && Objects.equals(row.getReporterUserId(), auth.userId()))
-        && !("待派工".equals(row.getStatus()) && !"REQUIRED".equals(row.getApprovalGate())))
+    if (!(RepairOrderStatus.PENDING_SUBMISSION.code().equals(row.getStatus()) && Objects.equals(row.getReporterUserId(), auth.userId()))
+        && !(RepairOrderStatus.PENDING_DISPATCH.code().equals(row.getStatus()) && !RepairApprovalGate.REQUIRED.code().equals(row.getApprovalGate())))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0041");
     copy(form, row);
     setEquipment(row, form.equipmentCode());
@@ -160,7 +162,7 @@ public class RepairOrderService {
     VersionGuard.check(row.getRowVersion(), rowVersion);
     switch (request.action()) {
       case "dispatch" -> {
-        if (!"待派工".equals(row.getStatus())) throw invalid();
+        if (!RepairOrderStatus.PENDING_DISPATCH.code().equals(row.getStatus())) throw invalid();
         if (request.assignee() == null || request.assignee().isBlank())
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.repair.message0043");
@@ -169,10 +171,10 @@ public class RepairOrderService {
         if (row.getAssigneeUserId() == null)
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.repair.message0044");
-        next = "处理中";
+        next = RepairOrderStatus.PROCESSING.code();
       }
       case "complete" -> {
-        if (!"处理中".equals(row.getStatus())) throw invalid();
+        if (!RepairOrderStatus.PROCESSING.code().equals(row.getStatus())) throw invalid();
         if (request.repairAction() == null || request.repairAction().isBlank())
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.repair.message0045");
@@ -180,27 +182,27 @@ public class RepairOrderService {
         row.setDowntimeMinutes(
             Math.max(0, request.downtimeMinutes() == null ? 0 : request.downtimeMinutes()));
         row.setCompletedAt(LocalDateTime.now());
-        next = "待验收";
+        next = RepairOrderStatus.PENDING_ACCEPTANCE.code();
       }
       case "accept" -> {
-        if (!"待验收".equals(row.getStatus())) throw invalid();
-        next = "已完成";
+        if (!RepairOrderStatus.PENDING_ACCEPTANCE.code().equals(row.getStatus())) throw invalid();
+        next = RepairOrderStatus.COMPLETED.code();
       }
       case "reject", "return" -> {
-        if (!"待验收".equals(row.getStatus())) throw invalid();
-        next = "处理中";
+        if (!RepairOrderStatus.PENDING_ACCEPTANCE.code().equals(row.getStatus())) throw invalid();
+        next = RepairOrderStatus.PROCESSING.code();
       }
       case "suspend" -> {
-        if (!"处理中".equals(row.getStatus())) throw invalid();
-        next = "挂起";
+        if (!RepairOrderStatus.PROCESSING.code().equals(row.getStatus())) throw invalid();
+        next = RepairOrderStatus.SUSPENDED.code();
       }
       case "resume" -> {
-        if (!"挂起".equals(row.getStatus())) throw invalid();
-        next = "处理中";
+        if (!RepairOrderStatus.SUSPENDED.code().equals(row.getStatus())) throw invalid();
+        next = RepairOrderStatus.PROCESSING.code();
       }
       case "cancel" -> {
-        if (!"待派工".equals(row.getStatus())) throw invalid();
-        next = "已撤销";
+        if (!RepairOrderStatus.PENDING_DISPATCH.code().equals(row.getStatus())) throw invalid();
+        next = RepairOrderStatus.CANCELLED.code();
       }
       default ->
           throw new com.windasoft.eam.common.LocalizedArgumentException(
