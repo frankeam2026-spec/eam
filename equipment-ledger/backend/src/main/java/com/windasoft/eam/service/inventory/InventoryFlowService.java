@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.domain.inventory.InventoryReversalSourceKind;
 import com.windasoft.eam.common.inventory.InventoryMoney;
 import com.windasoft.eam.repository.inventory.InventoryOperationRepository;
 import com.windasoft.eam.service.system.AuthContext;
@@ -420,19 +421,19 @@ public class InventoryFlowService {
       if (sourceKind.isBlank()) sourceKind = "receipt";
       long sourceId = id(body.get("sourceId"));
       if (sourceId == 0) sourceId = id(body.get("receiptId"));
-      require(
-          Set.of("receipt", "issue", "returns", "transfers", "counts", "openings")
-              .contains(sourceKind),
-          com.windasoft.eam.common.MessageContext.text("server.inventory.message0102"));
+      // 冲销来源必须属于固定的单据类型集合；数据库表路由与已有接口编码保持一致。
+      var sourceType = InventoryReversalSourceKind.parse(sourceKind);
       String table =
-          sourceKind.equals("receipt")
-              ? "inv_receipt"
-              : sourceKind.equals("issue") ? "inv_issue" : "v_inv_operation";
+          switch (sourceType) {
+            case RECEIPT -> "inv_receipt";
+            case ISSUE -> "inv_issue";
+            default -> "v_inv_operation";
+          };
       var source = one(repository.loadSource(auth.tenantId(), sourceId, table));
       require(
           id(source.get("warehouse_id")) == warehouseId,
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0103"));
-      if (sourceKind.equals("issue"))
+      if (sourceType == InventoryReversalSourceKind.ISSUE)
         require(
             !flag(source.get("reversed")) && text(source, "status").equals("已出库"),
             com.windasoft.eam.common.MessageContext.text("server.inventory.message0104"));
@@ -1206,12 +1207,13 @@ public class InventoryFlowService {
 
   private void reverse(long doc, Map<String, Object> data) {
     String kind = text(data, "sourceKind");
+    var sourceType = InventoryReversalSourceKind.parse(kind);
     long source = id(data.get("sourceId"));
-    if (kind.equals("receipt")) {
+    if (sourceType == InventoryReversalSourceKind.RECEIPT) {
       reverseReceipt(doc, source);
       return;
     }
-    if (kind.equals("issue")) {
+    if (sourceType == InventoryReversalSourceKind.ISSUE) {
       var issue = one(repository.lockIssue(auth.tenantId(), source));
       require(
           !flag(issue.get("reversed")),
@@ -1246,7 +1248,7 @@ public class InventoryFlowService {
     require(
         id(sourceData.get("conversionMaterialId")) == 0,
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0155"));
-    if (kind.equals("openings") && id(sourceData.get("conversionMaterialId")) == 0)
+    if (sourceType == InventoryReversalSourceKind.OPENING && id(sourceData.get("conversionMaterialId")) == 0)
       reverseReceipt(doc, id(sourceData.get("receiptId")));
     else {
       var movements = repository.lockMovements(auth.tenantId(), source);
@@ -1256,7 +1258,7 @@ public class InventoryFlowService {
           undoLayer(doc, id(a.get("target_layer_id")), qty, ((BigDecimal) a.get("amount")));
       }
       for (var a : movements) if (((BigDecimal) a.get("quantity")).signum() < 0) restore(doc, a);
-      if (kind.equals("returns"))
+      if (sourceType == InventoryReversalSourceKind.RETURN)
         for (var line : lines(sourceData)) {
           var a = issueAllocation(id(line.get("allocationId")), true);
           var q = decimal(line.get("quantity"), false);
