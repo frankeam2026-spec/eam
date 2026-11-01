@@ -18,6 +18,7 @@ import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
 import com.windasoft.eam.service.business.BusinessValueService;
+import com.windasoft.eam.service.basedata.BaseDataType;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.util.List;
@@ -256,7 +257,11 @@ public class EquipmentCommandService {
     var base =
         (operation == EquipmentBatchOperation.LOCATION || operation == EquipmentBatchOperation.CATEGORY)
             ? baseItems.activeForShare(
-                auth.tenantId(), value, operation == EquipmentBatchOperation.LOCATION ? "LOCATION" : "CATEGORY")
+                auth.tenantId(),
+                value,
+                operation == EquipmentBatchOperation.LOCATION
+                    ? BaseDataType.LOCATION.code()
+                    : BaseDataType.CATEGORY.code())
             : null;
     if ((operation == EquipmentBatchOperation.LOCATION || operation == EquipmentBatchOperation.CATEGORY) && base == null) {
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0041");
