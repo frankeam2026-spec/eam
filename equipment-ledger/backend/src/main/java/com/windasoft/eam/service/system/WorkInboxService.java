@@ -4,6 +4,7 @@ import com.windasoft.eam.repository.system.WorkInboxRepository;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
+/** 待办服务：汇总业务任务投影，实际业务流转由对应业务模块处理。 */
 @Service
 public class WorkInboxService {
   private final WorkInboxRepository repository;
