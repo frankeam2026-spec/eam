@@ -9,6 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.Map;
 
 /** 系统用户自身数据的租户限定读取。 */
+/** 系统用户仓储：按租户访问用户主体和邮箱版本，身份及角色权限在服务层校验。 */
 @Repository
 public class SystemUserRepository {
   private final SystemUserMapper mapper;
