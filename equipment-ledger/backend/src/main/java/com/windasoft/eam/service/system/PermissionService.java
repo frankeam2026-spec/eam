@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+/** 统一权限入口：综合角色动作授权、组织数据范围和业务参与资格，服务端操作必须再次校验。 */
 @Service
 public class PermissionService {
   private final com.windasoft.eam.repository.system.AuthorizationRepository repository;
