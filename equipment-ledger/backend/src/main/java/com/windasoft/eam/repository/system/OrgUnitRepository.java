@@ -2,6 +2,7 @@ package com.windasoft.eam.repository.system;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.windasoft.eam.entity.system.OrgUnit;
+import java.util.List;
 import org.springframework.stereotype.Repository;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -64,4 +65,64 @@ public class OrgUnitRepository {
         after);
   }
 
+  public List<OrgUnit> organizations(long tenant) {
+    return mapper.selectList(
+        new LambdaQueryWrapper<OrgUnit>()
+            .eq(OrgUnit::getTenantId, tenant)
+            .orderByAsc(OrgUnit::getId));
+  }
+
+  public OrgUnit organization(long tenant, Long id) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<OrgUnit>().eq(OrgUnit::getTenantId, tenant).eq(OrgUnit::getId, id));
+  }
+
+  public OrgUnit organizationById(Long id) {
+    return mapper.selectById(id);
+  }
+
+  public int insertOrganization(OrgUnit x) {
+    return mapper.insert(x);
+  }
+
+  public int updateOrganization(OrgUnit x) {
+    return mapper.updateById(x);
+  }
+
+  public int deleteOrganization(Long id) {
+    return mapper.deleteById(id);
+  }
+
+  public long childOrganizationCount(long tenant, Long id) {
+    return mapper.selectCount(
+        new LambdaQueryWrapper<OrgUnit>()
+            .eq(OrgUnit::getTenantId, tenant)
+            .eq(OrgUnit::getParentId, id));
+  }
+
+  public long rootCount(long tenant, Long current) {
+    var q =
+        new LambdaQueryWrapper<OrgUnit>()
+            .eq(OrgUnit::getTenantId, tenant)
+            .isNull(OrgUnit::getParentId);
+    if (current != null) q.ne(OrgUnit::getId, current);
+    return mapper.selectCount(q);
+  }
+
+  public long orgCodeCount(long tenant, String code, Long current) {
+    var q =
+        new LambdaQueryWrapper<OrgUnit>()
+            .eq(OrgUnit::getTenantId, tenant)
+            .eq(OrgUnit::getCode, code.trim());
+    if (current != null) q.ne(OrgUnit::getId, current);
+    return mapper.selectCount(q);
+  }
+
+  public long organizationCount(long tenant, String type, List<Long> ids) {
+    return mapper.selectCount(
+        new LambdaQueryWrapper<OrgUnit>()
+            .eq(OrgUnit::getTenantId, tenant)
+            .eq(OrgUnit::getOrgType, type)
+            .in(OrgUnit::getId, ids));
+  }
 }
