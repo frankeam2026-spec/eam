@@ -1,6 +1,8 @@
 package com.windasoft.eam.service.workflow;
 
 import com.windasoft.eam.common.workflow.WorkflowExpression;
+import com.windasoft.eam.domain.workflow.WorkflowInstanceStatus;
+import com.windasoft.eam.domain.workflow.WorkflowApprovalStatus;
 import com.windasoft.eam.dto.workflow.WorkflowDefinition;
 import com.windasoft.eam.repository.workflow.*;
 import com.windasoft.eam.service.system.AuthContext;
@@ -55,7 +57,7 @@ public class WorkflowRuntimeService {
 
   public boolean approved(String business, long id) {
     var i = repository.latest(auth.tenantId(), business, id);
-    return i != null && "APPROVED".equals(i.get("state"));
+    return i != null && WorkflowInstanceStatus.APPROVED.code().equals(i.get("state"));
   }
 
   public boolean configured(long company, String business) {
@@ -72,7 +74,7 @@ public class WorkflowRuntimeService {
     adapter.lock(businessId);
     adapter.requireActive(businessId);
     var previous = repository.latest(auth.tenantId(), business, businessId);
-    if (previous != null && Set.of("RUNNING", "APPROVED").contains(previous.get("state")))
+    if (previous != null && Set.of(WorkflowInstanceStatus.RUNNING.code(), WorkflowInstanceStatus.APPROVED.code()).contains(previous.get("state")))
       throw new IllegalArgumentException("此申请已启动审批");
     var binding = repository.binding(auth.tenantId(), company, business);
     if (binding == null
@@ -143,7 +145,7 @@ public class WorkflowRuntimeService {
           > 0) return;
       adapter(instance.get("business_type").toString())
           .requireActive(number(instance, "business_id"));
-      repository.finish(auth.tenantId(), id, "APPROVED");
+      repository.finish(auth.tenantId(), id, WorkflowInstanceStatus.APPROVED.code());
       adapter(instance.get("business_type").toString()).approved(number(instance, "business_id"));
       repository.event(auth.tenantId(), id, null, "APPROVED", auth.userId(), "审批通过");
       return;
@@ -188,11 +190,12 @@ public class WorkflowRuntimeService {
                 a ->
                     number(a, "id") == approvalId
                         && number(a, "user_id") == auth.userId()
-                        && "PENDING".equals(a.get("state")))
+                        && WorkflowApprovalStatus.PENDING.code().equals(a.get("state")))
             .findFirst()
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "无此待办的审批权限"));
     if (approve) adapter.requireActive(number(instance, "business_id"));
-    repository.act(auth.tenantId(), approvalId, approve ? "APPROVED" : "REJECTED", opinion);
+    repository.act(auth.tenantId(), approvalId,
+        approve ? WorkflowApprovalStatus.APPROVED.code() : WorkflowApprovalStatus.REJECTED.code(), opinion);
     repository.touch(auth.tenantId(), instanceId);
     repository.event(
         auth.tenantId(),
@@ -205,7 +208,7 @@ public class WorkflowRuntimeService {
       engine
           .getRuntimeService()
           .deleteProcessInstance(instance.get("engine_instance_id").toString(), "驳回");
-      repository.finish(auth.tenantId(), instanceId, "REJECTED");
+      repository.finish(auth.tenantId(), instanceId, WorkflowInstanceStatus.REJECTED.code());
       adapter.returned(number(instance, "business_id"), "审批驳回");
     } else {
       var definition = definition(instance);
@@ -220,7 +223,7 @@ public class WorkflowRuntimeService {
                   .noneMatch(
                       a ->
                           Objects.equals(a.get("engine_task_id"), current.get("engine_task_id"))
-                              && "PENDING".equals(a.get("state")));
+                              && WorkflowApprovalStatus.PENDING.code().equals(a.get("state")));
       repository.closeTodos(auth.tenantId(), instanceId);
       if (complete) {
         repository.cancelNode(
@@ -250,7 +253,7 @@ public class WorkflowRuntimeService {
     engine
         .getRuntimeService()
         .deleteProcessInstance(instance.get("engine_instance_id").toString(), "申请人撤回");
-    repository.finish(auth.tenantId(), instanceId, "WITHDRAWN");
+    repository.finish(auth.tenantId(), instanceId, WorkflowInstanceStatus.WITHDRAWN.code());
     adapter.returned(number(instance, "business_id"), "撤回审批");
     repository.event(auth.tenantId(), instanceId, null, "WITHDRAW", auth.userId(), "申请人撤回");
     return history(instance.get("business_type").toString(), number(instance, "business_id"));
@@ -283,7 +286,7 @@ public class WorkflowRuntimeService {
   }
 
   private static void running(Map<String, Object> row, long version) {
-    if (!"RUNNING".equals(row.get("state")) || number(row, "row_version") != version)
+    if (!WorkflowInstanceStatus.RUNNING.code().equals(row.get("state")) || number(row, "row_version") != version)
       throw new IllegalArgumentException("审批状态已变化，请刷新后重试");
   }
 }
