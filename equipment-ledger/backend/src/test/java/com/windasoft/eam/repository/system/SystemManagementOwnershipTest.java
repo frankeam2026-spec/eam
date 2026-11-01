@@ -16,8 +16,16 @@ class SystemManagementOwnershipTest {
 
     assertTrue(orgMethods.contains("lockOrganizations"));
     assertTrue(orgMethods.contains("orgEvent"));
+    assertTrue(orgMethods.contains("insertOrganization"));
+    assertTrue(orgMethods.contains("updateOrganization"));
+    assertTrue(orgMethods.contains("deleteOrganization"));
+    assertTrue(orgMethods.contains("orgCodeCount"));
     assertFalse(managementMethods.contains("lockOrganizations"));
     assertFalse(managementMethods.contains("orgEvent"));
+    assertFalse(managementMethods.contains("insertOrganization"));
+    assertFalse(managementMethods.contains("updateOrganization"));
+    assertFalse(managementMethods.contains("deleteOrganization"));
+    assertFalse(managementMethods.contains("orgCodeCount"));
     assertFalse(managementMethods.contains("warehouseCount"));
     assertFalse(managementMethods.contains("warehouseChoices"));
   }
