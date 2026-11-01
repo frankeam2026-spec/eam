@@ -14,6 +14,7 @@ import com.windasoft.eam.repository.repair.RepairWorkflowMapper;
 import com.windasoft.eam.repository.system.SystemUserMapper;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
@@ -171,4 +172,34 @@ class RepairWorkflowServiceTest {
         ResponseStatusException.class,
         () -> service.action(1L, 4, json.readTree("{\"action\":\"suspend\",\"reason\":\"等待配件\"}")));
   }
+  @Test
+  void cancelLastPendingMaterialClosesIssueTodos() throws Exception {
+    row.setStatus("处理中");
+    row.setAssigneeUserId(73001L);
+    when(flow.cancelMaterial(10001L, 12L, 1L)).thenReturn(1);
+    when(flow.materials(10001L, 1L)).thenReturn(java.util.List.of());
+    when(orders.updateById(any(RepairOrder.class))).thenReturn(1);
+    when(orders.selectOne(any())).thenReturn(row);
+
+    service.action(1L, 4, json.readTree("{\"action\":\"cancelMaterial\",\"materialId\":12}"));
+
+    verify(flow).closeIssueTodos(10001L, 1L);
+    verify(flow).materials(10001L, 1L);
+  }
+
+  @Test
+  void cancelMaterialKeepsIssueTodosWhenAnotherIssueIsPending() throws Exception {
+    row.setStatus("处理中");
+    row.setAssigneeUserId(73001L);
+    when(flow.cancelMaterial(10001L, 12L, 1L)).thenReturn(1);
+    when(flow.materials(10001L, 1L))
+        .thenReturn(java.util.List.of(Map.of("status", "待出库")));
+    when(orders.updateById(any(RepairOrder.class))).thenReturn(1);
+    when(orders.selectOne(any())).thenReturn(row);
+
+    service.action(1L, 4, json.readTree("{\"action\":\"cancelMaterial\",\"materialId\":12}"));
+
+    verify(flow, never()).closeIssueTodos(anyLong(), anyLong());
+  }
+
 }
