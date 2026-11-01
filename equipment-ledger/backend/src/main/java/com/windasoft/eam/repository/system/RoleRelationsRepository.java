@@ -94,34 +94,26 @@ public class RoleRelationsRepository {
             .collect(java.util.stream.Collectors.groupingBy(RoleMenuPermission::getTenantId))
             .entrySet()) {
       var ids = group.getValue().stream().map(RoleMenuPermission::getId).toList();
-      var actions = read("eam_role_menu_action", "grant_id", group.getKey(), ids);
-      var scopes = read("eam_role_menu_scope", "grant_id", group.getKey(), ids);
-      var targets = read("eam_role_menu_target", "grant_id", group.getKey(), ids);
+      var actions = groupByGrant(read("eam_role_menu_action", "grant_id", group.getKey(), ids), "action_name");
+      var scopes = groupByGrant(read("eam_role_menu_scope", "grant_id", group.getKey(), ids), "scope_code");
+      var targets = groupByGrant(read("eam_role_menu_target", "grant_id", group.getKey(), ids), "target_id");
       for (var r : group.getValue()) {
-        r.setActionsJson(
-            encode(
-                actions.stream()
-                    .filter(
-                        v -> Objects.equals(((Number) v.get("grant_id")).longValue(), r.getId()))
-                    .map(v -> v.get("action_name"))
-                    .toList()));
-        r.setDataScopesJson(
-            encode(
-                scopes.stream()
-                    .filter(
-                        v -> Objects.equals(((Number) v.get("grant_id")).longValue(), r.getId()))
-                    .map(v -> v.get("scope_code"))
-                    .toList()));
-        r.setOrgIdsJson(
-            encode(
-                targets.stream()
-                    .filter(
-                        v -> Objects.equals(((Number) v.get("grant_id")).longValue(), r.getId()))
-                    .map(v -> v.get("target_id"))
-                    .toList()));
+        r.setActionsJson(encode(actions.getOrDefault(r.getId(), List.of())));
+        r.setDataScopesJson(encode(scopes.getOrDefault(r.getId(), List.of())));
+        r.setOrgIdsJson(encode(targets.getOrDefault(r.getId(), List.of())));
       }
     }
     return rows;
+  }
+
+  private static Map<Long, List<Object>> groupByGrant(
+      List<Map<String, Object>> rows, String valueColumn) {
+    var result = new HashMap<Long, List<Object>>();
+    for (var row : rows) {
+      var grantId = ((Number) row.get("grant_id")).longValue();
+      result.computeIfAbsent(grantId, ignored -> new ArrayList<>()).add(row.get(valueColumn));
+    }
+    return result;
   }
 
   public void saveRole(SystemRole row) {
