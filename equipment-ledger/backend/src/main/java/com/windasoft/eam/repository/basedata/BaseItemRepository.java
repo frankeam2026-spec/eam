@@ -30,4 +30,11 @@ public class BaseItemRepository {
   public BaseItem findById(Long id) {
     return mapper.selectById(id);
   }
+  public long locationCount(long tenant, Long id) {
+    return mapper.selectCount(
+        new LambdaQueryWrapper<BaseItem>()
+            .eq(BaseItem::getTenantId, tenant)
+            .eq(BaseItem::getItemType, "LOCATION")
+            .eq(BaseItem::getCompanyOrgId, id));
+  }
 }
