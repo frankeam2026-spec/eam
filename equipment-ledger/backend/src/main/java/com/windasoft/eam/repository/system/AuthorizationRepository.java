@@ -70,6 +70,18 @@ public class AuthorizationRepository {
                 .in(SystemRole::getId, ids)));
   }
 
+  public Map<Long, List<RoleMenuPermission>> grantsForRoles(
+      long tenant, Collection<Long> roleIds, String menu) {
+    if (roleIds.isEmpty()) return Map.of();
+    var q = new LambdaQueryWrapper<RoleMenuPermission>()
+        .eq(RoleMenuPermission::getTenantId, tenant)
+        .in(RoleMenuPermission::getRoleId, roleIds);
+    if (menu != null) q.eq(RoleMenuPermission::getMenuKey, menu);
+    var rows = relations.grants(grants.selectList(q));
+    return rows.stream().collect(java.util.stream.Collectors.groupingBy(
+        RoleMenuPermission::getRoleId));
+  }
+
   public List<RoleMenuPermission> grants(long tenant, Long role, String menu) {
     var q =
         new LambdaQueryWrapper<RoleMenuPermission>()
