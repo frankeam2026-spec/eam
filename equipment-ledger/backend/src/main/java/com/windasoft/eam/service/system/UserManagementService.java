@@ -3,6 +3,7 @@ package com.windasoft.eam.service.system;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.UserBatchForm;
 import com.windasoft.eam.dto.system.UserForm;
+import com.windasoft.eam.dto.system.UserStatusForm;
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
@@ -93,10 +94,12 @@ public class UserManagementService {
   }
 
   @Transactional
-  public Map<String, Object> userStatus(Long id, Map<String, Integer> body) {
+  public Map<String, Object> userStatus(Long id, UserStatusForm body) {
     var x = requireUser(id);
     permissions.checkUser("user", "停用", x);
-    int status = body.getOrDefault("status", 0);
+    if (body == null || body.status() == null)
+      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0037");
+    int status = body.status();
     if (status != 0 && status != 1)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0037");
     if (id.equals(auth.userId()) && status == 0)
