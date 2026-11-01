@@ -6,7 +6,7 @@ import com.windasoft.eam.dto.system.UserForm;
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
-import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.system.AuthenticationRepository;
 import com.windasoft.eam.repository.system.RoleManagementRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
@@ -17,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class UserManagementService {
-  private final SystemManagementRepository repository;
+  private final AuthenticationRepository sessions;
   private final RoleManagementRepository roleRepository;
   private final SystemUserRepository systemUsers;
   private final OrgUnitRepository orgUnits;
@@ -27,14 +27,14 @@ public class UserManagementService {
   private final BCryptPasswordEncoder passwords = new BCryptPasswordEncoder();
 
   public UserManagementService(
-      SystemManagementRepository repository,
+      AuthenticationRepository sessions,
       RoleManagementRepository roleRepository,
       SystemUserRepository systemUsers,
       OrgUnitRepository orgUnits,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json) {
-    this.repository = repository;
+    this.sessions = sessions;
     this.roleRepository = roleRepository;
     this.systemUsers = systemUsers;
     this.orgUnits = orgUnits;
@@ -84,7 +84,7 @@ public class UserManagementService {
     systemUsers.updateUser(x);
     if(f.email()!=null) {
       if(f.emailVersion()==null)throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0018");
-      com.windasoft.eam.common.VersionGuard.updated(repository.updateEmail(auth.tenantId(),id,f.email().trim(),f.emailVersion()));
+      com.windasoft.eam.common.VersionGuard.updated(systemUsers.updateEmail(auth.tenantId(),id,f.email().trim(),f.emailVersion()));
     }
     if (f.password() != null && !f.password().isBlank() || x.getStatus() == 0) revokeSessions(id);
     roleRepository.deleteUserRoles(auth.tenantId(), id);
@@ -169,7 +169,7 @@ public class UserManagementService {
   }
 
   private void revokeSessions(Long userId) {
-    repository.revokeSessions(auth.tenantId(), userId);
+    sessions.revokeSessions(auth.tenantId(), userId);
   }
 
   private void saveRoleLinks(Long userId, List<Long> ids) {
@@ -238,7 +238,7 @@ public class UserManagementService {
         ids,
         "status",
         x.getStatus() == 1 ? "启用" : "停用"));
-    var emailProfile=repository.emailProfile(auth.tenantId(),x.getId());
+    var emailProfile=systemUsers.emailProfile(auth.tenantId(),x.getId());
     result.put("email", Objects.toString(emailProfile.get("email"),Objects.toString(x.getEmail(),"")));
     result.put("emailVersion", emailProfile.getOrDefault("email_version",0));
     return result;
