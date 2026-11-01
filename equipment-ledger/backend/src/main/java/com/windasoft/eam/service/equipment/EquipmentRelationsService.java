@@ -20,6 +20,9 @@ import java.math.*;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
+/**
+ * 设备关联业务规则：维护父子设备及设备物料清单等关联，写入前检查关联对象及变更限制。
+ */
 @Service
 public class EquipmentRelationsService {
   final EquipmentRelationsRepository repository;
