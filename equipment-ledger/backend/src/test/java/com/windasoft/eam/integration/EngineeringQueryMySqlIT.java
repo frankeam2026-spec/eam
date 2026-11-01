@@ -1580,8 +1580,9 @@ class EngineeringQueryMySqlIT {
                         "全天安排",
                         "frequency",
                         "shift",
+                        // 每个检查安排必须显式绑定班次；计划级 shifts 不会自动替代安排的 slots。
                         "slots",
-                        List.of(),
+                        List.of(Map.of("id", "qa-shift", "name", "全天", "start", "00:00", "end", "23:59")),
                         "personMode",
                         "specified",
                         "followUpUserId",
@@ -1599,16 +1600,37 @@ class EngineeringQueryMySqlIT {
                                 "qa-ins-item")))));
             inspectionPlan.put("customFields", Map.of());
             inspectionPlan.put("customSchemaVersion", 0);
+            // 不传旧版间隔/时间窗口字段，验证班次安排按现有 API 可以直接保存。
             var created = inspectionDefinitions.save(kind, null, mutable(inspectionPlan));
             long planId = Long.parseLong(created.get("id").toString());
+            if (kind.equals("daily-plans")) {
+              var compatibility =
+                  db.queryForMap(
+                      "SELECT interval_count,window_minutes,CAST(start_time AS CHAR) start_time,"
+                          + " CAST(end_time AS CHAR) end_time FROM eam_inspection_daily_arrangement"
+                          + " WHERE tenant_id=10001 AND plan_id=?",
+                      planId);
+              assertEquals(1, ((Number) compatibility.get("interval_count")).intValue());
+              assertEquals(1, ((Number) compatibility.get("window_minutes")).intValue());
+              assertTrue(Objects.toString(compatibility.get("start_time")).startsWith("00:00"));
+              assertTrue(Objects.toString(compatibility.get("end_time")).startsWith("23:59"));
+            }
+            // 日常点检的任务级 type_id 按领域规则为空；周期巡检才直接记录计划类型 ID。
+            // 两者都要生成任务，不应以同一个 type_id 条件误判日常任务未生成。
             int count =
-                db.queryForObject(
-                    "SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001 AND plan_id=?"
-                        + " AND type_id=?",
-                    Integer.class,
-                    planId,
-                    Long.parseLong(inspectionType.get("id").toString()));
-            assertEquals(1, count);
+                kind.equals("daily-plans")
+                    ? db.queryForObject(
+                        "SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001"
+                            + " AND plan_id=? AND type_id IS NULL",
+                        Integer.class,
+                        planId)
+                    : db.queryForObject(
+                        "SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=10001"
+                            + " AND plan_id=? AND type_id=?",
+                        Integer.class,
+                        planId,
+                        Long.parseLong(inspectionType.get("id").toString()));
+            assertEquals(1, count, "计划应生成一条类型归属正确的任务：" + kind);
             inspectionDefinitions.generate(10001, planId);
             assertEquals(
                 count,
