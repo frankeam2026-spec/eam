@@ -58,6 +58,7 @@ class PermissionServiceTest {
     service =
         new PermissionService(
             auth,
+            mock(com.windasoft.eam.repository.inventory.InventoryQueryRepository.class),
             repository,
             new ObjectMapper(),
             new com.windasoft.eam.service.system.OrganizationScopeService(auth, repository));
