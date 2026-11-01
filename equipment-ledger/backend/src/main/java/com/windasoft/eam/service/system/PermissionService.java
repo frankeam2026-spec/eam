@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.PermissionScope;
+import com.windasoft.eam.domain.system.PermissionAction;
+import com.windasoft.eam.domain.system.PermissionMenu;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.entity.system.OrgUnit;
@@ -38,8 +40,28 @@ public class PermissionService {
     this.organizationScopes = organizationScopes;
   }
 
+  /**
+   * 保留字符串入口以兼容数据库授权、动态菜单和已有调用方；
+   * 领域代码优先通过类型安全重载避免拼错动作或菜单键。
+   */
   public void require(String menu, String action) {
     scopes(menu, action);
+  }
+
+  public void require(String menu, PermissionAction action) {
+    require(menu, action.code());
+  }
+
+  public void require(PermissionMenu menu, PermissionAction action) {
+    require(menu.code(), action.code());
+  }
+
+  public boolean allowed(String menu, PermissionAction action) {
+    return allowed(menu, action.code());
+  }
+
+  public boolean allowed(PermissionMenu menu, PermissionAction action) {
+    return allowed(menu.code(), action.code());
   }
 
   public boolean allowed(String menu, String action) {
