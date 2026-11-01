@@ -7,6 +7,7 @@ import com.windasoft.eam.dto.system.RoleForm;
 import com.windasoft.eam.entity.system.RoleMenuPermission;
 import com.windasoft.eam.entity.system.SystemRole;
 import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
 import java.util.*;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class RoleManagementService {
   private final SystemManagementRepository repository;
+  private final OrgUnitRepository orgUnits;
   private final InventoryQueryRepository inventoryQueries;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -22,11 +24,13 @@ public class RoleManagementService {
 
   public RoleManagementService(
       SystemManagementRepository repository,
+      OrgUnitRepository orgUnits,
       InventoryQueryRepository inventoryQueries,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json) {
     this.repository = repository;
+    this.orgUnits = orgUnits;
     this.inventoryQueries = inventoryQueries;
     this.auth = auth;
     this.permissions = permissions;
@@ -137,7 +141,7 @@ public class RoleManagementService {
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.system.message0061", menu);
         long count =
-            repository.organizationCount(
+            orgUnits.organizationCount(
                 auth.tenantId(), scopes.contains("companies") ? "公司" : "部门", ids);
         if (count != ids.size())
           throw new com.windasoft.eam.common.LocalizedArgumentException(
