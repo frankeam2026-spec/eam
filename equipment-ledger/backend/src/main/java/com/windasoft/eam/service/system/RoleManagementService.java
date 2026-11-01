@@ -45,7 +45,11 @@ public class RoleManagementService {
   public Map<String, Object> roles() {
     permissions.require("role", "查看");
     var rows = repository.roles(auth.tenantId());
-    return Map.of("data", rows.stream().map(this::roleView).toList());
+    var grantsByRole = repository.menuPermissionsForRoles(
+        auth.tenantId(), rows.stream().map(SystemRole::getId).toList());
+    return Map.of("data", rows.stream()
+        .map(role -> roleView(role, grantsByRole.getOrDefault(role.getId(), List.of())))
+        .toList());
   }
 
   @Transactional
@@ -290,8 +294,11 @@ public class RoleManagementService {
   }
 
   private Map<String, Object> roleView(SystemRole x) {
+    return roleView(x, repository.menuPermissions(auth.tenantId(), x.getId()));
+  }
+
+  private Map<String, Object> roleView(SystemRole x, List<RoleMenuPermission> rows) {
     Map<String, Object> grants = new LinkedHashMap<>();
-    var rows = repository.menuPermissions(auth.tenantId(), x.getId());
     for (var row : rows)
       grants.put(
           row.getMenuKey(),
