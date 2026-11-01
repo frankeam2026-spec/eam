@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.MenuGrantForm;
 import com.windasoft.eam.dto.system.RoleForm;
 import com.windasoft.eam.dto.system.RoleView;
+import com.windasoft.eam.domain.system.PermissionAction;
+import com.windasoft.eam.domain.system.PermissionMenu;
 import com.windasoft.eam.entity.system.RoleMenuPermission;
 import com.windasoft.eam.entity.system.SystemRole;
 import com.windasoft.eam.repository.system.RoleManagementRepository;
@@ -40,12 +42,12 @@ public class RoleManagementService {
   }
 
   public Object roleWarehouses() {
-    permissions.require("role", "授权");
+    permissions.require(PermissionMenu.ROLE, PermissionAction.AUTHORIZE);
     return Map.of("data", inventoryQueries.warehouseChoices(auth.tenantId()));
   }
 
   public Map<String, Object> roles() {
-    permissions.require("role", "查看");
+    permissions.require(PermissionMenu.ROLE, PermissionAction.VIEW);
     var rows = repository.roles(auth.tenantId());
     var grantsByRole = repository.menuPermissionsForRoles(
         auth.tenantId(), rows.stream().map(SystemRole::getId).toList());
@@ -56,8 +58,8 @@ public class RoleManagementService {
 
   @Transactional
   public Map<String, Object> createRole(RoleForm f) {
-    permissions.require("role", "新增");
-    permissions.require("role", "授权");
+    permissions.require(PermissionMenu.ROLE, PermissionAction.CREATE);
+    permissions.require(PermissionMenu.ROLE, PermissionAction.AUTHORIZE);
     checkRoleCode(f.code(), null);
     validateRoleForm(f);
     var x = new SystemRole();
@@ -70,8 +72,8 @@ public class RoleManagementService {
 
   @Transactional
   public Map<String, Object> updateRole(Long id, RoleForm f) {
-    permissions.require("role", "编辑");
-    permissions.require("role", "授权");
+    permissions.require(PermissionMenu.ROLE, PermissionAction.EDIT);
+    permissions.require(PermissionMenu.ROLE, PermissionAction.AUTHORIZE);
     var x = requireRole(id);
     checkRoleCode(f.code(), id);
     validateRoleForm(f);
@@ -83,7 +85,7 @@ public class RoleManagementService {
 
   @Transactional
   public Map<String, Object> deleteRole(Long id) {
-    permissions.require("role", "删除");
+    permissions.require(PermissionMenu.ROLE, PermissionAction.DELETE);
     requireRole(id);
     if (repository.roleUserCount(auth.tenantId(), id) > 0)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0052");
