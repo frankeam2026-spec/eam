@@ -6,7 +6,7 @@ import com.windasoft.eam.dto.system.MenuGrantForm;
 import com.windasoft.eam.dto.system.RoleForm;
 import com.windasoft.eam.entity.system.RoleMenuPermission;
 import com.windasoft.eam.entity.system.SystemRole;
-import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.system.RoleManagementRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
 import java.util.*;
@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RoleManagementService {
-  private final SystemManagementRepository repository;
+  private final RoleManagementRepository repository;
   private final OrgUnitRepository orgUnits;
   private final InventoryQueryRepository inventoryQueries;
   private final AuthContext auth;
@@ -23,7 +23,7 @@ public class RoleManagementService {
   private final ObjectMapper json;
 
   public RoleManagementService(
-      SystemManagementRepository repository,
+      RoleManagementRepository repository,
       OrgUnitRepository orgUnits,
       InventoryQueryRepository inventoryQueries,
       AuthContext auth,
