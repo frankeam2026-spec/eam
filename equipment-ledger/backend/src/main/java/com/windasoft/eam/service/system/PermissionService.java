@@ -10,6 +10,7 @@ import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
 import com.windasoft.eam.entity.system.SystemRole;
+import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
 import java.util.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,15 +20,18 @@ import org.springframework.web.server.ResponseStatusException;
 public class PermissionService {
   private final com.windasoft.eam.repository.system.AuthorizationRepository repository;
   private final AuthContext auth;
+  private final InventoryQueryRepository inventoryQueries;
   private final com.windasoft.eam.service.system.OrganizationScopeService organizationScopes;
   private final ObjectMapper json;
 
   public PermissionService(
       AuthContext auth,
+      InventoryQueryRepository inventoryQueries,
       com.windasoft.eam.repository.system.AuthorizationRepository repository,
       ObjectMapper json,
       com.windasoft.eam.service.system.OrganizationScopeService organizationScopes) {
     this.auth = auth;
+    this.inventoryQueries = inventoryQueries;
     this.repository = repository;
     this.json = json;
     this.organizationScopes = organizationScopes;
@@ -535,7 +539,7 @@ public class PermissionService {
 
   public boolean inventoryWarehouseUser(long userId, String menu, long warehouse, String action) {
     var users = repository.userOrganization(auth.tenantId(), userId);
-    var warehouses = repository.warehouse(auth.tenantId(), warehouse);
+    var warehouses = inventoryQueries.warehouseCompany(auth.tenantId(), warehouse);
     if (users.size() != 1
         || warehouses.size() != 1
         || ((Number) users.getFirst().get("status")).intValue() != 1) return false;
@@ -556,7 +560,7 @@ public class PermissionService {
   }
 
   public void checkInventoryWarehouse(String menu, long warehouseId, String action) {
-    var w = repository.warehouse(auth.tenantId(), warehouseId);
+    var w = inventoryQueries.warehouseCompany(auth.tenantId(), warehouseId);
     if (w.size() != 1) deny();
     long company = ((Number) w.getFirst().get("company_id")).longValue();
     for (var grant : scopes(menu, action))
