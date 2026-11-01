@@ -3,7 +3,8 @@ package com.windasoft.eam.service.system;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.OrgForm;
 import com.windasoft.eam.entity.system.OrgUnit;
-import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
+import com.windasoft.eam.repository.system.OrganizationReferenceRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
 import java.util.*;
@@ -12,7 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class OrganizationService {
-  private final SystemManagementRepository repository;
+  private final BaseItemRepository locations;
+  private final OrganizationReferenceRepository references;
   private final OrgUnitRepository orgUnits;
   private final SystemUserRepository systemUsers;
   private final AuthContext auth;
@@ -20,13 +22,15 @@ public class OrganizationService {
   private final ObjectMapper json;
 
   public OrganizationService(
-      SystemManagementRepository repository,
+      BaseItemRepository locations,
+      OrganizationReferenceRepository references,
       OrgUnitRepository orgUnits,
       SystemUserRepository systemUsers,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json) {
-    this.repository = repository;
+    this.locations = locations;
+    this.references = references;
     this.orgUnits = orgUnits;
     this.systemUsers = systemUsers;
     this.auth = auth;
@@ -102,7 +106,7 @@ public class OrganizationService {
   }
 
   private boolean hasLocations(Long id) {
-    return repository.locationCount(auth.tenantId(), id) > 0;
+    return locations.locationCount(auth.tenantId(), id) > 0;
   }
 
   private void applyOrg(OrgUnit x, OrgForm f) {
@@ -130,7 +134,7 @@ public class OrganizationService {
   }
 
   private boolean businessReferences(Long id) {
-    return repository.businessReferences(auth.tenantId(), id);
+    return references.businessReferences(auth.tenantId(), id);
   }
 
   private void validateOrg(String type, Long parentId, Long current) {
