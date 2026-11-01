@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.windasoft.eam.repository.inventory.InventoryUsageMapper">
+  <!-- 设备履历只读投影：SQL 负责 inv_usage 与物料名称的关联，业务合并由 Service 负责。 -->
+  <select id="installedForEquipment"
+          resultType="com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView">
+    SELECT CAST(u.id AS CHAR) id,
+           m.code,
+           m.name,
+           m.model,
+           u.quantity,
+           u.status,
+           DATE_FORMAT(u.created_at,'%Y-%m-%d %H:%i') installedAt
+    FROM inv_usage u
+    JOIN inv_material m
+      ON m.tenant_id=u.tenant_id
+     AND m.id=u.material_id
+    WHERE u.tenant_id=#{tenant}
+      AND u.equipment_id=#{equipmentId}
+      AND u.status='在用'
+    ORDER BY u.created_at DESC,u.id DESC
+  </select>
+</mapper>

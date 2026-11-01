@@ -8,6 +8,7 @@ import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -36,6 +37,8 @@ import org.springframework.web.server.ResponseStatusException;
 class EquipmentQueryServiceTest {
   EquipmentQueryRepository repository;
   EquipmentOwnerRepository ownerRepository;
+  EquipmentHistoryQueryService historyQueries;
+  EquipmentAssistantQueryService assistantQueries;
   PermissionService permissions;
   EquipmentQueryService service;
 
@@ -43,6 +46,8 @@ class EquipmentQueryServiceTest {
   void setup() {
     repository = mock(EquipmentQueryRepository.class);
     ownerRepository = mock(EquipmentOwnerRepository.class);
+    historyQueries = mock(EquipmentHistoryQueryService.class);
+    assistantQueries = mock(EquipmentAssistantQueryService.class);
     permissions = mock(PermissionService.class);
     var auth = mock(AuthContext.class);
     when(auth.tenantId()).thenReturn(10001L);
@@ -57,9 +62,9 @@ class EquipmentQueryServiceTest {
             auth,
             permissions,
             new ObjectMapper(),
-            mock(com.windasoft.eam.repository.equipment.EquipmentAssistantRepository.class),
+            historyQueries,
+            assistantQueries,
             ownerRepository,
-            mock(com.windasoft.eam.repository.equipment.EquipmentHistoryRepository.class),
             mock(com.windasoft.eam.repository.basedata.BaseItemRepository.class),
             mock(com.windasoft.eam.repository.system.OrgUnitRepository.class),
             mock(com.windasoft.eam.repository.system.SystemUserRepository.class),
@@ -115,6 +120,27 @@ class EquipmentQueryServiceTest {
     order.verify(repository).find(10001L, 3L);
     order.verify(permissions).checkEquipment(equipment, "查看");
     order.verify(ownerRepository).list(10001L, 3L);
+  }
+
+  @Test
+  void historyDelegatesLifecycleAggregationAfterCheckingEquipmentAccess() {
+    var equipment = new Equipment();
+    equipment.setId(3L);
+    equipment.setEquipmentCode("EQ-QA");
+    when(repository.find(10001L, 3L)).thenReturn(equipment);
+    when(ownerRepository.list(10001L, 3L)).thenReturn(List.of());
+    when(repository.children(10001L, 3L)).thenReturn(List.of());
+    when(repository.bom(10001L, 3L)).thenReturn(List.of());
+    var expected =
+        new com.windasoft.eam.dto.equipment.EquipmentHistoryView(
+            List.of(), service.view(equipment), List.of(), List.of(), List.of(), List.of());
+    when(historyQueries.history(any(Equipment.class), any())).thenReturn(expected);
+
+    var result = service.history(3L);
+
+    assertEquals(expected, result);
+    verify(permissions).checkEquipment(equipment, "查看");
+    verify(historyQueries).history(eq(equipment), any(com.windasoft.eam.dto.equipment.EquipmentView.class));
   }
 
   @Test

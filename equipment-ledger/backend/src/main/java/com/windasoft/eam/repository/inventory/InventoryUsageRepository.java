@@ -1,6 +1,7 @@
 package com.windasoft.eam.repository.inventory;
 
 import com.windasoft.eam.entity.repair.RepairOrder;
+import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Repository;
 public class InventoryUsageRepository {
   private final JdbcTemplate db;
   private final RepairOrderMapper repairs;
+  private final InventoryUsageMapper usageMapper;
 
   public RepairOrder findRepair(long id) {
     return repairs.selectById(id);
@@ -22,9 +24,15 @@ public class InventoryUsageRepository {
             .eq(RepairOrder::getDeleted, 0));
   }
 
-  public InventoryUsageRepository(JdbcTemplate db, RepairOrderMapper repairs) {
+  public InventoryUsageRepository(
+      JdbcTemplate db, RepairOrderMapper repairs, InventoryUsageMapper usageMapper) {
     this.db = db;
     this.repairs = repairs;
+    this.usageMapper = usageMapper;
+  }
+
+  public List<EquipmentInstalledSpareView> installedForEquipment(long tenant, long equipmentId) {
+    return usageMapper.installedForEquipment(tenant, equipmentId);
   }
 
   public List<Map<String, Object>> lockTask(long tenantId, Object task, String table) {

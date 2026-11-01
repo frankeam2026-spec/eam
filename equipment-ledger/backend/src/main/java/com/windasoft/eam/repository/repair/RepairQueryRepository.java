@@ -35,6 +35,25 @@ public class RepairQueryRepository {
     }
   }
 
+  /**
+   * 设备履历按稳定设备身份读取维修记录。仅为历史兼容，equipment_id 为空的旧记录才回退到编号。
+   */
+  public List<RepairOrder> historyByEquipment(long tenant, long equipmentId, String equipmentCode) {
+    return mapper.selectList(
+        new LambdaQueryWrapper<RepairOrder>()
+            .eq(RepairOrder::getTenantId, tenant)
+            .and(
+                q ->
+                    q.eq(RepairOrder::getEquipmentId, equipmentId)
+                        .or(
+                            legacy ->
+                                legacy
+                                    .isNull(RepairOrder::getEquipmentId)
+                                    .eq(RepairOrder::getEquipmentCode, equipmentCode)))
+            .orderByDesc(RepairOrder::getReportedAt)
+            .orderByDesc(RepairOrder::getId));
+  }
+
   public Set<String> fields() {
     return FIELDS.keySet();
   }

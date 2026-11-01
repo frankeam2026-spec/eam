@@ -3,7 +3,6 @@ package com.windasoft.eam.repository.experience;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.equipment.EquipmentMapper;
-import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,17 +13,14 @@ public class EquipmentExperienceRepository {
   private final JdbcTemplate db;
   private final EquipmentMapper equipment;
   private final RepairOrderMapper repairs;
-  private final EquipmentQueryRepository equipmentQueries;
 
   public EquipmentExperienceRepository(
       JdbcTemplate db,
       EquipmentMapper equipment,
-      RepairOrderMapper repairs,
-      EquipmentQueryRepository equipmentQueries) {
+      RepairOrderMapper repairs) {
     this.db = db;
     this.equipment = equipment;
     this.repairs = repairs;
-    this.equipmentQueries = equipmentQueries;
   }
 
   public Equipment findEquipment(long id) {
@@ -45,10 +41,6 @@ public class EquipmentExperienceRepository {
             + " equipment_id=?",
         tenantId,
         eid);
-  }
-
-  public List<Map<String, Object>> listInstalled(long tenantId, Object id) {
-    return equipmentQueries.installedSpares(tenantId, Long.parseLong(id.toString()));
   }
 
   public Map<String, String> userNames(long tenant, Set<String> ids) {

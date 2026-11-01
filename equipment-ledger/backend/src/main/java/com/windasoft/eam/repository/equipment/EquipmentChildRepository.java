@@ -38,6 +38,24 @@ public class EquipmentChildRepository {
             .eq(EquipmentChild::getChildId, child));
   }
 
+  public List<EquipmentChild> parents(long tenant, List<Long> children) {
+    if (children.isEmpty()) return List.of();
+    return mapper.selectList(
+        new LambdaQueryWrapper<EquipmentChild>()
+            .eq(EquipmentChild::getTenantId, tenant)
+            .in(EquipmentChild::getChildId, children)
+            .orderByAsc(EquipmentChild::getChildId, EquipmentChild::getParentId));
+  }
+
+  public List<EquipmentChild> children(long tenant, List<Long> parents) {
+    if (parents.isEmpty()) return List.of();
+    return mapper.selectList(
+        new LambdaQueryWrapper<EquipmentChild>()
+            .eq(EquipmentChild::getTenantId, tenant)
+            .in(EquipmentChild::getParentId, parents)
+            .orderByAsc(EquipmentChild::getParentId, EquipmentChild::getSortNo, EquipmentChild::getChildId));
+  }
+
   public void clear(long tenant, long parent) {
     mapper.delete(
         new LambdaQueryWrapper<EquipmentChild>()
@@ -47,6 +65,10 @@ public class EquipmentChildRepository {
 
   public void add(EquipmentChild relation) {
     mapper.insert(relation);
+  }
+
+  public void addBatch(List<EquipmentChild> relations) {
+    if (!relations.isEmpty()) mapper.insertBatch(relations);
   }
 
   /** 关联展示查询集中于所属Repository，单条与批量调用共用。 */

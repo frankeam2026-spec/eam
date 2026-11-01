@@ -32,7 +32,7 @@ public class InspectionListRepository {
   }
 
   static String taskPlanDepartment() {
-    return "COALESCE(dp.department_id,pp.department_id)";
+    return "COALESCE(dp.department_id,pp.department_id,t.department_id)";
   }
 
   static String j(String source, String key) {

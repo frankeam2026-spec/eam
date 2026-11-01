@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.windasoft.eam.dto.experience.EquipmentAttentionItem;
+import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
+import com.windasoft.eam.service.equipment.EquipmentInstalledSpareService;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.experience.EquipmentExperienceRepository;
@@ -28,6 +30,7 @@ class EquipmentExperienceServiceTest {
   MaintenanceService maintenance = mock(MaintenanceService.class);
   InspectionService inspection = mock(InspectionService.class);
   AnomalyService anomalies = mock(AnomalyService.class);
+  EquipmentInstalledSpareService installedSpares = mock(EquipmentInstalledSpareService.class);
   EquipmentExperienceService service;
   Equipment equipment;
 
@@ -46,7 +49,7 @@ class EquipmentExperienceServiceTest {
         .thenReturn(Map.of("data", List.of(), "total", 0));
     service =
         new EquipmentExperienceService(
-            repo, auth, permissions, repair, maintenance, inspection, anomalies);
+            repo, auth, permissions, repair, maintenance, inspection, anomalies, installedSpares);
   }
 
   Map<String, Object> task(String id, String status, String deadline) {
@@ -178,15 +181,19 @@ class EquipmentExperienceServiceTest {
 
   @Test
   void installedPreviewHasSameSourceAndNoMixedQuantityTotal() {
-    when(repo.listInstalled(1L, 1L))
-        .thenReturn(
-            List.of(
-                Map.of("id", "2", "installedAt", "2026-10-02", "quantity", "2.00"),
-                Map.of("id", "1", "installedAt", "2026-10-01", "quantity", "5.00")));
+    var newer = new EquipmentInstalledSpareView();
+    newer.setId("2");
+    newer.setInstalledAt("2026-10-02");
+    newer.setQuantity(new java.math.BigDecimal("2.00"));
+    var older = new EquipmentInstalledSpareView();
+    older.setId("1");
+    older.setInstalledAt("2026-10-01");
+    older.setQuantity(new java.math.BigDecimal("5.00"));
+    when(installedSpares.list(1L, 1L)).thenReturn(List.of(older, newer));
     var data = result(service.overview(1L));
     assertEquals(2, data.get("installedTotal"));
     assertEquals("2", result(((List<?>) data.get("installed")).getFirst()).get("id"));
-    verify(repo).listInstalled(1L, 1L);
+    verify(installedSpares).list(1L, 1L);
     assertFalse(data.containsKey("totalQuantity"));
   }
 

@@ -268,7 +268,7 @@ public class EquipmentRelationsService {
             "server.equipment.message0020");
       var current = childRepository.parents(auth.tenantId(), id);
       if (!current.isEmpty()
-          && current.getFirst().getParentId() != parent.getId())
+          && !Objects.equals(current.getFirst().getParentId(), parent.getId()))
         throw new com.windasoft.eam.common.LocalizedArgumentException(
             "server.equipment.message0021");
       Long ancestor = parent.getId();
@@ -321,16 +321,18 @@ public class EquipmentRelationsService {
     if (replaceChildren) {
       legacySelection(parent.getId(), "child", childNodes);
       childRepository.clear(auth.tenantId(), parent.getId());
-      for (int i = 0; i < links.size(); i++)
-        childRepository.add(new com.windasoft.eam.entity.equipment.EquipmentChild(auth.tenantId(), parent.getId(), links.get(i).getId(), i));
+      var childRelations = new ArrayList<com.windasoft.eam.entity.equipment.EquipmentChild>();
+      for (int i = 0; i < links.size(); i++) {
+        childRelations.add(
+            new com.windasoft.eam.entity.equipment.EquipmentChild(
+                auth.tenantId(), parent.getId(), links.get(i).getId(), i));
+      }
+      childRepository.addBatch(childRelations);
     }
     if (replaceBom) {
       legacySelection(parent.getId(), "bom", bomNodes);
       equipmentBomRepository.clear(auth.tenantId(), parent.getId());
-      for (int i = 0; i < materials.size(); i++) {
-        var m = materials.get(i);
-        equipmentBomRepository.add(m);
-      }
+      equipmentBomRepository.addBatch(materials);
     }
   }
 
@@ -338,6 +340,7 @@ public class EquipmentRelationsService {
   public void appendImportedChildren(Map<Equipment, List<Equipment>> groups) {
     if (!org.springframework.transaction.support.TransactionSynchronizationManager
         .isActualTransactionActive()) throw new IllegalStateException("设备关系必须在事务中执行");
+    var additions = new ArrayList<com.windasoft.eam.entity.equipment.EquipmentChild>();
     for (var entry : groups.entrySet()) {
       var parent = entry.getKey();
       int sort = queryRepository.children(auth.tenantId(), parent.getId()).size();
@@ -349,9 +352,12 @@ public class EquipmentRelationsService {
         if (!childRepository.parents(auth.tenantId(), child.getId()).isEmpty())
           throw new com.windasoft.eam.common.LocalizedArgumentException(
               "server.equipment.message0027");
-        childRepository.add(new com.windasoft.eam.entity.equipment.EquipmentChild(auth.tenantId(), parent.getId(), child.getId(), sort++));
+        additions.add(
+            new com.windasoft.eam.entity.equipment.EquipmentChild(
+                auth.tenantId(), parent.getId(), child.getId(), sort++));
       }
     }
+    childRepository.addBatch(additions);
   }
 
   public List<Map<String, Object>> children(long id) {

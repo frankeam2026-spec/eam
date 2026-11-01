@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 public record EquipmentHistoryView(
-    List<Map<String, Object>> installedSpares,
+    List<EquipmentInstalledSpareView> installedSpares,
     EquipmentView data,
     List<Map<String, Object>> repairs,
     List<Map<String, Object>> maintenance,

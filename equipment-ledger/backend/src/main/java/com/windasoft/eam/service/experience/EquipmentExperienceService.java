@@ -4,6 +4,8 @@ import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.windasoft.eam.common.experience.ExperienceSupport;
 import com.windasoft.eam.dto.experience.EquipmentAttentionItem;
+import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
+import com.windasoft.eam.service.equipment.EquipmentInstalledSpareService;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.experience.EquipmentExperienceRepository;
@@ -25,6 +27,7 @@ public class EquipmentExperienceService {
   final MaintenanceService maintenance;
   final InspectionService inspection;
   final AnomalyService anomalies;
+  final EquipmentInstalledSpareService installedSpares;
 
   public EquipmentExperienceService(
       EquipmentExperienceRepository repository,
@@ -33,7 +36,8 @@ public class EquipmentExperienceService {
       RepairWorkflowService workflow,
       MaintenanceService maintenance,
       InspectionService inspection,
-      AnomalyService anomalies) {
+      AnomalyService anomalies,
+      EquipmentInstalledSpareService installedSpares) {
     this.repository = repository;
     this.auth = auth;
     this.permissions = permissions;
@@ -41,6 +45,7 @@ public class EquipmentExperienceService {
     this.maintenance = maintenance;
     this.inspection = inspection;
     this.anomalies = anomalies;
+    this.installedSpares = installedSpares;
   }
 
   Equipment equipment(long id) {
@@ -214,6 +219,18 @@ public class EquipmentExperienceService {
         .thenComparing(EquipmentAttentionItem::id);
   }
 
+  private static Map<String, Object> installedSpareRow(EquipmentInstalledSpareView spare) {
+    var row = new LinkedHashMap<String, Object>();
+    row.put("id", spare.getId());
+    row.put("code", spare.getCode());
+    row.put("name", spare.getName());
+    row.put("model", spare.getModel());
+    row.put("quantity", spare.getQuantity());
+    row.put("status", spare.getStatus());
+    row.put("installedAt", spare.getInstalledAt());
+    return row;
+  }
+
   public Object overview(long id) {
     var e = equipment(id);
     var data = attentionData(e);
@@ -222,11 +239,15 @@ public class EquipmentExperienceService {
       counts.put(kind, (int) data.tasks().stream().filter(t -> t.kind().equals(kind)).count());
     counts.put("anomaly", data.issues().size());
     var installed =
-        repository.listInstalled(auth.tenantId(), id).stream()
+        installedSpares.list(auth.tenantId(), id).stream()
             .sorted(
-                Comparator.comparing((Map<String, Object> r) -> text(r, "installedAt"))
+                Comparator.comparing(
+                        (EquipmentInstalledSpareView spare) ->
+                            Objects.toString(spare.getInstalledAt(), ""))
                     .reversed()
-                    .thenComparing(r -> text(r, "id"), Comparator.reverseOrder()))
+                    .thenComparing(
+                        spare -> Objects.toString(spare.getId(), ""), Comparator.reverseOrder()))
+            .map(EquipmentExperienceService::installedSpareRow)
             .toList();
     return Map.of(
         "tasks",
