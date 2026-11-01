@@ -4,6 +4,7 @@ package com.windasoft.eam.domain.maintenance;
 public enum MaintenanceTaskStatus {
   PENDING("待执行"),
   IN_PROGRESS("执行中"),
+  PENDING_ACCEPTANCE("待验收"),
   SUSPENDED("挂起"),
   COMPLETED("已完成"),
   CANCELLED("已作废"),
