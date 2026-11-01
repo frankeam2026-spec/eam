@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.system.SystemManagementRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,7 +23,7 @@ class UserManagementServiceTest {
     var repository = mock(SystemManagementRepository.class);
     var auth = mock(AuthContext.class);
     var permissions = mock(PermissionService.class);
-    var service = new UserManagementService(repository, auth, permissions, new ObjectMapper());
+    var service = new UserManagementService(repository, mock(OrgUnitRepository.class), auth, permissions, new ObjectMapper());
     var user = new SystemUser();
     user.setId(21L);
     user.setTenantId(7L);
