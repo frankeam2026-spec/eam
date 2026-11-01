@@ -17,6 +17,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/** 用户管理服务：协调账号唯一性、组织归属、角色分配及会话失效，敏感操作须经授权。 */
 @Service
 public class UserManagementService {
   private final AuthenticationRepository sessions;
