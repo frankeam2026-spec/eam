@@ -66,12 +66,7 @@ public class SystemManagementRepository {
 
 
 
-  public List<SystemUser> users(long tenant) {
-    return users.selectList(
-        new LambdaQueryWrapper<SystemUser>()
-            .eq(SystemUser::getTenantId, tenant)
-            .orderByAsc(SystemUser::getId));
-  }
+
 
   public List<SystemRole> roles(long tenant) {
     return relations.roles(
@@ -85,12 +80,7 @@ public class SystemManagementRepository {
 
 
 
-  public SystemUser user(long tenant, Long id) {
-    return users.selectOne(
-        new LambdaQueryWrapper<SystemUser>()
-            .eq(SystemUser::getTenantId, tenant)
-            .eq(SystemUser::getId, id));
-  }
+
 
   public SystemRole role(long tenant, Long id) {
     return relations.role(
@@ -106,17 +96,11 @@ public class SystemManagementRepository {
 
 
 
-  public int insertUser(SystemUser x) {
-    return users.insert(x);
-  }
 
-  public int updateUser(SystemUser x) {
-    return users.updateById(x);
-  }
 
-  public int deleteUser(Long id) {
-    return users.deleteById(id);
-  }
+
+
+
 
   public int insertRole(SystemRole x) {
     int changed = roles.insert(x);
@@ -136,12 +120,7 @@ public class SystemManagementRepository {
 
 
 
-  public long organizationUserCount(long tenant, Long id) {
-    return users.selectCount(
-        new LambdaQueryWrapper<SystemUser>()
-            .eq(SystemUser::getTenantId, tenant)
-            .eq(SystemUser::getOrgId, id));
-  }
+
 
   public long locationCount(long tenant, Long id) {
     return locations.selectCount(
@@ -155,14 +134,7 @@ public class SystemManagementRepository {
 
 
 
-  public long accountCount(long tenant, String account, Long current) {
-    var q =
-        new LambdaQueryWrapper<SystemUser>()
-            .eq(SystemUser::getTenantId, tenant)
-            .eq(SystemUser::getAccount, account.trim());
-    if (current != null) q.ne(SystemUser::getId, current);
-    return users.selectCount(q);
-  }
+
 
   public long roleCodeCount(long tenant, String code, Long current) {
     var q =
