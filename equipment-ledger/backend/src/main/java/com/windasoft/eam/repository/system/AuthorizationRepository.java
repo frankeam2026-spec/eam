@@ -44,14 +44,6 @@ public class AuthorizationRepository {
     this.db = db;
   }
 
-  public boolean hasWorkflow() {
-    return workflow != null;
-  }
-
-  public boolean hasTaskDatabase() {
-    return db != null;
-  }
-
   public boolean personalRepairAccess(long tenant, long user) {
     return workflow.personalAccess(tenant, user);
   }
