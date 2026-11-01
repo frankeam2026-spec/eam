@@ -1,6 +1,7 @@
 package com.windasoft.eam.repository.repair;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.windasoft.eam.domain.repair.RepairOrderStatus;
+import com.windasoft.eam.domain.repair.RepairQueue;import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -231,19 +232,19 @@ public class RepairQueryRepository {
       case "owned" -> q.eq(RepairOrder::getAssigneeUserId, user);
       case "mine" ->
           q.eq(RepairOrder::getAssigneeUserId, user)
-              .in(RepairOrder::getStatus, List.of("处理中", "挂起"));
+              .in(RepairOrder::getStatus, List.of(RepairOrderStatus.PROCESSING.code(), RepairOrderStatus.SUSPENDED.code()));
       case "pending" ->
-          q.eq(RepairOrder::getStatus, "待接单")
+          q.eq(RepairOrder::getStatus, RepairOrderStatus.PENDING_CLAIM.code())
               .apply(
                   "id IN (SELECT order_id FROM eam_repair_candidate WHERE tenant_id={0} AND"
                       + " user_id={1} AND status='待接单')",
                   tenant, user);
       case "accept" -> {
-        q.eq(RepairOrder::getStatus, "待验收");
+        q.eq(RepairOrder::getStatus, RepairOrderStatus.PENDING_ACCEPTANCE.code());
         acceptance.accept(q);
       }
       case "created" -> q.eq(RepairOrder::getReporterUserId, user);
-      case "dispatch" -> q.eq(RepairOrder::getStatus, "待派工");
+      case "dispatch" -> q.eq(RepairOrder::getStatus, RepairOrderStatus.PENDING_DISPATCH.code());
       default -> {}
     }
     return q;
