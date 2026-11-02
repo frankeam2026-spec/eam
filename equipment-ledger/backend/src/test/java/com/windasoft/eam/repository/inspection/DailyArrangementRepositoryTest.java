@@ -30,6 +30,7 @@ class DailyArrangementRepositoryTest {
     assertTrue(sql.getValue().contains("u.status=1 AND u.deleted=0"));
   }
   @Test
+  @SuppressWarnings("unchecked")
   void loadBatchesArrangementChildrenAndRosterMembersAcrossThePlan() {
     var db = mock(JdbcTemplate.class);
     var repository = new DailyArrangementRepository(db);
@@ -118,7 +119,7 @@ class DailyArrangementRepositoryTest {
     assertEquals(List.of("73002"), override.get("users"));
     assertEquals("2026-11-03", override.get("date"));
 
-    // One plan read plus two batched roster reads and five batched child reads.
+    // One plan read, four batched roster queries, and five batched child queries.
     verify(db, times(10)).queryForList(anyString(), any(Object[].class));
   }
 
