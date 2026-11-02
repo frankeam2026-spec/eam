@@ -304,13 +304,14 @@ public class InspectionGenerationService {
               .collect(java.util.stream.Collectors.toSet()));
       p.put("_teams", new HashMap<Long, List<Long>>());
     }
+    boolean generationEnabled = yes(p.get("enabled"));
+    if (generationEnabled && text(plan, "kind").equals("periodic-plans")) {
+      var selectedType =
+          views.definition(projectSource.raw("types", tenant, number(p.get("typeId")), true));
+      generationEnabled = yes(selectedType.get("enabled"));
+    }
     int count = 0;
-    if (yes(p.get("enabled"))) {
-      if (text(plan, "kind").equals("periodic-plans")) {
-        var selectedType =
-            views.definition(projectSource.raw("types", tenant, number(p.get("typeId")), true));
-        if (!yes(selectedType.get("enabled"))) return 0;
-      }
+    if (generationEnabled) {
       var schedule = repository.lockSchedule(tenant, planId);
       LocalDateTime next = dateTime(schedule.get("next_at")),
           anchor = dateTime(schedule.get("anchor_at"));
