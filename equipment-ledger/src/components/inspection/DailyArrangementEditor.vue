@@ -367,7 +367,14 @@ onMounted(() => {
             type="warning"
             :closable="false"
           />
-          <ElFormItem class="full slot-field" :error="err('slots') || err('frequency')"
+          <ElAlert
+            v-if="err('slots') || err('frequency')"
+            class="full slot-error"
+            :title="err('slots') || err('frequency')"
+            type="error"
+            :closable="false"
+          />
+          <ElFormItem class="full slot-field"
             ><div class="slots">
               <AppBusinessTable :rows="a.slots" row-key="id" :pagination="false" :fill="false">
                 <ElTableColumn :label="tr('daily.slotName')" min-width="180"
