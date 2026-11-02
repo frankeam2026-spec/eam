@@ -573,11 +573,16 @@ public class AnomalyService {
             ? LocalDateTime.now(ZoneId.of("Asia/Shanghai"))
             : sourceEvents.getFirst().get("created_at");
     var result = (Map<String, Object>) s.getOrDefault("result", Map.of());
-    var skippedEquipmentIds = new java.util.HashSet<>(strings(result.get("skippedEquipmentIds")));
+    var skippedEquipmentIds = new java.util.HashSet<String>();
+    Object skippedValue = result.get("skippedEquipmentIds");
+    if (skippedValue instanceof Iterable<?> skippedIds)
+      for (Object skippedId : skippedIds)
+        skippedEquipmentIds.add(Objects.toString(skippedId, ""));
     var itemsById = new HashMap<String, Map<String, Object>>();
     for (var item : rows(s.get("items"))) itemsById.putIfAbsent(text(item, "id"), item);
     for (var answer : rows(result.get("items"))) {
-      if (!Boolean.TRUE.equals(answer.get("abnormal")) || yes(answer.get("skipped"))) continue;
+      if (!Boolean.TRUE.equals(answer.get("abnormal"))
+          || Boolean.TRUE.equals(answer.get("skipped"))) continue;
       String key = text(answer, "id");
       var item = itemsById.get(key);
       if (item == null || skippedEquipmentIds.contains(text(item, "equipmentId"))) continue;
