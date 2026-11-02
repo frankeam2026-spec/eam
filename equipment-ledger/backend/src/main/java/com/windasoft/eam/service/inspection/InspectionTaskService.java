@@ -215,6 +215,9 @@ public class InspectionTaskService {
   @Transactional
   public Map<String, Object> action(long id, String action, Map<String, Object> body) {
     long tenant = auth.tenantId(), user = auth.userId();
+    // Submission finalizes material custody. Acquire the tenant inventory lock before the task
+    // row lock, matching the daily-exemption lock order and avoiding cross-flow deadlocks.
+    if (InspectionTaskAction.SUBMIT.code().equals(action)) experienceInventoryMutex.enter();
     var row = taskRaw(tenant, id, true);
     if (!access(row, "查看")) deny();
     VersionGuard.checkPayload((Number) row.get("row_version"), body);
@@ -293,9 +296,6 @@ public class InspectionTaskService {
         result.put("skipReason", text(body, "skipReason"));
         label = complete ? "提交检查结果" : "保存检查结果";
         if (complete) {
-          // Only submission touches material custody; unrelated task actions must not lock
-          // the tenant-wide inventory row and serialize all inventory operations.
-          experienceInventoryMutex.enter();
           materialCustody.finishTask("点巡检", id, body);
           result.put("finishedAt", now().toString());
           if (text(row, "kind").equals("daily")) dailyStorage.submission(tenant, id, user, result);
