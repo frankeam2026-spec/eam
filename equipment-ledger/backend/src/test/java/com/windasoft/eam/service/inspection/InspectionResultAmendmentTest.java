@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.system.SystemUser;
+import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.experience.MaterialCustodyService;
@@ -22,6 +23,7 @@ class InspectionResultAmendmentTest {
   final ObjectMapper json = new ObjectMapper();
   final AuthContext auth = mock(AuthContext.class);
   final InspectionRepository repository = mock(InspectionRepository.class);
+  final DailyArrangementRepository dailyStorage = mock(DailyArrangementRepository.class);
   final InspectionTaskAccessService access = mock(InspectionTaskAccessService.class);
   final InspectionTaskJournal journal = mock(InspectionTaskJournal.class);
   final MaterialCustodyService custody = mock(MaterialCustodyService.class);
@@ -51,7 +53,7 @@ class InspectionResultAmendmentTest {
     when(repository.loadTask(1L, 7L, true)).thenReturn(List.of(row));
     when(access.access(row, "查看")).thenReturn(true);
     when(access.canAmendResult(row)).thenReturn(true);
-    service = new InspectionTaskService(repository, json, auth, access,
+    service = new InspectionTaskService(repository, dailyStorage, json, auth, access,
         mock(InspectionViewAssembler.class), mock(InspectionValidationService.class), journal,
         custom, mutex, publisher, custody) {
       @Override public Map<String, Object> task(long id) { return Map.of("id", id); }
