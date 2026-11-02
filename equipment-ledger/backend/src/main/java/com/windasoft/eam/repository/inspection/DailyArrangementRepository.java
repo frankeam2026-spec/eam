@@ -129,11 +129,12 @@ public class DailyArrangementRepository {
     }
     var grouped = new LinkedHashMap<Long, List<Map<String, Object>>>();
     for (var rule : rules) {
-      long arrangementId = number(rule.remove("arrangementId"));
-      var key = new StaffingKey(arrangementId, text(rule, "key"));
-      rule.put("unassigned", flag(rule.get("unassigned")));
-      rule.put("users", usersByRule.getOrDefault(key, List.of()));
-      grouped.computeIfAbsent(arrangementId, ignored -> new ArrayList<>()).add(rule);
+      var normalized = new LinkedHashMap<String, Object>(rule);
+      long arrangementId = number(normalized.remove("arrangementId"));
+      var key = new StaffingKey(arrangementId, text(normalized, "key"));
+      normalized.put("unassigned", flag(normalized.get("unassigned")));
+      normalized.put("users", usersByRule.getOrDefault(key, List.of()));
+      grouped.computeIfAbsent(arrangementId, ignored -> new ArrayList<>()).add(normalized);
     }
     return grouped;
   }
@@ -141,8 +142,9 @@ public class DailyArrangementRepository {
   private Map<Long, List<Map<String, Object>>> groupRows(List<Map<String, Object>> rows) {
     var grouped = new LinkedHashMap<Long, List<Map<String, Object>>>();
     for (var row : rows) {
-      long arrangementId = number(row.remove("arrangementId"));
-      grouped.computeIfAbsent(arrangementId, ignored -> new ArrayList<>()).add(row);
+      var normalized = new LinkedHashMap<String, Object>(row);
+      long arrangementId = number(normalized.remove("arrangementId"));
+      grouped.computeIfAbsent(arrangementId, ignored -> new ArrayList<>()).add(normalized);
     }
     return grouped;
   }
