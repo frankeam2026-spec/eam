@@ -573,15 +573,14 @@ public class AnomalyService {
             ? LocalDateTime.now(ZoneId.of("Asia/Shanghai"))
             : sourceEvents.getFirst().get("created_at");
     var result = (Map<String, Object>) s.getOrDefault("result", Map.of());
+    var skippedEquipmentIds = new java.util.HashSet<>(strings(result.get("skippedEquipmentIds")));
+    var itemsById = new HashMap<String, Map<String, Object>>();
+    for (var item : rows(s.get("items"))) itemsById.putIfAbsent(text(item, "id"), item);
     for (var answer : rows(result.get("items"))) {
-      if (!Boolean.TRUE.equals(answer.get("abnormal"))) continue;
+      if (!Boolean.TRUE.equals(answer.get("abnormal")) || yes(answer.get("skipped"))) continue;
       String key = text(answer, "id");
-      var item =
-          rows(s.get("items")).stream()
-              .filter(i -> text(i, "id").equals(key))
-              .findFirst()
-              .orElse(null);
-      if (item == null) continue;
+      var item = itemsById.get(key);
+      if (item == null || skippedEquipmentIds.contains(text(item, "equipmentId"))) continue;
       long eid =
           kind.equals("保养")
               ? id(repository.findBackfillEquipment(auth.tenantId(), task).get("equipment_id"))
