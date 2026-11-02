@@ -5,7 +5,9 @@ import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
+import com.windasoft.eam.repository.system.NotificationRepository;
 import com.windasoft.eam.service.system.*;
 import java.time.*;
 import java.util.*;
@@ -14,13 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class InspectionGenerationService {
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.repository.system.NotificationRepository notificationPolicies;
-  @org.springframework.beans.factory.annotation.Autowired
-  private DailyArrangementService arrangements;
-
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.repository.inspection.DailyArrangementRepository dailyStorage;
+  private final NotificationRepository notificationPolicies;
+  private final DailyArrangementService arrangements;
+  private final DailyArrangementRepository dailyStorage;
 
   private final InspectionRepository repository;
   private final ObjectMapper json;
@@ -37,7 +35,10 @@ public class InspectionGenerationService {
       InspectionProjectService projectSource,
       InspectionViewAssembler views,
       InspectionTaskJournal journal,
-      InspectionNumbers numbers) {
+      InspectionNumbers numbers,
+      NotificationRepository notificationPolicies,
+      DailyArrangementService arrangements,
+      DailyArrangementRepository dailyStorage) {
     this.repository = repository;
     this.json = json;
     this.permissions = permissions;
@@ -45,6 +46,9 @@ public class InspectionGenerationService {
     this.views = views;
     this.journal = journal;
     this.numbers = numbers;
+    this.notificationPolicies = notificationPolicies;
+    this.arrangements = arrangements;
+    this.dailyStorage = dailyStorage;
   }
 
   List<Long> effectiveOwners(
@@ -486,7 +490,7 @@ public class InspectionGenerationService {
         if (next.equals("过期作废")) journal.closeTodos(tenant, id);
         state = next;
       }
-      boolean newReminders=notificationPolicies!=null && notificationPolicies.replacesLegacy(tenant,text(task,"kind"),planId);
+      boolean newReminders=notificationPolicies.replacesLegacy(tenant,text(task,"kind"),planId);
       if (!newReminders && text(task, "kind").equals("daily")
           && task.get("follow_up_user_id") != null
           && now().isAfter(expires)
