@@ -39,8 +39,8 @@ public class DailyArrangementRepository {
     String in = placeholders(arrangementIds.size());
     Object[] args = tenantAndIds(tenant, arrangementIds);
 
-    var regularRoster = staffing(tenant, arrangementIds, false, in, args);
-    var dateRoster = staffing(tenant, arrangementIds, true, in, args);
+    var regularRoster = staffing(false, in, args);
+    var dateRoster = staffing(true, in, args);
     var days =
         groupRows(
             db.queryForList(
@@ -102,7 +102,7 @@ public class DailyArrangementRepository {
   }
 
   private Map<Long, List<Map<String, Object>>> staffing(
-      long tenant, List<Long> arrangementIds, boolean dates, String in, Object[] args) {
+      boolean dates, String in, Object[] args) {
     String table =
         dates ? "eam_inspection_daily_staff_override" : "eam_inspection_daily_staff_rule";
     var rules =
@@ -115,6 +115,7 @@ public class DailyArrangementRepository {
                 + (dates ? "work_date" : "weekday_no")
                 + ",slot_key,start_time,rule_key",
             args);
+    if (rules.isEmpty()) return Map.of();
     var people =
         db.queryForList(
             "SELECT arrangement_id arrangementId,rule_key `key`,CAST(user_id AS CHAR) userId"
