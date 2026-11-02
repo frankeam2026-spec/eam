@@ -21,7 +21,8 @@ public class RepairApprovalAdapter implements WorkflowBusinessAdapter {
   }
 
   public Map<String, Object> values(long id) {
-    return service.values(id);
+    // 工作流变量注册接口按稳定变量名读取，仅在此边界适配为Map。
+    return service.values(id).variables();
   }
 
   public void requireActive(long id) {

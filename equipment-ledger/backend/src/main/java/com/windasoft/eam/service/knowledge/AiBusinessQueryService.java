@@ -3,9 +3,16 @@ package com.windasoft.eam.service.knowledge;
 import com.fasterxml.jackson.databind.*;
 import com.windasoft.eam.dto.knowledge.AiBusinessCatalog;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
+import com.windasoft.eam.dto.repair.RepairAssistantRequest;
 import com.windasoft.eam.repository.common.AssistantReadSource;
 import com.windasoft.eam.repository.common.SqlPredicate;
+import com.windasoft.eam.repository.knowledge.AiBusinessFilters;
 import com.windasoft.eam.repository.knowledge.AiBusinessQueryRepository;
+import com.windasoft.eam.service.equipment.EquipmentQueryService;
+import com.windasoft.eam.service.inspection.InspectionListService;
+import com.windasoft.eam.service.inventory.InventoryQueryService;
+import com.windasoft.eam.service.maintenance.MaintenanceListService;
+import com.windasoft.eam.service.repair.RepairQueryService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.time.LocalDate;
@@ -25,22 +32,22 @@ public class AiBusinessQueryService {
   private final PermissionService permissions;
   private final AuthContext auth;
   private final ObjectMapper json;
-  private final com.windasoft.eam.service.equipment.EquipmentQueryService equipment;
-  private final com.windasoft.eam.service.repair.RepairQueryService repairs;
-  private final com.windasoft.eam.service.maintenance.MaintenanceListService maintenance;
-  private final com.windasoft.eam.service.inspection.InspectionListService inspection;
-  private final com.windasoft.eam.service.inventory.InventoryQueryService stock;
+  private final EquipmentQueryService equipment;
+  private final RepairQueryService repairs;
+  private final MaintenanceListService maintenance;
+  private final InspectionListService inspection;
+  private final InventoryQueryService stock;
 
   public AiBusinessQueryService(
       AiBusinessQueryRepository repository,
       PermissionService permissions,
       AuthContext auth,
       ObjectMapper json,
-      com.windasoft.eam.service.equipment.EquipmentQueryService equipment,
-      com.windasoft.eam.service.repair.RepairQueryService repairs,
-      com.windasoft.eam.service.maintenance.MaintenanceListService maintenance,
-      com.windasoft.eam.service.inspection.InspectionListService inspection,
-      com.windasoft.eam.service.inventory.InventoryQueryService stock) {
+      EquipmentQueryService equipment,
+      RepairQueryService repairs,
+      MaintenanceListService maintenance,
+      InspectionListService inspection,
+      InventoryQueryService stock) {
     this.repository = repository;
     this.permissions = permissions;
     this.auth = auth;
@@ -70,7 +77,6 @@ public class AiBusinessQueryService {
 
   AssistantReadSource source(String domain) {
     return switch (domain) {
-      case "repair" -> repairs.assistantSource();
       case "maintenanceTask" -> maintenance.assistantSource("tasks");
       case "maintenancePlan" -> maintenance.assistantSource("plans");
       case "dailyTask" -> inspection.assistantSource("daily-tasks");
@@ -103,11 +109,25 @@ public class AiBusinessQueryService {
           answer.range() == null
               ? null
               : new LocalDate[] {answer.range().start(), answer.range().end()};
+    } else if (plan.domain().equals("repair")) {
+      if (equipmentId != null) {
+        equipment.get(equipmentId);
+      }
+      bounds = bounds(plan, now.toLocalDate());
+      executed =
+          repairs.queryAssistant(
+              new RepairAssistantRequest(
+                  plan,
+                  equipmentId,
+                  page,
+                  size,
+                  now,
+                  bounds == null ? null : bounds[0],
+                  bounds == null ? null : bounds[1]));
     } else {
       var source = source(plan.domain());
       var filter =
-          com.windasoft.eam.repository.knowledge.AiBusinessFilters.compile(
-              plan.where(), domain, now, auth.userId(), auth.tenantId());
+          AiBusinessFilters.compile(plan.where(), domain, now, auth.userId(), auth.tenantId());
       if (equipmentId != null) {
         equipment.get(equipmentId);
         filter = filter.and(repository.equipmentFilter(plan, auth.tenantId(), equipmentId));

@@ -1,15 +1,20 @@
 package com.windasoft.eam.repository.repair;
 
-import com.windasoft.eam.domain.repair.RepairOrderStatus;
-import com.windasoft.eam.domain.repair.RepairQueue;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.AdvancedFilters;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.domain.repair.RepairOrderStatus;
+import com.windasoft.eam.domain.repair.RepairQueue;
 import com.windasoft.eam.entity.repair.RepairOrder;
-import java.util.*;
-import java.util.function.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import org.springframework.stereotype.Repository;
 
 /** 维修数据库查询：负责查询条件、稳定排序与分页，权限范围由上层传入。 */
@@ -38,9 +43,7 @@ public class RepairQueryRepository {
     }
   }
 
-  /**
-   * 设备履历按稳定设备身份读取维修记录。仅为历史兼容，equipment_id 为空的旧记录才回退到编号。
-   */
+  /** 设备履历按稳定设备身份读取维修记录。仅为历史兼容，equipment_id 为空的旧记录才回退到编号。 */
   public List<RepairOrder> historyByEquipment(long tenant, long equipmentId, String equipmentCode) {
     return mapper.selectList(
         new LambdaQueryWrapper<RepairOrder>()
@@ -59,10 +62,6 @@ public class RepairQueryRepository {
 
   public Set<String> fields() {
     return FIELDS.keySet();
-  }
-
-  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(Query query){
-    return com.windasoft.eam.repository.common.AssistantReadSource.wrapped("CAST(id AS CHAR) id,order_no code,equipment_code equipmentCode,equipment_name equipmentName,CAST(equipment_id AS CHAR) equipmentId,status,severity,department,CAST(department_org_id AS CHAR) departmentId,(SELECT o.name FROM eam_org_unit o WHERE o.tenant_id=eam_repair_order.tenant_id AND o.id=company_org_id) company,CAST(company_org_id AS CHAR) companyId,assignee owner,CAST(assignee_user_id AS CHAR) ownerId,reporter,CAST(reporter_user_id AS CHAR) reporterId,fault_type faultType,CAST(fault_type_id AS CHAR) faultTypeId,fault_cause faultCause,CAST(fault_cause_id AS CHAR) faultCauseId,reported_at reportedAt,claimed_at claimedAt,completed_at submittedAt,accepted_at acceptedAt,downtime_minutes downtimeMinutes", "eam_repair_order",query.rows());
   }
 
   public Object value(RepairOrder row, String field) {
@@ -172,7 +171,7 @@ public class RepairQueryRepository {
         direction = params.getOrDefault("direction", "desc");
     if (sort.startsWith("custom:")) return query;
     if (!FIELDS.containsKey(sort) || !List.of("asc", "desc").contains(direction))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0007");
+      throw new LocalizedArgumentException("server.repair.message0007");
     query.orderBy(true, "asc".equals(direction), FIELDS.get(sort)).orderByAsc(RepairOrder::getId);
     return query;
   }
@@ -186,8 +185,7 @@ public class RepairQueryRepository {
       long user,
       java.util.function.BiConsumer<LambdaQueryWrapper<RepairOrder>, Boolean> scope,
       java.util.function.Consumer<LambdaQueryWrapper<RepairOrder>> acceptance) {
-    if (!QUEUES.contains(queue))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0008");
+    if (!QUEUES.contains(queue)) throw new LocalizedArgumentException("server.repair.message0008");
     String keyword = text(params.get("keyword"));
     var q =
         new LambdaQueryWrapper<RepairOrder>()
@@ -233,7 +231,9 @@ public class RepairQueryRepository {
       case "owned" -> q.eq(RepairOrder::getAssigneeUserId, user);
       case "mine" ->
           q.eq(RepairOrder::getAssigneeUserId, user)
-              .in(RepairOrder::getStatus, List.of(RepairOrderStatus.PROCESSING.code(), RepairOrderStatus.SUSPENDED.code()));
+              .in(
+                  RepairOrder::getStatus,
+                  List.of(RepairOrderStatus.PROCESSING.code(), RepairOrderStatus.SUSPENDED.code()));
       case "pending" ->
           q.eq(RepairOrder::getStatus, RepairOrderStatus.PENDING_CLAIM.code())
               .apply(
@@ -253,8 +253,7 @@ public class RepairQueryRepository {
 
   private static String text(String value) {
     String result = value == null ? "" : value.trim();
-    if (result.length() > 200)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0009");
+    if (result.length() > 200) throw new LocalizedArgumentException("server.repair.message0009");
     return result;
   }
 }

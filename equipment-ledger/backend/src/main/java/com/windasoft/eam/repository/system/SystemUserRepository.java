@@ -2,11 +2,12 @@ package com.windasoft.eam.repository.system;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import java.util.List;
+import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.entity.system.SystemUser;
-import org.springframework.stereotype.Repository;
-import org.springframework.jdbc.core.JdbcTemplate;
+import java.util.List;
 import java.util.Map;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
 
 /** 系统用户自身数据的租户限定读取。 */
 /** 系统用户仓储：按租户访问用户主体和邮箱版本，身份及角色权限在服务层校验。 */
@@ -21,28 +22,35 @@ public class SystemUserRepository {
   }
 
   public SystemUser find(long tenant, Long id) {
-    return mapper.selectOne(new LambdaQueryWrapper<SystemUser>()
-        .eq(SystemUser::getTenantId, tenant).eq(SystemUser::getId, id));
+    return mapper.selectOne(
+        new LambdaQueryWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getId, id));
   }
 
-  public Page<SystemUser> ownerCandidates(
-      long tenant, com.windasoft.eam.dto.common.ListQuery query) {
-    var where = new LambdaQueryWrapper<SystemUser>()
-        .eq(SystemUser::getTenantId, tenant)
-        .eq(SystemUser::getStatus, 1);
+  public Page<SystemUser> ownerCandidates(long tenant, ListQuery query) {
+    var where =
+        new LambdaQueryWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getStatus, 1);
     if (!query.keyword().isBlank()) {
-      where.and(w -> w.like(SystemUser::getDisplayName, query.keyword())
-          .or().like(SystemUser::getAccount, query.keyword()));
+      where.and(
+          w ->
+              w.like(SystemUser::getDisplayName, query.keyword())
+                  .or()
+                  .like(SystemUser::getAccount, query.keyword()));
     }
     where.orderByAsc(SystemUser::getDisplayName).orderByAsc(SystemUser::getId);
     return mapper.selectPage(new Page<>(query.page(), query.size()), where);
   }
 
   public List<SystemUser> employees(long tenant) {
-    return mapper.selectList(new LambdaQueryWrapper<SystemUser>()
-        .eq(SystemUser::getTenantId, tenant)
-        .eq(SystemUser::getStatus, 1));
+    return mapper.selectList(
+        new LambdaQueryWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getStatus, 1));
   }
+
   public List<SystemUser> users(long tenant) {
     return mapper.selectList(
         new LambdaQueryWrapper<SystemUser>()
@@ -84,17 +92,19 @@ public class SystemUserRepository {
     if (current != null) q.ne(SystemUser::getId, current);
     return mapper.selectCount(q);
   }
-  public Map<Long, Map<String, Object>> emailProfiles(
-      long tenant, java.util.Collection<Long> ids) {
+
+  public Map<Long, Map<String, Object>> emailProfiles(long tenant, java.util.Collection<Long> ids) {
     if (ids.isEmpty()) return Map.of();
     var args = new java.util.ArrayList<Object>();
     args.add(tenant);
     args.addAll(ids);
     var result = new java.util.HashMap<Long, Map<String, Object>>();
-    for (var row : db.queryForList(
-        "SELECT id,email,email_version FROM eam_sys_user WHERE tenant_id=? AND id IN ("
-            + String.join(",", java.util.Collections.nCopies(ids.size(), "?")) + ")",
-        args.toArray())) {
+    for (var row :
+        db.queryForList(
+            "SELECT id,email,email_version FROM eam_sys_user WHERE tenant_id=? AND id IN ("
+                + String.join(",", java.util.Collections.nCopies(ids.size(), "?"))
+                + ")",
+            args.toArray())) {
       result.put(((Number) row.get("id")).longValue(), row);
     }
     return result;
@@ -102,9 +112,7 @@ public class SystemUserRepository {
 
   public Map<String, Object> emailProfile(long tenant, long user) {
     return db.queryForMap(
-        "SELECT email,email_version FROM eam_sys_user WHERE tenant_id=? AND id=?",
-        tenant,
-        user);
+        "SELECT email,email_version FROM eam_sys_user WHERE tenant_id=? AND id=?", tenant, user);
   }
 
   public int updateEmail(long tenant, long user, String email, int expectedVersion) {
@@ -115,5 +123,13 @@ public class SystemUserRepository {
         tenant,
         user,
         expectedVersion);
+  }
+
+  public SystemUser activeUser(long tenant, long id) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getId, id)
+            .eq(SystemUser::getStatus, 1));
   }
 }

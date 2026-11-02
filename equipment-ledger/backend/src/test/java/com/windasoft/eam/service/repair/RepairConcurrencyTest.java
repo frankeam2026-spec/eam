@@ -5,19 +5,23 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.dto.repair.RepairAction;
 import com.windasoft.eam.entity.repair.RepairOrder;
-import com.windasoft.eam.repository.equipment.EquipmentMapper;
-import com.windasoft.eam.repository.equipment.NumberCounterMapper;
+import com.windasoft.eam.repository.equipment.EquipmentNumberRepository;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
+import com.windasoft.eam.repository.repair.RepairOrderRepository;
+import com.windasoft.eam.service.basedata.BaseDataReferenceService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
+import com.windasoft.eam.support.RelationStubs;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
 
 class RepairConcurrencyTest {
   private RepairOrderMapper mapper;
-  private com.windasoft.eam.service.repair.RepairOrderService controller;
+  private RepairOrderService controller;
   private RepairOrder row;
 
   @BeforeEach
@@ -27,19 +31,17 @@ class RepairConcurrencyTest {
     when(auth.tenantId()).thenReturn(10001L);
     var json = new ObjectMapper();
     controller =
-        new com.windasoft.eam.service.repair.RepairOrderService(
-            new com.windasoft.eam.repository.repair.RepairOrderRepository(
-                mapper,
-                mock(EquipmentMapper.class),
-                mock(com.windasoft.eam.repository.basedata.BaseItemMapper.class),
-                mock(NumberCounterMapper.class),
-                com.windasoft.eam.support.RelationStubs.repair()),
+        new RepairOrderService(
+            new RepairOrderRepository(mapper, RelationStubs.repair()),
             null,
             json,
             auth,
             mock(PermissionService.class),
-            new com.windasoft.eam.service.repair.RepairViewAssembler(json),
-            mock(com.windasoft.eam.service.basedata.BaseDataReferenceService.class));
+            new RepairViewAssembler(json),
+            mock(BaseDataReferenceService.class),
+            mock(RepairRelationsService.class),
+            mock(EquipmentQueryRepository.class),
+            mock(EquipmentNumberRepository.class));
     row = new RepairOrder();
     row.setId(1L);
     row.setTenantId(10001L);
@@ -65,11 +67,7 @@ class RepairConcurrencyTest {
         409,
         assertThrows(
                 ResponseStatusException.class,
-                () ->
-                    controller.action(
-                        1L,
-                        new com.windasoft.eam.dto.repair.RepairAction("complete", null, "已修复", 10),
-                        3))
+                () -> controller.action(1L, new RepairAction("complete", null, "已修复", 10), 3))
             .getStatusCode()
             .value());
     assertEquals("处理中", row.getStatus());
@@ -83,11 +81,7 @@ class RepairConcurrencyTest {
         409,
         assertThrows(
                 ResponseStatusException.class,
-                () ->
-                    controller.action(
-                        1L,
-                        new com.windasoft.eam.dto.repair.RepairAction("complete", null, "已修复", 10),
-                        4))
+                () -> controller.action(1L, new RepairAction("complete", null, "已修复", 10), 4))
             .getStatusCode()
             .value());
   }

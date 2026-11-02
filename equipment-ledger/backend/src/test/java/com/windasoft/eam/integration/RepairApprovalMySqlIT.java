@@ -4,17 +4,38 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.workflow.WorkflowExpression;
+import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
+import com.windasoft.eam.dto.repair.RepairAssistantRequest;
 import com.windasoft.eam.dto.repair.RepairForm;
+import com.windasoft.eam.dto.repair.RepairReadViews;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.dto.workflow.WorkflowDefinition;
 import com.windasoft.eam.dto.workflow.WorkflowDefinition.Node;
+import com.windasoft.eam.entity.repair.RepairCollaborator;
+import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.entity.system.SystemUser;
-import com.windasoft.eam.repository.repair.RepairWorkflowRepository;
+import com.windasoft.eam.repository.equipment.EquipmentSpareRepository;
+import com.windasoft.eam.repository.repair.RepairCandidateRepository;
+import com.windasoft.eam.repository.repair.RepairCollaboratorRepository;
+import com.windasoft.eam.repository.repair.RepairInboxRepository;
+import com.windasoft.eam.repository.repair.RepairMaterialRepository;
+import com.windasoft.eam.repository.repair.RepairOrderRepository;
+import com.windasoft.eam.scheduler.experience.RepairPlanScheduler;
+import com.windasoft.eam.scheduler.inspection.InspectionScheduler;
+import com.windasoft.eam.scheduler.inventory.InventoryReservationCleanup;
+import com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler;
+import com.windasoft.eam.scheduler.maintenance.MaintenanceScheduler;
+import com.windasoft.eam.scheduler.system.NotificationScheduler;
+import com.windasoft.eam.service.inventory.RequisitionService;
 import com.windasoft.eam.service.repair.*;
 import com.windasoft.eam.service.system.*;
 import com.windasoft.eam.service.workflow.*;
-import java.time.*;
-import java.util.*;
+import java.time.LocalDateTime;
+import java.util.Base64;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,12 +64,12 @@ class RepairApprovalMySqlIT {
 
   @MockitoBean AuthContext auth;
   @MockitoBean PermissionService permissions;
-  @MockitoBean com.windasoft.eam.scheduler.system.NotificationScheduler notificationScheduler;
-  @MockitoBean com.windasoft.eam.scheduler.inspection.InspectionScheduler inspectionScheduler;
-  @MockitoBean com.windasoft.eam.scheduler.maintenance.MaintenanceScheduler maintenanceScheduler;
-  @MockitoBean com.windasoft.eam.scheduler.inventory.InventoryReservationCleanup cleanup;
-  @MockitoBean com.windasoft.eam.scheduler.experience.RepairPlanScheduler repairScheduler;
-  @MockitoBean com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler knowledgeScheduler;
+  @MockitoBean NotificationScheduler notificationScheduler;
+  @MockitoBean InspectionScheduler inspectionScheduler;
+  @MockitoBean MaintenanceScheduler maintenanceScheduler;
+  @MockitoBean InventoryReservationCleanup cleanup;
+  @MockitoBean RepairPlanScheduler repairScheduler;
+  @MockitoBean KnowledgeScheduler knowledgeScheduler;
   @Autowired JdbcTemplate db;
   @Autowired ObjectMapper json;
   @Autowired WorkflowTemplateService templates;
@@ -56,8 +77,8 @@ class RepairApprovalMySqlIT {
   @Autowired RepairOrderService orders;
   @Autowired RepairApprovalService approvals;
   @Autowired RepairWorkflowService repairWorkflow;
-  @Autowired RepairWorkflowRepository repairs;
-  @Autowired com.windasoft.eam.service.inventory.RequisitionService requisitions;
+  @Autowired RepairOrderRepository repairs;
+  @Autowired RequisitionService requisitions;
   @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
   long actor = 73001L, fault;
 
@@ -185,7 +206,7 @@ class RepairApprovalMySqlIT {
   void optionalCompanyAndPublishedButNotEnabledKeepExistingPath() {
     publish("repair_report", "ANY", "71002");
     long id = create();
-    var row = repairs.findOrder(10001, id);
+    var row = repairs.find(10001, id);
     assertEquals("EXEMPT", row.getApprovalGate());
     assertEquals("待派工", row.getStatus());
     assertEquals(row.getReportedAt(), row.getApprovalReadyAt());
@@ -240,7 +261,7 @@ class RepairApprovalMySqlIT {
     publish("repair_report", "ANY", "71002");
     enable();
     long id = create();
-    var row = repairs.findOrder(10001, id);
+    var row = repairs.find(10001, id);
     assertEquals("审批中", row.getStatus());
     assertNull(row.getApprovalReadyAt());
     assertThrows(
@@ -248,7 +269,7 @@ class RepairApprovalMySqlIT {
         () ->
             repairWorkflow.action(
                 id,
-                repairs.findOrder(10001, id).getRowVersion(),
+                repairs.find(10001, id).getRowVersion(),
                 json.readTree("{\"action\":\"dispatch\",\"userIds\":[\"73001\"]}")));
     assertEquals(
         2,
@@ -260,7 +281,7 @@ class RepairApprovalMySqlIT {
         0,
         db.queryForObject("SELECT COUNT(*) FROM inv_inbox WHERE document_id=?", Integer.class, id));
     act(id, true);
-    row = repairs.findOrder(10001, id);
+    row = repairs.find(10001, id);
     assertEquals("待派工", row.getStatus());
     assertNotNull(row.getApprovalReadyAt());
     assertFalse(row.getApprovalReadyAt().isBefore(row.getReportedAt()));
@@ -272,11 +293,11 @@ class RepairApprovalMySqlIT {
             id));
     assertThrows(
         IllegalArgumentException.class,
-        () -> orders.update(id, form(), repairs.findOrder(10001, id).getRowVersion()));
+        () -> orders.update(id, form(), repairs.find(10001, id).getRowVersion()));
     var dispatched =
         repairWorkflow.action(
             id,
-            repairs.findOrder(10001, id).getRowVersion(),
+            repairs.find(10001, id).getRowVersion(),
             json.readTree("{\"action\":\"dispatch\",\"userIds\":[\"73001\"]}"));
     assertEquals("待接单", dispatched.getStatus());
   }
@@ -287,17 +308,17 @@ class RepairApprovalMySqlIT {
     enable();
     long id = create();
     act(id, true);
-    assertEquals("审批中", repairs.findOrder(10001, id).getStatus());
+    assertEquals("审批中", repairs.find(10001, id).getStatus());
     actor = 73002L;
     act(id, false);
-    assertEquals("待提交", repairs.findOrder(10001, id).getStatus());
+    assertEquals("待提交", repairs.find(10001, id).getStatus());
     actor = 73001L;
     doThrow(
             new org.springframework.web.server.ResponseStatusException(
                 org.springframework.http.HttpStatus.FORBIDDEN))
         .when(permissions)
         .checkRepair(any(), eq("编辑"));
-    orders.update(id, form(), repairs.findOrder(10001, id).getRowVersion());
+    orders.update(id, form(), repairs.find(10001, id).getRowVersion());
     verify(permissions, atLeastOnce()).checkRepair(any(), eq("报修"));
     assertEquals(
         1,
@@ -305,7 +326,7 @@ class RepairApprovalMySqlIT {
             "SELECT COUNT(*) FROM eam_repair_inbox WHERE order_id=? AND kind='报修待修改' AND done=0",
             Integer.class,
             id));
-    approvals.submit(id, repairs.findOrder(10001, id).getRowVersion());
+    approvals.submit(id, repairs.find(10001, id).getRowVersion());
     assertEquals(
         0,
         db.queryForObject(
@@ -320,7 +341,7 @@ class RepairApprovalMySqlIT {
         () -> runtime.withdraw(n(i, "id"), n(i, "row_version")));
     actor = 73001L;
     runtime.withdraw(n(i, "id"), n(i, "row_version"));
-    assertEquals("待提交", repairs.findOrder(10001, id).getStatus());
+    assertEquals("待提交", repairs.find(10001, id).getStatus());
     assertThrows(
         org.springframework.web.server.ResponseStatusException.class,
         () -> approvals.submit(id, 0));
@@ -334,12 +355,11 @@ class RepairApprovalMySqlIT {
     var s = (Map<?, ?>) templates.approvalSetting(71002);
     templates.approvalSetting(71002, false, ((Number) s.get("rowVersion")).longValue());
     assertThrows(
-        IllegalArgumentException.class,
-        () -> approvals.requireReleased(repairs.findOrder(10001, id)));
-    assertEquals("审批中", repairs.findOrder(10001, id).getStatus());
-    assertEquals("EXEMPT", repairs.findOrder(10001, create()).getApprovalGate());
+        IllegalArgumentException.class, () -> approvals.requireReleased(repairs.find(10001, id)));
+    assertEquals("审批中", repairs.find(10001, id).getStatus());
+    assertEquals("EXEMPT", repairs.find(10001, create()).getApprovalGate());
     act(id, true);
-    assertEquals("待派工", repairs.findOrder(10001, id).getStatus());
+    assertEquals("待派工", repairs.find(10001, id).getStatus());
   }
 
   @Test
@@ -360,11 +380,9 @@ class RepairApprovalMySqlIT {
     assertTrue(fields.containsKey("severity"));
     assertFalse(fields.containsKey("warehouseId"));
     var expression =
-        com.windasoft.eam.common.workflow.WorkflowExpression.parse(
-            "severity == \"紧急\" AND departmentId == 71003", fields);
+        WorkflowExpression.parse("severity == \"紧急\" AND departmentId == 71003", fields);
     assertTrue(
-        com.windasoft.eam.common.workflow.WorkflowExpression.test(
-                expression, Map.of("severity", "紧急", "departmentId", 71003L))
+        WorkflowExpression.test(expression, Map.of("severity", "紧急", "departmentId", 71003L))
             .matched());
   }
 
@@ -395,8 +413,8 @@ class RepairApprovalMySqlIT {
         org.springframework.web.server.ResponseStatusException.class,
         () -> runtime.act(n(i, "id"), task, n(i, "row_version"), true, "越权测试"));
     act(second, true);
-    assertEquals("待派工", repairs.findOrder(10001, second).getStatus());
-    assertEquals("审批中", repairs.findOrder(10001, first).getStatus());
+    assertEquals("待派工", repairs.find(10001, second).getStatus());
+    assertEquals("审批中", repairs.find(10001, first).getStatus());
   }
 
   @Test
@@ -407,7 +425,192 @@ class RepairApprovalMySqlIT {
         "UPDATE eam_equipment SET company_org_id=71006,department_org_id=71007 WHERE id=990410001");
     assertThrows(
         IllegalArgumentException.class,
-        () -> orders.update(id, form(), repairs.findOrder(10001, id).getRowVersion()));
-    assertEquals(71002L, repairs.findOrder(10001, id).getCompanyOrgId());
+        () -> orders.update(id, form(), repairs.find(10001, id).getRowVersion()));
+    assertEquals(71002L, repairs.find(10001, id).getCompanyOrgId());
+  }
+
+  @Autowired RepairCandidateRepository candidates;
+  @Autowired RepairInboxRepository inboxes;
+  @Autowired RepairCollaboratorRepository collaborators;
+  @Autowired RepairMaterialRepository materials;
+  @Autowired EquipmentSpareRepository spares;
+  @Autowired RepairRelationsService relationService;
+  @Autowired RepairQueryService repairQueries;
+
+  @Test
+  void candidateClaimKeepsTenantAndUsesOneAtomicUpdate() {
+    long order = create();
+    candidates.addCandidate(993112001L, 10001, order, 73001);
+    candidates.addCandidate(993112002L, 10001, order, 73002);
+    candidates.addCandidate(993112003L, 10002, order, 73001);
+    long before = counter("Com_update");
+    candidates.claim(10001, order, 73001);
+    assertEquals(1, counter("Com_update") - before);
+    assertEquals(0, candidates.candidate(10001, order, 73001));
+    assertEquals(1, candidates.candidate(10002, order, 73001));
+    assertEquals(
+        Set.of("已接单", "已由他人接单"),
+        candidates.candidates(10001, order).stream()
+            .map(RepairReadViews.Candidate::status)
+            .collect(java.util.stream.Collectors.toSet()));
+    candidates.clearCandidates(10001, order);
+    assertEquals(1, candidates.candidate(10002, order, 73001));
+  }
+
+  @Test
+  void todoClosureSeparatesWarehouseAndApprovalAndKeepsRecipientScope() {
+    long order = create();
+    inboxes.inbox(993112011, 10001, 73001, order, "待出库", "仓库", true);
+    inboxes.inbox(993112012, 10001, 73001, order, "待接单", "接单", true);
+    inboxes.inbox(993112013, 10001, 73001, order, "报修待修改", "修改", true);
+    inboxes.closeTodos(10002, order);
+    assertEquals(
+        0,
+        db.queryForObject(
+            "SELECT SUM(done) FROM eam_repair_inbox WHERE id BETWEEN 993112011 AND 993112013",
+            Integer.class));
+    inboxes.closeApprovalReturnTodos(10001, order);
+    assertEquals(
+        1,
+        db.queryForObject("SELECT done FROM eam_repair_inbox WHERE id=993112013", Integer.class));
+    inboxes.closeTodos(10001, order);
+    assertEquals(
+        0,
+        db.queryForObject("SELECT done FROM eam_repair_inbox WHERE id=993112011", Integer.class));
+    assertEquals(0, inboxes.markRead(10001, 73002, 993112011));
+    assertEquals(1, inboxes.markRead(10001, 73001, 993112011));
+    inboxes.closeIssueTodos(10001, order);
+    assertEquals(
+        1,
+        db.queryForObject("SELECT done FROM eam_repair_inbox WHERE id=993112011", Integer.class));
+    assertNotNull(
+        db.queryForObject(
+            "SELECT message_args FROM eam_repair_inbox WHERE id=993112011", String.class));
+  }
+
+  @Test
+  void collaboratorReplacePreservesOtherOrderAndRejectsForeignKeysBeforeDelete() {
+    long first = create(), second = create();
+    var row = repairs.find(10001, first);
+    row.setCollaboratorsJson("[{\"id\":\"73001\",\"name\":\"甲\",\"extra\":\"兼容字段\"}]");
+    relationService.save(row);
+    var other = repairs.find(10001, second);
+    other.setCollaboratorsJson("[{\"id\":\"73002\",\"name\":\"乙\"}]");
+    relationService.save(other);
+    assertEquals("甲", collaborators.list(10001, List.of(first)).getFirst().getNameSnapshot());
+    assertTrue(collaborators.list(10002, List.of(first)).isEmpty());
+    var wrong = new RepairCollaborator();
+    wrong.setTenantId(10002L);
+    wrong.setOrderId(first);
+    assertThrows(
+        IllegalArgumentException.class, () -> collaborators.replace(10001, first, List.of(wrong)));
+    assertEquals(1, collaborators.list(10001, List.of(first)).size());
+    row.setCollaboratorsJson("[]");
+    relationService.save(row);
+    assertTrue(collaborators.list(10001, List.of(first)).isEmpty());
+    assertEquals(1, collaborators.list(10001, List.of(second)).size());
+  }
+
+  @Test
+  void legacyMaterialConsumptionAndSpareRemovalRemainAtomic() {
+    long order = create();
+    db.update(
+        "INSERT INTO eam_spare_stock(id,tenant_id,company_id,code,name,model,quantity)"
+            + " VALUES(993112021,10001,71002,'QA-LEGACY','旧轴承','M',10)");
+    db.update(
+        "INSERT INTO"
+            + " eam_repair_material(id,tenant_id,order_id,stock_id,applicant_id,quantity,issued_quantity,installed_quantity,status,created_at)"
+            + " VALUES(993112022,10001,?,993112021,73001,2,2,0,'已出库',NOW())",
+        order);
+    assertNull(materials.lockMaterial(10002, 993112022, order));
+    assertEquals(0, materials.consume(10001, 993112022, new java.math.BigDecimal("3")));
+    assertEquals(1, materials.consume(10001, 993112022, new java.math.BigDecimal("1.25")));
+    assertEquals(0, materials.consume(10001, 993112022, new java.math.BigDecimal("1")));
+    assertEquals(0, materials.consume(10002, 993112022, new java.math.BigDecimal("0.1")));
+    assertEquals(993112021L, materials.lockMaterial(10001, 993112022, order).getStockId());
+    spares.install(993112023, 10001, 990410001, 993112021, order, new java.math.BigDecimal("1.25"));
+    var row =
+        spares.installed(10001, 990410001).stream()
+            .filter(x -> x.getId().equals("993112023"))
+            .findFirst()
+            .orElseThrow();
+    assertEquals(0, row.getQuantity().compareTo(new java.math.BigDecimal("1.25")));
+    assertEquals("旧轴承", row.getName());
+    assertEquals(0, spares.remove(10002, 990410001, 993112023));
+    assertEquals(1, spares.remove(10001, 990410001, 993112023));
+    assertEquals(0, spares.remove(10001, 990410001, 993112023));
+  }
+
+  @Test
+  void assistantUsesRepairListAuthorizationAndRejectsInvalidDomain() throws Exception {
+    long id = create();
+    doAnswer(
+            call -> {
+              com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RepairOrder> q =
+                  call.getArgument(0);
+              q.eq(RepairOrder::getId, id);
+              return null;
+            })
+        .when(permissions)
+        .filterRepair(any());
+    var plan =
+        AiBusinessPlan.parse(json.readTree("{\"domain\":\"repair\",\"operation\":\"COUNT\"}"));
+    var request = new RepairAssistantRequest(plan, null, 1, 20, LocalDateTime.now(), null, null);
+    assertEquals(1, ((Number) repairQueries.queryAssistant(request).get("value")).intValue());
+    doThrow(
+            new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.FORBIDDEN))
+        .when(permissions)
+        .require("repair", "查看");
+    assertThrows(
+        org.springframework.web.server.ResponseStatusException.class,
+        () -> repairQueries.queryAssistant(request));
+  }
+
+  private long counter(String name) {
+    return Long.parseLong(
+        db.queryForList("SHOW SESSION STATUS LIKE '" + name + "'")
+            .getFirst()
+            .get("Value")
+            .toString());
+  }
+
+  @Test
+  void auditInsertsStillUseDatabaseClock() {
+    long order = create();
+    try {
+      db.execute("SET timestamp=1000000000");
+      candidates.addCandidate(993112031, 10001, order, 73001);
+      inboxes.inbox(993112032, 10001, 73001, order, "待接单", "时钟", true);
+      assertEquals(
+          db.queryForObject("SELECT NOW()", java.sql.Timestamp.class),
+          db.queryForObject(
+              "SELECT created_at FROM eam_repair_candidate WHERE id=993112031",
+              java.sql.Timestamp.class));
+      assertEquals(
+          db.queryForObject("SELECT NOW()", java.sql.Timestamp.class),
+          db.queryForObject(
+              "SELECT created_at FROM eam_repair_inbox WHERE id=993112032",
+              java.sql.Timestamp.class));
+    } finally {
+      db.execute("SET timestamp=0");
+    }
+  }
+
+  @Test
+  void inboxTypedProjectionKeepsOriginalJsonShape() {
+    long order = create();
+    inboxes.inbox(993112041, 10001, 73001, order, "未知历史消息", "旧标题", true);
+    var old =
+        db.queryForList(
+            "SELECT CAST(i.id AS CHAR) id,CAST(i.order_id AS CHAR)"
+                + " orderId,i.kind,i.title,i.message_key messageKey,i.message_args"
+                + " messageArgs,i.is_todo todo,i.done,i.read_at IS NOT NULL"
+                + " isRead,DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time,r.order_no"
+                + " orderNo,r.equipment_name equipmentName,r.status FROM eam_repair_inbox i JOIN"
+                + " eam_repair_order r ON r.id=i.order_id AND r.tenant_id=i.tenant_id WHERE"
+                + " i.tenant_id=10001 AND i.user_id=73001 AND r.deleted=0 ORDER BY i.created_at"
+                + " DESC,i.id DESC LIMIT 300");
+    assertEquals(json.valueToTree(old), json.valueToTree(inboxes.inboxRows(10001, 73001)));
   }
 }

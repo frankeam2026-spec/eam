@@ -3,10 +3,12 @@ package com.windasoft.eam.repository.equipment;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery;
 import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.basedata.BaseItemMapper;
+import com.windasoft.eam.repository.common.SqlPredicate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -29,7 +31,6 @@ public class EquipmentQueryRepository {
   private final BaseItemMapper baseItems;
   private final ObjectMapper json;
 
-
   public EquipmentQueryRepository(
       EquipmentMapper equipment,
       EquipmentMediaRepository media,
@@ -51,7 +52,7 @@ public class EquipmentQueryRepository {
       long tenant,
       EquipmentListQuery request,
       Consumer<LambdaQueryWrapper<Equipment>> authorizedScope,
-      com.windasoft.eam.repository.common.SqlPredicate extensions,
+      SqlPredicate extensions,
       String extensionOrder) {
     var query =
         new LambdaQueryWrapper<Equipment>()
@@ -67,16 +68,14 @@ public class EquipmentQueryRepository {
             ? extensionOrder
             : EquipmentQueryFields.order(request.sort());
     if (order == null || order.isBlank())
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0009");
+      throw new LocalizedArgumentException("server.common.message0009");
     query.last(
         "ORDER BY " + order + " " + request.sort().direction().name() + ",eam_equipment.id ASC");
     return media.hydratePage(
         equipment.selectPage(new Page<>(request.page(), request.size()), query));
   }
 
-  private static void apply(
-      LambdaQueryWrapper<Equipment> query,
-      com.windasoft.eam.repository.common.SqlPredicate predicate) {
+  private static void apply(LambdaQueryWrapper<Equipment> query, SqlPredicate predicate) {
     var sql = new StringBuilder();
     int index = 0;
     for (char c : predicate.sql().toCharArray()) {
@@ -184,7 +183,6 @@ public class EquipmentQueryRepository {
     }
   }
 
-
   public List<Map<String, Object>> children(long tenant, long id) {
     var grouped = new HashMap<Long, List<Map<String, Object>>>();
     group(grouped, childRelations.viewRows(tenant, List.of(id)));
@@ -203,5 +201,13 @@ public class EquipmentQueryRepository {
 
   private void appendLegacy(List<Map<String, Object>> result, long tenant, long id, String kind) {
     for (var row : legacyRelations.list(tenant, id, kind)) result.add(legacyRelations.view(row));
+  }
+
+  /** 维修按旧设备编号关联的只读入口，保持原租户限定及删除语义。 */
+  public Equipment findByCode(long tenant, String code) {
+    return equipment.selectOne(
+        new LambdaQueryWrapper<Equipment>()
+            .eq(Equipment::getTenantId, tenant)
+            .eq(Equipment::getEquipmentCode, code));
   }
 }

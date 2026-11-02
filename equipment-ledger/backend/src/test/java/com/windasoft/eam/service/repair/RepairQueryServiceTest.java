@@ -9,9 +9,18 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.repair.RepairOrder;
+import com.windasoft.eam.repository.business.BusinessConfigRepository;
+import com.windasoft.eam.repository.business.BusinessQueryRepository;
+import com.windasoft.eam.repository.repair.RepairAssistantRepository;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
+import com.windasoft.eam.repository.repair.RepairQueryRepository;
+import com.windasoft.eam.service.business.BusinessConfigService;
+import com.windasoft.eam.service.business.BusinessQueryService;
+import com.windasoft.eam.service.business.BusinessReferenceService;
+import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
+import com.windasoft.eam.support.RelationStubs;
 import java.util.Map;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,27 +44,24 @@ class RepairQueryServiceTest {
     permissions = mock(PermissionService.class);
     service =
         new RepairQueryService(
-            new com.windasoft.eam.repository.repair.RepairQueryRepository(
-                mapper, new ObjectMapper(), com.windasoft.eam.support.RelationStubs.repair()),
+            new RepairQueryRepository(mapper, new ObjectMapper(), RelationStubs.repair()),
             auth,
             permissions,
-            new ObjectMapper());
-    var repo = mock(com.windasoft.eam.repository.business.BusinessConfigRepository.class);
+            new ObjectMapper(),
+            mock(RepairAssistantRepository.class));
+    var repo = mock(BusinessConfigRepository.class);
     when(repo.schema(anyLong(), anyString(), anyBoolean()))
         .thenReturn(Map.of("published", "{\"fields\":[]}"));
-    var config =
-        new com.windasoft.eam.service.business.BusinessConfigService(
-            repo, new ObjectMapper(), auth, permissions);
+    var config = new BusinessConfigService(repo, new ObjectMapper(), auth, permissions);
     var query =
-        new com.windasoft.eam.service.business.BusinessQueryService(
+        new BusinessQueryService(
             config,
             repo,
-            mock(com.windasoft.eam.service.business.BusinessReferenceService.class),
+            mock(BusinessReferenceService.class),
             auth,
             new ObjectMapper(),
-            new com.windasoft.eam.repository.business.BusinessQueryRepository(
-                mock(org.springframework.jdbc.core.JdbcTemplate.class)));
-    var custom = mock(com.windasoft.eam.service.business.BusinessValueService.class);
+            new BusinessQueryRepository(mock(org.springframework.jdbc.core.JdbcTemplate.class)));
+    var custom = mock(BusinessValueService.class);
     when(custom.batch(anyString(), anyCollection())).thenReturn(Map.of());
     when(custom.repairCategories(anyCollection())).thenReturn(Map.of());
     org.springframework.test.util.ReflectionTestUtils.setField(service, "customQueries", query);
@@ -72,8 +78,9 @@ class RepairQueryServiceTest {
 
   @Test
   void emptyPageDoesNotQueryCustomFields() {
-    var custom = (com.windasoft.eam.service.business.BusinessValueService)
-        org.springframework.test.util.ReflectionTestUtils.getField(service, "custom");
+    var custom =
+        (BusinessValueService)
+            org.springframework.test.util.ReflectionTestUtils.getField(service, "custom");
     service.list(Map.of());
     verify(custom, never()).batch(anyString(), anyCollection());
     verify(custom, never()).repairCategories(anyCollection());

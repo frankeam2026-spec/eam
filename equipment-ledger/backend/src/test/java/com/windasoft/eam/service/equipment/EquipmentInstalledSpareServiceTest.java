@@ -7,29 +7,27 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
+import com.windasoft.eam.repository.equipment.EquipmentSpareRepository;
 import com.windasoft.eam.repository.inventory.InventoryUsageRepository;
-import com.windasoft.eam.repository.repair.RepairWorkflowRepository;
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
 class EquipmentInstalledSpareServiceTest {
   @Test
   void mergesLegacyAndInventoryRecordsIntoTypedRowsInExistingSourceOrder() {
-    var repair = mock(RepairWorkflowRepository.class);
+    var repair = mock(EquipmentSpareRepository.class);
     var inventory = mock(InventoryUsageRepository.class);
     var service = new EquipmentInstalledSpareService(repair, inventory);
-    var legacyRow =
-        Map.<String, Object>of(
-            "id", "legacy-1",
-            "code", "OLD-01",
-            "name", "旧系统备件",
-            "model", "M-OLD",
-            "quantity", new BigDecimal("1.250000"),
-            "status", "在用",
-            "installedAt", "2026-10-30 09:10");
+    var legacyRow = new EquipmentInstalledSpareView();
+    legacyRow.setId("legacy-1");
+    legacyRow.setCode("OLD-01");
+    legacyRow.setName("旧系统备件");
+    legacyRow.setModel("M-OLD");
+    legacyRow.setQuantity(new BigDecimal("1.250000"));
+    legacyRow.setStatus("在用");
+    legacyRow.setInstalledAt("2026-10-30 09:10");
     var current = new EquipmentInstalledSpareView();
     current.setId("usage-1");
     current.setCode("MAT-01");

@@ -14,27 +14,38 @@ public class BaseItemRepository {
   }
 
   public BaseItem findForShare(Long id) {
-    return mapper.selectOne(new LambdaQueryWrapper<BaseItem>()
-        .eq(BaseItem::getId, id).last("FOR SHARE"));
+    return mapper.selectOne(
+        new LambdaQueryWrapper<BaseItem>().eq(BaseItem::getId, id).last("FOR SHARE"));
   }
 
   public BaseItem activeForShare(long tenant, String id, String type) {
-    return mapper.selectOne(new LambdaQueryWrapper<BaseItem>()
-        .eq(BaseItem::getTenantId, tenant)
-        .eq(BaseItem::getId, id)
-        .eq(BaseItem::getItemType, type)
-        .eq(BaseItem::getStatus, 1)
-        .last("FOR SHARE"));
+    return mapper.selectOne(
+        new LambdaQueryWrapper<BaseItem>()
+            .eq(BaseItem::getTenantId, tenant)
+            .eq(BaseItem::getId, id)
+            .eq(BaseItem::getItemType, type)
+            .eq(BaseItem::getStatus, 1)
+            .last("FOR SHARE"));
   }
 
   public BaseItem findById(Long id) {
     return mapper.selectById(id);
   }
+
   public long locationCount(long tenant, Long id) {
     return mapper.selectCount(
         new LambdaQueryWrapper<BaseItem>()
             .eq(BaseItem::getTenantId, tenant)
             .eq(BaseItem::getItemType, "LOCATION")
             .eq(BaseItem::getCompanyOrgId, id));
+  }
+
+  public java.util.List<BaseItem> processingResults(long tenant) {
+    return mapper.selectList(
+        new LambdaQueryWrapper<BaseItem>()
+            .eq(BaseItem::getTenantId, tenant)
+            .eq(BaseItem::getItemType, "PROCESS_RESULT")
+            .eq(BaseItem::getStatus, 1)
+            .orderByAsc(BaseItem::getSortNo));
   }
 }

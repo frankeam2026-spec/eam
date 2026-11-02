@@ -5,12 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.windasoft.eam.entity.repair.RepairOrder;
-import com.windasoft.eam.repository.equipment.EquipmentMapper;
-import com.windasoft.eam.repository.equipment.NumberCounterMapper;
 import java.util.List;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.Test;
@@ -24,13 +22,7 @@ class RepairAttachmentQueryTest {
         RepairOrder.class);
     var mapper = mock(RepairOrderMapper.class);
     when(mapper.selectList(any())).thenReturn(List.of());
-    var repository =
-        new RepairOrderRepository(
-            mapper,
-            mock(EquipmentMapper.class),
-            mock(com.windasoft.eam.repository.basedata.BaseItemMapper.class),
-            mock(NumberCounterMapper.class),
-            mock(RepairRelationsRepository.class));
+    var repository = new RepairOrderRepository(mapper, mock(RepairRelationsRepository.class));
 
     repository.attachmentOrders(10001L, "01234567-89ab-4cde-8012-3456789abcde");
 

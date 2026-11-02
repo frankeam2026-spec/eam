@@ -16,9 +16,15 @@ public class EquipmentHistoryRepository {
   }
 
   public List<EquipmentHistory> list(long tenant, long equipmentId) {
-    return mapper.selectList(new LambdaQueryWrapper<EquipmentHistory>()
-        .eq(EquipmentHistory::getTenantId, tenant)
-        .eq(EquipmentHistory::getEquipmentId, equipmentId)
-        .orderByDesc(EquipmentHistory::getOccurredAt, EquipmentHistory::getId));
+    return mapper.selectList(
+        new LambdaQueryWrapper<EquipmentHistory>()
+            .eq(EquipmentHistory::getTenantId, tenant)
+            .eq(EquipmentHistory::getEquipmentId, equipmentId)
+            .orderByDesc(EquipmentHistory::getOccurredAt, EquipmentHistory::getId));
+  }
+
+  /** 事件内容由业务用例提供，仓储只保存设备履历记录。 */
+  public void insert(EquipmentHistory row) {
+    mapper.insertAtDatabaseTime(row);
   }
 }

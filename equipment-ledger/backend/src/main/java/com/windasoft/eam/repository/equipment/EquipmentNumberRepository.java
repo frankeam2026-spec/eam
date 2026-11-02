@@ -19,4 +19,9 @@ public class EquipmentNumberRepository {
   public long currentValue() {
     return counter.currentValue();
   }
+
+  /** 月度单据编号沿用同连接计数器，当前值须在递增后的同一事务读取。 */
+  public void nextMonthlyNumber(String prefix, String month) {
+    counter.nextMonthlyNumber(prefix, month);
+  }
 }

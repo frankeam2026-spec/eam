@@ -1,28 +1,41 @@
 package com.windasoft.eam.service.repair;
 
-import com.windasoft.eam.domain.repair.RepairQueue;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.common.MessageContext;
+import com.windasoft.eam.domain.repair.RepairQueue;
+import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
+import com.windasoft.eam.dto.repair.RepairAssistantRequest;
 import com.windasoft.eam.entity.repair.RepairOrder;
+import com.windasoft.eam.repository.repair.RepairAssistantRepository;
+import com.windasoft.eam.repository.repair.RepairQueryRepository;
+import com.windasoft.eam.service.business.BusinessQueryService;
+import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.io.PrintWriter;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 维修列表、统计与导出查询编排：共用可见范围，分页后批量装配业务扩展数据。 */
 @Service
 public class RepairQueryService {
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.business.BusinessValueService custom;
+  @org.springframework.beans.factory.annotation.Autowired private BusinessValueService custom;
 
   @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.business.BusinessQueryService customQueries;
+  private BusinessQueryService customQueries;
 
   private static final List<String> QUEUES =
       java.util.Arrays.stream(RepairQueue.values()).map(RepairQueue::code).toList();
@@ -40,16 +53,19 @@ public class RepairQueryService {
           "reportedAt");
   private static final List<String> EXPORT_LABELS =
       List.of("工单编号", "设备编号", "设备名称", "故障描述", "所属部门", "报修人", "维修人", "紧急程度", "工单状态", "报修时间");
-  private final com.windasoft.eam.repository.repair.RepairQueryRepository repository;
+  private final RepairQueryRepository repository;
+  private final RepairAssistantRepository assistant;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
 
   public RepairQueryService(
-      com.windasoft.eam.repository.repair.RepairQueryRepository repository,
+      RepairQueryRepository repository,
       AuthContext auth,
       PermissionService permissions,
-      ObjectMapper json) {
+      ObjectMapper json,
+      RepairAssistantRepository assistant) {
+    this.assistant = assistant;
     this.repository = repository;
     this.auth = auth;
     this.permissions = permissions;
@@ -83,7 +99,7 @@ public class RepairQueryService {
           .get(key.substring(7))
           .path("name")
           .asText();
-    return com.windasoft.eam.common.MessageContext.text("output.repair.field." + key);
+    return MessageContext.text("output.repair.field." + key);
   }
 
   public void requireExport() {
@@ -92,10 +108,22 @@ public class RepairQueryService {
 
   public record Result(Page<RepairOrder> page, Map<String, Long> counts) {}
 
-  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource() {
+  /** 与维修列表共用授权过滤；模型计划重新校验，不能借内部调用绕过字段白名单。 */
+  @Transactional(readOnly = true)
+  public Map<String, Object> queryAssistant(RepairAssistantRequest request) {
     permissions.require("repair", "查看");
-    var params = Map.<String, String>of();
-    return repository.assistantSource(query(params, filters(params), "all", false));
+    var plan = AiBusinessPlan.parse(json.valueToTree(request.plan()));
+    var verified =
+        new RepairAssistantRequest(
+            plan,
+            request.equipmentId(),
+            request.page(),
+            request.size(),
+            request.evaluatedAt(),
+            request.start(),
+            request.end());
+    return assistant.execute(
+        query(Map.of(), Map.of(), "all", false), verified, auth.tenantId(), auth.userId());
   }
 
   @Transactional(readOnly = true)
@@ -167,25 +195,23 @@ public class RepairQueryService {
         || columns.size() > allowed.size()
         || new HashSet<>(columns).size() != columns.size()
         || !allowed.containsAll(columns))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0028");
+      throw new LocalizedArgumentException("server.equipment.message0028");
     return columns;
   }
 
   private Map<String, String> filters(Map<String, String> params) {
     String raw = params.getOrDefault("filters", "{}");
-    if (raw.length() > 5000)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.business.message0007");
+    if (raw.length() > 5000) throw new LocalizedArgumentException("server.business.message0007");
     try {
       Map<String, String> result = json.readValue(raw, new TypeReference<Map<String, String>>() {});
       if (result == null || !repository.fields().containsAll(result.keySet()))
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.inventory.message0005");
+        throw new LocalizedArgumentException("server.inventory.message0005");
       result.values().forEach(RepairQueryService::text);
       return result;
     } catch (IllegalArgumentException e) {
       throw e;
     } catch (Exception e) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0014");
+      throw new LocalizedArgumentException("server.common.message0014");
     }
   }
 
@@ -193,17 +219,16 @@ public class RepairQueryService {
     try {
       long value = Long.parseLong(raw);
       if (value < min || value > max)
-        throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0004");
+        throw new LocalizedArgumentException("server.common.message0004");
       return value;
     } catch (NumberFormatException e) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0004");
+      throw new LocalizedArgumentException("server.common.message0004");
     }
   }
 
   private static String text(String value) {
     String result = value == null ? "" : value.trim();
-    if (result.length() > 200)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0009");
+    if (result.length() > 200) throw new LocalizedArgumentException("server.repair.message0009");
     return result;
   }
 
@@ -220,7 +245,7 @@ public class RepairQueryService {
     return value == null ? "" : value.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
   }
 
-  private com.windasoft.eam.repository.repair.RepairQueryRepository.Query ordered(
+  private RepairQueryRepository.Query ordered(
       Map<String, String> params, Map<String, String> filters, boolean export) {
     var prepared = new HashMap<>(params);
     prepared.put("advanced", customQueries.standard(params.get("advanced")));
@@ -245,7 +270,7 @@ public class RepairQueryService {
     return result;
   }
 
-  private com.windasoft.eam.repository.repair.RepairQueryRepository.Query query(
+  private RepairQueryRepository.Query query(
       Map<String, String> params, Map<String, String> filters, String queue, boolean export) {
     var prepared = new HashMap<>(params);
     prepared.put("advanced", customQueries.standard(params.get("advanced")));
@@ -269,7 +294,7 @@ public class RepairQueryService {
     if (raw.isBlank()) return;
     var values = new HashSet<>(Arrays.asList(raw.split(",", -1)));
     if (!Set.of("owned", "created").containsAll(values))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0040");
+      throw new LocalizedArgumentException("server.repair.message0040");
     query.and(
         group -> {
           if (values.contains("owned")) group.eq(RepairOrder::getAssigneeUserId, auth.userId());

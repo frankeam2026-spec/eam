@@ -92,6 +92,9 @@ jobs:
           - suite: query
             database: eam_equipment_query_test_20261030
             test: EquipmentQueryMySqlIT
+          - suite: repair
+            database: eam_repair_approval_test_20261030
+            test: RepairApprovalMySqlIT
           - suite: installed-spares
             database: eam_engineering_test
             test: EquipmentInstalledSpareMySqlIT
@@ -106,6 +109,7 @@ jobs:
           --health-cmd="mysqladmin ping -h localhost -uroot"
           --health-interval=10s --health-timeout=5s --health-retries=12
     env:
+      EAM_REPAIR_APPROVAL_TEST_URL: jdbc:mysql://127.0.0.1:3308/eam_repair_approval_test_20261030?connectionTimeZone=UTC
       EAM_EQUIPMENT_COMMAND_TEST_URL: jdbc:mysql://127.0.0.1:3308/eam_equipment_command_test_20261030?connectionTimeZone=UTC
       EAM_EQUIPMENT_QUERY_TEST_URL: jdbc:mysql://127.0.0.1:3308/eam_equipment_query_test_20261030?connectionTimeZone=UTC
       EAM_ENGINEERING_DB_URL: jdbc:mysql://127.0.0.1:3308/eam_engineering_test?connectionTimeZone=UTC

@@ -7,11 +7,23 @@ import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.entity.system.SystemUser;
-import com.windasoft.eam.repository.basedata.BaseItemMapper;
-import com.windasoft.eam.repository.equipment.EquipmentMapper;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
+import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
+import com.windasoft.eam.repository.equipment.EquipmentSpareRepository;
+import com.windasoft.eam.repository.inventory.LegacySpareStockRepository;
+import com.windasoft.eam.repository.repair.RepairCandidateRepository;
+import com.windasoft.eam.repository.repair.RepairEventRepository;
+import com.windasoft.eam.repository.repair.RepairInboxRepository;
+import com.windasoft.eam.repository.repair.RepairMaterialRepository;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
-import com.windasoft.eam.repository.repair.RepairWorkflowMapper;
-import com.windasoft.eam.repository.system.SystemUserMapper;
+import com.windasoft.eam.repository.repair.RepairOrderRepository;
+import com.windasoft.eam.repository.repair.RepairWorkflowRepository;
+import com.windasoft.eam.repository.system.NotificationRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
+import com.windasoft.eam.service.basedata.BaseDataReferenceService;
+import com.windasoft.eam.service.experience.MaterialCustodyService;
+import com.windasoft.eam.service.inventory.InventoryMutex;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,7 +31,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
 
 class RepairWorkflowServiceTest {
-  RepairWorkflowMapper flow;
+  RepairOrderRepository orderRows;
+  RepairCandidateRepository candidates;
+  RepairInboxRepository inboxes;
   RepairOrderMapper orders;
   PermissionService permissions;
   RepairWorkflowService service;
@@ -28,7 +42,9 @@ class RepairWorkflowServiceTest {
 
   @BeforeEach
   void setUp() {
-    flow = mock(RepairWorkflowMapper.class);
+    orderRows = mock(RepairOrderRepository.class);
+    candidates = mock(RepairCandidateRepository.class);
+    inboxes = mock(RepairInboxRepository.class);
     orders = mock(RepairOrderMapper.class);
     permissions = mock(PermissionService.class);
     var auth = mock(AuthContext.class);
@@ -41,21 +57,26 @@ class RepairWorkflowServiceTest {
     when(auth.user()).thenReturn(user);
     service =
         new RepairWorkflowService(
-            new com.windasoft.eam.repository.repair.RepairWorkflowRepository(
-                flow,
-                orders,
-                mock(EquipmentMapper.class),
-                mock(SystemUserMapper.class),
-                mock(BaseItemMapper.class),
-                com.windasoft.eam.support.RelationStubs.repair()),
+            mock(RepairWorkflowRepository.class),
             auth,
             permissions,
             json,
-            mock(com.windasoft.eam.service.basedata.BaseDataReferenceService.class));
+            mock(BaseDataReferenceService.class),
+            orderRows,
+            candidates,
+            mock(RepairEventRepository.class),
+            inboxes,
+            mock(RepairMaterialRepository.class),
+            mock(LegacySpareStockRepository.class),
+            mock(EquipmentSpareRepository.class),
+            mock(EquipmentQueryRepository.class),
+            mock(SystemUserRepository.class),
+            mock(BaseItemRepository.class),
+            mock(EquipmentHistoryRepository.class),
+            mock(NotificationRepository.class),
+            mock(RepairRelationsService.class));
     org.springframework.test.util.ReflectionTestUtils.setField(
-        service,
-        "experienceInventoryMutex",
-        mock(com.windasoft.eam.service.inventory.InventoryMutex.class));
+        service, "experienceInventoryMutex", mock(InventoryMutex.class));
     org.springframework.test.util.ReflectionTestUtils.setField(
         service, "approvals", mock(RepairApprovalService.class));
     org.springframework.test.util.ReflectionTestUtils.setField(
@@ -63,16 +84,14 @@ class RepairWorkflowServiceTest {
         "experiencePublisher",
         mock(org.springframework.context.ApplicationEventPublisher.class));
     org.springframework.test.util.ReflectionTestUtils.setField(
-        service,
-        "custody",
-        mock(com.windasoft.eam.service.experience.MaterialCustodyService.class));
+        service, "custody", mock(MaterialCustodyService.class));
     row = new RepairOrder();
     row.setId(1L);
     row.setTenantId(10001L);
     row.setStatus("待接单");
     row.setRowVersion(4);
     row.setDeleted(0);
-    when(flow.lock(10001L, 1L)).thenReturn(row);
+    when(orderRows.lock(10001L, 1L)).thenReturn(row);
   }
 
   @Test
@@ -84,8 +103,8 @@ class RepairWorkflowServiceTest {
                 () -> service.action(1L, 3, json.readTree("{\"action\":\"claim\"}")))
             .getStatusCode()
             .value());
-    verify(flow, never()).claim(anyLong(), anyLong(), anyLong());
-    verify(orders, never()).updateById(any(RepairOrder.class));
+    verify(candidates, never()).claim(anyLong(), anyLong(), anyLong());
+    verify(orderRows, never()).update(any(RepairOrder.class));
   }
 
   @Test
@@ -97,7 +116,7 @@ class RepairWorkflowServiceTest {
                 () -> service.action(1L, 4, json.readTree("{\"action\":\"claim\"}")))
             .getStatusCode()
             .value());
-    verify(flow, never()).closeTodos(anyLong(), anyLong());
+    verify(inboxes, never()).closeTodos(anyLong(), anyLong());
   }
 
   @Test
