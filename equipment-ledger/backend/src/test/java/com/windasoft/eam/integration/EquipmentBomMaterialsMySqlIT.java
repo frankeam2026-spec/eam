@@ -17,6 +17,7 @@ import com.windasoft.eam.controller.equipment.EquipmentSelectionController;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.inventory.Material;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.service.equipment.EquipmentRelationsService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.util.ArrayList;
@@ -81,7 +82,7 @@ class EquipmentBomMaterialsMySqlIT {
   com.windasoft.eam.repository.equipment.EquipmentRelationLegacyRepository legacyRelations;
 
   @Autowired com.windasoft.eam.repository.equipment.EquipmentRelationLegacyMapper legacyMapper;
-  @Autowired com.windasoft.eam.repository.equipment.EquipmentQueryRepository equipmentQueries;
+  @Autowired EquipmentRelationsService equipmentQueries;
   @Autowired javax.sql.DataSource dataSource;
   MockMvc mvc;
 
@@ -214,11 +215,11 @@ class EquipmentBomMaterialsMySqlIT {
     var parent = new com.windasoft.eam.entity.equipment.Equipment();
     parent.setId(993980001L);
     long before = selects();
-    var batch = equipmentQueries.pageRelations(TENANT, java.util.List.of(parent));
+    var batch = equipmentQueries.pageRelations(java.util.List.of(parent));
     assertEquals(3L, selects() - before);
     assertEquals(
-        equipmentQueries.children(TENANT, parent.getId()), batch.children().get(parent.getId()));
-    assertEquals(equipmentQueries.bom(TENANT, parent.getId()), batch.bom().get(parent.getId()));
+        equipmentQueries.children(parent.getId()), batch.children().get(parent.getId()));
+    assertEquals(equipmentQueries.bom(parent.getId()), batch.bom().get(parent.getId()));
     assertEquals("1.20", batch.bom().get(parent.getId()).getFirst().get("quantity"));
   }
 
@@ -251,7 +252,7 @@ class EquipmentBomMaterialsMySqlIT {
     rows.getFirst().setUnitId(foreign);
     rows.getFirst().setSourceId(foreign + 1);
     long before = selects();
-    var result = equipmentQueries.pageRelations(TENANT, rows);
+    var result = equipmentQueries.pageRelations(rows);
     // 首层503个ID分两批、上级一批；501台设备的三类关系各分两批。
     assertEquals(9L, selects() - before);
     assertEquals(502, result.dictionary().size());
@@ -259,7 +260,7 @@ class EquipmentBomMaterialsMySqlIT {
     assertFalse(result.dictionary().containsKey(foreign));
     assertFalse(result.dictionary().containsKey(foreign + 1));
     before = selects();
-    assertEquals(0, equipmentQueries.pageRelations(TENANT, List.of()).dictionary().size());
+    assertEquals(0, equipmentQueries.pageRelations(List.of()).dictionary().size());
     assertEquals(0L, selects() - before);
   }
 

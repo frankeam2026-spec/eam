@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.repository.equipment.EquipmentBomRepository;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.equipment.EquipmentRelationLegacyRepository;
 import com.windasoft.eam.repository.equipment.EquipmentRelationsRepository;
 import com.windasoft.eam.repository.inventory.MaterialRepository;
@@ -39,7 +40,7 @@ class EquipmentCompanyLockTest {
           equipment,
           mock(com.windasoft.eam.repository.equipment.EquipmentChildRepository.class),
           mock(com.windasoft.eam.repository.equipment.EquipmentQueryRepository.class),
-          auth, mock(PermissionService.class), new ObjectMapper(), mutex, organizations,bomRepository,relationLegacyRepository,mR);
+          auth, mock(PermissionService.class), new ObjectMapper(), mutex, organizations,bomRepository,relationLegacyRepository,mR, mock(BaseItemRepository.class));
 
   @BeforeEach
   void identity() {

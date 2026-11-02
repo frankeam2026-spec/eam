@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.equipment.EquipmentBomRepository;
 import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.repository.equipment.EquipmentRelationLegacyRepository;
@@ -114,7 +115,7 @@ class EquipmentRelationsCommandTest {
     when(reR.list(anyLong(), anyLong(), anyString())).thenReturn(java.util.List.of());
     var service =
         new EquipmentRelationsService(repo, childr, queryr, auth, permissions, json, mock(InventoryMutex.class),
-            mock(com.windasoft.eam.repository.system.OrgUnitRepository.class), bomr,reR,mR);
+            mock(com.windasoft.eam.repository.system.OrgUnitRepository.class), bomr,reR,mR, mock(BaseItemRepository.class));
     var parent = new Equipment();
     parent.setId(901L);
     service.saveBom(parent, json.createArrayNode());
@@ -135,7 +136,7 @@ class EquipmentRelationsCommandTest {
     when(reR.list(anyLong(), anyLong(), anyString())).thenReturn(java.util.List.of());
     var service =
         new EquipmentRelationsService(repo, childr, queryr, auth, permissions, json, mock(InventoryMutex.class),
-            mock(com.windasoft.eam.repository.system.OrgUnitRepository.class), bomR, reR,mR);
+            mock(com.windasoft.eam.repository.system.OrgUnitRepository.class), bomR, reR,mR, mock(BaseItemRepository.class));
     var parent = new Equipment();
     parent.setId(901L);
     service.saveChildren(parent, json.createArrayNode());

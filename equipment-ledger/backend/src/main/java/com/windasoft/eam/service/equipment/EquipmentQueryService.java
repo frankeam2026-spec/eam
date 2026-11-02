@@ -1,7 +1,16 @@
 package com.windasoft.eam.service.equipment;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.MultiFormatWriter;
+import com.google.zxing.client.j2se.MatrixToImageWriter;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.common.MessageContext;
+import com.windasoft.eam.dto.common.ListQuery;
+import com.windasoft.eam.dto.common.PageResult;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantResult;
 import com.windasoft.eam.dto.equipment.EquipmentHistoryView;
@@ -11,32 +20,40 @@ import com.windasoft.eam.dto.equipment.EquipmentOptions;
 import com.windasoft.eam.dto.equipment.EquipmentOwnerView;
 import com.windasoft.eam.dto.equipment.EquipmentPage;
 import com.windasoft.eam.dto.equipment.EquipmentView;
+import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
-import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
-import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
+import com.windasoft.eam.entity.equipment.EquipmentOwner;
+import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.repository.basedata.BaseItemRepository;
+import com.windasoft.eam.repository.common.SqlPredicate;
+import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
-import com.windasoft.eam.entity.equipment.EquipmentOwner;
+import com.windasoft.eam.service.business.BusinessQueryService;
+import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintWriter;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 设备台账读取用例入口：组织筛选、数据范围、分页以及关联资料组装；不承担台账状态修改。
- */
+/** 设备台账读取用例入口：组织筛选、数据范围、分页以及关联资料组装；不承担台账状态修改。 */
 @Service
 public class EquipmentQueryService {
-  private final com.windasoft.eam.service.business.BusinessValueService custom;
-  private final com.windasoft.eam.service.business.BusinessQueryService customQueries;
+  private final BusinessValueService custom;
+  private final BusinessQueryService customQueries;
 
+  private final EquipmentRelationsService relations;
   private final EquipmentQueryRepository repository;
   private final EquipmentOwnerRepository ownerRepository;
   private final EquipmentHistoryQueryService historyQueries;
@@ -50,6 +67,7 @@ public class EquipmentQueryService {
 
   public EquipmentQueryService(
       EquipmentQueryRepository repository,
+      EquipmentRelationsService relations,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper objectMapper,
@@ -59,9 +77,10 @@ public class EquipmentQueryService {
       BaseItemRepository baseItems,
       OrgUnitRepository organizations,
       SystemUserRepository users,
-      com.windasoft.eam.service.business.BusinessValueService custom,
-      com.windasoft.eam.service.business.BusinessQueryService customQueries) {
+      BusinessValueService custom,
+      BusinessQueryService customQueries) {
     this.repository = repository;
+    this.relations = relations;
     this.ownerRepository = ownerRepository;
     this.historyQueries = historyQueries;
     this.assistantQueries = assistantQueries;
@@ -79,20 +98,19 @@ public class EquipmentQueryService {
     return list(request, false);
   }
 
-  @org.springframework.transaction.annotation.Transactional(readOnly = true)
+  @Transactional(readOnly = true)
   public EquipmentAssistantResult queryAssistant(EquipmentAssistantQuery query) {
     return assistantQueries.query(query);
   }
 
-  private record PreparedQuery(
-      com.windasoft.eam.repository.common.SqlPredicate extensions, String order) {}
+  private record PreparedQuery(SqlPredicate extensions, String order) {}
 
   private PreparedQuery prepare(EquipmentListQuery request) {
     var extensions =
         request.conditions().stream().filter(c -> c.field().startsWith("custom:")).toList();
     var predicate =
         extensions.isEmpty()
-            ? com.windasoft.eam.repository.common.SqlPredicate.of("1=1")
+            ? SqlPredicate.of("1=1")
             : customQueries.predicate(
                 "equipment", objectMapper.valueToTree(extensions), "eam_equipment");
     return new PreparedQuery(
@@ -127,15 +145,17 @@ public class EquipmentQueryService {
               e.setCustomFieldLabels(v.customFieldLabels());
               e.setCustomSchemaVersion(v.customSchemaVersion());
             });
-    var relations = repository.pageRelations(auth.tenantId(), result.getRecords());
+    var pageRelations = relations.pageRelations(result.getRecords());
     var ownersByEquipment =
         ownerRepository
             .listByEquipmentIds(
                 auth.tenantId(), result.getRecords().stream().map(Equipment::getId).toList())
             .stream()
-            .collect(java.util.stream.Collectors.groupingBy(EquipmentOwner::getEquipmentId));
+            .collect(Collectors.groupingBy(EquipmentOwner::getEquipmentId));
     return new EquipmentPage(
-        result.getRecords().stream().map(row -> view(row, relations, ownersByEquipment)).toList(),
+        result.getRecords().stream()
+            .map(row -> view(row, pageRelations, ownersByEquipment))
+            .toList(),
         new EquipmentPage.PageInfo(result.getCurrent(), result.getSize(), result.getTotal()));
   }
 
@@ -160,18 +180,14 @@ public class EquipmentQueryService {
           Map.entry("amount", "采购金额（元）"),
           Map.entry("warranty", "保修期至"));
 
-  @org.springframework.transaction.annotation.Transactional(readOnly = true)
-  public void export(EquipmentListQuery request, List<String> columns, java.io.PrintWriter writer) {
+  @Transactional(readOnly = true)
+  public void export(EquipmentListQuery request, List<String> columns, PrintWriter writer) {
     permissions.require("equipment", "导出");
     var fields = customQueries.fields("equipment");
     var labels = new HashMap<>(EXPORT_FIELDS);
     EXPORT_FIELDS
         .keySet()
-        .forEach(
-            k ->
-                labels.put(
-                    k,
-                    com.windasoft.eam.common.MessageContext.text("output.equipment.field." + k)));
+        .forEach(k -> labels.put(k, MessageContext.text("output.equipment.field." + k)));
     fields.forEach(
         (id, f) -> {
           if (f.path("exportable").asBoolean()) labels.put("custom:" + id, f.path("name").asText());
@@ -180,21 +196,16 @@ public class EquipmentQueryService {
         || columns.size() > labels.size()
         || !labels.keySet().containsAll(columns)
         || new HashSet<>(columns).size() != columns.size())
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0028");
+      throw new LocalizedArgumentException("server.equipment.message0028");
     // 首次写出响应前完成整份查询的校验，避免响应头提交后再报错。
     var prepared = prepare(request);
     var first = load(request.at(1, 500), true, prepared);
     writer.print('\ufeff');
-    writer.println(
-        columns.stream()
-            .map(k -> csv(labels.get(k)))
-            .collect(java.util.stream.Collectors.joining(",")));
+    writer.println(columns.stream().map(k -> csv(labels.get(k))).collect(Collectors.joining(",")));
     for (int page = 1; ; page++) {
       var result = page == 1 ? first : load(request.at(page, 500), true, prepared);
       for (var row : result.data()) {
-        Map<String, Object> view =
-            objectMapper.convertValue(
-                row, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        Map<String, Object> view = objectMapper.convertValue(row, new TypeReference<>() {});
         writer.println(
             columns.stream()
                 .map(
@@ -203,7 +214,7 @@ public class EquipmentQueryService {
                             k.startsWith("custom:")
                                 ? row.customFieldLabels().get(k.substring(7))
                                 : Objects.toString(view.get(k), "")))
-                .collect(java.util.stream.Collectors.joining(",")));
+                .collect(Collectors.joining(",")));
       }
       if (result.data().size() < 500) break;
       if (writer.checkError()) throw new IllegalStateException("导出连接已断开");
@@ -228,25 +239,21 @@ public class EquipmentQueryService {
     var equipment = require(id);
     permissions.checkEquipment(equipment, "查看");
     var matrix =
-        new com.google.zxing.MultiFormatWriter()
+        new MultiFormatWriter()
             .encode(
                 equipment.getEquipmentCode(),
-                com.google.zxing.BarcodeFormat.QR_CODE,
+                BarcodeFormat.QR_CODE,
                 240,
                 240,
-                Map.of(
-                    com.google.zxing.EncodeHintType.CHARACTER_SET,
-                    "UTF-8",
-                    com.google.zxing.EncodeHintType.MARGIN,
-                    2));
-    var bytes = new java.io.ByteArrayOutputStream();
-    com.google.zxing.client.j2se.MatrixToImageWriter.writeToStream(matrix, "PNG", bytes);
+                Map.of(EncodeHintType.CHARACTER_SET, "UTF-8", EncodeHintType.MARGIN, 2));
+    var bytes = new ByteArrayOutputStream();
+    MatrixToImageWriter.writeToStream(matrix, "PNG", bytes);
     return bytes.toByteArray();
   }
 
   public List<EquipmentNavigationNode> navigationTree() {
     permissions.require("equipment", "查看");
-    var visible = new java.util.HashSet<Long>();
+    var visible = new HashSet<Long>();
     for (var e : repository.visibleOrganizations(auth.tenantId(), permissions::filterEquipment)) {
       if (e.getCompanyOrgId() != null) visible.add(e.getCompanyOrgId());
       if (e.getDepartmentOrgId() != null) visible.add(e.getDepartmentOrgId());
@@ -271,13 +278,12 @@ public class EquipmentQueryService {
         .toList();
   }
 
-  public com.windasoft.eam.dto.common.PageResult<EquipmentOptions.Employee> ownerCandidates(
-      String action, com.windasoft.eam.dto.common.ListQuery query) {
+  public PageResult<EquipmentOptions.Employee> ownerCandidates(String action, ListQuery query) {
     if (!List.of("新增", "编辑").contains(action))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0029");
+      throw new LocalizedArgumentException("server.equipment.message0029");
     permissions.require("equipment", action);
     var page = users.ownerCandidates(auth.tenantId(), query);
-    return new com.windasoft.eam.dto.common.PageResult<>(
+    return new PageResult<>(
         page.getRecords().stream()
             .map(
                 u ->
@@ -291,7 +297,7 @@ public class EquipmentQueryService {
 
   public EquipmentOptions batchOptions(String action) {
     if (!List.of("新增", "编辑").contains(action))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.equipment.message0029");
+      throw new LocalizedArgumentException("server.equipment.message0029");
     permissions.require("equipment", action);
     var allOrgs = organizations.organizations(auth.tenantId(), true);
     var selectable =
@@ -300,17 +306,13 @@ public class EquipmentQueryService {
                 o ->
                     "部门".equals(o.getOrgType())
                         && permissions.equipmentDepartmentAllowed(o.getId(), action))
-            .map(com.windasoft.eam.entity.system.OrgUnit::getId)
-            .collect(java.util.stream.Collectors.toSet());
-    var visible = new java.util.HashSet<Long>(selectable);
-    var orgMap =
-        allOrgs.stream()
-            .collect(
-                java.util.stream.Collectors.toMap(
-                    com.windasoft.eam.entity.system.OrgUnit::getId, o -> o));
+            .map(OrgUnit::getId)
+            .collect(Collectors.toSet());
+    var visible = new HashSet<Long>(selectable);
+    var orgMap = allOrgs.stream().collect(Collectors.toMap(OrgUnit::getId, o -> o));
     for (Long id : selectable) {
       var node = orgMap.get(id);
-      var visited = new java.util.HashSet<Long>();
+      var visited = new HashSet<Long>();
       while (node != null && visited.add(node.getId())) {
         visible.add(node.getId());
         node = orgMap.get(node.getParentId());
@@ -338,7 +340,7 @@ public class EquipmentQueryService {
     return new EquipmentOptions(departments, employees);
   }
 
-  @org.springframework.transaction.annotation.Transactional(readOnly = true)
+  @Transactional(readOnly = true)
   public EquipmentHistoryView history(long id) {
     var equipment = require(id);
     permissions.checkEquipment(equipment, "查看");
@@ -347,56 +349,48 @@ public class EquipmentQueryService {
 
   private Equipment require(long id) {
     var e = repository.find(auth.tenantId(), id);
-    if (e == null)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
+    if (e == null) throw new LocalizedArgumentException("server.common.message0064");
     return e;
   }
 
   private String locationPath(
-      Long id, Long company, boolean required, EquipmentQueryRepository.PageRelations context) {
+      Long id, Long company, boolean required, EquipmentRelationsService.PageRelations context) {
     if (id == null) {
-      if (required)
-        throw new com.windasoft.eam.common.LocalizedArgumentException("ui.equipment.text0109");
+      if (required) throw new LocalizedArgumentException("ui.equipment.text0109");
       return null;
     }
-    var parts = new java.util.ArrayList<String>();
-    var visited = new java.util.HashSet<Long>();
+    var parts = new ArrayList<String>();
+    var visited = new HashSet<Long>();
     var node = baseItem(id, context);
     if (node == null) {
-      if (required)
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.equipment.message0030");
+      if (required) throw new LocalizedArgumentException("server.equipment.message0030");
       return null;
     }
     while (node != null) {
       if (!visited.add(node.getId()))
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.equipment.message0031");
+        throw new LocalizedArgumentException("server.equipment.message0031");
       if (!node.getTenantId().equals(auth.tenantId())
           || !"LOCATION".equals(node.getItemType())
-          || !java.util.Objects.equals(node.getCompanyOrgId(), company))
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.equipment.message0032");
+          || !Objects.equals(node.getCompanyOrgId(), company))
+        throw new LocalizedArgumentException("server.equipment.message0032");
       if (required && node.getId().equals(id) && !Integer.valueOf(1).equals(node.getStatus()))
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.equipment.message0033");
+        throw new LocalizedArgumentException("server.equipment.message0033");
       parts.addFirst(node.getName());
       node = node.getParentId() == null ? null : baseItem(node.getParentId(), context);
     }
     return String.join(" · ", parts);
   }
 
-  private com.windasoft.eam.entity.basedata.BaseItem baseItem(
-      Long id, EquipmentQueryRepository.PageRelations context) {
+  private BaseItem baseItem(Long id, EquipmentRelationsService.PageRelations context) {
     return context == null ? baseItems.findById(id) : context.dictionary().get(id);
   }
 
   private String currentBaseName(
-      Long id, String type, String snapshot, EquipmentQueryRepository.PageRelations context) {
+      Long id, String type, String snapshot, EquipmentRelationsService.PageRelations context) {
     if (id == null) return safe(snapshot);
     var node = baseItem(id, context);
     return node != null
-            && java.util.Objects.equals(node.getTenantId(), auth.tenantId())
+            && Objects.equals(node.getTenantId(), auth.tenantId())
             && type.equals(node.getItemType())
         ? node.getName()
         : safe(snapshot);
@@ -430,7 +424,7 @@ public class EquipmentQueryService {
 
   private EquipmentView view(
       Equipment e,
-      EquipmentQueryRepository.PageRelations context,
+      EquipmentRelationsService.PageRelations context,
       Map<Long, List<EquipmentOwner>> ownersByEquipment) {
     if (e.getCustomFields() == null) {
       var v = custom.read("equipment", e.getId());
@@ -484,7 +478,7 @@ public class EquipmentQueryService {
         safe(
             e.getFunctionLocationId() == null
                 ? e.getFunctionLocation()
-                : java.util.Objects.requireNonNullElse(
+                : Objects.requireNonNullElse(
                     locationPath(e.getFunctionLocationId(), e.getCompanyOrgId(), false, context),
                     safe(e.getFunctionLocation()))),
         safe(e.getSpecialEquipment()),
@@ -499,10 +493,10 @@ public class EquipmentQueryService {
         json(e.getImagesJson()),
         json(e.getDocumentsJson()),
         context == null
-            ? repository.children(auth.tenantId(), e.getId())
+            ? relations.children(e.getId())
             : context.children().getOrDefault(e.getId(), List.of()),
         context == null
-            ? repository.bom(auth.tenantId(), e.getId())
+            ? relations.bom(e.getId())
             : context.bom().getOrDefault(e.getId(), List.of()),
         e.getCustomFields(),
         e.getCustomFieldLabels(),

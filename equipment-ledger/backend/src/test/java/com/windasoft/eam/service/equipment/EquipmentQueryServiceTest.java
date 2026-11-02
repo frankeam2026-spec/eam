@@ -36,6 +36,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 class EquipmentQueryServiceTest {
   EquipmentQueryRepository repository;
+  EquipmentRelationsService relations;
   EquipmentOwnerRepository ownerRepository;
   EquipmentHistoryQueryService historyQueries;
   EquipmentAssistantQueryService assistantQueries;
@@ -45,6 +46,7 @@ class EquipmentQueryServiceTest {
   @BeforeEach
   void setup() {
     repository = mock(EquipmentQueryRepository.class);
+    relations = mock(EquipmentRelationsService.class);
     ownerRepository = mock(EquipmentOwnerRepository.class);
     historyQueries = mock(EquipmentHistoryQueryService.class);
     assistantQueries = mock(EquipmentAssistantQueryService.class);
@@ -59,6 +61,7 @@ class EquipmentQueryServiceTest {
     service =
         new EquipmentQueryService(
             repository,
+            relations,
             auth,
             permissions,
             new ObjectMapper(),
@@ -77,6 +80,7 @@ class EquipmentQueryServiceTest {
     var error = assertThrows(IllegalArgumentException.class, () -> service.get(3L));
     assertEquals("设备不存在", error.getMessage());
     verifyNoInteractions(permissions);
+    verifyNoInteractions(relations);
   }
 
   @Test
@@ -89,6 +93,7 @@ class EquipmentQueryServiceTest {
         .checkEquipment(equipment, "查看");
     assertThrows(ResponseStatusException.class, () -> service.get(3L));
     verify(ownerRepository, never()).list(anyLong(), anyLong());
+    verifyNoInteractions(relations);
   }
 
   @Test
@@ -102,9 +107,9 @@ class EquipmentQueryServiceTest {
     when(repository.find(10001L, 3L)).thenReturn(equipment);
     when(ownerRepository.list(10001L, 3L))
         .thenReturn(List.of(new EquipmentOwner(10001L, 3L, 73001L, "负责人", 0)));
-    when(repository.children(10001L, 3L))
+    when(relations.children(3L))
         .thenReturn(List.of(Map.of("equipmentId", "4", "code", "EQ-C")));
-    when(repository.bom(10001L, 3L))
+    when(relations.bom(3L))
         .thenReturn(List.of(Map.of("materialId", "5", "quantity", "1.00")));
     var view = service.get(3L);
     assertEquals("3", view.id());
@@ -129,8 +134,8 @@ class EquipmentQueryServiceTest {
     equipment.setEquipmentCode("EQ-QA");
     when(repository.find(10001L, 3L)).thenReturn(equipment);
     when(ownerRepository.list(10001L, 3L)).thenReturn(List.of());
-    when(repository.children(10001L, 3L)).thenReturn(List.of());
-    when(repository.bom(10001L, 3L)).thenReturn(List.of());
+    when(relations.children(3L)).thenReturn(List.of());
+    when(relations.bom(3L)).thenReturn(List.of());
     var expected =
         new com.windasoft.eam.dto.equipment.EquipmentHistoryView(
             List.of(), service.view(equipment), List.of(), List.of(), List.of(), List.of());

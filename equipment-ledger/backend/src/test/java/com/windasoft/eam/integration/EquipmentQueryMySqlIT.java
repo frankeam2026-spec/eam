@@ -11,6 +11,7 @@ import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.repair.RepairQueryRepository;
 import com.windasoft.eam.repository.equipment.EquipmentOwnerRepository;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
+import com.windasoft.eam.service.equipment.EquipmentRelationsService;
 import com.windasoft.eam.service.system.*;
 import java.io.*;
 import java.util.*;
@@ -52,6 +53,7 @@ class EquipmentQueryMySqlIT {
   @MockitoBean com.windasoft.eam.scheduler.experience.RepairPlanScheduler repairScheduler;
   @MockitoBean com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler knowledgeScheduler;
   @MockitoSpyBean EquipmentQueryRepository repository;
+  @MockitoSpyBean EquipmentRelationsService relations;
   @MockitoSpyBean EquipmentOwnerRepository owners;
   @MockitoSpyBean com.windasoft.eam.repository.basedata.BaseItemRepository baseItems;
   @Autowired EquipmentQueryService service;
@@ -210,14 +212,14 @@ class EquipmentQueryMySqlIT {
             + " eam_equipment_relation_legacy(tenant_id,equipment_id,kind,source_index,snapshot_json,reason)"
             + " VALUES(10001,?,'bom',0,'{\"code\":\"QA-OLD\"}','test')",
         FIRST);
-    clearInvocations(repository, owners, baseItems);
+    clearInvocations(repository, relations, owners, baseItems);
     var row = service.list(query(Map.of())).data().getFirst();
     verify(owners, never()).list(anyLong(), anyLong());
     verify(owners).listByEquipmentIds(eq(10001L), argThat(ids -> ids.size() == 20));
     verify(baseItems, never()).findById(any());
-    verify(repository, never()).children(anyLong(), anyLong());
-    verify(repository, never()).bom(anyLong(), anyLong());
-    verify(repository).pageRelations(eq(10001L), argThat(rows -> rows.size() == 20));
+    verify(relations, never()).children(anyLong());
+    verify(relations, never()).bom(anyLong());
+    verify(relations).pageRelations(argThat(rows -> rows.size() == 20));
     var detail = service.get(FIRST);
     assertEquals(detail, row);
     assertEquals("厂区 · 车间", row.functionLocation());

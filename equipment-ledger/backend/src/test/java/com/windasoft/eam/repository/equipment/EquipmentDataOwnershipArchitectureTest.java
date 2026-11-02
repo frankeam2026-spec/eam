@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.windasoft.eam.repository.basedata.BaseItemMapper;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.system.OrgUnitMapper;
 import com.windasoft.eam.repository.system.SystemUserMapper;
 import java.lang.reflect.Field;
@@ -66,17 +67,44 @@ class EquipmentDataOwnershipArchitectureTest {
     assertFalse(fields.contains(OrgUnitMapper.class));
     assertFalse(fields.contains(SystemUserMapper.class));
     noBaseItemMapper(EquipmentQueryRepository.class);
+    noRelationAssembly(EquipmentQueryRepository.class);
     noMethods(
         EquipmentQueryRepository.class,
         "ownerCandidates",
         "employees",
         "organizations",
-        "baseItem");
+        "baseItem",
+        "pageRelations",
+        "children",
+        "bom");
   }
 
   @Test
   void dictionaryOwnershipCheckRejectsDirectMapperDependency() {
     assertThrows(AssertionError.class, () -> noBaseItemMapper(DirectDictionaryAccess.class));
+  }
+
+  @Test
+  void relationAssemblyCheckRejectsDependenciesAndAssemblyEntryPoints() {
+    assertThrows(AssertionError.class, () -> noRelationAssembly(DirectRelationAccess.class));
+    assertThrows(AssertionError.class, () -> noRelationAssembly(RelationAssemblyEntry.class));
+  }
+
+  private static void noRelationAssembly(Class<?> owner) {
+    var fields = Arrays.stream(owner.getDeclaredFields()).map(Field::getType).toList();
+    assertFalse(fields.contains(EquipmentChildRepository.class));
+    assertFalse(fields.contains(EquipmentBomRepository.class));
+    assertFalse(fields.contains(EquipmentRelationLegacyRepository.class));
+    assertFalse(fields.contains(BaseItemRepository.class));
+    noMethods(owner, "pageRelations", "children", "bom");
+  }
+
+  private static class DirectRelationAccess {
+    private EquipmentChildRepository children;
+  }
+
+  private static class RelationAssemblyEntry {
+    void pageRelations() {}
   }
 
   private static void noBaseItemMapper(Class<?> owner) {

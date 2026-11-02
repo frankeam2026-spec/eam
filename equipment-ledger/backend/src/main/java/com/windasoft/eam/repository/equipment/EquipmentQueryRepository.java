@@ -5,45 +5,23 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery;
-import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
-import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.common.SqlPredicate;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 import org.springframework.stereotype.Repository;
 
-/** 设备台账只读仓储：集中查询设备主体和关联数据，权限判断由业务服务承担。 */
+/** 设备台账只读仓储：查询设备主体及媒体投影，权限判断由业务服务承担。 */
 @Repository
 public class EquipmentQueryRepository {
-  private final EquipmentRelationLegacyRepository legacyRelations;
-  private final EquipmentChildRepository childRelations;
-  private final EquipmentBomRepository bomRelations;
   private final EquipmentMapper equipment;
   private final EquipmentMediaRepository media;
-  private final BaseItemRepository baseItems;
   private final ObjectMapper json;
 
   public EquipmentQueryRepository(
-      EquipmentMapper equipment,
-      EquipmentMediaRepository media,
-      BaseItemRepository baseItems,
-      ObjectMapper json,
-      EquipmentChildRepository childRelations,
-      EquipmentBomRepository bomRelations,
-      EquipmentRelationLegacyRepository legacyRelations) {
-    this.legacyRelations = legacyRelations;
-    this.childRelations = childRelations;
-    this.bomRelations = bomRelations;
+      EquipmentMapper equipment, EquipmentMediaRepository media, ObjectMapper json) {
     this.equipment = equipment;
     this.media = media;
-    this.baseItems = baseItems;
     this.json = json;
   }
 
@@ -119,70 +97,6 @@ public class EquipmentQueryRepository {
             .select(Equipment::getCompanyOrgId, Equipment::getDepartmentOrgId);
     authorizedScope.accept(q);
     return equipment.selectList(q);
-  }
-
-  public record PageRelations(
-      Map<Long, BaseItem> dictionary,
-      Map<Long, List<Map<String, Object>>> children,
-      Map<Long, List<Map<String, Object>>> bom) {}
-
-  public PageRelations pageRelations(long tenant, List<Equipment> rows) {
-    Map<Long, BaseItem> dictionary = new HashMap<>();
-    var children = new HashMap<Long, List<Map<String, Object>>>();
-    var bom = new HashMap<Long, List<Map<String, Object>>>();
-    if (rows.isEmpty()) return new PageRelations(dictionary, children, bom);
-    var ids = rows.stream().map(Equipment::getId).toList();
-    var pending = new HashSet<Long>();
-    for (var row : rows)
-      for (Long id :
-          Arrays.asList(
-              row.getCategoryId(),
-              row.getUseStatusId(),
-              row.getUnitId(),
-              row.getSourceId(),
-              row.getFunctionLocationId())) if (id != null) pending.add(id);
-    dictionary = baseItems.findWithAncestors(tenant, pending);
-    for (int start = 0; start < ids.size(); start += 500) {
-      var batch = ids.subList(start, Math.min(start + 500, ids.size()));
-      group(children, childRelations.viewRows(tenant, batch));
-      group(bom, bomRelations.viewRows(tenant, batch));
-      for (var row : legacyRelations.list(tenant, batch)) {
-        var target = row.getKind().equals("child") ? children : bom;
-        target
-            .computeIfAbsent(row.getEquipmentId(), key -> new ArrayList<>())
-            .add(legacyRelations.view(row));
-      }
-    }
-    return new PageRelations(dictionary, children, bom);
-  }
-
-  private static void group(
-      Map<Long, List<Map<String, Object>>> target, List<Map<String, Object>> rows) {
-    for (var row : rows) {
-      var value = new LinkedHashMap<>(row);
-      long id = ((Number) value.remove("__equipment_id")).longValue();
-      target.computeIfAbsent(id, key -> new ArrayList<>()).add(value);
-    }
-  }
-
-  public List<Map<String, Object>> children(long tenant, long id) {
-    var grouped = new HashMap<Long, List<Map<String, Object>>>();
-    group(grouped, childRelations.viewRows(tenant, List.of(id)));
-    var result = new ArrayList<>(grouped.getOrDefault(id, List.of()));
-    appendLegacy(result, tenant, id, "child");
-    return result;
-  }
-
-  public List<Map<String, Object>> bom(long tenant, long id) {
-    var grouped = new HashMap<Long, List<Map<String, Object>>>();
-    group(grouped, bomRelations.viewRows(tenant, List.of(id)));
-    var result = new ArrayList<>(grouped.getOrDefault(id, List.of()));
-    appendLegacy(result, tenant, id, "bom");
-    return result;
-  }
-
-  private void appendLegacy(List<Map<String, Object>> result, long tenant, long id, String kind) {
-    for (var row : legacyRelations.list(tenant, id, kind)) result.add(legacyRelations.view(row));
   }
 
   /** 维修按旧设备编号关联的只读入口，保持原租户限定及删除语义。 */
