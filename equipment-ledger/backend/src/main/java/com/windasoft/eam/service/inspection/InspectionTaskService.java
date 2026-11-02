@@ -9,6 +9,7 @@ import com.windasoft.eam.common.AcceptanceDecision;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.domain.inspection.InspectionTaskAction;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
+import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.system.*;
 import java.math.BigDecimal;
@@ -20,8 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class InspectionTaskService {
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.repository.inspection.DailyArrangementRepository dailyStorage;
+  private final DailyArrangementRepository dailyStorage;
 
   private final InspectionRepository repository;
   private final ObjectMapper json;
@@ -37,6 +37,7 @@ public class InspectionTaskService {
 
   public InspectionTaskService(
       InspectionRepository repository,
+      DailyArrangementRepository dailyStorage,
       ObjectMapper json,
       AuthContext auth,
       InspectionTaskAccessService taskAccess,
@@ -48,6 +49,7 @@ public class InspectionTaskService {
       org.springframework.context.ApplicationEventPublisher publisher,
       com.windasoft.eam.service.experience.MaterialCustodyService custody) {
     this.repository = repository;
+    this.dailyStorage = dailyStorage;
     this.json = json;
     this.auth = auth;
     this.taskAccess = taskAccess;
