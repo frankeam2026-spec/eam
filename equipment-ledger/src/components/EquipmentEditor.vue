@@ -1003,7 +1003,8 @@ function relationSaved(record: EquipmentRecord) {
   overflow-wrap: anywhere;
 }
 .equipment-editor .editor-body {
-  padding: 8px;
+  /* Align the editor content's left edge with the header and footer. */
+  padding: 8px 8px 8px 0;
 }
 .equipment-editor .editor-layout {
   grid-template-columns: minmax(0, 1fr) 220px;
