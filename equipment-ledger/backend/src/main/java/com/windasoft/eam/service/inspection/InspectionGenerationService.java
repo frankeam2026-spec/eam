@@ -103,7 +103,7 @@ public class InspectionGenerationService {
     return DailyInspectionSchedule.rest(plan, date);
   }
 
-  int createTask(
+  private int createTask(
       long tenant,
       Map<String, Object> plan,
       Map<String, Object> p,
