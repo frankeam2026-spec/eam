@@ -188,7 +188,7 @@ public class DailyArrangementRepository {
     return db.queryForList(
         "SELECT p.user_id FROM eam_inspection_operation_team_person p JOIN eam_sys_user u ON"
             + " u.id=p.user_id AND u.tenant_id=p.tenant_id WHERE p.tenant_id=? AND p.team_id=? AND"
-            + " u.status=1 ORDER BY p.sort_no",
+            + " u.status=1 AND u.deleted=0 ORDER BY p.sort_no",
         Long.class,
         tenant,
         id);
