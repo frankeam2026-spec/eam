@@ -1,6 +1,8 @@
 package com.windasoft.eam.service.repair;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.AcceptanceDecision;
@@ -18,13 +20,13 @@ import com.windasoft.eam.domain.repair.RepairOrderStatus;
 import com.windasoft.eam.domain.repair.RepairWorkflowAction;
 import com.windasoft.eam.dto.repair.RepairInboxView;
 import com.windasoft.eam.dto.repair.RepairReadViews;
+import com.windasoft.eam.dto.repair.RepairWorkflowCommand;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.equipment.EquipmentHistory;
 import com.windasoft.eam.entity.inventory.LegacySpareStock;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.event.experience.ExperienceEvents;
-import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.equipment.EquipmentSpareRepository;
@@ -56,22 +58,23 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 /** 维修状态流转的事务编排入口：协调派工、接单、处理、验收、材料及履历。 跨工单、待办和库存的写入保持同一事务，不按代码行数机械拆分职责。 */
 @Service
 public class RepairWorkflowService {
-  @org.springframework.beans.factory.annotation.Autowired private RepairApprovalService approvals;
+  @Autowired private RepairApprovalService approvals;
 
-  @org.springframework.beans.factory.annotation.Autowired private BusinessValueService custom;
+  @Autowired private BusinessValueService custom;
 
   private final BaseDataReferenceService references;
 
-  @org.springframework.beans.factory.annotation.Autowired
-  private InventoryMutex experienceInventoryMutex;
+  @Autowired private InventoryMutex experienceInventoryMutex;
 
   private final RepairWorkflowRepository flow;
   private final RepairOrderRepository orders;
@@ -83,10 +86,12 @@ public class RepairWorkflowService {
   private final EquipmentSpareRepository spares;
   private final EquipmentQueryRepository equipmentRows;
   private final SystemUserRepository userRows;
-  private final BaseItemRepository baseRows;
   private final EquipmentHistoryRepository history;
   private final NotificationRepository notifications;
   private final RepairRelationsService relations;
+  private final RepairAttachmentAccessService attachmentAccess;
+  private final RepairAccessService access;
+  private final RepairQueryService viewData;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
@@ -106,10 +111,15 @@ public class RepairWorkflowService {
       EquipmentSpareRepository spares,
       EquipmentQueryRepository equipmentRows,
       SystemUserRepository userRows,
-      BaseItemRepository baseRows,
       EquipmentHistoryRepository history,
       NotificationRepository notifications,
-      RepairRelationsService relations) {
+      RepairRelationsService relations,
+      RepairAttachmentAccessService attachmentAccess,
+      RepairAccessService access,
+      RepairQueryService viewData) {
+    this.viewData = viewData;
+    this.attachmentAccess = attachmentAccess;
+    this.access = access;
     this.relations = relations;
     this.orders = orders;
     this.candidates = candidates;
@@ -120,7 +130,6 @@ public class RepairWorkflowService {
     this.spares = spares;
     this.equipmentRows = equipmentRows;
     this.userRows = userRows;
-    this.baseRows = baseRows;
     this.history = history;
     this.notifications = notifications;
     this.references = references;
@@ -144,9 +153,7 @@ public class RepairWorkflowService {
   }
 
   public void viewAllowed(RepairOrder row) {
-    if (candidates.candidate(auth.tenantId(), row.getId(), auth.userId()) > 0
-        || inboxes.hasInbox(auth.tenantId(), auth.userId(), row.getId()) > 0) return;
-    permissions.checkRepair(row, "查看");
+    access.requireView(row);
   }
 
   public boolean isOwner(RepairOrder row) {
@@ -157,82 +164,24 @@ public class RepairWorkflowService {
     return permissions.canAccept(auth.user(), row);
   }
 
-  public Map<String, Object> detail(long id) {
-    var row = require(id);
-    viewAllowed(row);
-    var eq = equipment(row);
-    Map<String, Object> result = new LinkedHashMap<>();
-    var extra = custom.read("repair_report", row.getId());
-    row.setCustomFields(extra.customFields());
-    row.setCustomFieldLabels(extra.customFieldLabels());
-    row.setCustomSchemaVersion(extra.customSchemaVersion());
-    var processing = new LinkedHashMap<String, Object>();
-    processing.put("id", Long.toString(id));
-    custom.attach("repair_process", processing);
-    result.put("processingFields", processing);
-    result.put("order", row);
-    result.put("categoryId", eq.getCategoryId() == null ? "" : eq.getCategoryId().toString());
-    result.put("model", eq.getModel() == null ? "" : eq.getModel());
-    result.put("candidates", candidates.candidates(auth.tenantId(), id));
-    result.put(
-        "events",
-        events.events(auth.tenantId(), id).stream()
-            .map(
-                e -> {
-                  var value = new LinkedHashMap<String, Object>();
-                  value.put("id", e.getId().toString());
-                  value.put("action", e.getAction());
-                  value.put("actor", e.getActorName());
-                  value.put(
-                      "time",
-                      e.getCreatedAt()
-                          .format(
-                              java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-                  value.put("details", read(e.getDetailsJson()));
-                  return value;
-                })
-            .toList());
-    result.put("materials", materials.materials(auth.tenantId(), id));
-    result.put("installed", spares.installed(auth.tenantId(), eq.getId()));
-    result.put(
-        "canClaim",
-        RepairOrderStatus.PENDING_CLAIM.code().equals(row.getStatus())
-            && candidates.candidate(auth.tenantId(), id, auth.userId()) > 0);
-    result.put("canProcess", isOwner(row));
-    result.put("canAccept", canAccept(row));
-    result.put("canDispatch", canDispatch(row));
-    result.put("canIssue", canIssue(eq.getCompanyOrgId()));
-    result.put("results", results());
-    result.put("approvalRounds", approvals.history(id));
-    result.put(
-        "canResubmit",
-        RepairOrderStatus.PENDING_SUBMISSION.code().equals(row.getStatus())
-            && Objects.equals(row.getReporterUserId(), auth.userId()));
-    return result;
-  }
-
-  public List<Map<String, Object>> results() {
-    return baseRows.activeItemsByType(auth.tenantId(), BaseDataType.PROCESS_RESULT.code()).stream()
-        .map(
-            item ->
-                Map.<String, Object>of(
-                    "id",
-                    item.getId().toString(),
-                    "name",
-                    item.getName(),
-                    "resolved",
-                    BaseDataReferenceService.fixed(item)))
-        .toList();
-  }
-
   /** 执行动作前先获取互斥锁与工单数据库锁，再校验客户端版本。 后续任一业务校验失败时依靠事务回滚，避免状态和领料记录部分写入。 */
+  /** 旧Java调用方的受控适配入口；实际状态机只消费类型化命令，不在内部传递任意字段树。 */
   @Transactional
   public RepairOrder action(long id, int version, JsonNode body) {
+    try {
+      return action(id, version, json.treeToValue(body, RepairWorkflowCommand.class));
+    } catch (JsonProcessingException invalid) {
+      throw new LocalizedArgumentException("server.repair.message0025");
+    }
+  }
+
+  @Transactional
+  public RepairOrder action(long id, int version, RepairWorkflowCommand body) {
     experienceInventoryMutex.enter();
     var row = orders.lock(auth.tenantId(), id);
     if (row == null) throw new LocalizedArgumentException("server.repair.message0012");
     VersionGuard.check(row.getRowVersion(), version);
-    String action = text(body, "action", 30), previous = row.getStatus();
+    String action = text(body.action(), "action", 30), previous = row.getStatus();
     approvals.requireReleased(row);
     Map<String, Object> details = new LinkedHashMap<>();
     details.put("before", previous);
@@ -249,10 +198,10 @@ public class RepairWorkflowService {
               RepairOrderStatus.PROCESSING.code(),
               RepairOrderStatus.SUSPENDED.code(),
               RepairOrderStatus.PENDING_CLAIM.code());
-          String reason = text(body, "reason", 2000);
+          String reason = text(body.reason(), "reason", 2000);
           details.put("reason", reason);
         }
-        List<Long> ids = ids(body.get("userIds"));
+        List<Long> ids = ids(body.userIds());
         if (ids.isEmpty()) throw new LocalizedArgumentException("server.repair.message0013");
         var names = new ArrayList<String>();
         for (long userId : ids) names.add(user(userId).getDisplayName());
@@ -300,32 +249,25 @@ public class RepairWorkflowService {
         custom.save(
             "repair_process",
             id,
-            body.get("customFields"),
-            body.has("customSchemaVersion") ? body.path("customSchemaVersion").asInt() : null,
+            body.customFields(),
+            body.customSchemaVersion(),
             Objects.toString(equipment(row).getCategoryId(), ""),
             false);
-        String content = text(body, "content", 20000), method = text(body, "repairMethod", 20);
+        String content = text(body.content(), "content", 20000),
+            method = text(body.repairMethod(), "repairMethod", 20);
         if (content.isBlank()) throw new FieldValidationException("content", "请填写处理内容");
         if (!Set.of(RepairMethod.INTERNAL.code(), RepairMethod.EXTERNAL.code()).contains(method))
           throw new LocalizedArgumentException("server.repair.message0014");
         var typeItem =
             references.required(
-                auth.tenantId(),
-                body.path("faultTypeId").asText(),
-                "FAULT_TYPE",
-                "faultTypeId",
-                "故障类型");
+                auth.tenantId(), body.faultTypeId(), "FAULT_TYPE", "faultTypeId", "故障类型");
         var causeItem =
             references.required(
-                auth.tenantId(),
-                body.path("faultCauseId").asText(),
-                "FAULT_CAUSE",
-                "faultCauseId",
-                "故障原因");
+                auth.tenantId(), body.faultCauseId(), "FAULT_CAUSE", "faultCauseId", "故障原因");
         var resultItem =
             references.required(
                 auth.tenantId(),
-                body.path("processingResultId").asText(),
+                body.processingResultId(),
                 BaseDataType.PROCESS_RESULT.code(),
                 "processingResultId",
                 "处理结果");
@@ -333,7 +275,7 @@ public class RepairWorkflowService {
             cause = causeItem.getName(),
             result = resultItem.getName();
         boolean resolved = BaseDataReferenceService.fixed(resultItem);
-        var collaborators = ids(body.get("collaboratorIds"));
+        var collaborators = ids(body.collaboratorIds());
         var collaboratorsView = new ArrayList<Map<String, String>>();
         for (long userId : collaborators)
           collaboratorsView.add(
@@ -346,10 +288,10 @@ public class RepairWorkflowService {
         row.setRepairMethod(method);
         row.setRepairAction(content);
         row.setProcessingResult(result);
-        row.setPreventiveMeasures(text(body, "prevention", 20000));
+        row.setPreventiveMeasures(text(body.prevention(), "prevention", 20000));
         row.setCollaboratorsJson(write(collaboratorsView));
-        row.setProcessAttachmentsJson(attachments(body.get("attachments")));
-        if (resolved) custody.finishTask("维修", id, json.convertValue(body, java.util.Map.class));
+        row.setProcessAttachmentsJson(attachments(body.attachments()));
+        if (resolved) custody.finishTask("维修", id, json.convertValue(body, Map.class));
         details.put("faultTypeId", typeItem.getId().toString());
         details.put("faultCauseId", causeItem.getId().toString());
         details.put("processingResultId", resultItem.getId().toString());
@@ -393,7 +335,7 @@ public class RepairWorkflowService {
             action.equals("suspend")
                 ? RepairOrderStatus.PROCESSING.code()
                 : RepairOrderStatus.SUSPENDED.code());
-        String reason = text(body, "reason", 2000);
+        String reason = text(body.reason(), "reason", 2000);
         if (reason.isBlank()) throw new LocalizedArgumentException("server.repair.message0016");
         row.setStatus(
             action.equals("suspend")
@@ -405,22 +347,22 @@ public class RepairWorkflowService {
       case OUTSOURCE -> {
         owner(row);
         state(row, RepairOrderStatus.PROCESSING.code(), RepairOrderStatus.SUSPENDED.code());
-        String vendor = text(body, "vendor", 200);
+        String vendor = text(body.vendor(), "vendor", 200);
         if (vendor.isBlank()) throw new LocalizedArgumentException("server.repair.message0017");
         row.setRepairMethod("外协");
         row.setOutsourceVendor(vendor);
         details.put("vendor", vendor);
-        details.put("reason", text(body, "reason", 2000));
+        details.put("reason", text(body.reason(), "reason", 2000));
         label = "委外";
       }
       case ACCEPT, REJECT, RETURN -> {
         var decision = AcceptanceDecision.parse(action);
         state(row, RepairOrderStatus.PENDING_ACCEPTANCE.code());
         if (!canAccept(row)) deny();
-        int score = body.path("score").asInt(0);
+        int score = body.score() == null ? 0 : body.score();
         if (score < 1 || score > 5)
           throw new LocalizedArgumentException("server.repair.message0018");
-        String comment = text(body, "comment", 10000);
+        String comment = text(body.comment(), "comment", 10000);
         if (comment.isBlank()) throw new LocalizedArgumentException("ui.equipment.text1088");
         if (decision == AcceptanceDecision.ACCEPT) {
           row.setAcceptedAt(LocalDateTime.now());
@@ -432,7 +374,7 @@ public class RepairWorkflowService {
         details.put("decision", decision.code());
         details.put("result", decision.label());
         details.put("comment", comment);
-        details.put("attachments", read(attachments(body.get("attachments"))));
+        details.put("attachments", read(attachments(body.attachments())));
         row.setAcceptanceComment(comment);
         row.setStatus(
             decision == AcceptanceDecision.ACCEPT
@@ -457,7 +399,7 @@ public class RepairWorkflowService {
       case CANCEL_MATERIAL -> {
         owner(row);
         state(row, RepairOrderStatus.PROCESSING.code(), RepairOrderStatus.SUSPENDED.code());
-        long materialId = id(body, "materialId");
+        long materialId = id(body.materialId(), "materialId");
         if (materials.cancelMaterial(auth.tenantId(), materialId, id) != 1)
           throw new LocalizedArgumentException("server.repair.message0020");
         details.put("materialId", String.valueOf(materialId));
@@ -469,7 +411,7 @@ public class RepairWorkflowService {
         owner(row);
         state(row, RepairOrderStatus.PROCESSING.code());
         var eq = equipment(row);
-        long materialId = id(body, "materialId");
+        long materialId = id(body.materialId(), "materialId");
         var material = materials.lockMaterial(auth.tenantId(), materialId, id);
         BigDecimal quantity = quantity(body);
         if (material == null || materials.consume(auth.tenantId(), materialId, quantity) != 1)
@@ -494,7 +436,7 @@ public class RepairWorkflowService {
         owner(row);
         state(row, RepairOrderStatus.PROCESSING.code());
         var eq = equipment(row);
-        long installedId = id(body, "installedId");
+        long installedId = id(body.installedId(), "installedId");
         var installed =
             spares.installed(auth.tenantId(), eq.getId()).stream()
                 .filter(x -> String.valueOf(installedId).equals(x.getId()))
@@ -502,7 +444,7 @@ public class RepairWorkflowService {
                 .orElseThrow(() -> new LocalizedArgumentException("server.repair.message0023"));
         if (spares.remove(auth.tenantId(), eq.getId(), installedId) != 1)
           throw new LocalizedArgumentException("server.repair.message0024");
-        String reason = text(body, "reason", 2000);
+        String reason = text(body.reason(), "reason", 2000);
         recordSpareHistory(
             IdWorker.getId(),
             auth.tenantId(),
@@ -526,15 +468,16 @@ public class RepairWorkflowService {
     }
     details.put("after", row.getStatus());
     VersionGuard.updated(orders.update(row));
-    relations.save(row);
+    if (RepairWorkflowAction.parse(action) == RepairWorkflowAction.PROCESS) {
+      relations.saveProcessing(row);
+    }
     record(row, label, details);
-    return require(id);
+    return viewData.prepareDetail(require(id));
   }
 
-  @org.springframework.beans.factory.annotation.Autowired
-  private org.springframework.context.ApplicationEventPublisher experiencePublisher;
+  @Autowired private ApplicationEventPublisher experiencePublisher;
 
-  @org.springframework.beans.factory.annotation.Autowired private MaterialCustodyService custody;
+  @Autowired private MaterialCustodyService custody;
 
   /** 写入维修审计事件并发布状态事件；调用者负责保持业务事务边界。 */
   public void record(RepairOrder row, String action, Object details) {
@@ -557,9 +500,7 @@ public class RepairWorkflowService {
       if (row.getMessageKey() != null && !row.getMessageKey().isBlank()) {
         try {
           Map<String, Object> args =
-              json.readValue(
-                  row.getMessageArgs(),
-                  new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+              json.readValue(row.getMessageArgs(), new TypeReference<Map<String, Object>>() {});
           row.setTitle(MessageContext.render(new MessageRef(row.getMessageKey(), args)));
         } catch (Exception invalidHistoricalMetadata) {
           /* 旧消息可能没有完整翻译参数，保留入库标题。 */
@@ -590,7 +531,7 @@ public class RepairWorkflowService {
   }
 
   @Transactional
-  public void addStock(JsonNode body) {
+  public void addStock() {
     throw new LocalizedArgumentException("server.repair.message0027");
   }
 
@@ -613,24 +554,6 @@ public class RepairWorkflowService {
           row.getOrderNo() + " · " + row.getEquipmentName(),
           todo);
       notifications.captureSource("eam_repair_inbox", auth.tenantId(), noticeId);
-    }
-  }
-
-  private boolean canDispatch(RepairOrder row) {
-    try {
-      permissions.checkRepair(row, "派工");
-      return true;
-    } catch (ResponseStatusException denied) {
-      return false;
-    }
-  }
-
-  private boolean canIssue(long company) {
-    try {
-      permissions.checkInventoryCompany(company, "出库");
-      return true;
-    } catch (ResponseStatusException denied) {
-      return false;
     }
   }
 
@@ -659,41 +582,39 @@ public class RepairWorkflowService {
     throw new LocalizedStatusException(HttpStatus.FORBIDDEN, "server.repair.message0030");
   }
 
-  private static String text(JsonNode n, String key, int max) {
-    String v = n.path(key).asText("").trim();
+  private static String text(String value, String key, int max) {
+    String v = value == null ? "" : value.trim();
     if (v.length() > max) throw new LocalizedArgumentException("server.repair.message0031", key);
     return v;
   }
 
-  private static long id(JsonNode node, String key) {
-    try {
-      long id = Long.parseLong(node.path(key).asText());
-      if (id <= 0) throw new NumberFormatException();
-      return id;
-    } catch (Exception e) {
+  private static long id(Long value, String key) {
+    if (value == null || value <= 0) {
       throw new LocalizedArgumentException("server.repair.message0032", key);
     }
+    return value;
   }
 
-  private static List<Long> ids(JsonNode node) {
-    if (node == null || node.isNull()) return List.of();
-    if (!node.isArray() || node.size() > 50)
+  private static List<Long> ids(List<Long> values) {
+    if (values == null) {
+      return List.of();
+    }
+    if (values.size() > 50) {
       throw new LocalizedArgumentException("server.repair.message0033");
+    }
     var ids = new LinkedHashSet<Long>();
-    for (var x : node)
-      try {
-        long value = Long.parseLong(x.asText());
-        if (value <= 0) throw new NumberFormatException();
-        ids.add(value);
-      } catch (Exception e) {
+    for (var value : values) {
+      if (value == null || value <= 0) {
         throw new LocalizedArgumentException("server.repair.message0034");
       }
+      ids.add(value);
+    }
     return List.copyOf(ids);
   }
 
-  private static BigDecimal quantity(JsonNode body) {
+  private static BigDecimal quantity(RepairWorkflowCommand body) {
     try {
-      var value = new BigDecimal(body.path("quantity").asText());
+      var value = body.quantity();
       if (value.signum() <= 0
           || value.scale() > 3
           || value.compareTo(new BigDecimal("99999999999")) > 0) throw new ArithmeticException();
@@ -703,9 +624,7 @@ public class RepairWorkflowService {
     }
   }
 
-  @org.springframework.beans.factory.annotation.Autowired
-  @org.springframework.context.annotation.Lazy
-  private AnomalyService anomalySources;
+  @Autowired @Lazy private AnomalyService anomalySources;
 
   public String attachments(JsonNode node) {
     if (node == null || node.isNull()) return "[]";
@@ -724,6 +643,7 @@ public class RepairWorkflowService {
       if (!fileId.matches("[0-9a-fA-F-]{36}")
           || !file.path("url").asText().equals("/api/v1/repairs/attachments/" + fileId))
         throw new LocalizedArgumentException("server.repair.message0038");
+      attachmentAccess.requireAttachable(fileId);
     }
     return write(node);
   }
@@ -736,11 +656,11 @@ public class RepairWorkflowService {
     }
   }
 
-  private Object read(String value) {
+  private JsonNode read(String value) {
     try {
       return json.readTree(value == null ? "[]" : value);
     } catch (Exception e) {
-      return List.of();
+      throw new IllegalStateException("维修审计JSON损坏，不能作为空数据返回", e);
     }
   }
 

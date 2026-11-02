@@ -342,3 +342,6 @@ GET `/api/v1/equipment/bom-materials`的q/page/size参数、默认值及成功20
 查看条件保持当前租户、enabled=1、设备新增或编辑权限；四列LIKE通配符语义及code/id排序不变。原page收敛至至少1、size收敛至1～100的兼容行为保留；偏移以long计算，int范围内的大页码返回空页，越出int或非数字仍由原绑定错误返回400。只查询物料，不变更库存或关联写入。
 
 Controller/Service使用明确查询及响应类型，设备关联Repository复用物料Repository的MyBatis-Plus查询，Service将内部物料实体转换为协议DTO。回归证据与范围见[设备台账专项治理第一批](../plans/设备台账专项治理-实施记录-20261030.md)。
+### 维修审查整改（2026-11-02）
+
+既有 /api/v1/repairs 路由不变。创建/编辑/动作使用 DataResponse<RepairOrderView>，列表保留 data/page/counts，处理详情使用 RepairWorkflowDetail；工作流动作改为 RepairWorkflowCommand，审批重提交版本必填且非负。上传、下载和绑定核对文件原归属，固定接口字段及日期/编号语义由兼容测试核对。动态扩展字段及附件元数据维持既有验证边界。详见[维修模块审查整改](../plans/维修模块审查整改-20261102.md)。

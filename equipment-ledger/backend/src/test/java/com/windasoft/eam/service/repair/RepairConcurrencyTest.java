@@ -41,7 +41,8 @@ class RepairConcurrencyTest {
             mock(BaseDataReferenceService.class),
             mock(RepairRelationsService.class),
             mock(EquipmentQueryRepository.class),
-            mock(EquipmentNumberRepository.class));
+            mock(EquipmentNumberRepository.class),
+            mock(RepairQueryService.class));
     row = new RepairOrder();
     row.setId(1L);
     row.setTenantId(10001L);

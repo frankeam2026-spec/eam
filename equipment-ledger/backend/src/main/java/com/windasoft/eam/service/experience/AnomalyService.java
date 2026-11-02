@@ -1,39 +1,54 @@
 package com.windasoft.eam.service.experience;
 
-import com.windasoft.eam.domain.experience.AnomalyAction;
-import com.windasoft.eam.domain.experience.AnomalyStatus;
 import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.experience.ExperienceSupport;
+import com.windasoft.eam.domain.experience.AnomalyAction;
+import com.windasoft.eam.domain.experience.AnomalyStatus;
+import com.windasoft.eam.dto.repair.RepairForm;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.event.experience.ExperienceEvents;
 import com.windasoft.eam.repository.experience.AnomalyRepository;
+import com.windasoft.eam.service.basedata.BaseDataReferenceService;
+import com.windasoft.eam.service.business.BusinessConfigService;
 import com.windasoft.eam.service.inspection.InspectionService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
+import com.windasoft.eam.service.repair.RepairOrderService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AnomalyService {
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.business.BusinessConfigService businessConfig;
+  @Autowired private BusinessConfigService businessConfig;
 
-  private final com.windasoft.eam.service.basedata.BaseDataReferenceService references;
+  private final BaseDataReferenceService references;
   final AnomalyRepository repository;
   final AuthContext auth;
   final PermissionService permissions;
   final ObjectMapper json;
-  final com.windasoft.eam.service.repair.RepairOrderService repairs;
+  final RepairOrderService repairs;
   final RepairWorkflowService workflow;
   final MaintenanceService maintenance;
   final InspectionService inspection;
@@ -43,11 +58,11 @@ public class AnomalyService {
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json,
-      com.windasoft.eam.service.repair.RepairOrderService repairs,
+      RepairOrderService repairs,
       RepairWorkflowService workflow,
       MaintenanceService maintenance,
       InspectionService inspection,
-      com.windasoft.eam.service.basedata.BaseDataReferenceService references) {
+      BaseDataReferenceService references) {
     this.references = references;
     this.repository = repository;
     this.auth = auth;
@@ -110,8 +125,7 @@ public class AnomalyService {
   void checkAction(Map<String, Object> r, String action) {
     permissions.require("anomaly", action);
     if (!scope("anomaly", action, eq(id(r.get("equipment_id"))), id(r.get("discovered_by"))))
-      throw new com.windasoft.eam.common.LocalizedStatusException(
-          org.springframework.http.HttpStatus.FORBIDDEN, "server.experience.message0019");
+      throw new LocalizedStatusException(HttpStatus.FORBIDDEN, "server.experience.message0019");
   }
 
   String number(String prefix) {
@@ -142,7 +156,8 @@ public class AnomalyService {
             "异常待处理",
             text(row, "description"),
             true);
-      repository.syncAnomalyTodos(text(row, "status").equals(AnomalyStatus.PENDING.code()) ? 0 : 1, auth.tenantId(), id);
+      repository.syncAnomalyTodos(
+          text(row, "status").equals(AnomalyStatus.PENDING.code()) ? 0 : 1, auth.tenantId(), id);
     } else if (kind.equals("repairPlan")) {
       var row = repository.loadPlanState(auth.tenantId(), id);
       if (text(row, "status").equals("待生成"))
@@ -284,8 +299,7 @@ public class AnomalyService {
   public Object detail(long id) {
     var r = raw(id, false);
     if (!canView(r))
-      throw new com.windasoft.eam.common.LocalizedStatusException(
-          org.springframework.http.HttpStatus.FORBIDDEN, "server.experience.message0020");
+      throw new LocalizedStatusException(HttpStatus.FORBIDDEN, "server.experience.message0020");
     var v = viewAnomaly(r);
     v.put("events", events("anomaly", id));
     v.put(
@@ -368,10 +382,7 @@ public class AnomalyService {
           items.stream()
               .filter(i -> text(i, "id").equals(sourceKey))
               .findFirst()
-              .orElseThrow(
-                  () ->
-                      new com.windasoft.eam.common.LocalizedArgumentException(
-                          "server.experience.message0021"));
+              .orElseThrow(() -> new LocalizedArgumentException("server.experience.message0021"));
       long sourceEq =
           kind.equals("保养")
               ? id(repository.findCaptureEquipment(auth.tenantId(), taskId).get("equipment_id"))
@@ -406,7 +417,7 @@ public class AnomalyService {
           auth.user().getDisplayName(),
           LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
       event("anomaly", aid, "登记异常", Map.of("source", kind));
-    } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+    } catch (DuplicateKeyException duplicate) {
       var old = repository.findAnomalyBySource(auth.tenantId(), kind, taskId, eqId, itemId);
       return detail(id(old.get("id")));
     }
@@ -424,13 +435,14 @@ public class AnomalyService {
           case RESOLVE -> "消除";
           case REPORT, LINK -> "报修";
           case VOID -> "作废";
-          default ->
-              throw new com.windasoft.eam.common.LocalizedArgumentException(
-                  "server.experience.message0022");
+          default -> throw new LocalizedArgumentException("server.experience.message0022");
         };
     checkAction(r, grant);
     if (id(r.get("row_version")) != id(b.get("rowVersion"))) conflict();
-    check(!Set.of(AnomalyStatus.RESOLVED.code(), AnomalyStatus.VOIDED.code()).contains(r.get("status")), "异常已结束");
+    check(
+        !Set.of(AnomalyStatus.RESOLVED.code(), AnomalyStatus.VOIDED.code())
+            .contains(r.get("status")),
+        "异常已结束");
     check(r.get("repair_id") == null && r.get("plan_id") == null, "异常已有处理安排，请先在关联单据处理");
     if (operation == AnomalyAction.RESOLVE || operation == AnomalyAction.VOID) {
       String reason = required(b, "reason", 4000);
@@ -438,12 +450,18 @@ public class AnomalyService {
       evidence.addAll(ownFiles(b.get("attachments")));
       repository.updateEvidence(encode(json, evidence), auth.tenantId(), aid);
       repository.resolveAnomaly(
-          operation == AnomalyAction.RESOLVE ? AnomalyStatus.RESOLVED.code() : AnomalyStatus.VOIDED.code(),
+          operation == AnomalyAction.RESOLVE
+              ? AnomalyStatus.RESOLVED.code()
+              : AnomalyStatus.VOIDED.code(),
           reason,
           LocalDateTime.now(ZoneId.of("Asia/Shanghai")),
           auth.tenantId(),
           aid);
-      event("anomaly", aid, operation == AnomalyAction.RESOLVE ? "直接消除" : "作废异常", Map.of("reason", reason));
+      event(
+          "anomaly",
+          aid,
+          operation == AnomalyAction.RESOLVE ? "直接消除" : "作废异常",
+          Map.of("reason", reason));
     } else {
       long repair;
       if (operation == AnomalyAction.LINK) {
@@ -471,7 +489,7 @@ public class AnomalyService {
     var e = eq(id(r.get("equipment_id")));
     var result =
         repairs.create(
-            new com.windasoft.eam.dto.repair.RepairForm(
+            new RepairForm(
                 e.getEquipmentCode(),
                 e.getName(),
                 e.getDepartment(),
@@ -494,7 +512,7 @@ public class AnomalyService {
                 json.createObjectNode(),
                 ((Number) businessConfig.current("repair_report", false).get("published_version"))
                     .intValue()));
-    return id(((Map<String, Object>) result.get("data")).get("id"));
+    return Long.parseLong(result.id());
   }
 
   @EventListener
@@ -506,12 +524,15 @@ public class AnomalyService {
             : ev.status().equals("已撤销")
                 ? AnomalyStatus.PENDING.code()
                 : Set.of("处理中", "挂起", "待验收").contains(ev.status())
-                    ? AnomalyStatus.IN_PROGRESS.code() : AnomalyStatus.ARRANGED.code();
+                    ? AnomalyStatus.IN_PROGRESS.code()
+                    : AnomalyStatus.ARRANGED.code();
     var rows = repository.lockRepairAnomalies(auth.tenantId(), ev.repairId());
     for (var r : rows) {
       repository.updateRepairAnomaly(
           status,
-          status.equals(AnomalyStatus.RESOLVED.code()) ? LocalDateTime.now(ZoneId.of("Asia/Shanghai")) : null,
+          status.equals(AnomalyStatus.RESOLVED.code())
+              ? LocalDateTime.now(ZoneId.of("Asia/Shanghai"))
+              : null,
           status.equals(AnomalyStatus.PENDING.code()) ? null : ev.repairId(),
           status,
           status,
@@ -581,7 +602,8 @@ public class AnomalyService {
               discoveredName,
               discoveredAt,
               Boolean.TRUE.equals(answer.get("resolved"))
-                   ? AnomalyStatus.RESOLVED.code() : AnomalyStatus.PENDING.code(),
+                  ? AnomalyStatus.RESOLVED.code()
+                  : AnomalyStatus.PENDING.code(),
               text(answer, "measure"),
               Boolean.TRUE.equals(answer.get("resolved")) ? discoveredAt : null);
       if (inserted == 1)
@@ -740,8 +762,7 @@ public class AnomalyService {
     }
     var ids = b.get("anomalyIds") instanceof List<?> l ? l : List.of();
     var target = pid;
-    var retained =
-        ids.stream().map(ExperienceSupport::id).collect(java.util.stream.Collectors.toSet());
+    var retained = ids.stream().map(ExperienceSupport::id).collect(Collectors.toSet());
     for (var previous : repository.lockPlanAnomalyIds(auth.tenantId(), pid)) {
       long aid = id(previous.get("id"));
       if (retained.contains(aid)) continue;
@@ -757,7 +778,8 @@ public class AnomalyService {
       check(
           a.get("repair_id") == null
               && (a.get("plan_id") == null || id(a.get("plan_id")) == pid)
-              && !Set.of(AnomalyStatus.RESOLVED.code(), AnomalyStatus.VOIDED.code()).contains(a.get("status")),
+              && !Set.of(AnomalyStatus.RESOLVED.code(), AnomalyStatus.VOIDED.code())
+                  .contains(a.get("status")),
           "异常已有安排或已结束");
       repository.attachPlanAnomaly(pid, auth.tenantId(), aid);
       event("anomaly", aid, "安排维修计划", Map.of("planId", pid.toString()));

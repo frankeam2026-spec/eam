@@ -1,37 +1,62 @@
 package com.windasoft.eam.controller.repair;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.windasoft.eam.dto.common.DataResponse;
+import com.windasoft.eam.dto.common.PageResult;
 import com.windasoft.eam.dto.repair.RepairAction;
+import com.windasoft.eam.dto.repair.RepairFileView;
 import com.windasoft.eam.dto.repair.RepairForm;
+import com.windasoft.eam.dto.repair.RepairInboxView;
+import com.windasoft.eam.dto.repair.RepairListResponse;
+import com.windasoft.eam.dto.repair.RepairOrderView;
+import com.windasoft.eam.dto.repair.RepairReadViews;
 import com.windasoft.eam.dto.repair.RepairUpload;
-import com.windasoft.eam.entity.repair.RepairOrder;
+import com.windasoft.eam.dto.repair.RepairWorkflowCommand;
+import com.windasoft.eam.dto.repair.RepairWorkflowDetail;
+import com.windasoft.eam.service.repair.RepairApprovalService;
+import com.windasoft.eam.service.repair.RepairDetailService;
 import com.windasoft.eam.service.repair.RepairFileService;
 import com.windasoft.eam.service.repair.RepairOrderService;
 import com.windasoft.eam.service.repair.RepairQueryService;
 import com.windasoft.eam.service.repair.RepairViewAssembler;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
-import org.springframework.http.*;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /** 维修工单 HTTP 入口：负责协议转换与请求分发；状态、权限及业务校验由 Service 执行。 */
 @RestController
 @RequestMapping("/api/v1/repairs")
 public class RepairOrderController {
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.repair.RepairApprovalService approvals;
+  @Autowired private RepairApprovalService approvals;
 
-  public record Resubmit(int rowVersion) {}
+  public record Resubmit(@NotNull @Min(0) Integer rowVersion) {}
 
   @PostMapping("/{id}/approval-submit")
-  public Object submitApproval(@PathVariable long id, @RequestBody Resubmit body) {
+  public DataResponse<Boolean> submitApproval(
+      @PathVariable long id, @Valid @RequestBody Resubmit body) {
     approvals.submit(id, body.rowVersion());
-    return Map.of("data", true);
+    return new DataResponse<>(true);
   }
 
   private final RepairOrderService service;
@@ -39,13 +64,16 @@ public class RepairOrderController {
   private final RepairWorkflowService workflow;
   private final RepairQueryService queries;
   private final RepairViewAssembler views;
+  private final RepairDetailService details;
 
   public RepairOrderController(
       RepairOrderService service,
       RepairFileService files,
       RepairWorkflowService workflow,
       RepairQueryService queries,
-      RepairViewAssembler views) {
+      RepairViewAssembler views,
+      RepairDetailService details) {
+    this.details = details;
     this.service = service;
     this.files = files;
     this.workflow = workflow;
@@ -54,15 +82,17 @@ public class RepairOrderController {
   }
 
   @PostMapping("/attachments")
-  public Map<String, Object> upload(@RequestPart("file") MultipartFile file) throws IOException {
+  public DataResponse<RepairFileView> upload(@RequestPart("file") MultipartFile file)
+      throws IOException {
     try (var input = file.getInputStream()) {
-      return files.upload(
-          new RepairUpload(
-              file.getOriginalFilename(),
-              file.getContentType(),
-              file.getSize(),
-              file.isEmpty(),
-              input));
+      return new DataResponse<>(
+          files.upload(
+              new RepairUpload(
+                  file.getOriginalFilename(),
+                  file.getContentType(),
+                  file.getSize(),
+                  file.isEmpty(),
+                  input)));
     }
   }
 
@@ -78,26 +108,19 @@ public class RepairOrderController {
   }
 
   @GetMapping
-  public Map<String, Object> list(@RequestParam Map<String, String> params) {
+  public RepairListResponse list(@RequestParam Map<String, String> params) {
     var result = queries.list(params);
-    return Map.of(
-        "data",
+    return new RepairListResponse(
         result.page().getRecords().stream().map(views::view).toList(),
-        "page",
-        Map.of(
-            "number",
-            result.page().getCurrent(),
-            "size",
-            result.page().getSize(),
-            "total",
+        new PageResult.Page(
+            Math.toIntExact(result.page().getCurrent()),
+            Math.toIntExact(result.page().getSize()),
             result.page().getTotal()),
-        "counts",
         result.counts());
   }
 
   @GetMapping("/export")
-  public void export(
-      @RequestParam Map<String, String> params, jakarta.servlet.http.HttpServletResponse response)
+  public void export(@RequestParam Map<String, String> params, HttpServletResponse response)
       throws IOException {
     queries.requireExport();
     queries.validateExport(params);
@@ -107,67 +130,67 @@ public class RepairOrderController {
   }
 
   @PostMapping
-  public Map<String, Object> create(@Valid @RequestBody RepairForm form) {
-    return service.create(form);
+  public DataResponse<RepairOrderView> create(@Valid @RequestBody RepairForm form) {
+    return new DataResponse<>(service.create(form));
   }
 
   @PutMapping("/{id}")
-  public Map<String, Object> update(
+  public DataResponse<RepairOrderView> update(
       @PathVariable Long id, @Valid @RequestBody RepairForm form, @RequestParam int rowVersion) {
-    return service.update(id, form, rowVersion);
+    return new DataResponse<>(service.update(id, form, rowVersion));
   }
 
   @PostMapping("/{id}/actions")
-  public Map<String, Object> action(
+  public DataResponse<RepairOrderView> action(
       @PathVariable Long id,
       @Valid @RequestBody RepairAction request,
       @RequestParam int rowVersion) {
-    return service.action(id, request, rowVersion);
+    return new DataResponse<>(service.action(id, request, rowVersion));
   }
 
   @GetMapping("/user-choices")
-  public Map<String, Object> userChoices() {
-    return Map.of("data", workflow.userChoices());
+  public DataResponse<List<RepairReadViews.DispatchUser>> userChoices() {
+    return new DataResponse<>(workflow.userChoices());
   }
 
   @GetMapping("/inbox")
-  public Map<String, Object> inbox() {
-    return Map.of("data", workflow.inbox());
+  public DataResponse<List<RepairInboxView>> inbox() {
+    return new DataResponse<>(workflow.inbox());
   }
 
   @PatchMapping("/inbox/{id}/read")
-  public Map<String, Object> readInbox(@PathVariable long id) {
+  public DataResponse<Boolean> readInbox(@PathVariable long id) {
     workflow.markRead(id);
-    return Map.of("data", true);
+    return new DataResponse<>(true);
   }
 
   @GetMapping("/{id}/workflow")
-  public Map<String, Object> detail(@PathVariable long id) {
-    var result = new java.util.LinkedHashMap<>(workflow.detail(id));
-    result.put("order", views.view((RepairOrder) result.get("order")));
-    return Map.of("data", result);
+  public DataResponse<RepairWorkflowDetail> detail(@PathVariable long id) {
+    return new DataResponse<>(details.detail(id));
   }
 
   /** 兼容现有按 action 区分的请求结构，具体动作字段由工作流服务校验。 */
   @PostMapping("/{id}/workflow")
-  public Map<String, Object> workflowAction(
-      @PathVariable long id, @RequestParam int rowVersion, @RequestBody JsonNode body) {
-    return Map.of("data", views.view(workflow.action(id, rowVersion, body)));
+  public DataResponse<RepairOrderView> workflowAction(
+      @PathVariable long id,
+      @RequestParam int rowVersion,
+      @Valid @RequestBody RepairWorkflowCommand body) {
+    return new DataResponse<>(views.view(workflow.action(id, rowVersion, body)));
   }
 
   @GetMapping("/{id}/stocks")
-  public Map<String, Object> stockChoices(@PathVariable long id) {
-    return Map.of("data", workflow.stockChoices(id));
+  public DataResponse<List<RepairReadViews.Stock>> stockChoices(@PathVariable long id) {
+    return new DataResponse<>(workflow.stockChoices(id));
   }
 
   @GetMapping("/stocks")
-  public Map<String, Object> inventory() {
-    return Map.of("data", workflow.inventory());
+  public DataResponse<List<RepairReadViews.Stock>> inventory() {
+    return new DataResponse<>(workflow.inventory());
   }
 
   @PostMapping("/stocks")
-  public Map<String, Object> stock(@RequestBody JsonNode body) {
-    workflow.addStock(body);
-    return Map.of("data", true);
+  public DataResponse<Boolean> stock(@RequestBody RepairReadViews.Stock body) {
+    workflow.addStock();
+    return new DataResponse<>(true);
   }
 }

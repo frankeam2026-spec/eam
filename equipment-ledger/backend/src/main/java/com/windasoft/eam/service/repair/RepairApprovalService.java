@@ -1,10 +1,15 @@
 package com.windasoft.eam.service.repair;
 
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.domain.repair.RepairApprovalGate;
 import com.windasoft.eam.domain.repair.RepairEventLabel;
 import com.windasoft.eam.domain.repair.RepairNoticeKind;
 import com.windasoft.eam.domain.repair.RepairOrderStatus;
+import com.windasoft.eam.dto.repair.RepairApprovalValues;
+import com.windasoft.eam.dto.workflow.WorkflowHistoryRound;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.repair.RepairInboxRepository;
 import com.windasoft.eam.repository.repair.RepairOrderRepository;
@@ -14,6 +19,7 @@ import com.windasoft.eam.service.inventory.InventoryMutex;
 import com.windasoft.eam.service.system.*;
 import com.windasoft.eam.service.workflow.WorkflowRuntimeService;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -31,7 +37,7 @@ public class RepairApprovalService {
   private final RepairOrderRepository orders;
   private final RepairInboxRepository inboxes;
   private final WorkflowRuntimeService runtime;
-  private final RepairRelationsService relations;
+  private final ObjectMapper json;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final InventoryMutex mutex;
@@ -47,8 +53,8 @@ public class RepairApprovalService {
       RepairOrderRepository orders,
       RepairInboxRepository inboxes,
       NotificationRepository notifications,
-      RepairRelationsService relations) {
-    this.relations = relations;
+      ObjectMapper json) {
+    this.json = json;
     this.notifications = notifications;
     this.orders = orders;
     this.inboxes = inboxes;
@@ -118,7 +124,6 @@ public class RepairApprovalService {
     row.setStatus(RepairOrderStatus.PENDING_DISPATCH.code());
     row.setApprovalReadyAt(LocalDateTime.now());
     VersionGuard.updated(orders.update(row));
-    relations.save(row);
     record(row, RepairEventLabel.APPROVAL_APPROVED.code());
     notifyReporter(row, RepairNoticeKind.APPROVAL_APPROVED.code(), false);
   }
@@ -129,7 +134,6 @@ public class RepairApprovalService {
     requireActive(id);
     row.setStatus(RepairOrderStatus.PENDING_SUBMISSION.code());
     VersionGuard.updated(orders.update(row));
-    relations.save(row);
     record(row, reason);
     inboxes.closeApprovalReturnTodos(auth.tenantId(), id);
     notifyReporter(row, RepairNoticeKind.REPORT_REVISION.code(), true);
@@ -146,17 +150,18 @@ public class RepairApprovalService {
       throw new IllegalArgumentException("只有退回的报修可以重新提交");
     row.setStatus(RepairOrderStatus.PENDING_APPROVAL.code());
     VersionGuard.updated(orders.update(row));
-    relations.save(row);
     start(row);
     inboxes.closeApprovalReturnTodos(auth.tenantId(), id);
     record(row, RepairEventLabel.APPROVAL_RESUBMITTED.code());
   }
 
-  public Object history(long id) {
-    return runtime.history("repair_report", id);
+  public List<WorkflowHistoryRound> history(long id) {
+    // 现有工作流提供者的类型化边界与领料详情一致，不将Object带入维修响应。
+    return json.convertValue(
+        runtime.history("repair_report", id), new TypeReference<List<WorkflowHistoryRound>>() {});
   }
 
-  public com.windasoft.eam.dto.repair.RepairApprovalValues values(long id) {
+  public RepairApprovalValues values(long id) {
     return repository.approvalValues(auth.tenantId(), id);
   }
 
@@ -165,7 +170,7 @@ public class RepairApprovalService {
   }
 
   private void notifyReporter(RepairOrder row, String kind, boolean todo) {
-    long noticeId = com.baomidou.mybatisplus.core.toolkit.IdWorker.getId();
+    long noticeId = IdWorker.getId();
     inboxes.inbox(
         noticeId,
         auth.tenantId(),

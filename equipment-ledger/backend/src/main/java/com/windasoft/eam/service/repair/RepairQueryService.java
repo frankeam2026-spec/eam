@@ -26,19 +26,19 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 维修列表、统计与导出查询编排：共用可见范围，分页后批量装配业务扩展数据。 */
 @Service
 public class RepairQueryService {
-  @org.springframework.beans.factory.annotation.Autowired private BusinessValueService custom;
+  @Autowired private BusinessValueService custom;
 
-  @org.springframework.beans.factory.annotation.Autowired
-  private BusinessQueryService customQueries;
+  @Autowired private BusinessQueryService customQueries;
 
   private static final List<String> QUEUES =
-      java.util.Arrays.stream(RepairQueue.values()).map(RepairQueue::code).toList();
+      Arrays.stream(RepairQueue.values()).map(RepairQueue::code).toList();
   private static final List<String> EXPORT_FIELDS =
       List.of(
           "orderNo",
@@ -307,5 +307,15 @@ public class RepairQueryService {
   private void scope(LambdaQueryWrapper<RepairOrder> query, Boolean export) {
     permissions.filterRepair(query);
     if (export) permissions.filterRepair(query, "导出");
+  }
+
+  /** 单条业务返回前完成查询装配；转换器不执行数据库访问，null分类也代表已读取。 */
+  public RepairOrder prepareDetail(RepairOrder row) {
+    var v = custom.read("repair_report", row.getId());
+    row.setCustomFields(v.customFields());
+    row.setCustomFieldLabels(v.customFieldLabels());
+    row.setCustomSchemaVersion(v.customSchemaVersion());
+    row.setEquipmentCategoryId(custom.repairCategories(List.of(row.getId())).get(row.getId()));
+    return row;
   }
 }

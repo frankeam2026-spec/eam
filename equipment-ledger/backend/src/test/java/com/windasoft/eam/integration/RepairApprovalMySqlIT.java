@@ -3,12 +3,14 @@ package com.windasoft.eam.integration;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.workflow.WorkflowExpression;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
 import com.windasoft.eam.dto.repair.RepairAssistantRequest;
 import com.windasoft.eam.dto.repair.RepairForm;
 import com.windasoft.eam.dto.repair.RepairReadViews;
+import com.windasoft.eam.dto.repair.RepairUpload;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.dto.workflow.WorkflowDefinition;
 import com.windasoft.eam.dto.workflow.WorkflowDefinition.Node;
@@ -21,6 +23,9 @@ import com.windasoft.eam.repository.repair.RepairCollaboratorRepository;
 import com.windasoft.eam.repository.repair.RepairInboxRepository;
 import com.windasoft.eam.repository.repair.RepairMaterialRepository;
 import com.windasoft.eam.repository.repair.RepairOrderRepository;
+import com.windasoft.eam.repository.repair.RepairUploadRepository;
+import com.windasoft.eam.repository.repair.RepairWorkflowRepository;
+import com.windasoft.eam.repository.system.AuthorizationRepository;
 import com.windasoft.eam.scheduler.experience.RepairPlanScheduler;
 import com.windasoft.eam.scheduler.inspection.InspectionScheduler;
 import com.windasoft.eam.scheduler.inventory.InventoryReservationCleanup;
@@ -29,21 +34,33 @@ import com.windasoft.eam.scheduler.maintenance.MaintenanceScheduler;
 import com.windasoft.eam.scheduler.system.NotificationScheduler;
 import com.windasoft.eam.service.inventory.RequisitionService;
 import com.windasoft.eam.service.repair.*;
+import com.windasoft.eam.service.repair.RepairDetailService;
 import com.windasoft.eam.service.system.*;
 import com.windasoft.eam.service.workflow.*;
+import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.*;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @EnabledIfEnvironmentVariable(named = "EAM_REPAIR_APPROVAL_TEST_URL", matches = ".+")
@@ -59,6 +76,13 @@ class RepairApprovalMySqlIT {
     p.add("spring.datasource.url", () -> url);
     p.add("spring.datasource.username", () -> "root");
     p.add("spring.datasource.password", () -> "");
+    p.add(
+        "eam.upload.directory",
+        () ->
+            Path.of("../../.local-runtime/repair-quality-20261102/security-uploads")
+                .toAbsolutePath()
+                .normalize()
+                .toString());
     p.add("eam.notification.secret-key", () -> Base64.getEncoder().encodeToString(new byte[32]));
   }
 
@@ -79,7 +103,7 @@ class RepairApprovalMySqlIT {
   @Autowired RepairWorkflowService repairWorkflow;
   @Autowired RepairOrderRepository repairs;
   @Autowired RequisitionService requisitions;
-  @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
+  @Autowired PlatformTransactionManager transactions;
   long actor = 73001L, fault;
 
   @BeforeEach
@@ -175,8 +199,8 @@ class RepairApprovalMySqlIT {
   }
 
   long create() {
-    var result = (Map<?, ?>) orders.create(form()).get("data");
-    return Long.parseLong(result.get("id").toString());
+    var result = orders.create(form());
+    return Long.parseLong(result.id());
   }
 
   Map<String, Object> instance(long id) {
@@ -217,14 +241,13 @@ class RepairApprovalMySqlIT {
   }
 
   @Test
-  @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
   void enablingWithoutTemplateRollsBackTheEntireSubmission() {
     long count =
         db.queryForObject(
             "SELECT COUNT(*) FROM eam_repair_order WHERE tenant_id=10001", Long.class);
     try {
-      var transaction =
-          new org.springframework.transaction.support.TransactionTemplate(transactions);
+      var transaction = new TransactionTemplate(transactions);
       assertThrows(
           IllegalArgumentException.class,
           () ->
@@ -313,9 +336,7 @@ class RepairApprovalMySqlIT {
     act(id, false);
     assertEquals("待提交", repairs.find(10001, id).getStatus());
     actor = 73001L;
-    doThrow(
-            new org.springframework.web.server.ResponseStatusException(
-                org.springframework.http.HttpStatus.FORBIDDEN))
+    doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN))
         .when(permissions)
         .checkRepair(any(), eq("编辑"));
     orders.update(id, form(), repairs.find(10001, id).getRowVersion());
@@ -337,14 +358,11 @@ class RepairApprovalMySqlIT {
     var i = instance(id);
     actor = 73002L;
     assertThrows(
-        org.springframework.web.server.ResponseStatusException.class,
-        () -> runtime.withdraw(n(i, "id"), n(i, "row_version")));
+        ResponseStatusException.class, () -> runtime.withdraw(n(i, "id"), n(i, "row_version")));
     actor = 73001L;
     runtime.withdraw(n(i, "id"), n(i, "row_version"));
     assertEquals("待提交", repairs.find(10001, id).getStatus());
-    assertThrows(
-        org.springframework.web.server.ResponseStatusException.class,
-        () -> approvals.submit(id, 0));
+    assertThrows(ResponseStatusException.class, () -> approvals.submit(id, 0));
   }
 
   @Test
@@ -365,9 +383,7 @@ class RepairApprovalMySqlIT {
   @Test
   void companySettingsEnforcePermissionAndOptimisticVersion() {
     when(permissions.companyAllowed(eq("workflow"), anyString(), eq(71006L))).thenReturn(false);
-    assertThrows(
-        org.springframework.web.server.ResponseStatusException.class,
-        () -> templates.approvalSetting(71006, true, -1));
+    assertThrows(ResponseStatusException.class, () -> templates.approvalSetting(71006, true, -1));
     enable();
     assertThrows(IllegalArgumentException.class, () -> templates.approvalSetting(71002, false, -1));
     when(auth.tenantId()).thenReturn(99999L);
@@ -410,7 +426,7 @@ class RepairApprovalMySqlIT {
             n(i, "id"));
     actor = 990410002L;
     assertThrows(
-        org.springframework.web.server.ResponseStatusException.class,
+        ResponseStatusException.class,
         () -> runtime.act(n(i, "id"), task, n(i, "row_version"), true, "越权测试"));
     act(second, true);
     assertEquals("待派工", repairs.find(10001, second).getStatus());
@@ -452,7 +468,7 @@ class RepairApprovalMySqlIT {
         Set.of("已接单", "已由他人接单"),
         candidates.candidates(10001, order).stream()
             .map(RepairReadViews.Candidate::status)
-            .collect(java.util.stream.Collectors.toSet()));
+            .collect(Collectors.toSet()));
     candidates.clearCandidates(10001, order);
     assertEquals(1, candidates.candidate(10002, order, 73001));
   }
@@ -493,10 +509,10 @@ class RepairApprovalMySqlIT {
     long first = create(), second = create();
     var row = repairs.find(10001, first);
     row.setCollaboratorsJson("[{\"id\":\"73001\",\"name\":\"甲\",\"extra\":\"兼容字段\"}]");
-    relationService.save(row);
+    relationService.saveProcessing(row);
     var other = repairs.find(10001, second);
     other.setCollaboratorsJson("[{\"id\":\"73002\",\"name\":\"乙\"}]");
-    relationService.save(other);
+    relationService.saveProcessing(other);
     assertEquals("甲", collaborators.list(10001, List.of(first)).getFirst().getNameSnapshot());
     assertTrue(collaborators.list(10002, List.of(first)).isEmpty());
     var wrong = new RepairCollaborator();
@@ -506,7 +522,7 @@ class RepairApprovalMySqlIT {
         IllegalArgumentException.class, () -> collaborators.replace(10001, first, List.of(wrong)));
     assertEquals(1, collaborators.list(10001, List.of(first)).size());
     row.setCollaboratorsJson("[]");
-    relationService.save(row);
+    relationService.saveProcessing(row);
     assertTrue(collaborators.list(10001, List.of(first)).isEmpty());
     assertEquals(1, collaborators.list(10001, List.of(second)).size());
   }
@@ -523,18 +539,18 @@ class RepairApprovalMySqlIT {
             + " VALUES(993112022,10001,?,993112021,73001,2,2,0,'已出库',NOW())",
         order);
     assertNull(materials.lockMaterial(10002, 993112022, order));
-    assertEquals(0, materials.consume(10001, 993112022, new java.math.BigDecimal("3")));
-    assertEquals(1, materials.consume(10001, 993112022, new java.math.BigDecimal("1.25")));
-    assertEquals(0, materials.consume(10001, 993112022, new java.math.BigDecimal("1")));
-    assertEquals(0, materials.consume(10002, 993112022, new java.math.BigDecimal("0.1")));
+    assertEquals(0, materials.consume(10001, 993112022, new BigDecimal("3")));
+    assertEquals(1, materials.consume(10001, 993112022, new BigDecimal("1.25")));
+    assertEquals(0, materials.consume(10001, 993112022, new BigDecimal("1")));
+    assertEquals(0, materials.consume(10002, 993112022, new BigDecimal("0.1")));
     assertEquals(993112021L, materials.lockMaterial(10001, 993112022, order).getStockId());
-    spares.install(993112023, 10001, 990410001, 993112021, order, new java.math.BigDecimal("1.25"));
+    spares.install(993112023, 10001, 990410001, 993112021, order, new BigDecimal("1.25"));
     var row =
         spares.installed(10001, 990410001).stream()
             .filter(x -> x.getId().equals("993112023"))
             .findFirst()
             .orElseThrow();
-    assertEquals(0, row.getQuantity().compareTo(new java.math.BigDecimal("1.25")));
+    assertEquals(0, row.getQuantity().compareTo(new BigDecimal("1.25")));
     assertEquals("旧轴承", row.getName());
     assertEquals(0, spares.remove(10002, 990410001, 993112023));
     assertEquals(1, spares.remove(10001, 990410001, 993112023));
@@ -546,8 +562,7 @@ class RepairApprovalMySqlIT {
     long id = create();
     doAnswer(
             call -> {
-              com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RepairOrder> q =
-                  call.getArgument(0);
+              LambdaQueryWrapper<RepairOrder> q = call.getArgument(0);
               q.eq(RepairOrder::getId, id);
               return null;
             })
@@ -557,14 +572,10 @@ class RepairApprovalMySqlIT {
         AiBusinessPlan.parse(json.readTree("{\"domain\":\"repair\",\"operation\":\"COUNT\"}"));
     var request = new RepairAssistantRequest(plan, null, 1, 20, LocalDateTime.now(), null, null);
     assertEquals(1, ((Number) repairQueries.queryAssistant(request).get("value")).intValue());
-    doThrow(
-            new org.springframework.web.server.ResponseStatusException(
-                org.springframework.http.HttpStatus.FORBIDDEN))
+    doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN))
         .when(permissions)
         .require("repair", "查看");
-    assertThrows(
-        org.springframework.web.server.ResponseStatusException.class,
-        () -> repairQueries.queryAssistant(request));
+    assertThrows(ResponseStatusException.class, () -> repairQueries.queryAssistant(request));
   }
 
   private long counter(String name) {
@@ -583,15 +594,13 @@ class RepairApprovalMySqlIT {
       candidates.addCandidate(993112031, 10001, order, 73001);
       inboxes.inbox(993112032, 10001, 73001, order, "待接单", "时钟", true);
       assertEquals(
-          db.queryForObject("SELECT NOW()", java.sql.Timestamp.class),
+          db.queryForObject("SELECT NOW()", Timestamp.class),
           db.queryForObject(
-              "SELECT created_at FROM eam_repair_candidate WHERE id=993112031",
-              java.sql.Timestamp.class));
+              "SELECT created_at FROM eam_repair_candidate WHERE id=993112031", Timestamp.class));
       assertEquals(
-          db.queryForObject("SELECT NOW()", java.sql.Timestamp.class),
+          db.queryForObject("SELECT NOW()", Timestamp.class),
           db.queryForObject(
-              "SELECT created_at FROM eam_repair_inbox WHERE id=993112032",
-              java.sql.Timestamp.class));
+              "SELECT created_at FROM eam_repair_inbox WHERE id=993112032", Timestamp.class));
     } finally {
       db.execute("SET timestamp=0");
     }
@@ -617,8 +626,8 @@ class RepairApprovalMySqlIT {
         json.readTree(json.writeValueAsString(inboxes.inboxRows(10001, 73001))));
   }
 
-  @Autowired com.windasoft.eam.repository.repair.RepairWorkflowRepository workflowQueries;
-  @Autowired com.windasoft.eam.repository.system.AuthorizationRepository authorization;
+  @Autowired RepairWorkflowRepository workflowQueries;
+  @Autowired AuthorizationRepository authorization;
 
   @Test
   void parameterizedParticipationAndDispatchQueriesKeepExistingMeaning() {
@@ -631,5 +640,133 @@ class RepairApprovalMySqlIT {
     assertFalse(authorization.personalRepairAccess(10001, user));
     assertFalse(workflowQueries.users(10001).isEmpty());
     assertTrue(workflowQueries.users(10001).stream().allMatch(row -> row.unfinished() >= 0));
+  }
+
+  @Autowired RepairFileService repairFiles;
+  @Autowired RepairFileStorage repairStorage;
+  @Autowired RepairUploadRepository uploadRecords;
+
+  @Test
+  void registeredForeignFileCannotBeReboundOrDownloadedThroughForgedLocalRelation()
+      throws Exception {
+    when(auth.tenantId()).thenReturn(10002L);
+    var file =
+        repairFiles.upload(
+            new RepairUpload(
+                "security.txt",
+                "text/plain",
+                6,
+                false,
+                new ByteArrayInputStream("secret".getBytes(StandardCharsets.UTF_8))));
+    try {
+      when(auth.tenantId()).thenReturn(10001L);
+      assertEquals(10002L, uploadRecords.ownership(file.id()).getTenantId());
+      var f = form();
+      var metadata = json.createArrayNode();
+      metadata
+          .addObject()
+          .put("id", file.id())
+          .put("name", file.name())
+          .put("url", file.url())
+          .put("size", file.size())
+          .put("contentType", file.contentType());
+      var request =
+          new RepairForm(
+              f.equipmentCode(),
+              f.equipmentName(),
+              f.department(),
+              f.faultTypeId(),
+              f.severity(),
+              f.description(),
+              f.reporter(),
+              f.assignee(),
+              f.repairAction(),
+              f.downtimeMinutes(),
+              metadata,
+              f.customFields(),
+              f.customSchemaVersion());
+      long order = create();
+      // 模拟已有伪造关联；文件原归属仍是另一个租户，下载不能只信新关系。
+      db.update(
+          "INSERT INTO eam_repair_report_file(tenant_id,order_id,sort_no,file_id)"
+              + " VALUES(10001,?,0,?)",
+          order,
+          file.id());
+      assertThrows(IllegalArgumentException.class, () -> repairFiles.download(file.id()));
+      assertThrows(IllegalArgumentException.class, () -> orders.create(request));
+    } finally {
+      repairStorage.remove(file.id(), ".txt");
+    }
+  }
+
+  @Test
+  void nonRelationStateTransitionDoesNotRewriteAttachmentRows() throws Exception {
+    long order = create();
+    candidates.addCandidate(993112070, 10001, order, 73001);
+    db.update("UPDATE eam_repair_order SET status='待接单' WHERE tenant_id=10001 AND id=?", order);
+    // 以真实关系写入次数为依据，接单可更新工单/候选/消息，但不应删除、重插附件或协同关系。
+    long before = counter("Com_delete");
+    repairWorkflow.action(
+        order, repairs.find(10001, order).getRowVersion(), json.readTree("{\"action\":\"claim\"}"));
+    assertEquals(0, counter("Com_delete") - before);
+  }
+
+  @Autowired RepairDetailService detailQueries;
+
+  @Test
+  void typedApprovalHistoryPreservesProviderWireContract() throws Exception {
+    publish("repair_report", "ANY", "71002");
+    enable();
+    long id = create();
+    var original = runtime.history("repair_report", id);
+    var actual = detailQueries.detail(id).approvalRounds();
+    assertEquals(
+        json.readTree(json.writeValueAsString(original)),
+        json.readTree(json.writeValueAsString(actual)));
+  }
+
+  @Test
+  void processingStillSavesOwnRelationsAndPreservesReportAttachments() throws Exception {
+    long id = create();
+    db.update("UPDATE eam_repair_order SET status='处理中',assignee_user_id=73001 WHERE id=?", id);
+    db.update(
+        "INSERT INTO eam_repair_report_file(tenant_id,order_id,sort_no,file_id,name_snapshot)"
+            + " VALUES(10001,?,0,'historical-test-reference','历史文件')",
+        id);
+    var body =
+        json.createObjectNode()
+            .put("action", "process")
+            .put("content", "已处理并确认")
+            .put("repairMethod", "自修")
+            .put("faultTypeId", fault);
+    body.put(
+        "faultCauseId",
+        db.queryForObject(
+            "SELECT MIN(id) FROM eam_base_item WHERE tenant_id=10001 AND item_type='FAULT_CAUSE'"
+                + " AND status=1 AND deleted=0",
+            Long.class));
+    body.put(
+        "processingResultId",
+        db.queryForObject(
+            "SELECT MIN(id) FROM eam_base_item WHERE tenant_id=10001 AND item_type='PROCESS_RESULT'"
+                + " AND status=1 AND deleted=0",
+            Long.class));
+    body.set("collaboratorIds", json.valueToTree(List.of("73001")));
+    body.set("attachments", json.createArrayNode());
+    body.set("customFields", json.createObjectNode());
+    body.put(
+        "customSchemaVersion",
+        db.queryForObject(
+            "SELECT published_version FROM eam_business_schema WHERE tenant_id=10001 AND"
+                + " object_key='repair_process'",
+            Integer.class));
+    repairWorkflow.action(id, repairs.find(10001, id).getRowVersion(), body);
+    assertEquals(1, collaborators.list(10001, List.of(id)).size());
+    assertEquals(
+        "historical-test-reference",
+        db.queryForObject(
+            "SELECT file_id FROM eam_repair_report_file WHERE tenant_id=10001 AND order_id=?",
+            String.class,
+            id));
   }
 }

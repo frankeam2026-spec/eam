@@ -2,27 +2,85 @@ package com.windasoft.eam.integration;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.dto.business.BusinessFilterTerm;
 import com.windasoft.eam.dto.common.*;
+import com.windasoft.eam.dto.equipment.EquipmentForm;
+import com.windasoft.eam.dto.equipment.EquipmentQueryParameters;
+import com.windasoft.eam.dto.repair.RepairForm;
 import com.windasoft.eam.dto.system.PermissionScope;
+import com.windasoft.eam.entity.system.SystemUser;
+import com.windasoft.eam.repository.business.BusinessQueryRepository;
 import com.windasoft.eam.repository.common.*;
+import com.windasoft.eam.repository.equipment.EquipmentMediaRepository;
+import com.windasoft.eam.repository.equipment.EquipmentWriteRepository;
+import com.windasoft.eam.repository.experience.HomeRepository;
+import com.windasoft.eam.repository.inspection.InspectionExecutionStorage;
+import com.windasoft.eam.repository.inspection.InspectionListRepository;
+import com.windasoft.eam.repository.inventory.InventoryListRepository;
+import com.windasoft.eam.repository.inventory.OutboundRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
-import java.util.*;
+import com.windasoft.eam.repository.system.UserListRepository;
+import com.windasoft.eam.service.equipment.EquipmentCommandService;
+import com.windasoft.eam.service.equipment.EquipmentQueryService;
+import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.inspection.InspectionTaskService;
+import com.windasoft.eam.service.inventory.InventoryFlowService;
+import com.windasoft.eam.service.inventory.InventoryListService;
+import com.windasoft.eam.service.inventory.InventoryService;
+import com.windasoft.eam.service.inventory.OutboundService;
+import com.windasoft.eam.service.inventory.ReceiptService;
+import com.windasoft.eam.service.maintenance.MaintenanceCsvService;
+import com.windasoft.eam.service.maintenance.MaintenanceListService;
+import com.windasoft.eam.service.maintenance.MaintenanceService;
+import com.windasoft.eam.service.maintenance.MaintenanceTaskService;
+import com.windasoft.eam.service.repair.RepairOrderService;
+import com.windasoft.eam.service.repair.RepairQueryService;
+import com.windasoft.eam.service.repair.RepairWorkflowService;
+import com.windasoft.eam.service.system.SystemExecution;
+import com.windasoft.eam.support.RelationalTaskFixtures;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @EnabledIfEnvironmentVariable(named = "EAM_ENGINEERING_DB_URL", matches = ".+")
 @Transactional
 class EngineeringQueryMySqlIT {
-  @org.springframework.beans.factory.annotation.Autowired
-  com.windasoft.eam.repository.inspection.InspectionExecutionStorage inspectionExecution;
+  @Autowired InspectionExecutionStorage inspectionExecution;
 
   @DynamicPropertySource
   static void database(DynamicPropertyRegistry properties) {
@@ -45,42 +103,40 @@ class EngineeringQueryMySqlIT {
         () -> System.getProperty("java.io.tmpdir") + "/eam-engineering-uploads");
   }
 
-  @Autowired com.windasoft.eam.repository.inspection.InspectionListRepository inspections;
-  @Autowired com.windasoft.eam.repository.inventory.InventoryListRepository inventory;
-  @Autowired com.windasoft.eam.repository.system.UserListRepository userLists;
-  @Autowired com.windasoft.eam.repository.business.BusinessQueryRepository extensions;
-  @Autowired com.windasoft.eam.service.maintenance.MaintenanceListService maintenanceLists;
-  @Autowired com.windasoft.eam.service.maintenance.MaintenanceCsvService maintenanceCsv;
-  @Autowired com.windasoft.eam.service.maintenance.MaintenanceTaskService maintenanceTasks;
-  @Autowired com.windasoft.eam.service.maintenance.MaintenanceService maintenanceDefinitions;
-  @Autowired com.windasoft.eam.service.inspection.InspectionService inspectionDefinitions;
-  @Autowired com.windasoft.eam.service.inspection.InspectionTaskService inspectionTasks;
-  @Autowired com.windasoft.eam.service.inventory.InventoryService inventoryMasters;
-  @Autowired com.windasoft.eam.service.inventory.InventoryListService inventoryLists;
-  @Autowired com.windasoft.eam.service.inventory.ReceiptService receiptCommands;
-  @Autowired com.windasoft.eam.service.inventory.OutboundService outboundCommands;
-  @Autowired com.windasoft.eam.service.equipment.EquipmentCommandService equipmentCommands;
-  @Autowired com.windasoft.eam.service.repair.RepairOrderService repairCommands;
-  @Autowired com.windasoft.eam.service.repair.RepairWorkflowService repairWorkflow;
-  @Autowired com.windasoft.eam.service.equipment.EquipmentQueryService equipmentQueries;
-  @Autowired com.windasoft.eam.service.repair.RepairQueryService repairQueries;
-  @Autowired com.windasoft.eam.repository.experience.HomeRepository homeRepository;
-  @Autowired com.windasoft.eam.repository.equipment.EquipmentMediaRepository equipmentMedia;
-  @Autowired com.windasoft.eam.repository.equipment.EquipmentWriteRepository equipmentWrites;
+  @Autowired InspectionListRepository inspections;
+  @Autowired InventoryListRepository inventory;
+  @Autowired UserListRepository userLists;
+  @Autowired BusinessQueryRepository extensions;
+  @Autowired MaintenanceListService maintenanceLists;
+  @Autowired MaintenanceCsvService maintenanceCsv;
+  @Autowired MaintenanceTaskService maintenanceTasks;
+  @Autowired MaintenanceService maintenanceDefinitions;
+  @Autowired InspectionService inspectionDefinitions;
+  @Autowired InspectionTaskService inspectionTasks;
+  @Autowired InventoryService inventoryMasters;
+  @Autowired InventoryListService inventoryLists;
+  @Autowired ReceiptService receiptCommands;
+  @Autowired OutboundService outboundCommands;
+  @Autowired EquipmentCommandService equipmentCommands;
+  @Autowired RepairOrderService repairCommands;
+  @Autowired RepairWorkflowService repairWorkflow;
+  @Autowired EquipmentQueryService equipmentQueries;
+  @Autowired RepairQueryService repairQueries;
+  @Autowired HomeRepository homeRepository;
+  @Autowired EquipmentMediaRepository equipmentMedia;
+  @Autowired EquipmentWriteRepository equipmentWrites;
   @Autowired ObjectMapper json;
-  @Autowired com.windasoft.eam.service.inventory.InventoryFlowService inventoryFlows;
+  @Autowired InventoryFlowService inventoryFlows;
 
-  @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
-  com.windasoft.eam.repository.inventory.OutboundRepository outboundRepository;
+  @MockitoSpyBean OutboundRepository outboundRepository;
 
-  @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
+  @Autowired PlatformTransactionManager transactions;
   @Autowired JdbcTemplate db;
   @Autowired MaintenanceListRepository repository;
 
   @BeforeAll
   static void resetQueryReports() throws Exception {
-    java.nio.file.Files.deleteIfExists(
-        java.nio.file.Path.of("target/engineering-query-plans.jsonl"));
+    Files.deleteIfExists(Path.of("target/engineering-query-plans.jsonl"));
   }
 
   void recordPlan(String name, String from, SqlPredicate predicate, String order) {
@@ -95,11 +151,11 @@ class EngineeringQueryMySqlIT {
                   .writeValueAsString(
                       Map.of("query", name, "sql", sql, "plan", new ObjectMapper().readTree(plan)))
               + "\n";
-      java.nio.file.Files.writeString(
-          java.nio.file.Path.of("target/engineering-query-plans.jsonl"),
+      Files.writeString(
+          Path.of("target/engineering-query-plans.jsonl"),
           line,
-          java.nio.file.StandardOpenOption.CREATE,
-          java.nio.file.StandardOpenOption.APPEND);
+          StandardOpenOption.CREATE,
+          StandardOpenOption.APPEND);
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }
@@ -216,7 +272,7 @@ class EngineeringQueryMySqlIT {
             + " eam_inspection_task(id,tenant_id,kind,code,plan_id,company_id,department_id,due_at,expires_at,status,snapshot)"
             + " VALUES(?,?,?,?,?,?,?,?,?,?,CAST(? AS JSON))",
         tasks);
-    com.windasoft.eam.support.RelationalTaskFixtures.capture(db);
+    RelationalTaskFixtures.capture(db);
   }
 
   @Test
@@ -280,7 +336,7 @@ class EngineeringQueryMySqlIT {
         "UPDATE eam_inspection_task SET"
             + " snapshot=JSON_OBJECT('owners',JSON_ARRAY('73001'),'items',JSON_ARRAY(JSON_OBJECT('id','a','equipmentId','1'),JSON_OBJECT('id','b','equipmentId','2')),'equipment',JSON_ARRAY(JSON_OBJECT('id','1'),JSON_OBJECT('id','2')))"
             + " WHERE id=880000000");
-    com.windasoft.eam.support.RelationalTaskFixtures.capture(db);
+    RelationalTaskFixtures.capture(db);
     inspectionExecution.save(
         10001L,
         880000000L,
@@ -363,11 +419,9 @@ class EngineeringQueryMySqlIT {
     var rows = inventory.page(selected, q);
     assertEquals(
         Set.of("921000001", "g920000001"),
-        rows.stream()
-            .map(row -> row.get("id").toString())
-            .collect(java.util.stream.Collectors.toSet()));
+        rows.stream().map(row -> row.get("id").toString()).collect(Collectors.toSet()));
     assertEquals(
-        new java.math.BigDecimal("5.67"),
+        new BigDecimal("5.67"),
         rows.stream()
             .filter(row -> row.get("id").toString().startsWith("g"))
             .findFirst()
@@ -412,7 +466,7 @@ class EngineeringQueryMySqlIT {
     var row = inventory.page(selected, q).getFirst();
     assertEquals("部分出库", row.get("business_status"));
     assertEquals("部分预留", row.get("reservation_status"));
-    assertEquals(new java.math.BigDecimal("7.000000"), row.get("remaining_quantity"));
+    assertEquals(new BigDecimal("7.000000"), row.get("remaining_quantity"));
     assertEquals(
         0, inventory.count(inventory.requisitions(10001, 73001, q, Set.of(), false, true)));
   }
@@ -450,11 +504,11 @@ class EngineeringQueryMySqlIT {
         id,
         id);
     var term =
-        new com.windasoft.eam.dto.business.BusinessFilterTerm(
+        new BusinessFilterTerm(
             id,
             "number_value",
-            com.windasoft.eam.dto.business.BusinessFilterTerm.Operator.RANGE,
-            Arrays.asList(java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO),
+            BusinessFilterTerm.Operator.RANGE,
+            Arrays.asList(BigDecimal.ZERO, BigDecimal.ZERO),
             false);
     var predicate = extensions.predicate(10001, "maintenance_plan", "t", List.of(term));
     var q = ListQuery.from(Map.of("q", "QA-ENG-"));
@@ -475,23 +529,22 @@ class EngineeringQueryMySqlIT {
 
   @Test
   void maintenanceServiceAndCsvShareTheSameAuthorizedQuery() {
-    var user = new com.windasoft.eam.entity.system.SystemUser();
+    var user = new SystemUser();
     user.setId(73001L);
     user.setTenantId(10001L);
     user.setOrgId(71003L);
     user.setStatus(1);
     user.setDeleted(0);
     user.setDisplayName("工程管理员");
-    com.windasoft.eam.service.system.SystemExecution.run(
+    SystemExecution.run(
         user,
         () -> {
           var q = ListQuery.from(Map.of("q", "QA-ENG-1000"));
           var result = maintenanceLists.query("plans", q);
           assertEquals(5, result.page().total());
           assertEquals(5, result.data().size());
-          var text = new java.io.StringWriter();
-          maintenanceCsv.write(
-              "plans", q, "[\"code\",\"name\"]", () -> new java.io.PrintWriter(text));
+          var text = new StringWriter();
+          maintenanceCsv.write("plans", q, "[\"code\",\"name\"]", () -> new PrintWriter(text));
           assertEquals(6, text.toString().lines().count());
           return null;
         });
@@ -503,7 +556,7 @@ class EngineeringQueryMySqlIT {
         "INSERT INTO"
             + " eam_maintenance_task(id,tenant_id,code,plan_id,schedule_id,equipment_id,company_id,department_id,due_date,status,snapshot)"
             + " VALUES(950000001,10001,'QA-ACCEPT-STRING',860000000,1,1,71002,71003,'2026-10-17','待验收',JSON_OBJECT('reviewers',JSON_ARRAY('73001'))),(950000002,10001,'QA-ACCEPT-NUMBER',860000000,2,1,71002,71003,'2026-10-17','待验收',JSON_OBJECT('reviewers',JSON_ARRAY(73001)))");
-    com.windasoft.eam.support.RelationalTaskFixtures.capture(db);
+    RelationalTaskFixtures.capture(db);
     var scope = new PermissionScope(true, null, Set.of(), false);
     var q = ListQuery.from(Map.of("queue", "待我验收", "q", "QA-ACCEPT-"));
     var selection =
@@ -517,7 +570,7 @@ class EngineeringQueryMySqlIT {
   @Test
   void maintenanceExecuteSubmitReturnAndAcceptPreserveVersionsAndStock() {
     maintenanceWorkflowFixtures();
-    var user = new com.windasoft.eam.entity.system.SystemUser();
+    var user = new SystemUser();
     user.setId(73001L);
     user.setTenantId(10001L);
     user.setOrgId(71003L);
@@ -527,8 +580,8 @@ class EngineeringQueryMySqlIT {
     var before =
         db.queryForObject(
             "SELECT COALESCE(SUM(quantity),0) FROM inv_balance WHERE tenant_id=10001",
-            java.math.BigDecimal.class);
-    com.windasoft.eam.service.system.SystemExecution.run(
+            BigDecimal.class);
+    SystemExecution.run(
         user,
         () -> {
           var started = maintenanceTasks.action(960000001, "start", Map.of("rowVersion", 0));
@@ -578,7 +631,7 @@ class EngineeringQueryMySqlIT {
           assertEquals(5, ((Number) accepted.get("rowVersion")).intValue());
           var error =
               assertThrows(
-                  org.springframework.web.server.ResponseStatusException.class,
+                  ResponseStatusException.class,
                   () ->
                       maintenanceTasks.action(
                           960000001,
@@ -591,7 +644,7 @@ class EngineeringQueryMySqlIT {
         before,
         db.queryForObject(
             "SELECT COALESCE(SUM(quantity),0) FROM inv_balance WHERE tenant_id=10001",
-            java.math.BigDecimal.class));
+            BigDecimal.class));
     assertEquals(
         5,
         db.queryForObject(
@@ -609,14 +662,14 @@ class EngineeringQueryMySqlIT {
         "INSERT INTO"
             + " eam_maintenance_task(id,tenant_id,code,plan_id,schedule_id,equipment_id,company_id,department_id,due_date,status,snapshot)"
             + " VALUES(960000001,10001,'QA-WORKFLOW',860000000,50,970000001,71002,71003,?,'待执行',JSON_OBJECT('owners',JSON_ARRAY('73001'),'reviewers',JSON_ARRAY('73001'),'items',JSON_ARRAY(),'equipmentName','工程设备','calculation','固定间隔'))",
-        java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")));
-    com.windasoft.eam.support.RelationalTaskFixtures.capture(db);
+        LocalDate.now(ZoneId.of("Asia/Shanghai")));
+    RelationalTaskFixtures.capture(db);
   }
 
   @Test
   void inspectionDraftSubmitReturnAndReviewPreserveTheSameTaskAndCost() {
     maintenanceWorkflowFixtures();
-    var json = new com.fasterxml.jackson.databind.ObjectMapper();
+    var json = new ObjectMapper();
     String itemId = "970000001/standard:item";
     var item =
         Map.of(
@@ -658,7 +711,7 @@ class EngineeringQueryMySqlIT {
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }
-    var now = java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
+    var now = LocalDateTime.now(ZoneId.of("Asia/Shanghai"));
     db.update(
         "INSERT INTO"
             + " eam_inspection_task(id,tenant_id,kind,code,plan_id,equipment_id,company_id,department_id,due_at,expires_at,status,snapshot)"
@@ -667,8 +720,8 @@ class EngineeringQueryMySqlIT {
         now.minusHours(1),
         now.plusDays(1),
         encoded);
-    com.windasoft.eam.support.RelationalTaskFixtures.capture(db);
-    var user = new com.windasoft.eam.entity.system.SystemUser();
+    RelationalTaskFixtures.capture(db);
+    var user = new SystemUser();
     user.setId(73001L);
     user.setTenantId(10001L);
     user.setOrgId(71003L);
@@ -678,8 +731,8 @@ class EngineeringQueryMySqlIT {
     var before =
         db.queryForObject(
             "SELECT COALESCE(SUM(quantity),0) FROM inv_balance WHERE tenant_id=10001",
-            java.math.BigDecimal.class);
-    com.windasoft.eam.service.system.SystemExecution.run(
+            BigDecimal.class);
+    SystemExecution.run(
         user,
         () -> {
           assertEquals(
@@ -752,7 +805,7 @@ class EngineeringQueryMySqlIT {
         before,
         db.queryForObject(
             "SELECT COALESCE(SUM(quantity),0) FROM inv_balance WHERE tenant_id=10001",
-            java.math.BigDecimal.class));
+            BigDecimal.class));
     assertEquals(
         1,
         db.queryForObject(
@@ -790,14 +843,14 @@ class EngineeringQueryMySqlIT {
     // The migration deliberately does not grant direct issues to legacy issue roles.
     // This isolated warehouse-operator fixture explicitly grants the actions under test.
     grantDirectOutbounds();
-    var user = new com.windasoft.eam.entity.system.SystemUser();
+    var user = new SystemUser();
     user.setId(73001L);
     user.setTenantId(10001L);
     user.setOrgId(71003L);
     user.setStatus(1);
     user.setDeleted(0);
     user.setDisplayName("工程管理员");
-    com.windasoft.eam.service.system.SystemExecution.run(
+    SystemExecution.run(
         user,
         () -> {
           Long unit =
@@ -868,7 +921,7 @@ class EngineeringQueryMySqlIT {
             receiptCommands.confirm(receiptId, Map.of("rowVersion", receipt.get("rowVersion")));
             receiptCommands.confirm(receiptId, Map.of("rowVersion", receipt.get("rowVersion")));
           }
-          assertEquals(new java.math.BigDecimal("5.000000"), stockQuantity(materialId));
+          assertEquals(new BigDecimal("5.000000"), stockQuantity(materialId));
           assertEquals(
               2,
               db.queryForObject(
@@ -877,7 +930,7 @@ class EngineeringQueryMySqlIT {
                       + " b.material_id=?",
                   Integer.class,
                   materialId));
-          java.math.BigDecimal total = java.math.BigDecimal.ZERO;
+          BigDecimal total = BigDecimal.ZERO;
           int index = 0;
           for (String quantity : List.of("4", "1")) {
             var saved =
@@ -914,13 +967,12 @@ class EngineeringQueryMySqlIT {
             var after = stockQuantity(materialId);
             outboundCommands.confirm(id, confirmation);
             assertEquals(after, stockQuantity(materialId));
-            var amount = new java.math.BigDecimal(issued.get("totalAmount").toString());
-            assertEquals(
-                new java.math.BigDecimal(quantity.equals("4") ? "41.39" : "11.01"), amount);
+            var amount = new BigDecimal(issued.get("totalAmount").toString());
+            assertEquals(new BigDecimal(quantity.equals("4") ? "41.39" : "11.01"), amount);
             total = total.add(amount);
           }
-          assertEquals(new java.math.BigDecimal("52.40"), total);
-          assertEquals(new java.math.BigDecimal("0.000000"), stockQuantity(materialId));
+          assertEquals(new BigDecimal("52.40"), total);
+          assertEquals(new BigDecimal("0.000000"), stockQuantity(materialId));
           assertEquals(
               0,
               db.queryForObject(
@@ -952,40 +1004,32 @@ class EngineeringQueryMySqlIT {
             + " published_version=1,published=JSON_OBJECT('fields',JSON_ARRAY(JSON_OBJECT('id',?,'name','额定功率','type','NUMBER','enabled',true,'required',true)))"
             + " WHERE tenant_id=10001 AND object_key='equipment'",
         field);
-    com.windasoft.eam.service.system.SystemExecution.run(
+    SystemExecution.run(
         engineeringUser(),
         () -> {
           var input = equipmentInput("QA-ENGINEERING-CHILD");
           input.put("customFields", Map.of(field, "0"));
           input.put("customSchemaVersion", 1);
-          var child =
-              equipmentCommands.create(
-                  json.convertValue(input, com.windasoft.eam.dto.equipment.EquipmentForm.class));
+          var child = equipmentCommands.create(json.convertValue(input, EquipmentForm.class));
           assertEquals("990000001", child.locationId());
           assertEquals(List.of("73001"), child.ownerIds());
           assertEquals("0.000000", child.customFields().get(field));
           input.put("code", "");
           input.put("name", "工程复制");
-          var copied =
-              equipmentCommands.create(
-                  json.convertValue(input, com.windasoft.eam.dto.equipment.EquipmentForm.class));
+          var copied = equipmentCommands.create(json.convertValue(input, EquipmentForm.class));
           assertNotEquals(child.code(), copied.code());
           assertEquals(child.customFields(), copied.customFields());
           input.put("code", "QA-ENGINEERING-PARENT");
           input.put("children", List.of(Map.of("equipmentId", child.id())));
           input.put(
               "relatedSpares", List.of(Map.of("materialId", "990000002", "quantity", "2.00")));
-          var parent =
-              equipmentCommands.create(
-                  json.convertValue(input, com.windasoft.eam.dto.equipment.EquipmentForm.class));
+          var parent = equipmentCommands.create(json.convertValue(input, EquipmentForm.class));
           assertEquals(child.id(), parent.children().getFirst().get("equipmentId"));
           assertEquals("990000002", parent.relatedSpares().getFirst().get("materialId"));
           input.put("name", "工程更新");
           var updated =
               equipmentCommands.update(
-                  Long.parseLong(parent.id()),
-                  json.convertValue(input, com.windasoft.eam.dto.equipment.EquipmentForm.class),
-                  0);
+                  Long.parseLong(parent.id()), json.convertValue(input, EquipmentForm.class), 0);
           assertEquals(1, updated.rowVersion());
           assertEquals("工程更新", updated.name());
           assertEquals(1, updated.children().size());
@@ -1022,8 +1066,8 @@ class EngineeringQueryMySqlIT {
         type);
   }
 
-  com.windasoft.eam.entity.system.SystemUser engineeringUser() {
-    var user = new com.windasoft.eam.entity.system.SystemUser();
+  SystemUser engineeringUser() {
+    var user = new SystemUser();
     user.setId(73001L);
     user.setTenantId(10001L);
     user.setOrgId(71003L);
@@ -1039,7 +1083,7 @@ class EngineeringQueryMySqlIT {
     db.update(
         "INSERT INTO eam_base_item(id,tenant_id,item_type,code,name)"
             + " VALUES(990000003,10001,'FAULT_CAUSE','QA-FAULT-CAUSE','工程原因')");
-    com.windasoft.eam.service.system.SystemExecution.run(
+    SystemExecution.run(
         engineeringUser(),
         () -> {
           var body = new HashMap<String, Object>();
@@ -1051,19 +1095,13 @@ class EngineeringQueryMySqlIT {
           body.put("reporter", "伪造报修人");
           body.put("customFields", Map.of());
           body.put("customSchemaVersion", 0);
-          var report =
-              (Map<String, Object>)
-                  repairCommands
-                      .create(
-                          json.convertValue(body, com.windasoft.eam.dto.repair.RepairForm.class))
-                      .get("data");
-          long id = Long.parseLong(report.get("id").toString());
-          assertEquals("工程设备", report.get("equipmentName"));
-          assertEquals("工程管理员", report.get("reporter"));
-          assertEquals("待派工", report.get("status"));
+          var report = repairCommands.create(json.convertValue(body, RepairForm.class));
+          long id = Long.parseLong(report.id());
+          assertEquals("工程设备", report.equipmentName());
+          assertEquals("工程管理员", report.reporter());
+          assertEquals("待派工", report.status());
           body.put("description", "工程报修更新");
-          repairCommands.update(
-              id, json.convertValue(body, com.windasoft.eam.dto.repair.RepairForm.class), 0);
+          repairCommands.update(id, json.convertValue(body, RepairForm.class), 0);
           assertEquals(
               "待接单",
               repairWorkflow
@@ -1120,7 +1158,7 @@ class EngineeringQueryMySqlIT {
           assertEquals(73001L, complete.getAcceptedOwnerId());
           var stale =
               assertThrows(
-                  org.springframework.web.server.ResponseStatusException.class,
+                  ResponseStatusException.class,
                   () ->
                       repairWorkflow.action(
                           id,
@@ -1175,7 +1213,7 @@ class EngineeringQueryMySqlIT {
             + " eam_repair_order(id,tenant_id,order_no,equipment_code,equipment_name,fault_type,description,reporter,reporter_user_id,company_org_id,department_org_id)"
             + " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         repairRows);
-    com.windasoft.eam.service.system.SystemExecution.run(
+    SystemExecution.run(
         engineeringUser(),
         () -> {
           var input =
@@ -1191,7 +1229,7 @@ class EngineeringQueryMySqlIT {
                       "code",
                       "direction",
                       "asc"));
-          var query = com.windasoft.eam.dto.equipment.EquipmentQueryParameters.read(input, json);
+          var query = EquipmentQueryParameters.read(input, json);
           assertEquals(10005, equipmentQueries.list(query).page().total());
           var last = equipmentQueries.list(query.at(51, 200));
           assertEquals(5, last.data().size());
@@ -1205,18 +1243,16 @@ class EngineeringQueryMySqlIT {
               "UPDATE eam_equipment SET created_at='2026-01-01 00:00:00'"
                   + " WHERE tenant_id=10001 AND equipment_code='QA-PAGE-EQ-00009'");
           input.put("keyword", "QA-PAGE-EQ-0000");
-          var codeSorted =
-              equipmentQueries.list(
-                  com.windasoft.eam.dto.equipment.EquipmentQueryParameters.read(input, json));
+          var codeSorted = equipmentQueries.list(EquipmentQueryParameters.read(input, json));
           assertEquals(10, codeSorted.page().total());
           assertEquals("QA-PAGE-EQ-00000", codeSorted.data().getFirst().code());
           assertEquals("QA-PAGE-EQ-00009", codeSorted.data().getLast().code());
           input.put("keyword", "QA-PAGE-EQ-1000");
-          var writer = new java.io.StringWriter();
+          var writer = new StringWriter();
           equipmentQueries.export(
-              com.windasoft.eam.dto.equipment.EquipmentQueryParameters.read(input, json),
+              EquipmentQueryParameters.read(input, json),
               List.of("code", "name"),
-              new java.io.PrintWriter(writer));
+              new PrintWriter(writer));
           assertEquals(6, writer.toString().lines().count());
           var parameters =
               new HashMap<String, String>(
@@ -1237,8 +1273,8 @@ class EngineeringQueryMySqlIT {
           assertEquals(10005, repairs.counts().get("all"));
           parameters.put("keyword", "QA-PAGE-REPAIR-1000");
           parameters.put("columns", "orderNo,equipmentCode");
-          var output = new java.io.StringWriter();
-          repairQueries.export(parameters, new java.io.PrintWriter(output));
+          var output = new StringWriter();
+          repairQueries.export(parameters, new PrintWriter(output));
           assertEquals(6, output.toString().lines().count());
           return null;
         });
@@ -1248,7 +1284,7 @@ class EngineeringQueryMySqlIT {
   void outboundFailureAfterLedgerWritesRollsBackStockCostDocumentAndNotice() {
     warehouseFixtures();
     grantDirectOutbounds();
-    com.windasoft.eam.service.system.SystemExecution.run(
+    SystemExecution.run(
         engineeringUser(),
         () -> {
           var material =
@@ -1315,19 +1351,17 @@ class EngineeringQueryMySqlIT {
                   (Map<String, Object>)
                       outboundCommands.preview(id, Map.of("rowVersion", saved.get("rowVersion"))));
           body.put("confirmationKey", "qa-engineering-rollback-confirm");
-          org.mockito.Mockito.doThrow(new IllegalStateException("工程故障注入：库存写入后失败"))
+          Mockito.doThrow(new IllegalStateException("工程故障注入：库存写入后失败"))
               .when(outboundRepository)
               .insertEvent(
-                  org.mockito.ArgumentMatchers.anyLong(),
-                  org.mockito.ArgumentMatchers.eq(10001L),
-                  org.mockito.ArgumentMatchers.eq(id),
-                  org.mockito.ArgumentMatchers.any(),
-                  org.mockito.ArgumentMatchers.anyLong(),
-                  org.mockito.ArgumentMatchers.any());
-          var nested =
-              new org.springframework.transaction.support.TransactionTemplate(transactions);
-          nested.setPropagationBehavior(
-              org.springframework.transaction.TransactionDefinition.PROPAGATION_NESTED);
+                  ArgumentMatchers.anyLong(),
+                  ArgumentMatchers.eq(10001L),
+                  ArgumentMatchers.eq(id),
+                  ArgumentMatchers.any(),
+                  ArgumentMatchers.anyLong(),
+                  ArgumentMatchers.any());
+          var nested = new TransactionTemplate(transactions);
+          nested.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
           var failure =
               assertThrows(
                   IllegalStateException.class,
@@ -1346,7 +1380,7 @@ class EngineeringQueryMySqlIT {
                       + " AND document_id=?",
                   Integer.class,
                   id));
-          assertEquals(new java.math.BigDecimal("2.000000"), stockQuantity(materialId));
+          assertEquals(new BigDecimal("2.000000"), stockQuantity(materialId));
           assertEquals(
               "草稿",
               db.queryForObject(
@@ -1358,12 +1392,12 @@ class EngineeringQueryMySqlIT {
                   Integer.class,
                   id));
           assertEquals(
-              new java.math.BigDecimal("10.000000"),
+              new BigDecimal("10.000000"),
               db.queryForObject(
                   "SELECT SUM(c.remaining_cost) FROM inv_cost_layer c JOIN inv_balance b ON"
                       + " b.id=c.balance_id AND b.tenant_id=c.tenant_id WHERE b.tenant_id=10001 AND"
                       + " b.material_id=?",
-                  java.math.BigDecimal.class,
+                  BigDecimal.class,
                   materialId));
           return null;
         });
@@ -1377,7 +1411,7 @@ class EngineeringQueryMySqlIT {
             + " inv_issue(id,tenant_id,code,company_id,warehouse_id,confirmation_key,preview_fingerprint,total_amount,actor_id,actor_name,source_kind,status)"
             + " VALUES(994000001,10001,'QA-PERM-OWN',71002,890000001,'qa-perm-1','qa-fp',12.34,73001,'工程仓管','直接出库','已出库'),(994000002,10001,'QA-PERM-OTHER',71006,890000002,'qa-perm-2','qa-fp',88,73001,'工程仓管','直接出库','已出库')");
     companyOutboundGrant(true);
-    com.windasoft.eam.service.system.SystemExecution.run(
+    SystemExecution.run(
         engineeringUser(),
         () -> {
           var result = inventoryLists.outbounds("QA-PERM-", "{}", "[]", 1, 10, false);
@@ -1390,12 +1424,11 @@ class EngineeringQueryMySqlIT {
           assertFalse(exported.getFirst().containsKey("totalAmount"));
           var denied =
               assertThrows(
-                  org.springframework.web.server.ResponseStatusException.class,
-                  () -> outboundCommands.detail("994000002"));
+                  ResponseStatusException.class, () -> outboundCommands.detail("994000002"));
           assertEquals(403, denied.getStatusCode().value());
           var amountFilter =
               assertThrows(
-                  org.springframework.web.server.ResponseStatusException.class,
+                  ResponseStatusException.class,
                   () ->
                       inventoryLists.outbounds(
                           "QA-PERM-", "{\"totalAmount\":\"12.34\"}", "[]", 1, 10, false));
@@ -1407,8 +1440,8 @@ class EngineeringQueryMySqlIT {
   @Test
   void savingDueMaintenanceAndInspectionPlansGeneratesOnceAndKeepsTypeIds() {
     maintenanceWorkflowFixtures();
-    var today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
-    com.windasoft.eam.service.system.SystemExecution.run(
+    var today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
+    SystemExecution.run(
         engineeringUser(),
         () -> {
           var type =
@@ -1582,7 +1615,9 @@ class EngineeringQueryMySqlIT {
                         "shift",
                         // 每个检查安排必须显式绑定班次；计划级 shifts 不会自动替代安排的 slots。
                         "slots",
-                        List.of(Map.of("id", "qa-shift", "name", "全天", "start", "00:00", "end", "23:59")),
+                        List.of(
+                            Map.of(
+                                "id", "qa-shift", "name", "全天", "start", "00:00", "end", "23:59")),
                         "personMode",
                         "specified",
                         "followUpUserId",
@@ -1644,16 +1679,14 @@ class EngineeringQueryMySqlIT {
   }
 
   Map<String, Object> mutable(Map<String, Object> value) {
-    return json.convertValue(
-        value,
-        new com.fasterxml.jackson.core.type.TypeReference<LinkedHashMap<String, Object>>() {});
+    return json.convertValue(value, new TypeReference<LinkedHashMap<String, Object>>() {});
   }
 
-  java.math.BigDecimal stockQuantity(long material) {
+  BigDecimal stockQuantity(long material) {
     return db.queryForObject(
         "SELECT COALESCE(SUM(quantity),0) FROM inv_balance WHERE tenant_id=10001 AND"
             + " warehouse_id=890000001 AND material_id=?",
-        java.math.BigDecimal.class,
+        BigDecimal.class,
         material);
   }
 
@@ -1667,7 +1700,7 @@ class EngineeringQueryMySqlIT {
     db.update(
         "INSERT INTO inv_bin(id,tenant_id,warehouse_id,code,name)"
             + " VALUES(990100001,10001,890000001,'QA-BIN-A','工程库位A'),(990100003,10001,890000003,'QA-BIN-C','工程库位C')");
-    com.windasoft.eam.service.system.SystemExecution.run(
+    SystemExecution.run(
         engineeringUser(),
         () -> {
           var material =
@@ -1713,7 +1746,7 @@ class EngineeringQueryMySqlIT {
           long openingId = Long.parseLong(opening.get("id").toString());
           inventoryFlows.confirm(
               "openings", openingId, Map.of("rowVersion", opening.get("rowVersion")), false);
-          assertEquals(new java.math.BigDecimal("5.000000"), allStockQuantity(materialId));
+          assertEquals(new BigDecimal("5.000000"), allStockQuantity(materialId));
           assertEquals(
               1,
               db.queryForObject(
@@ -1753,7 +1786,7 @@ class EngineeringQueryMySqlIT {
           assertEquals("在途", sent.get("status"));
           inventoryFlows.confirm(
               "transfers", transferId, Map.of("rowVersion", sent.get("rowVersion")), true);
-          assertEquals(new java.math.BigDecimal("5.000000"), allStockQuantity(materialId));
+          assertEquals(new BigDecimal("5.000000"), allStockQuantity(materialId));
           var count =
               inventoryFlows.save(
                   "counts", null, new HashMap<>(Map.of("warehouseId", "890000001")));
@@ -1779,7 +1812,7 @@ class EngineeringQueryMySqlIT {
                                   "")))));
           inventoryFlows.confirm(
               "counts", countId, Map.of("rowVersion", edited.get("rowVersion")), false);
-          assertEquals(new java.math.BigDecimal("4.000000"), allStockQuantity(materialId));
+          assertEquals(new BigDecimal("4.000000"), allStockQuantity(materialId));
           var issue =
               (Map<String, Object>)
                   outboundCommands.save(
@@ -1835,7 +1868,7 @@ class EngineeringQueryMySqlIT {
           long returnId = Long.parseLong(returned.get("id").toString());
           inventoryFlows.confirm(
               "returns", returnId, Map.of("rowVersion", returned.get("rowVersion")), false);
-          assertEquals(new java.math.BigDecimal("3.500000"), allStockQuantity(materialId));
+          assertEquals(new BigDecimal("3.500000"), allStockQuantity(materialId));
           var reversal =
               inventoryFlows.save(
                   "reversals",
@@ -1853,7 +1886,7 @@ class EngineeringQueryMySqlIT {
           long reversalId = Long.parseLong(reversal.get("id").toString());
           inventoryFlows.confirm(
               "reversals", reversalId, Map.of("rowVersion", reversal.get("rowVersion")), false);
-          assertEquals(new java.math.BigDecimal("3.000000"), allStockQuantity(materialId));
+          assertEquals(new BigDecimal("3.000000"), allStockQuantity(materialId));
           assertEquals("已冲销", inventoryFlows.detail("returns", returnId).get("status"));
           assertEquals(
               0,
@@ -1867,10 +1900,10 @@ class EngineeringQueryMySqlIT {
         });
   }
 
-  java.math.BigDecimal allStockQuantity(long material) {
+  BigDecimal allStockQuantity(long material) {
     return db.queryForObject(
         "SELECT COALESCE(SUM(quantity),0) FROM inv_balance WHERE tenant_id=10001 AND material_id=?",
-        java.math.BigDecimal.class,
+        BigDecimal.class,
         material);
   }
 
@@ -1917,7 +1950,7 @@ class EngineeringQueryMySqlIT {
     assertTrue(decodeFixture(equipmentWrites.find(10001L, 970000001L).getImagesJson()).isEmpty());
   }
 
-  com.fasterxml.jackson.databind.JsonNode decodeFixture(Object content) {
+  JsonNode decodeFixture(Object content) {
     try {
       return json.readTree(content.toString());
     } catch (Exception e) {

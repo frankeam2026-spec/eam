@@ -1,12 +1,14 @@
 package com.windasoft.eam.service.repair;
 
 import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.domain.repair.RepairApprovalGate;
 import com.windasoft.eam.domain.repair.RepairOrderStatus;
 import com.windasoft.eam.dto.repair.RepairAction;
 import com.windasoft.eam.dto.repair.RepairForm;
+import com.windasoft.eam.dto.repair.RepairOrderView;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.equipment.EquipmentNumberRepository;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
@@ -15,19 +17,23 @@ import com.windasoft.eam.service.basedata.BaseDataReferenceService;
 import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /** 维修报修的创建、编辑与旧接口兼容入口；新版维修动作的状态权威由工作流服务维护。 */
 @Service
 public class RepairOrderService {
-  @org.springframework.beans.factory.annotation.Autowired private RepairApprovalService approvals;
+  @Autowired private RepairApprovalService approvals;
 
-  @org.springframework.beans.factory.annotation.Autowired private BusinessValueService custom;
+  @Autowired private BusinessValueService custom;
 
   private final BaseDataReferenceService references;
   private final RepairOrderRepository repository;
@@ -36,6 +42,7 @@ public class RepairOrderService {
   private final RepairWorkflowService workflow;
   private final ObjectMapper objectMapper;
   private final RepairRelationsService relations;
+  private final RepairQueryService viewData;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final RepairViewAssembler views;
@@ -50,7 +57,9 @@ public class RepairOrderService {
       BaseDataReferenceService references,
       RepairRelationsService relations,
       EquipmentQueryRepository equipmentRows,
-      EquipmentNumberRepository numbers) {
+      EquipmentNumberRepository numbers,
+      RepairQueryService viewData) {
+    this.viewData = viewData;
     this.equipmentRows = equipmentRows;
     this.numbers = numbers;
     this.relations = relations;
@@ -63,15 +72,14 @@ public class RepairOrderService {
     this.views = views;
   }
 
-  @org.springframework.transaction.annotation.Transactional
-  public Map<String, Object> create(RepairForm form) {
+  @Transactional
+  public RepairOrderView create(RepairForm form) {
     var row = new RepairOrder();
     copy(form, row);
     setEquipmentAndReporter(row, form.equipmentCode());
     permissions.checkRepair(row, "报修");
     String month =
-        java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"))
-            .format(DateTimeFormatter.ofPattern("yyyyMM"));
+        LocalDate.now(ZoneId.of("Asia/Shanghai")).format(DateTimeFormatter.ofPattern("yyyyMM"));
     numbers.nextMonthlyNumber("repair-" + auth.tenantId(), month);
     row.setOrderNo("wx-" + month + "-" + String.format("%04d", numbers.currentValue()));
     row.setStatus(RepairOrderStatus.PENDING_DISPATCH.code());
@@ -80,7 +88,7 @@ public class RepairOrderService {
     row.setDeleted(0);
     approvals.prepare(row);
     repository.insert(row);
-    relations.save(row);
+    relations.saveReport(row);
     custom.save(
         "repair_report",
         row.getId(),
@@ -104,11 +112,11 @@ public class RepairOrderService {
             "attachments",
             views.json(row.getAttachmentsJson())));
     approvals.start(row);
-    return Map.of("data", views.view(require(row.getId())));
+    return views.view(viewData.prepareDetail(require(row.getId())));
   }
 
-  @org.springframework.transaction.annotation.Transactional
-  public Map<String, Object> update(Long id, RepairForm form, int rowVersion) {
+  @Transactional
+  public RepairOrderView update(Long id, RepairForm form, int rowVersion) {
     var row = require(id);
     boolean ownReturned =
         RepairOrderStatus.PENDING_SUBMISSION.code().equals(row.getStatus())
@@ -125,7 +133,7 @@ public class RepairOrderService {
     permissions.checkRepair(row, ownReturned ? "报修" : "编辑");
     approvals.requireCompanyChangeAllowed(originalCompany, row);
     VersionGuard.updated(repository.update(row));
-    relations.save(row);
+    relations.saveReport(row);
     custom.save(
         "repair_report",
         row.getId(),
@@ -146,23 +154,23 @@ public class RepairOrderService {
             row.getFaultType(),
             "attachments",
             views.json(row.getAttachmentsJson())));
-    return Map.of("data", views.view(require(id)));
+    return views.view(viewData.prepareDetail(require(id)));
   }
 
   /** 旧接口兼容：除撤回以外的动作转交新版工作流；撤回沿用既有路径。 删除兼容分支前必须核对实际调用方、权限和历史工单状态。 */
-  @org.springframework.transaction.annotation.Transactional
-  public Map<String, Object> action(Long id, RepairAction request, int rowVersion) {
+  @Transactional
+  public RepairOrderView action(Long id, RepairAction request, int rowVersion) {
     if (workflow != null) {
       if ("complete".equals(request.action()))
         throw new LocalizedArgumentException("server.repair.message0042");
       var body = objectMapper.valueToTree(request);
       if ("dispatch".equals(request.action()))
-        ((com.fasterxml.jackson.databind.node.ObjectNode) body)
+        ((ObjectNode) body)
             .set(
                 "userIds",
                 objectMapper.valueToTree(List.of(permissions.userIdByName(request.assignee()))));
       if (!"cancel".equals(request.action()))
-        return Map.of("data", views.view(workflow.action(id, rowVersion, body)));
+        return views.view(workflow.action(id, rowVersion, body));
     }
     var row = require(id);
     String next;
@@ -221,9 +229,8 @@ public class RepairOrderService {
     }
     row.setStatus(next);
     VersionGuard.updated(repository.update(row));
-    relations.save(row);
     if (workflow != null) workflow.record(row, "撤销工单", Map.of("status", next));
-    return Map.of("data", views.view(require(id)));
+    return views.view(viewData.prepareDetail(require(id)));
   }
 
   private RepairOrder require(Long id) {

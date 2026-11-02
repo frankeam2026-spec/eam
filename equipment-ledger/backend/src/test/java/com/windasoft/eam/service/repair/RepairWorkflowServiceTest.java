@@ -7,7 +7,6 @@ import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.entity.system.SystemUser;
-import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.equipment.EquipmentSpareRepository;
@@ -16,7 +15,6 @@ import com.windasoft.eam.repository.repair.RepairCandidateRepository;
 import com.windasoft.eam.repository.repair.RepairEventRepository;
 import com.windasoft.eam.repository.repair.RepairInboxRepository;
 import com.windasoft.eam.repository.repair.RepairMaterialRepository;
-import com.windasoft.eam.repository.repair.RepairOrderMapper;
 import com.windasoft.eam.repository.repair.RepairOrderRepository;
 import com.windasoft.eam.repository.repair.RepairWorkflowRepository;
 import com.windasoft.eam.repository.system.NotificationRepository;
@@ -28,13 +26,14 @@ import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 class RepairWorkflowServiceTest {
   RepairOrderRepository orderRows;
   RepairCandidateRepository candidates;
   RepairInboxRepository inboxes;
-  RepairOrderMapper orders;
   PermissionService permissions;
   RepairWorkflowService service;
   RepairOrder row;
@@ -45,7 +44,6 @@ class RepairWorkflowServiceTest {
     orderRows = mock(RepairOrderRepository.class);
     candidates = mock(RepairCandidateRepository.class);
     inboxes = mock(RepairInboxRepository.class);
-    orders = mock(RepairOrderMapper.class);
     permissions = mock(PermissionService.class);
     var auth = mock(AuthContext.class);
     var user = new SystemUser();
@@ -71,20 +69,17 @@ class RepairWorkflowServiceTest {
             mock(EquipmentSpareRepository.class),
             mock(EquipmentQueryRepository.class),
             mock(SystemUserRepository.class),
-            mock(BaseItemRepository.class),
             mock(EquipmentHistoryRepository.class),
             mock(NotificationRepository.class),
-            mock(RepairRelationsService.class));
-    org.springframework.test.util.ReflectionTestUtils.setField(
-        service, "experienceInventoryMutex", mock(InventoryMutex.class));
-    org.springframework.test.util.ReflectionTestUtils.setField(
-        service, "approvals", mock(RepairApprovalService.class));
-    org.springframework.test.util.ReflectionTestUtils.setField(
-        service,
-        "experiencePublisher",
-        mock(org.springframework.context.ApplicationEventPublisher.class));
-    org.springframework.test.util.ReflectionTestUtils.setField(
-        service, "custody", mock(MaterialCustodyService.class));
+            mock(RepairRelationsService.class),
+            mock(RepairAttachmentAccessService.class),
+            mock(RepairAccessService.class),
+            mock(RepairQueryService.class));
+    ReflectionTestUtils.setField(service, "experienceInventoryMutex", mock(InventoryMutex.class));
+    ReflectionTestUtils.setField(service, "approvals", mock(RepairApprovalService.class));
+    ReflectionTestUtils.setField(
+        service, "experiencePublisher", mock(ApplicationEventPublisher.class));
+    ReflectionTestUtils.setField(service, "custody", mock(MaterialCustodyService.class));
     row = new RepairOrder();
     row.setId(1L);
     row.setTenantId(10001L);
@@ -127,7 +122,7 @@ class RepairWorkflowServiceTest {
         IllegalArgumentException.class,
         () -> service.action(1L, 4, json.readTree("{\"action\":\"claim\"}")));
     assertEquals(73002L, row.getAssigneeUserId());
-    verify(orders, never()).updateById(any(RepairOrder.class));
+    verify(orderRows, never()).update(any(RepairOrder.class));
   }
 
   @Test
@@ -141,7 +136,7 @@ class RepairWorkflowServiceTest {
                 () -> service.action(1L, 4, json.readTree("{\"action\":\"process\"}")))
             .getStatusCode()
             .value());
-    verify(orders, never()).updateById(any(RepairOrder.class));
+    verify(orderRows, never()).update(any(RepairOrder.class));
   }
 
   @Test
@@ -169,7 +164,7 @@ class RepairWorkflowServiceTest {
         () ->
             service.action(
                 1L, 4, json.readTree("{\"action\":\"accept\",\"score\":6,\"comment\":\"通过\"}")));
-    verify(orders, never()).updateById(any(RepairOrder.class));
+    verify(orderRows, never()).update(any(RepairOrder.class));
   }
 
   @Test
@@ -179,7 +174,7 @@ class RepairWorkflowServiceTest {
     assertThrows(
         IllegalArgumentException.class,
         () -> service.action(1L, 4, json.readTree("{\"action\":\"return\",\"score\":2}")));
-    verify(orders, never()).updateById(any(RepairOrder.class));
+    verify(orderRows, never()).update(any(RepairOrder.class));
   }
 
   @Test

@@ -1,5 +1,6 @@
 package com.windasoft.eam.service.repair;
 
+import com.windasoft.eam.common.LocalizedArgumentException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -22,21 +23,29 @@ public class RepairFileStorage {
     Files.createDirectories(root);
     Path target = root.resolve(id + extension).normalize();
     if (!target.getParent().equals(root))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0010");
+      throw new LocalizedArgumentException("server.repair.message0010");
     Files.copy(input, target);
   }
 
   /** 通过受控的附件 ID 定位文件；调用方必须先完成 ID 校验和关联权限检查。 */
   public Path attachmentPath(String id) throws IOException {
-    if (!Files.isDirectory(root))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
+    if (!Files.isDirectory(root)) throw new LocalizedArgumentException("server.repair.message0011");
     // 附件写入使用 UUID 加扩展名；只匹配完整的“ID.”前缀，避免误取同前缀文件。
     List<Path> matches;
     try (var stream = Files.list(root)) {
-      matches = stream.filter(p -> p.getFileName().toString().startsWith(id + ".")).limit(1).toList();
+      matches =
+          stream.filter(p -> p.getFileName().toString().startsWith(id + ".")).limit(1).toList();
     }
-    if (matches.isEmpty())
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.repair.message0011");
+    if (matches.isEmpty()) throw new LocalizedArgumentException("server.repair.message0011");
     return matches.getFirst();
+  }
+
+  /** 登记失败时仅删除本次成功写入的UUID文件，不清理任何其他上传。 */
+  public void remove(String id, String extension) throws IOException {
+    Path target = root.resolve(id + extension).normalize();
+    if (!target.getParent().equals(root)) {
+      throw new IllegalArgumentException("非法文件路径");
+    }
+    Files.deleteIfExists(target);
   }
 }

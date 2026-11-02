@@ -1,5 +1,6 @@
 package com.windasoft.eam.service.repair;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
@@ -28,13 +29,17 @@ public class RepairRelationsService {
     this.files = files;
   }
 
-  /** null协同内容表示不替换，空数组表示清空；附件保存仍沿用原共享组件规则。 */
-  public void save(RepairOrder row) {
+  /** 报修资料只替换报修附件，不触及维修过程附件或协同人员。 */
+  public void saveReport(RepairOrder row) {
     files.save(
         AttachmentRelationsRepository.Kind.REPAIR_REPORT,
         row.getTenantId(),
         row.getId(),
         row.getAttachmentsJson());
+  }
+
+  /** 处理资料只替换过程关系；null协同内容不替换，空数组清空。调用方提供完整业务事务。 */
+  public void saveProcessing(RepairOrder row) {
     files.save(
         AttachmentRelationsRepository.Kind.REPAIR_PROCESS,
         row.getTenantId(),
@@ -63,7 +68,7 @@ public class RepairRelationsService {
     collaborators.replace(row.getTenantId(), row.getId(), relations);
   }
 
-  @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+  @JsonIgnoreProperties(ignoreUnknown = true)
   @lombok.Data
   private static class Person {
     private String id;
