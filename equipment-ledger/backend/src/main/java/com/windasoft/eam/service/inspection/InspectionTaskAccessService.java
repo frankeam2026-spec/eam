@@ -3,6 +3,7 @@ package com.windasoft.eam.service.inspection;
 import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.service.system.*;
 import java.time.*;
@@ -65,12 +66,17 @@ public class InspectionTaskAccessService {
   public boolean canAmendResult(Map<String, Object> row) {
     return number(row.get("tenant_id")) == auth.tenantId()
         && text(row, "kind").equals("daily")
-        && Set.of("已完成", "已审核").contains(text(row, "status"))
+        && Set.of(InspectionTaskStatus.COMPLETED.code(), InspectionTaskStatus.REVIEWED.code())
+            .contains(text(row, "status"))
         && access(row, "修改结果");
   }
 
   boolean unexecutedDailyTask(Map<String, Object> row) {
-    if (!Set.of("未开始", "待执行", "已过期").contains(text(row, "status"))) return false;
+    if (!Set.of(
+            InspectionTaskStatus.NOT_STARTED.code(),
+            InspectionTaskStatus.PENDING.code(),
+            InspectionTaskStatus.EXPIRED.code())
+        .contains(text(row, "status"))) return false;
     var result = decode(row.get("result"));
     return text(result, "startedAt").isBlank()
         && text(result, "finishedAt").isBlank()
