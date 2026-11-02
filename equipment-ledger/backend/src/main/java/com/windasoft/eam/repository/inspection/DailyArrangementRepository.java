@@ -20,6 +20,8 @@ public class DailyArrangementRepository {
         || "true".equals(Objects.toString(v));
   }
 
+  private record StaffingKey(long arrangementId, String ruleKey) {}
+
   public List<Map<String, Object>> load(long tenant, long plan) {
     var result =
         db.queryForList(
@@ -31,57 +33,137 @@ public class DailyArrangementRepository {
                 + " ORDER BY sort_no,id",
             tenant,
             plan);
-    for (var r : result) {
-      long id = number(r.get("id"));
+    if (result.isEmpty()) return result;
+
+    var arrangementIds = result.stream().map(row -> number(row.get("id"))).toList();
+    String in = placeholders(arrangementIds.size());
+    Object[] args = tenantAndIds(tenant, arrangementIds);
+
+    var regularRoster = staffing(tenant, arrangementIds, false, in, args);
+    var dateRoster = staffing(tenant, arrangementIds, true, in, args);
+    var days =
+        groupRows(
+            db.queryForList(
+                "SELECT arrangement_id arrangementId,day_no dayNo FROM"
+                    + " eam_inspection_daily_arrangement_day WHERE tenant_id=? AND"
+                    + " arrangement_id IN (" + in + ") ORDER BY arrangement_id,day_no",
+                args));
+    var slots =
+        groupRows(
+            db.queryForList(
+                "SELECT arrangement_id arrangementId,slot_key id,name,CAST(start_time AS CHAR)"
+                    + " start,CAST(end_time AS CHAR) end FROM"
+                    + " eam_inspection_daily_arrangement_slot WHERE tenant_id=? AND"
+                    + " arrangement_id IN (" + in + ") ORDER BY arrangement_id,sort_no",
+                args));
+    var owners =
+        groupValues(
+            db.queryForList(
+                "SELECT arrangement_id arrangementId,CAST(user_id AS CHAR) value FROM"
+                    + " eam_inspection_daily_arrangement_person WHERE tenant_id=? AND"
+                    + " arrangement_id IN (" + in + ") ORDER BY arrangement_id,sort_no",
+                args));
+    var equipment =
+        groupValues(
+            db.queryForList(
+                "SELECT arrangement_id arrangementId,CAST(equipment_id AS CHAR) value FROM"
+                    + " eam_inspection_daily_arrangement_equipment WHERE tenant_id=? AND"
+                    + " arrangement_id IN (" + in + ") ORDER BY arrangement_id,equipment_id",
+                args));
+    var projects =
+        groupRows(
+            db.queryForList(
+                "SELECT arrangement_id arrangementId,CAST(standard_id AS CHAR) standardId,"
+                    + "item_key itemId FROM eam_inspection_daily_arrangement_project WHERE"
+                    + " tenant_id=? AND arrangement_id IN (" + in + ") ORDER BY"
+                    + " arrangement_id,standard_id,item_key",
+                args));
+
+    for (var row : result) {
+      long id = number(row.get("id"));
       for (String key : List.of("id", "anchorDate", "startTime", "endTime", "followUpUserId"))
-        r.put(key, Objects.toString(r.get(key), ""));
-      r.put("teamId", Objects.toString(r.get("teamId"), ""));
-      r.put("enabled", true); // Compatibility field, no independent arrangement switch.
-      r.put("allowLate", flag(r.get("allowLate")));
-      r.put("regularRoster", staffing(tenant, id, false));
-      r.put("dateRoster", staffing(tenant, id, true));
-      r.put(
+        row.put(key, Objects.toString(row.get(key), ""));
+      row.put("teamId", Objects.toString(row.get("teamId"), ""));
+      row.put("enabled", true); // Compatibility field, no independent arrangement switch.
+      row.put("allowLate", flag(row.get("allowLate")));
+      row.put("regularRoster", regularRoster.getOrDefault(id, List.of()));
+      row.put("dateRoster", dateRoster.getOrDefault(id, List.of()));
+      row.put(
           "days",
-          db.queryForList(
-              "SELECT day_no FROM eam_inspection_daily_arrangement_day WHERE tenant_id=? AND"
-                  + " arrangement_id=? ORDER BY day_no",
-              Integer.class,
-              tenant,
-              id));
-      r.put(
-          "slots",
-          db.queryForList(
-              "SELECT slot_key id,name,CAST(start_time AS CHAR) start,CAST(end_time AS CHAR) end"
-                  + " FROM eam_inspection_daily_arrangement_slot WHERE tenant_id=? AND"
-                  + " arrangement_id=? ORDER BY sort_no",
-              tenant,
-              id));
-      r.put(
-          "owners",
-          db.queryForList(
-              "SELECT CAST(user_id AS CHAR) FROM eam_inspection_daily_arrangement_person WHERE"
-                  + " tenant_id=? AND arrangement_id=? ORDER BY sort_no",
-              String.class,
-              tenant,
-              id));
-      r.put(
-          "equipmentIds",
-          db.queryForList(
-              "SELECT CAST(equipment_id AS CHAR) FROM eam_inspection_daily_arrangement_equipment"
-                  + " WHERE tenant_id=? AND arrangement_id=? ORDER BY equipment_id",
-              String.class,
-              tenant,
-              id));
-      r.put(
-          "projectRefs",
-          db.queryForList(
-              "SELECT CAST(standard_id AS CHAR) standardId,item_key itemId FROM"
-                  + " eam_inspection_daily_arrangement_project WHERE tenant_id=? AND"
-                  + " arrangement_id=? ORDER BY standard_id,item_key",
-              tenant,
-              id));
+          days.getOrDefault(id, List.of()).stream()
+              .map(day -> Math.toIntExact(number(day.get("dayNo"))))
+              .toList());
+      row.put("slots", slots.getOrDefault(id, List.of()));
+      row.put("owners", owners.getOrDefault(id, List.of()));
+      row.put("equipmentIds", equipment.getOrDefault(id, List.of()));
+      row.put("projectRefs", projects.getOrDefault(id, List.of()));
     }
     return result;
+  }
+
+  private Map<Long, List<Map<String, Object>>> staffing(
+      long tenant, List<Long> arrangementIds, boolean dates, String in, Object[] args) {
+    String table =
+        dates ? "eam_inspection_daily_staff_override" : "eam_inspection_daily_staff_rule";
+    var rules =
+        db.queryForList(
+            "SELECT arrangement_id arrangementId,rule_key `key`,slot_key slotId,"
+                + "CAST(start_time AS CHAR) start,CAST(end_time AS CHAR) end,unassigned,"
+                + (dates ? "CAST(work_date AS CHAR) date" : "weekday_no weekday")
+                + " FROM " + table + " WHERE tenant_id=? AND arrangement_id IN (" + in + ")"
+                + " ORDER BY arrangement_id,"
+                + (dates ? "work_date" : "weekday_no")
+                + ",slot_key,start_time,rule_key",
+            args);
+    var people =
+        db.queryForList(
+            "SELECT arrangement_id arrangementId,rule_key `key`,CAST(user_id AS CHAR) userId"
+                + " FROM " + table + "_person WHERE tenant_id=? AND arrangement_id IN (" + in + ")"
+                + " ORDER BY arrangement_id,rule_key,sort_no,user_id",
+            args);
+    var usersByRule = new HashMap<StaffingKey, List<String>>();
+    for (var person : people) {
+      var key = new StaffingKey(number(person.get("arrangementId")), text(person, "key"));
+      usersByRule.computeIfAbsent(key, ignored -> new ArrayList<>()).add(text(person, "userId"));
+    }
+    var grouped = new LinkedHashMap<Long, List<Map<String, Object>>>();
+    for (var rule : rules) {
+      long arrangementId = number(rule.remove("arrangementId"));
+      var key = new StaffingKey(arrangementId, text(rule, "key"));
+      rule.put("unassigned", flag(rule.get("unassigned")));
+      rule.put("users", usersByRule.getOrDefault(key, List.of()));
+      grouped.computeIfAbsent(arrangementId, ignored -> new ArrayList<>()).add(rule);
+    }
+    return grouped;
+  }
+
+  private Map<Long, List<Map<String, Object>>> groupRows(List<Map<String, Object>> rows) {
+    var grouped = new LinkedHashMap<Long, List<Map<String, Object>>>();
+    for (var row : rows) {
+      long arrangementId = number(row.remove("arrangementId"));
+      grouped.computeIfAbsent(arrangementId, ignored -> new ArrayList<>()).add(row);
+    }
+    return grouped;
+  }
+
+  private Map<Long, List<String>> groupValues(List<Map<String, Object>> rows) {
+    var grouped = new LinkedHashMap<Long, List<String>>();
+    for (var row : rows) {
+      long arrangementId = number(row.get("arrangementId"));
+      grouped.computeIfAbsent(arrangementId, ignored -> new ArrayList<>()).add(text(row, "value"));
+    }
+    return grouped;
+  }
+
+  private String placeholders(int size) {
+    return String.join(",", Collections.nCopies(size, "?"));
+  }
+
+  private Object[] tenantAndIds(long tenant, List<Long> ids) {
+    var args = new ArrayList<Object>(ids.size() + 1);
+    args.add(tenant);
+    args.addAll(ids);
+    return args.toArray();
   }
 
   public List<String> workdays(long tenant, long plan) {
