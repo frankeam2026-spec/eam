@@ -104,7 +104,7 @@ class RepairApprovalMySqlIT {
   @Autowired RepairOrderRepository repairs;
   @Autowired RequisitionService requisitions;
   @Autowired PlatformTransactionManager transactions;
-  long actor = 73001L, fault;
+  long actor = 73001L, fault, faultCause;
 
   @BeforeEach
   void fixture() {
@@ -143,6 +143,14 @@ class RepairApprovalMySqlIT {
             "SELECT MIN(id) FROM eam_base_item WHERE tenant_id=10001 AND item_type='FAULT_TYPE' AND"
                 + " deleted=0 AND status=1",
             Long.class);
+    // The isolated approval database has no guaranteed FAULT_CAUSE seed; processing requires
+    // a real tenant-owned dictionary reference, so create one as part of this rolled-back fixture.
+    faultCause = com.baomidou.mybatisplus.core.toolkit.IdWorker.getId();
+    db.update(
+        "INSERT INTO eam_base_item(id,tenant_id,item_type,code,name,parent_id,decimal_precision,sort_no,status,deleted)"
+            + " VALUES(?,10001,'FAULT_CAUSE',?,'测试故障原因',NULL,0,999,1,0)",
+        faultCause,
+        "QA_CAUSE_" + faultCause);
   }
 
   WorkflowDefinition publish(String business, String mode, String company) {
@@ -739,12 +747,7 @@ class RepairApprovalMySqlIT {
             .put("content", "已处理并确认")
             .put("repairMethod", "自修")
             .put("faultTypeId", fault);
-    body.put(
-        "faultCauseId",
-        db.queryForObject(
-            "SELECT MIN(id) FROM eam_base_item WHERE tenant_id=10001 AND item_type='FAULT_CAUSE'"
-                + " AND status=1 AND deleted=0",
-            Long.class));
+    body.put("faultCauseId", faultCause);
     body.put(
         "processingResultId",
         db.queryForObject(
