@@ -49,7 +49,8 @@ class DailyArrangementRepositoryTest {
                             java.util.Map.entry("endTime", "16:00:00"),
                             java.util.Map.entry("followUpUserId", 73001L),
                             java.util.Map.entry("teamId", 81001L),
-                            java.util.Map.entry("allowLate", 1))));
+                            java.util.Map.entry("allowLate", 1))),
+                    new java.util.HashMap<>(java.util.Map.of("id", 88002L, "name", "夜班")));
               if (sql.contains("FROM eam_inspection_daily_staff_rule_person"))
                 return List.of(
                     java.util.Map.of(
@@ -101,7 +102,7 @@ class DailyArrangementRepositoryTest {
 
     var loaded = repository.load(10001L, 90001L);
 
-    assertEquals(1, loaded.size());
+    assertEquals(2, loaded.size());
     var arrangement = loaded.getFirst();
     assertEquals("88001", arrangement.get("id"));
     assertEquals(true, arrangement.get("enabled"));
@@ -118,6 +119,10 @@ class DailyArrangementRepositoryTest {
     var override = ((List<java.util.Map<String, Object>>) arrangement.get("dateRoster")).getFirst();
     assertEquals(List.of("73002"), override.get("users"));
     assertEquals("2026-11-03", override.get("date"));
+    var secondArrangement = loaded.get(1);
+    assertEquals("88002", secondArrangement.get("id"));
+    assertEquals(List.of(), secondArrangement.get("regularRoster"));
+    assertEquals(List.of(), secondArrangement.get("days"));
 
     // One plan read, four batched roster queries, and five batched child queries.
     verify(db, times(10)).queryForList(anyString(), any(Object[].class));
