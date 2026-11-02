@@ -1,6 +1,7 @@
 package com.windasoft.eam.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -13,11 +14,14 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.controller.equipment.EquipmentSelectionController;
+import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.inventory.Material;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -216,6 +220,47 @@ class EquipmentBomMaterialsMySqlIT {
         equipmentQueries.children(TENANT, parent.getId()), batch.children().get(parent.getId()));
     assertEquals(equipmentQueries.bom(TENANT, parent.getId()), batch.bom().get(parent.getId()));
     assertEquals("1.20", batch.bom().get(parent.getId()).getFirst().get("quantity"));
+  }
+
+  @Test
+  void dictionaryBatchPreservesAncestorsTenantAndCycleBoundary() {
+    long first = 993990000L;
+    long root = first + 1000;
+    long foreign = root + 1;
+    db.update(
+        "INSERT INTO eam_base_item(id,tenant_id,item_type,code,name,status)"
+            + " VALUES(?,?,'CATEGORY','QA-DICT-ROOT','历史分类',0)",
+        root,
+        TENANT);
+    var inserts = new ArrayList<Object[]>();
+    var rows = new ArrayList<Equipment>();
+    for (int index = 0; index < 501; index++) {
+      inserts.add(new Object[] {first + index, TENANT, "QA-DICT-" + index, root, 0});
+      var row = new Equipment();
+      row.setId(first + index);
+      row.setCategoryId(first + index);
+      rows.add(row);
+    }
+    // 上级回指已访问的分类，不能死循环；停用资料仍供历史设备展示。
+    inserts.add(new Object[] {foreign, TENANT + 1, "QA-DICT-FOREIGN", null, 1});
+    db.batchUpdate(
+        "INSERT INTO eam_base_item(id,tenant_id,item_type,code,name,parent_id,status)"
+            + " VALUES(?,?,'CATEGORY',?,'历史分类',?,?)",
+        inserts);
+    db.update("UPDATE eam_base_item SET parent_id=? WHERE id=?", first, root);
+    rows.getFirst().setUnitId(foreign);
+    rows.getFirst().setSourceId(foreign + 1);
+    long before = selects();
+    var result = equipmentQueries.pageRelations(TENANT, rows);
+    // 首层503个ID分两批、上级一批；501台设备的三类关系各分两批。
+    assertEquals(9L, selects() - before);
+    assertEquals(502, result.dictionary().size());
+    assertEquals(0, result.dictionary().get(root).getStatus());
+    assertFalse(result.dictionary().containsKey(foreign));
+    assertFalse(result.dictionary().containsKey(foreign + 1));
+    before = selects();
+    assertEquals(0, equipmentQueries.pageRelations(TENANT, List.of()).dictionary().size());
+    assertEquals(0L, selects() - before);
   }
 
   @Test

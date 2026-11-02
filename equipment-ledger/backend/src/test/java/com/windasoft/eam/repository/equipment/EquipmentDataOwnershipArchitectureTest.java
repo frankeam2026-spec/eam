@@ -1,8 +1,13 @@
 package com.windasoft.eam.repository.equipment;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.windasoft.eam.repository.basedata.BaseItemMapper;
+import com.windasoft.eam.repository.system.OrgUnitMapper;
+import com.windasoft.eam.repository.system.SystemUserMapper;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
@@ -11,37 +16,78 @@ import org.junit.jupiter.api.Test;
 class EquipmentDataOwnershipArchitectureTest {
   @Test
   void writeRepositoryOnlyOwnsEquipmentAccessAndDoesNotCoordinateOtherTables() {
-    var fields = Arrays.stream(EquipmentWriteRepository.class.getDeclaredFields())
-        .map(java.lang.reflect.Field::getType).toList();
+    var fields =
+        Arrays.stream(EquipmentWriteRepository.class.getDeclaredFields())
+            .map(Field::getType)
+            .toList();
     assertTrue(fields.contains(EquipmentMapper.class));
-    assertFalse(fields.contains(com.windasoft.eam.repository.system.OrgUnitMapper.class));
-    assertFalse(fields.contains(com.windasoft.eam.repository.system.SystemUserMapper.class));
-    assertFalse(fields.contains(com.windasoft.eam.repository.basedata.BaseItemMapper.class));
+    assertFalse(fields.contains(OrgUnitMapper.class));
+    assertFalse(fields.contains(SystemUserMapper.class));
+    assertFalse(fields.contains(BaseItemMapper.class));
     assertFalse(fields.contains(NumberCounterMapper.class));
-    noMethods(EquipmentWriteRepository.class, "baseItem", "activeBase", "organization",
-        "activeDepartment", "user", "nextEquipmentNumber", "currentValue", "importCodeKeys");
+    noMethods(
+        EquipmentWriteRepository.class,
+        "baseItem",
+        "activeBase",
+        "organization",
+        "activeDepartment",
+        "user",
+        "nextEquipmentNumber",
+        "currentValue",
+        "importCodeKeys");
   }
 
   @Test
   void relationRepositoryDoesNotDelegateWritesAcrossObjectOwnership() {
-    var fields = Arrays.stream(EquipmentRelationsRepository.class.getDeclaredFields())
-        .map(java.lang.reflect.Field::getType).toList();
+    var fields =
+        Arrays.stream(EquipmentRelationsRepository.class.getDeclaredFields())
+            .map(Field::getType)
+            .toList();
     assertTrue(fields.contains(EquipmentMapper.class));
     assertFalse(fields.contains(EquipmentChildRepository.class));
     assertFalse(fields.contains(EquipmentBomRepository.class));
     assertFalse(fields.contains(EquipmentQueryRepository.class));
-    noMethods(EquipmentRelationsRepository.class, "parents", "addChild",
-        "clearChildren", "relationshipCount", "children", "bom");
+    noMethods(
+        EquipmentRelationsRepository.class,
+        "parents",
+        "addChild",
+        "clearChildren",
+        "relationshipCount",
+        "children",
+        "bom");
   }
 
   @Test
   void queryRepositoryDoesNotOwnUserOrOrganizationSelection() {
-    var fields = Arrays.stream(EquipmentQueryRepository.class.getDeclaredFields())
-        .map(java.lang.reflect.Field::getType).toList();
-    assertFalse(fields.contains(com.windasoft.eam.repository.system.OrgUnitMapper.class));
-    assertFalse(fields.contains(com.windasoft.eam.repository.system.SystemUserMapper.class));
-    noMethods(EquipmentQueryRepository.class, "ownerCandidates", "employees",
-        "organizations", "baseItem");
+    var fields =
+        Arrays.stream(EquipmentQueryRepository.class.getDeclaredFields())
+            .map(Field::getType)
+            .toList();
+    assertFalse(fields.contains(OrgUnitMapper.class));
+    assertFalse(fields.contains(SystemUserMapper.class));
+    noBaseItemMapper(EquipmentQueryRepository.class);
+    noMethods(
+        EquipmentQueryRepository.class,
+        "ownerCandidates",
+        "employees",
+        "organizations",
+        "baseItem");
+  }
+
+  @Test
+  void dictionaryOwnershipCheckRejectsDirectMapperDependency() {
+    assertThrows(AssertionError.class, () -> noBaseItemMapper(DirectDictionaryAccess.class));
+  }
+
+  private static void noBaseItemMapper(Class<?> owner) {
+    assertFalse(
+        Arrays.stream(owner.getDeclaredFields())
+            .anyMatch(field -> field.getType().equals(BaseItemMapper.class)),
+        "设备查询必须通过基础资料Repository读取字典，不能直接持有其Mapper");
+  }
+
+  private static class DirectDictionaryAccess {
+    private BaseItemMapper mapper;
   }
 
   private static void noMethods(Class<?> owner, String... names) {

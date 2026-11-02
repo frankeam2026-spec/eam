@@ -7,7 +7,7 @@ import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery;
 import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
-import com.windasoft.eam.repository.basedata.BaseItemMapper;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.common.SqlPredicate;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -19,7 +19,6 @@ import java.util.Map;
 import java.util.function.Consumer;
 import org.springframework.stereotype.Repository;
 
-/** 台账只读数据访问，不授予权限，也不写入业务状态。 */
 /** 设备台账只读仓储：集中查询设备主体和关联数据，权限判断由业务服务承担。 */
 @Repository
 public class EquipmentQueryRepository {
@@ -28,13 +27,13 @@ public class EquipmentQueryRepository {
   private final EquipmentBomRepository bomRelations;
   private final EquipmentMapper equipment;
   private final EquipmentMediaRepository media;
-  private final BaseItemMapper baseItems;
+  private final BaseItemRepository baseItems;
   private final ObjectMapper json;
 
   public EquipmentQueryRepository(
       EquipmentMapper equipment,
       EquipmentMediaRepository media,
-      BaseItemMapper baseItems,
+      BaseItemRepository baseItems,
       ObjectMapper json,
       EquipmentChildRepository childRelations,
       EquipmentBomRepository bomRelations,
@@ -128,12 +127,11 @@ public class EquipmentQueryRepository {
       Map<Long, List<Map<String, Object>>> bom) {}
 
   public PageRelations pageRelations(long tenant, List<Equipment> rows) {
-    var dictionary = new HashMap<Long, BaseItem>();
+    Map<Long, BaseItem> dictionary = new HashMap<>();
     var children = new HashMap<Long, List<Map<String, Object>>>();
     var bom = new HashMap<Long, List<Map<String, Object>>>();
     if (rows.isEmpty()) return new PageRelations(dictionary, children, bom);
     var ids = rows.stream().map(Equipment::getId).toList();
-    var requested = new HashSet<Long>();
     var pending = new HashSet<Long>();
     for (var row : rows)
       for (Long id :
@@ -143,23 +141,7 @@ public class EquipmentQueryRepository {
               row.getUnitId(),
               row.getSourceId(),
               row.getFunctionLocationId())) if (id != null) pending.add(id);
-    while (!pending.isEmpty()) {
-      var next = new ArrayList<>(pending);
-      requested.addAll(next);
-      pending.clear();
-      for (int start = 0; start < next.size(); start += 500)
-        for (var item :
-            baseItems.selectList(
-                new LambdaQueryWrapper<BaseItem>()
-                    .eq(BaseItem::getTenantId, tenant)
-                    .in(
-                        BaseItem::getId,
-                        next.subList(start, Math.min(start + 500, next.size()))))) {
-          dictionary.put(item.getId(), item);
-          if (item.getParentId() != null && !requested.contains(item.getParentId()))
-            pending.add(item.getParentId());
-        }
-    }
+    dictionary = baseItems.findWithAncestors(tenant, pending);
     for (int start = 0; start < ids.size(); start += 500) {
       var batch = ids.subList(start, Math.min(start + 500, ids.size()));
       group(children, childRelations.viewRows(tenant, batch));
