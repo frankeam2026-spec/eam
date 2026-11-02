@@ -53,6 +53,7 @@ public class InspectionProjectService {
               nullable(row.get("creator_id")),
               auth.userId());
     } catch (ResponseStatusException ex) {
+      if (ex.getStatusCode().value() != 403) throw ex;
       return false;
     }
   }
