@@ -26,6 +26,7 @@ class InspectionResultAmendmentTest {
   final InspectionTaskJournal journal = mock(InspectionTaskJournal.class);
   final MaterialCustodyService custody = mock(MaterialCustodyService.class);
   final BusinessValueService custom = mock(BusinessValueService.class);
+  final InventoryMutex mutex = mock(InventoryMutex.class);
   final ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
   final Map<String, Object> row = new HashMap<>();
   final InspectionTaskService service;
@@ -52,7 +53,7 @@ class InspectionResultAmendmentTest {
     when(access.canAmendResult(row)).thenReturn(true);
     service = new InspectionTaskService(repository, json, auth, access,
         mock(InspectionViewAssembler.class), mock(InspectionValidationService.class), journal,
-        custom, mock(InventoryMutex.class), publisher, custody) {
+        custom, mutex, publisher, custody) {
       @Override public Map<String, Object> task(long id) { return Map.of("id", id); }
     };
   }
@@ -84,7 +85,7 @@ class InspectionResultAmendmentTest {
       assertTrue(((Map<?, ?>) audit.getValue()).containsKey("修改后"));
       verify(journal, never()).closeTodos(anyLong(), anyLong());
     }
-    verifyNoInteractions(custody, custom, publisher);
+    verifyNoInteractions(custody, custom, publisher, mutex);
   }
 
   @Test void rejectsMissingPermissionStaleVersionAndIncompleteAnswers() {

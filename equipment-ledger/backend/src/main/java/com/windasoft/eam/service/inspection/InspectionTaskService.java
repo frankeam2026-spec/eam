@@ -214,8 +214,10 @@ public class InspectionTaskService {
 
   @Transactional
   public Map<String, Object> action(long id, String action, Map<String, Object> body) {
-    experienceInventoryMutex.enter();
     long tenant = auth.tenantId(), user = auth.userId();
+    // Submission finalizes material custody. Acquire the tenant inventory lock before the task
+    // row lock, matching the daily-exemption lock order and avoiding cross-flow deadlocks.
+    if (InspectionTaskAction.SUBMIT.code().equals(action)) experienceInventoryMutex.enter();
     var row = taskRaw(tenant, id, true);
     if (!access(row, "查看")) deny();
     VersionGuard.checkPayload((Number) row.get("row_version"), body);
