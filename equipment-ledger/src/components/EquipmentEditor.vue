@@ -1011,8 +1011,6 @@ function relationSaved(record: EquipmentRecord) {
   max-width: none;
 }
 .equipment-editor .editor-main-column {
-  /* Offset only the main form column by the editor body's horizontal inset. */
-  margin-left: -8px;
   display: flex;
   flex-direction: column;
   gap: 16px;
