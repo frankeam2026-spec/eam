@@ -1,14 +1,14 @@
 package com.windasoft.eam.repository.inspection;
 
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
+import com.windasoft.eam.repository.system.NotificationRepository;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class InspectionRepository {
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.repository.system.NotificationRepository notifications;
+  private final NotificationRepository notifications;
   private final JdbcTemplate db;
   private final com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources;
   private final InspectionExecutionStorage executions;
@@ -20,8 +20,10 @@ public class InspectionRepository {
       NumberCounterMapper counter,
       InspectionDefinitionStorage definitions,
       InspectionExecutionStorage executions,
-      com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources) {
+      com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources,
+      NotificationRepository notifications) {
     this.db = db;
+    this.notifications = notifications;
     this.taskSources = taskSources;
     this.counter = counter;
     this.executions = executions;
@@ -331,7 +333,7 @@ public class InspectionRepository {
         com.windasoft.eam.common.NotificationMessages.arguments(kind, title),
         tenantId,
         recordId);
-    if (notifications != null) notifications.captureSource("eam_inspection_inbox", tenantId, recordId);
+    notifications.captureSource("eam_inspection_inbox", tenantId, recordId);
     return count;
   }
 

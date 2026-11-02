@@ -6,8 +6,12 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
+import com.windasoft.eam.service.common.DefinitionNumberService;
+import com.windasoft.eam.service.inventory.InventoryMutex;
 import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.NotificationPolicyService;
 import com.windasoft.eam.service.system.PermissionService;
 import java.math.BigDecimal;
 import java.time.*;
@@ -18,20 +22,16 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class InspectionService {
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.system.NotificationPolicyService reminderPolicies;
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.common.DefinitionNumberService definitionNumbers;
+  private final NotificationPolicyService reminderPolicies;
+  private final DefinitionNumberService definitionNumbers;
 
   private final com.windasoft.eam.service.business.BusinessValueService custom;
 
   private final com.windasoft.eam.service.basedata.BaseDataReferenceService references;
 
-  @org.springframework.beans.factory.annotation.Autowired
-  private DailyArrangementService dailyArrangements;
-
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.repository.inspection.DailyArrangementRepository dailyStorage;
+  private final DailyArrangementService dailyArrangements;
+  private final DailyArrangementRepository dailyStorage;
+  private final InventoryMutex dailyMutex;
 
   private final InspectionViewAssembler views;
 
@@ -65,7 +65,12 @@ public class InspectionService {
       InspectionTaskService taskCommands,
       InspectionValidationService validation,
       InspectionNumbers numbers,
-      InspectionListService listQueries) {
+      InspectionListService listQueries,
+      NotificationPolicyService reminderPolicies,
+      DefinitionNumberService definitionNumbers,
+      DailyArrangementService dailyArrangements,
+      DailyArrangementRepository dailyStorage,
+      InventoryMutex dailyMutex) {
     this.custom = custom;
     this.views = views;
     this.projectSource = projectSource;
@@ -74,6 +79,11 @@ public class InspectionService {
     this.validation = validation;
     this.numbers = numbers;
     this.listQueries = listQueries;
+    this.reminderPolicies = reminderPolicies;
+    this.definitionNumbers = definitionNumbers;
+    this.dailyArrangements = dailyArrangements;
+    this.dailyStorage = dailyStorage;
+    this.dailyMutex = dailyMutex;
 
     this.references = references;
     this.repository = repository;
@@ -185,7 +195,7 @@ public class InspectionService {
     }
     if (kind.endsWith("plans"))
       custom.attach(com.windasoft.eam.service.business.BusinessObjects.inspection(kind), result);
-    if (kind.endsWith("plans") && reminderPolicies != null) reminderPolicies.attachBinding(auth.tenantId(), kind.equals("daily-plans") ? "daily" : "periodic", id, result);
+    if (kind.endsWith("plans")) reminderPolicies.attachBinding(auth.tenantId(), kind.equals("daily-plans") ? "daily" : "periodic", id, result);
     return result;
   }
 
@@ -474,7 +484,7 @@ public class InspectionService {
           key,
           body,
           id == null);
-    if (kind.endsWith("plans") && reminderPolicies != null) reminderPolicies.saveBinding(tenant, kind.equals("daily-plans") ? "daily" : "periodic", key, body);
+    if (kind.endsWith("plans")) reminderPolicies.saveBinding(tenant, kind.equals("daily-plans") ? "daily" : "periodic", key, body);
     return definition(kind, key);
   }
 
@@ -592,9 +602,6 @@ public class InspectionService {
     VersionGuard.checkPayload((Number) plan.get("row_version"), body);
     return generation.manualEvent(auth.tenantId(), plan, body);
   }
-
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.inventory.InventoryMutex dailyMutex;
 
   @Transactional
   public Map<String, Object> dailyExemption(long id, Map<String, Object> body) {
