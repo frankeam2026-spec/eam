@@ -1,5 +1,6 @@
 package com.windasoft.eam.repository.repair;
 
+import com.windasoft.eam.domain.repair.RepairOrderStatus;
 import com.windasoft.eam.dto.repair.RepairApprovalValues;
 import com.windasoft.eam.dto.repair.RepairReadViews;
 import java.util.List;
@@ -41,6 +42,10 @@ public class RepairWorkflowRepository {
   }
 
   public List<RepairReadViews.DispatchUser> users(long tenant) {
-    return mapper.users(tenant);
+    return mapper.users(
+        tenant,
+        RepairOrderStatus.PROCESSING.code(),
+        RepairOrderStatus.SUSPENDED.code(),
+        RepairOrderStatus.PENDING_ACCEPTANCE.code());
   }
 }

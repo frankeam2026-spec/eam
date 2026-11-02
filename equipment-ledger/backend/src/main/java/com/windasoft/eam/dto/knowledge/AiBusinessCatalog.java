@@ -8,6 +8,9 @@ import java.util.Map;
 
 /** 业务字段能力目录，不接受模型提供数据库列名或表达式。 */
 public final class AiBusinessCatalog {
+  /** AI维修查询域标识，不与同名权限菜单编码共用定义。 */
+  public static final String REPAIR_DOMAIN = "repair";
+
   private AiBusinessCatalog() {}
 
   public record Field(String label, String type, String identity) {}
@@ -48,7 +51,7 @@ public final class AiBusinessCatalog {
         fields(
             "id:ID:ID,code:工单编号:TEXT,equipmentCode:设备编号:TEXT,equipmentName:设备名称:TEXT,equipmentId:设备ID:ID,status:工单状态:TEXT,severity:紧急程度:TEXT,department:部门:TEXT,departmentId:部门ID:ID,company:公司:TEXT,companyId:公司ID:ID,owner:维修负责人:TEXT,ownerId:负责人ID:ID,reporter:报修人:TEXT,reporterId:报修人ID:ID,faultType:故障类型:TEXT,faultTypeId:类型ID:ID,faultCause:故障原因:TEXT,faultCauseId:原因ID:ID,reportedAt:报修时间:DATETIME,claimedAt:接单时间:DATETIME,submittedAt:提交解决时间:DATETIME,acceptedAt:验收完成时间:DATETIME,downtimeMinutes:人工记录停机分钟:DISPLAY");
     domains.put(
-        "repair",
+        REPAIR_DOMAIN,
         new Domain(
             "维修工单（数量为工单数，不等于独立故障事件数）",
             "repair",

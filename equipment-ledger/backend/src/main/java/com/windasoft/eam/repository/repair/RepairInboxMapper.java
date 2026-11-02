@@ -24,6 +24,6 @@ public interface RepairInboxMapper extends BaseMapper<RepairInbox> {
           + " orderNo,r.equipment_name equipmentName,r.status FROM eam_repair_inbox i JOIN"
           + " eam_repair_order r ON r.id=i.order_id AND r.tenant_id=i.tenant_id WHERE"
           + " i.tenant_id=#{tenant} AND i.user_id=#{userId} AND r.deleted=0 ORDER BY i.created_at"
-          + " DESC,i.id DESC LIMIT 300")
-  List<RepairInboxView> inboxRows(long tenant, long userId);
+          + " DESC,i.id DESC LIMIT #{limit}")
+  List<RepairInboxView> inboxRows(long tenant, long userId, int limit);
 }

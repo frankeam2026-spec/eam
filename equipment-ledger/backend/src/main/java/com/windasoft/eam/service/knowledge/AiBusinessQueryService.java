@@ -3,6 +3,7 @@ package com.windasoft.eam.service.knowledge;
 import com.fasterxml.jackson.databind.*;
 import com.windasoft.eam.dto.knowledge.AiBusinessCatalog;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
+import com.windasoft.eam.dto.knowledge.AiQueryLimits;
 import com.windasoft.eam.dto.repair.RepairAssistantRequest;
 import com.windasoft.eam.repository.common.AssistantReadSource;
 import com.windasoft.eam.repository.common.SqlPredicate;
@@ -22,7 +23,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -91,7 +91,7 @@ public class AiBusinessQueryService {
   @Transactional(readOnly = true)
   public Map<String, Object> query(JsonNode input, Long equipmentId, int page, int size) {
     permissions.require("knowledge", "查看");
-    if (page < 1 || page > 1_000_000 || !Set.of(20, 50, 100).contains(size)) {
+    if (!AiQueryLimits.acceptsPage(page, size)) {
       throw new IllegalArgumentException("查询分页无效");
     }
     var plan = AiBusinessPlan.parse(input);
@@ -109,7 +109,7 @@ public class AiBusinessQueryService {
           answer.range() == null
               ? null
               : new LocalDate[] {answer.range().start(), answer.range().end()};
-    } else if (plan.domain().equals("repair")) {
+    } else if (AiBusinessCatalog.REPAIR_DOMAIN.equals(plan.domain())) {
       if (equipmentId != null) {
         equipment.get(equipmentId);
       }

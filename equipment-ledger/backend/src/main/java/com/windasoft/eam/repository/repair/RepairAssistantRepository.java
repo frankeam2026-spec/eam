@@ -40,7 +40,7 @@ public class RepairAssistantRepository {
   public Map<String, Object> execute(
       RepairQueryRepository.Query query, RepairAssistantRequest request, long tenant, long user) {
     var plan = request.plan();
-    var domain = AiBusinessCatalog.ALL.get("repair");
+    var domain = AiBusinessCatalog.ALL.get(AiBusinessCatalog.REPAIR_DOMAIN);
     var source = source(query);
     var filter =
         AiBusinessFilters.compile(plan.where(), domain, request.evaluatedAt(), user, tenant);

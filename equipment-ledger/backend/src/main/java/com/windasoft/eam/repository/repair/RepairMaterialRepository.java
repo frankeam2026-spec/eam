@@ -2,6 +2,7 @@ package com.windasoft.eam.repository.repair;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.windasoft.eam.domain.repair.LegacyRepairMaterialStatus;
 import com.windasoft.eam.dto.repair.RepairReadViews;
 import com.windasoft.eam.entity.repair.RepairMaterial;
 import java.math.BigDecimal;
@@ -28,8 +29,8 @@ public class RepairMaterialRepository {
             .eq(RepairMaterial::getTenantId, tenant)
             .eq(RepairMaterial::getId, id)
             .eq(RepairMaterial::getOrderId, order)
-            .eq(RepairMaterial::getStatus, "待出库")
-            .set(RepairMaterial::getStatus, "已撤回"));
+            .eq(RepairMaterial::getStatus, LegacyRepairMaterialStatus.PENDING_ISSUE.code())
+            .set(RepairMaterial::getStatus, LegacyRepairMaterialStatus.WITHDRAWN.code()));
   }
 
   public RepairMaterial lockMaterial(long tenant, long id, long order) {

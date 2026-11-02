@@ -2,6 +2,7 @@ package com.windasoft.eam.repository.repair;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.windasoft.eam.domain.repair.RepairCandidateStatus;
 import com.windasoft.eam.dto.repair.RepairReadViews;
 import com.windasoft.eam.entity.repair.RepairCandidate;
 import java.util.List;
@@ -23,7 +24,7 @@ public class RepairCandidateRepository {
                 .eq(RepairCandidate::getTenantId, tenant)
                 .eq(RepairCandidate::getOrderId, order)
                 .eq(RepairCandidate::getUserId, user)
-                .eq(RepairCandidate::getStatus, "待接单")));
+                .eq(RepairCandidate::getStatus, RepairCandidateStatus.PENDING_CLAIM.code())));
   }
 
   public List<RepairReadViews.Candidate> candidates(long tenant, long order) {
@@ -43,7 +44,7 @@ public class RepairCandidateRepository {
     row.setTenantId(tenant);
     row.setOrderId(order);
     row.setUserId(user);
-    row.setStatus("待接单");
+    row.setStatus(RepairCandidateStatus.PENDING_CLAIM.code());
     mapper.insertAtDatabaseTime(row);
   }
 
@@ -54,6 +55,10 @@ public class RepairCandidateRepository {
         new LambdaUpdateWrapper<RepairCandidate>()
             .eq(RepairCandidate::getTenantId, tenant)
             .eq(RepairCandidate::getOrderId, order)
-            .setSql("status=IF(user_id={0},'已接单','已由他人接单')", user));
+            .setSql(
+                "status=IF(user_id={0},{1},{2})",
+                user,
+                RepairCandidateStatus.CLAIMED.code(),
+                RepairCandidateStatus.CLAIMED_BY_OTHER.code()));
   }
 }

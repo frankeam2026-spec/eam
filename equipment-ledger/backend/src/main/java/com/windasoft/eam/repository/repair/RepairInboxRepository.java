@@ -3,6 +3,7 @@ package com.windasoft.eam.repository.repair;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.windasoft.eam.common.NotificationMessages;
+import com.windasoft.eam.domain.repair.RepairNoticeKind;
 import com.windasoft.eam.dto.repair.RepairInboxView;
 import com.windasoft.eam.entity.repair.RepairInbox;
 import java.util.List;
@@ -11,6 +12,9 @@ import org.springframework.stereotype.Repository;
 /** RepairInbox 主仓储：集中维护租户条件及持久化操作，不决定业务授权和事务。 */
 @Repository
 public class RepairInboxRepository {
+  /** 工作台只返回最近消息，沿用原有上限，不与列表分页上限合并。 */
+  private static final int MAX_RECENT_MESSAGES = 300;
+
   private final RepairInboxMapper mapper;
 
   public RepairInboxRepository(RepairInboxMapper mapper) {
@@ -44,15 +48,21 @@ public class RepairInboxRepository {
 
   /** 出库待办独立关闭，防止接单或审核结束误关仓库任务。 */
   public void closeTodos(long tenant, long order) {
-    mapper.update(null, pending(tenant, order).ne(RepairInbox::getKind, "待出库"));
+    mapper.update(
+        null,
+        pending(tenant, order).ne(RepairInbox::getKind, RepairNoticeKind.PENDING_ISSUE.code()));
   }
 
   public void closeIssueTodos(long tenant, long order) {
-    mapper.update(null, pending(tenant, order).eq(RepairInbox::getKind, "待出库"));
+    mapper.update(
+        null,
+        pending(tenant, order).eq(RepairInbox::getKind, RepairNoticeKind.PENDING_ISSUE.code()));
   }
 
   public void closeApprovalReturnTodos(long tenant, long order) {
-    mapper.update(null, pending(tenant, order).eq(RepairInbox::getKind, "报修待修改"));
+    mapper.update(
+        null,
+        pending(tenant, order).eq(RepairInbox::getKind, RepairNoticeKind.REPORT_REVISION.code()));
   }
 
   public int markRead(long tenant, long user, long id) {
@@ -75,6 +85,6 @@ public class RepairInboxRepository {
   }
 
   public List<RepairInboxView> inboxRows(long tenant, long user) {
-    return mapper.inboxRows(tenant, user);
+    return mapper.inboxRows(tenant, user, MAX_RECENT_MESSAGES);
   }
 }

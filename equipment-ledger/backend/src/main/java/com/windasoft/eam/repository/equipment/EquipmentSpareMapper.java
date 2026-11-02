@@ -22,7 +22,7 @@ public interface EquipmentSpareMapper extends BaseMapper<EquipmentSpare> {
           + " id,s.code,s.name,s.model,p.quantity,p.status,DATE_FORMAT(p.installed_at,'%Y-%m-%d"
           + " %H:%i') installedAt FROM eam_equipment_spare p JOIN eam_spare_stock s ON"
           + " s.id=p.stock_id AND s.tenant_id=p.tenant_id WHERE p.tenant_id=#{tenant} AND"
-          + " p.equipment_id=#{equipmentId} AND p.status='在用' ORDER BY p.installed_at DESC,p.id"
-          + " DESC")
-  List<EquipmentInstalledSpareView> installed(long tenant, long equipmentId);
+          + " p.equipment_id=#{equipmentId} AND p.status=#{status} ORDER BY p.installed_at"
+          + " DESC,p.id DESC")
+  List<EquipmentInstalledSpareView> installed(long tenant, long equipmentId, String status);
 }

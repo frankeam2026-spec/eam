@@ -14,9 +14,15 @@ import org.springframework.stereotype.Repository;
 /** 授权数据只读仓储：查询用户角色、组织范围及参与资格，不修改业务状态。 */
 @Repository
 public class AuthorizationRepository {
-  public boolean approvalParticipation(long tenant,long user) {
-    return db.queryForObject("SELECT COUNT(*) FROM wf_approval WHERE tenant_id=? AND user_id=?",Long.class,tenant,user)>0;
+  public boolean approvalParticipation(long tenant, long user) {
+    return db.queryForObject(
+            "SELECT COUNT(*) FROM wf_approval WHERE tenant_id=? AND user_id=?",
+            Long.class,
+            tenant,
+            user)
+        > 0;
   }
+
   private final RoleRelationsRepository relations;
   private final UserRoleLinkMapper links;
   private final SystemRoleMapper roles;
@@ -46,7 +52,8 @@ public class AuthorizationRepository {
   }
 
   public boolean personalRepairAccess(long tenant, long user) {
-    return workflow.personalAccess(tenant, user);
+    return workflow.personalAccess(
+        tenant, user, com.windasoft.eam.domain.repair.RepairCandidateStatus.PENDING_CLAIM.code());
   }
 
   public List<UserRoleLink> userRoles(long tenant, long user) {
@@ -66,13 +73,14 @@ public class AuthorizationRepository {
   public Map<Long, List<RoleMenuPermission>> grantsForRoles(
       long tenant, Collection<Long> roleIds, String menu) {
     if (roleIds.isEmpty()) return Map.of();
-    var q = new LambdaQueryWrapper<RoleMenuPermission>()
-        .eq(RoleMenuPermission::getTenantId, tenant)
-        .in(RoleMenuPermission::getRoleId, roleIds);
+    var q =
+        new LambdaQueryWrapper<RoleMenuPermission>()
+            .eq(RoleMenuPermission::getTenantId, tenant)
+            .in(RoleMenuPermission::getRoleId, roleIds);
     if (menu != null) q.eq(RoleMenuPermission::getMenuKey, menu);
     var rows = relations.grants(grants.selectList(q));
-    return rows.stream().collect(java.util.stream.Collectors.groupingBy(
-        RoleMenuPermission::getRoleId));
+    return rows.stream()
+        .collect(java.util.stream.Collectors.groupingBy(RoleMenuPermission::getRoleId));
   }
 
   public List<RoleMenuPermission> grants(long tenant, Long role, String menu) {
@@ -188,5 +196,4 @@ public class AuthorizationRepository {
         tenant,
         user);
   }
-
 }

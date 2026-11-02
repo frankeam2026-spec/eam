@@ -10,6 +10,8 @@ import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.MessageRef;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.domain.equipment.EquipmentSpareStatus;
+import com.windasoft.eam.domain.repair.LegacyRepairMaterialStatus;
 import com.windasoft.eam.domain.repair.RepairMethod;
 import com.windasoft.eam.domain.repair.RepairNoticeKind;
 import com.windasoft.eam.domain.repair.RepairOrderStatus;
@@ -482,7 +484,7 @@ public class RepairWorkflowService {
             row.getOrderNo(),
             "换上 " + name + " × " + quantity,
             auth.user().getDisplayName(),
-            "在用",
+            EquipmentSpareStatus.INSTALLED.code(),
             "已安装");
         details.putAll(Map.of("name", name, "quantity", quantity));
         label = "换上备件";
@@ -507,7 +509,7 @@ public class RepairWorkflowService {
             row.getOrderNo(),
             "换下 " + installed.getName() + " × " + installed.getQuantity(),
             auth.user().getDisplayName(),
-            "已换下",
+            EquipmentSpareStatus.REMOVED.code(),
             reason);
         details.putAll(
             Map.of(
@@ -594,7 +596,8 @@ public class RepairWorkflowService {
   /** 维修工单有待出库领料时不得提交验收；撤回最后一笔待出库领料后关闭出库待办。 */
   private boolean hasPendingIssue(long orderId) {
     return materials.materials(auth.tenantId(), orderId).stream()
-        .anyMatch(material -> "待出库".equals(material.status()));
+        .anyMatch(
+            material -> LegacyRepairMaterialStatus.PENDING_ISSUE.code().equals(material.status()));
   }
 
   private void todo(RepairOrder row, Long userId, String kind, boolean todo) {

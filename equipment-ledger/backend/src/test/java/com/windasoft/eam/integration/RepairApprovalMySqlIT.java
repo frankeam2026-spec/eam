@@ -598,7 +598,7 @@ class RepairApprovalMySqlIT {
   }
 
   @Test
-  void inboxTypedProjectionKeepsOriginalJsonShape() {
+  void inboxTypedProjectionKeepsOriginalJsonShape() throws Exception {
     long order = create();
     inboxes.inbox(993112041, 10001, 73001, order, "未知历史消息", "旧标题", true);
     var old =
@@ -611,6 +611,25 @@ class RepairApprovalMySqlIT {
                 + " eam_repair_order r ON r.id=i.order_id AND r.tenant_id=i.tenant_id WHERE"
                 + " i.tenant_id=10001 AND i.user_id=73001 AND r.deleted=0 ORDER BY i.created_at"
                 + " DESC,i.id DESC LIMIT 300");
-    assertEquals(json.valueToTree(old), json.valueToTree(inboxes.inboxRows(10001, 73001)));
+    // 比较实际HTTP JSON；JDBC的Integer/Long包装差异不改变JSON数字契约。
+    assertEquals(
+        json.readTree(json.writeValueAsString(old)),
+        json.readTree(json.writeValueAsString(inboxes.inboxRows(10001, 73001))));
+  }
+
+  @Autowired com.windasoft.eam.repository.repair.RepairWorkflowRepository workflowQueries;
+  @Autowired com.windasoft.eam.repository.system.AuthorizationRepository authorization;
+
+  @Test
+  void parameterizedParticipationAndDispatchQueriesKeepExistingMeaning() {
+    long order = create(), user = 993112055;
+    assertFalse(authorization.personalRepairAccess(10001, user));
+    candidates.addCandidate(993112056, 10001, order, user);
+    assertTrue(authorization.personalRepairAccess(10001, user));
+    assertFalse(authorization.personalRepairAccess(10002, user));
+    candidates.claim(10001, order, user);
+    assertFalse(authorization.personalRepairAccess(10001, user));
+    assertFalse(workflowQueries.users(10001).isEmpty());
+    assertTrue(workflowQueries.users(10001).stream().allMatch(row -> row.unfinished() >= 0));
   }
 }

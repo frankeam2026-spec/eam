@@ -1,6 +1,7 @@
 package com.windasoft.eam.repository.equipment;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.windasoft.eam.domain.equipment.EquipmentSpareStatus;
 import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
 import com.windasoft.eam.entity.equipment.EquipmentSpare;
 import java.math.BigDecimal;
@@ -17,7 +18,7 @@ public class EquipmentSpareRepository {
   }
 
   public List<EquipmentInstalledSpareView> installed(long tenant, long equipment) {
-    return mapper.installed(tenant, equipment);
+    return mapper.installed(tenant, equipment, EquipmentSpareStatus.INSTALLED.code());
   }
 
   public void install(
@@ -29,7 +30,7 @@ public class EquipmentSpareRepository {
     row.setStockId(stock);
     row.setOrderId(order);
     row.setQuantity(quantity);
-    row.setStatus("在用");
+    row.setStatus(EquipmentSpareStatus.INSTALLED.code());
     mapper.insertAtDatabaseTime(row);
   }
 
@@ -41,8 +42,8 @@ public class EquipmentSpareRepository {
             .eq(EquipmentSpare::getTenantId, tenant)
             .eq(EquipmentSpare::getEquipmentId, equipment)
             .eq(EquipmentSpare::getId, id)
-            .eq(EquipmentSpare::getStatus, "在用")
-            .set(EquipmentSpare::getStatus, "已换下")
+            .eq(EquipmentSpare::getStatus, EquipmentSpareStatus.INSTALLED.code())
+            .set(EquipmentSpare::getStatus, EquipmentSpareStatus.REMOVED.code())
             .setSql("removed_at=NOW()"));
   }
 }

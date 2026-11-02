@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.AdvancedFilters;
 import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.domain.repair.RepairCandidateStatus;
 import com.windasoft.eam.domain.repair.RepairOrderStatus;
 import com.windasoft.eam.domain.repair.RepairQueue;
 import com.windasoft.eam.entity.repair.RepairOrder;
@@ -238,8 +239,8 @@ public class RepairQueryRepository {
           q.eq(RepairOrder::getStatus, RepairOrderStatus.PENDING_CLAIM.code())
               .apply(
                   "id IN (SELECT order_id FROM eam_repair_candidate WHERE tenant_id={0} AND"
-                      + " user_id={1} AND status='待接单')",
-                  tenant, user);
+                      + " user_id={1} AND status={2})",
+                  tenant, user, RepairCandidateStatus.PENDING_CLAIM.code());
       case "accept" -> {
         q.eq(RepairOrder::getStatus, RepairOrderStatus.PENDING_ACCEPTANCE.code());
         acceptance.accept(q);
