@@ -1,5 +1,9 @@
 package com.windasoft.eam.controller.inspection;
 
+import com.windasoft.eam.service.business.BusinessQueryService;
+import com.windasoft.eam.service.inspection.DailyArrangementService;
+import com.windasoft.eam.service.inspection.InspectionCsvService;
+import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.inspection.InspectionService;
 import java.util.*;
 import org.springframework.web.bind.annotation.*;
@@ -7,23 +11,24 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/inspection")
 public class InspectionController {
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.business.BusinessQueryService customQuery;
-
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.inspection.InspectionListService lists;
-
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.inspection.InspectionCsvService csv;
-
+  private final BusinessQueryService customQuery;
+  private final InspectionListService lists;
+  private final InspectionCsvService csv;
+  private final DailyArrangementService arrangements;
   private final InspectionService service;
 
-  public InspectionController(InspectionService service) {
+  public InspectionController(
+      BusinessQueryService customQuery,
+      InspectionListService lists,
+      InspectionCsvService csv,
+      DailyArrangementService arrangements,
+      InspectionService service) {
+    this.customQuery = customQuery;
+    this.lists = lists;
+    this.csv = csv;
+    this.arrangements = arrangements;
     this.service = service;
   }
-
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.inspection.DailyArrangementService arrangements;
 
   @GetMapping("/daily-device-options")
   public Object dailyDeviceOptions(
