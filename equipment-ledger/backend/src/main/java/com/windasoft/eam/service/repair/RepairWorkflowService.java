@@ -38,6 +38,7 @@ import com.windasoft.eam.repository.repair.RepairWorkflowRepository;
 import com.windasoft.eam.repository.system.NotificationRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
 import com.windasoft.eam.service.basedata.BaseDataReferenceService;
+import com.windasoft.eam.service.basedata.BaseDataType;
 import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.experience.AnomalyService;
 import com.windasoft.eam.service.experience.MaterialCustodyService;
@@ -211,7 +212,7 @@ public class RepairWorkflowService {
   }
 
   public List<Map<String, Object>> results() {
-    return baseRows.processingResults(auth.tenantId()).stream()
+    return baseRows.activeItemsByType(auth.tenantId(), BaseDataType.PROCESS_RESULT.code()).stream()
         .map(
             item ->
                 Map.<String, Object>of(
@@ -325,7 +326,7 @@ public class RepairWorkflowService {
             references.required(
                 auth.tenantId(),
                 body.path("processingResultId").asText(),
-                "PROCESS_RESULT",
+                BaseDataType.PROCESS_RESULT.code(),
                 "processingResultId",
                 "处理结果");
         String type = typeItem.getName(),

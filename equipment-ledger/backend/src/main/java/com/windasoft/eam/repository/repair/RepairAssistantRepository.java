@@ -19,19 +19,24 @@ public class RepairAssistantRepository {
     this.executor = executor;
   }
 
+  /** 显式投影保持助手字段契约；公司按租户及主键关联，保留授权Wrapper的单表列作用域。 */
   private AssistantReadSource source(RepairQueryRepository.Query query) {
     return AssistantReadSource.wrapped(
-        "CAST(id AS CHAR) id,order_no code,equipment_code equipmentCode,equipment_name"
-            + " equipmentName,CAST(equipment_id AS CHAR)"
-            + " equipmentId,status,severity,department,CAST(department_org_id AS CHAR)"
-            + " departmentId,(SELECT o.name FROM eam_org_unit o WHERE"
-            + " o.tenant_id=eam_repair_order.tenant_id AND o.id=company_org_id)"
-            + " company,CAST(company_org_id AS CHAR) companyId,assignee owner,CAST(assignee_user_id"
-            + " AS CHAR) ownerId,reporter,CAST(reporter_user_id AS CHAR) reporterId,fault_type"
-            + " faultType,CAST(fault_type_id AS CHAR) faultTypeId,fault_cause"
-            + " faultCause,CAST(fault_cause_id AS CHAR) faultCauseId,reported_at"
-            + " reportedAt,claimed_at claimedAt,completed_at submittedAt,accepted_at"
-            + " acceptedAt,downtime_minutes downtimeMinutes",
+        """
+        CAST(id AS CHAR) id,
+        order_no code, equipment_code equipmentCode, equipment_name equipmentName,
+        CAST(equipment_id AS CHAR) equipmentId,
+        status, severity, department, CAST(department_org_id AS CHAR) departmentId,
+        (SELECT o.name FROM eam_org_unit o
+         WHERE o.tenant_id=eam_repair_order.tenant_id AND o.id=company_org_id) company,
+        CAST(company_org_id AS CHAR) companyId,
+        assignee owner, CAST(assignee_user_id AS CHAR) ownerId,
+        reporter, CAST(reporter_user_id AS CHAR) reporterId,
+        fault_type faultType, CAST(fault_type_id AS CHAR) faultTypeId,
+        fault_cause faultCause, CAST(fault_cause_id AS CHAR) faultCauseId,
+        reported_at reportedAt, claimed_at claimedAt, completed_at submittedAt,
+        accepted_at acceptedAt, downtime_minutes downtimeMinutes
+        """,
         "eam_repair_order",
         query.rows());
   }

@@ -1,5 +1,7 @@
 package com.windasoft.eam.entity.repair;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
@@ -11,8 +13,7 @@ public class RepairCollaborator {
   private Long orderId;
   private Long userId;
 
-  @com.baomidou.mybatisplus.annotation.TableField(
-      insertStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
+  @TableField(insertStrategy = FieldStrategy.ALWAYS)
   private String nameSnapshot;
 
   private Integer sortNo;

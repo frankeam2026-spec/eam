@@ -2,6 +2,7 @@ package com.windasoft.eam.repository.basedata;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.windasoft.eam.entity.basedata.BaseItem;
+import java.util.List;
 import org.springframework.stereotype.Repository;
 
 /** 基础字典及功能位置的数据访问；业务校验由 Service 负责。 */
@@ -40,11 +41,12 @@ public class BaseItemRepository {
             .eq(BaseItem::getCompanyOrgId, id));
   }
 
-  public java.util.List<BaseItem> processingResults(long tenant) {
+  /** 按服务层提供的字典类型读取启用项；类型含义及可选范围由业务服务确定。 */
+  public List<BaseItem> activeItemsByType(long tenant, String itemType) {
     return mapper.selectList(
         new LambdaQueryWrapper<BaseItem>()
             .eq(BaseItem::getTenantId, tenant)
-            .eq(BaseItem::getItemType, "PROCESS_RESULT")
+            .eq(BaseItem::getItemType, itemType)
             .eq(BaseItem::getStatus, 1)
             .orderByAsc(BaseItem::getSortNo));
   }
