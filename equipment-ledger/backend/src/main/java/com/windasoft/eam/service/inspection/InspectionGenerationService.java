@@ -5,6 +5,7 @@ import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.repository.system.NotificationRepository;
@@ -217,10 +218,13 @@ public class InspectionGenerationService {
     String code = numbers.nextCode(tenant, kind.equals("daily") ? "DJ" : "XJ");
     LocalDateTime expires = shiftDuration(due, p, "validHours", "validUnit", 1);
     if (yes(p.get("useShiftEnd")) && shiftEnd != null) expires = shiftEnd;
-    String status = due.isAfter(now()) ? "未开始" : "待执行";
+    String status =
+        due.isAfter(now())
+            ? InspectionTaskStatus.NOT_STARTED.code()
+            : InspectionTaskStatus.PENDING.code();
     if (p.containsKey("_arrangement")) {
       expires = dateTime(p.get("_windowEnd"));
-      if (now().isAfter(expires)) status = "已过期";
+      if (now().isAfter(expires)) status = InspectionTaskStatus.EXPIRED.code();
       snap.put("onlyAbnormal", false);
     }
     var org = repository.findOrganizationParent(tenant, plan.get("department_id"));
@@ -231,7 +235,7 @@ public class InspectionGenerationService {
       company = nullable(eq.get("company_org_id"));
       taskDepartment = eq.get("department_org_id");
     }
-    if (!exemption.isEmpty()) status = "已免检";
+    if (!exemption.isEmpty()) status = InspectionTaskStatus.EXEMPT.code();
     repository.insertTask(
         task,
         tenant,
@@ -475,26 +479,38 @@ public class InspectionGenerationService {
       var snap = decode(task.get("snapshot"));
       String state = text(task, "status");
       LocalDateTime due = dateTime(task.get("due_at")), expires = dateTime(task.get("expires_at"));
-      if (state.equals("未开始") && !due.isAfter(now())) {
+      if (state.equals(InspectionTaskStatus.NOT_STARTED.code()) && !due.isAfter(now())) {
         repository.activateTask(tenant, id);
-        state = "待执行";
+        state = InspectionTaskStatus.PENDING.code();
         journal.event(tenant, id, "任务到期开始", null, "系统", Map.of());
       }
-      if (now().isAfter(expires) && Set.of("未开始", "待执行").contains(state)) {
+      if (now().isAfter(expires)
+          && Set.of(
+                  InspectionTaskStatus.NOT_STARTED.code(), InspectionTaskStatus.PENDING.code())
+              .contains(state)) {
         String next =
             text(task, "kind").equals("daily") && task.get("arrangement_id") != null
-                ? "已过期"
-                : (yes(snap.get("allowLate")) ? "已过期" : "过期作废");
+                ? InspectionTaskStatus.EXPIRED.code()
+                : (yes(snap.get("allowLate"))
+                    ? InspectionTaskStatus.EXPIRED.code()
+                    : InspectionTaskStatus.EXPIRED_CANCELLED.code());
         repository.changeTaskStatus(next, tenant, id);
         journal.event(tenant, id, next, null, "系统", Map.of());
-        if (next.equals("过期作废")) journal.closeTodos(tenant, id);
+        if (next.equals(InspectionTaskStatus.EXPIRED_CANCELLED.code()))
+          journal.closeTodos(tenant, id);
         state = next;
       }
       boolean newReminders=notificationPolicies.replacesLegacy(tenant,text(task,"kind"),planId);
       if (!newReminders && text(task, "kind").equals("daily")
           && task.get("follow_up_user_id") != null
           && now().isAfter(expires)
-          && Set.of("待执行", "已过期", "执行中", "挂起", "审核不通过").contains(state))
+          && Set.of(
+                  InspectionTaskStatus.PENDING.code(),
+                  InspectionTaskStatus.EXPIRED.code(),
+                  InspectionTaskStatus.IN_PROGRESS.code(),
+                  InspectionTaskStatus.SUSPENDED.code(),
+                  InspectionTaskStatus.REVIEW_REJECTED.code())
+              .contains(state))
         journal.notify(
             tenant,
             id,
@@ -503,7 +519,8 @@ public class InspectionGenerationService {
             text(snap, "equipmentName"),
             false,
             true);
-      if (Set.of("待执行", "已过期").contains(state))
+      if (Set.of(InspectionTaskStatus.PENDING.code(), InspectionTaskStatus.EXPIRED.code())
+          .contains(state))
         journal.notify(
             tenant,
             id,
@@ -512,7 +529,7 @@ public class InspectionGenerationService {
             text(snap, "equipmentName"),
             true,
             false);
-      if (state.equals("未开始")
+      if (state.equals(InspectionTaskStatus.NOT_STARTED.code())
           && number(snap.get("remindHours")) > 0
           && !now().isBefore(shiftDuration(due, snap, "remindHours", "remindUnit", -1)))
         journal.notify(
@@ -523,7 +540,13 @@ public class InspectionGenerationService {
             text(snap, "equipmentName"),
             false,
             true);
-      if (!newReminders && Set.of("待执行", "执行中", "挂起", "已过期").contains(state)
+      if (!newReminders
+          && Set.of(
+                  InspectionTaskStatus.PENDING.code(),
+                  InspectionTaskStatus.IN_PROGRESS.code(),
+                  InspectionTaskStatus.SUSPENDED.code(),
+                  InspectionTaskStatus.EXPIRED.code())
+              .contains(state)
           && number(snap.get("expireRemindHours")) > 0
           && !now()
               .isBefore(shiftDuration(expires, snap, "expireRemindHours", "expireRemindUnit", -1)))
@@ -574,7 +597,11 @@ public class InspectionGenerationService {
         draft == null ? dailyStorage.load(tenant, planId) : rows(draft.get("arrangements"));
     int changed = 0;
     for (var task : repository.lockOpenPlanTasks(tenant, planId)) {
-      if (!Set.of("未开始", "待执行", "已过期").contains(text(task, "status"))
+      if (!Set.of(
+              InspectionTaskStatus.NOT_STARTED.code(),
+              InspectionTaskStatus.PENDING.code(),
+              InspectionTaskStatus.EXPIRED.code())
+          .contains(text(task, "status"))
           || task.get("owner_id") != null) continue;
       var result = decode(task.get("result"));
       if (!text(result, "startedAt").isBlank()

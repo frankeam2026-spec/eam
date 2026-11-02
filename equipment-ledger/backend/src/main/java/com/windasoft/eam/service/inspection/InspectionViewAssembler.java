@@ -3,6 +3,7 @@ package com.windasoft.eam.service.inspection;
 import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.system.*;
@@ -65,7 +66,11 @@ public class InspectionViewAssembler {
         "canExempt",
         text(row, "kind").equals("daily")
             && access.access(row, "免检")
-            && Set.of("未开始", "待执行", "已过期").contains(text(row, "status")));
+            && Set.of(
+                InspectionTaskStatus.NOT_STARTED.code(),
+                InspectionTaskStatus.PENDING.code(),
+                InspectionTaskStatus.EXPIRED.code())
+            .contains(text(row, "status")));
     v.put("exemptionReason", text(row, "exemption_reason"));
     v.put("exemptedAt", text(row, "exempted_at"));
     v.put(
@@ -90,7 +95,12 @@ public class InspectionViewAssembler {
     boolean expiredStart =
         text(row, "kind").equals("daily")
             && row.get("arrangement_id") != null
-            && Set.of("未开始", "待执行", "已过期", "审核不通过").contains(text(row, "status"))
+            && Set.of(
+                InspectionTaskStatus.NOT_STARTED.code(),
+                InspectionTaskStatus.PENDING.code(),
+                InspectionTaskStatus.EXPIRED.code(),
+                InspectionTaskStatus.REVIEW_REJECTED.code())
+            .contains(text(row, "status"))
             && now().isAfter(dateTime(row.get("expires_at")))
             && !yes(v.get("allowLate"));
     v.put("canExecute", access.execute(row) && !expiredStart);
