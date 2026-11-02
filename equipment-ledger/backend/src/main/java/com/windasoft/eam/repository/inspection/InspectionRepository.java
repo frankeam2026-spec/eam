@@ -1,5 +1,6 @@
 package com.windasoft.eam.repository.inspection;
 
+import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
 import com.windasoft.eam.repository.system.NotificationRepository;
 import java.util.*;
@@ -450,15 +451,20 @@ public class InspectionRepository {
   public List<Map<String, Object>> lockOpenPlanTasks(long tenantId, Object planId) {
     return lockedTaskRows(
         "SELECT * FROM v_inspection_task WHERE tenant_id=? AND plan_id=? AND deleted=0 AND"
-            + " status NOT IN ('已完成','已审核','已作废','过期作废') ORDER BY id FOR UPDATE",
+            + " status NOT IN (?,?,?,?) ORDER BY id FOR UPDATE",
         tenantId,
-        planId);
+        planId,
+        InspectionTaskStatus.COMPLETED.code(),
+        InspectionTaskStatus.REVIEWED.code(),
+        InspectionTaskStatus.CANCELLED.code(),
+        InspectionTaskStatus.EXPIRED_CANCELLED.code());
   }
 
   public int activateTask(long tenantId, long id) {
     return db.update(
-        "UPDATE eam_inspection_task SET status='待执行',row_version=row_version+1 WHERE"
+        "UPDATE eam_inspection_task SET status=?,row_version=row_version+1 WHERE"
             + " tenant_id=? AND id=?",
+        InspectionTaskStatus.PENDING.code(),
         tenantId,
         id);
   }
