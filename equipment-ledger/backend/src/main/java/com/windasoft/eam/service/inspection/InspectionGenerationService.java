@@ -29,6 +29,20 @@ public class InspectionGenerationService {
   private final InspectionTaskJournal journal;
   private final InspectionNumbers numbers;
 
+  private record ProjectKey(List<String> references) {
+    private ProjectKey {
+      references = List.copyOf(references);
+    }
+  }
+
+  private static final class GenerationCache {
+    private final Map<Long, Map<String, Object>> equipment = new HashMap<>();
+    private final Map<ProjectKey, List<Map<String, Object>>> projects = new HashMap<>();
+    private final Map<Long, Long> companyIds = new HashMap<>();
+    private final Map<Long, String> departmentNames = new HashMap<>();
+    private final Map<Long, String> typeNames = new HashMap<>();
+  }
+
   public InspectionGenerationService(
       InspectionRepository repository,
       ObjectMapper json,
@@ -97,7 +111,8 @@ public class InspectionGenerationService {
       LocalDateTime due,
       String shiftId,
       String shiftName,
-      LocalDateTime shiftEnd) {
+      LocalDateTime shiftEnd,
+      GenerationCache cache) {
     String kind = text(plan, "kind").equals("daily-plans") ? "daily" : "periodic";
     long equipmentId = kind.equals("daily") ? number(details.getFirst().get("equipmentId")) : 0;
     long planId = number(plan.get("id"));
@@ -119,7 +134,10 @@ public class InspectionGenerationService {
     var owners = new LinkedHashSet<Long>();
     var reviewers = new LinkedHashSet<Long>(ids(p.get("reviewers")));
     for (var detail : details) {
-      var eq = projectSource.equipment(tenant, number(detail.get("equipmentId")));
+      long detailEquipmentId = number(detail.get("equipmentId"));
+      var eq =
+          cache.equipment.computeIfAbsent(
+              detailEquipmentId, id -> projectSource.equipment(tenant, id));
       if (kind.equals("periodic")) owners.addAll(ids(p.get("owners")));
       else if (p.get("_arrangement") instanceof Map<?, ?>) {
         var a = (Map<String, Object>) p.get("_arrangement");
@@ -148,7 +166,15 @@ public class InspectionGenerationService {
               Objects.toString(eq.get("department"), ""),
               "functionLocation",
               Objects.toString(eq.get("function_location"), "")));
-      for (var project : projectSource.projects(tenant, detail, false)) {
+      var projectKey =
+          new ProjectKey(
+              rows(detail.get("projectRefs")).stream()
+                  .map(ref -> text(ref, "standardId") + ":" + text(ref, "itemId"))
+                  .toList());
+      var projects =
+          cache.projects.computeIfAbsent(
+              projectKey, ignored -> projectSource.projects(tenant, detail, false));
+      for (var project : projects) {
         var item = new LinkedHashMap<>(project);
         item.put("id", eq.get("id") + "/" + text(item, "id"));
         item.put("equipmentId", eq.get("id").toString());
@@ -171,9 +197,11 @@ public class InspectionGenerationService {
     snap.put("planCode", plan.get("code"));
     if (kind.equals("periodic")) {
       snap.put("typeId", text(p, "typeId"));
-      snap.put(
-          "typeName",
-          projectSource.raw("types", tenant, number(p.get("typeId")), false).get("name"));
+      long typeId = number(p.get("typeId"));
+      String typeName =
+          cache.typeNames.computeIfAbsent(
+              typeId, id -> text(projectSource.raw("types", tenant, id, false), "name"));
+      snap.put("typeName", typeName);
     } else {
       snap.remove("typeId");
       snap.remove("typeName");
@@ -190,9 +218,12 @@ public class InspectionGenerationService {
         equipmentList.stream()
             .map(e -> text(e, "code"))
             .collect(java.util.stream.Collectors.joining("、")));
-    snap.put(
-        "department",
-        Objects.toString(repository.findOrganizationName(tenant, plan.get("department_id")), ""));
+    long departmentId = number(plan.get("department_id"));
+    String departmentName =
+        cache.departmentNames.computeIfAbsent(
+            departmentId,
+            id -> Objects.toString(repository.findOrganizationName(tenant, id), ""));
+    snap.put("department", departmentName);
     boolean open =
         p.get("_arrangement") instanceof Map<?, ?>
             && arrangements.open((Map<String, Object>) p.get("_arrangement"), details.getFirst());
@@ -227,14 +258,18 @@ public class InspectionGenerationService {
       if (now().isAfter(expires)) status = InspectionTaskStatus.EXPIRED.code();
       snap.put("onlyAbnormal", false);
     }
-    var org = repository.findOrganizationParent(tenant, plan.get("department_id"));
-    Long company = permissions.companyOfOrganization(tenant, nullable(plan.get("department_id")));
-    Object taskDepartment = plan.get("department_id");
+    Long company;
     if (open) {
-      var eq = projectSource.equipment(tenant, equipmentId);
+      var eq = cache.equipment.get(equipmentId);
       company = nullable(eq.get("company_org_id"));
-      taskDepartment = eq.get("department_org_id");
+    } else {
+      if (!cache.companyIds.containsKey(departmentId))
+        cache.companyIds.put(
+            departmentId, permissions.companyOfOrganization(tenant, departmentId));
+      company = cache.companyIds.get(departmentId);
     }
+    Object taskDepartment =
+        open ? cache.equipment.get(equipmentId).get("department_org_id") : plan.get("department_id");
     if (!exemption.isEmpty()) status = InspectionTaskStatus.EXEMPT.code();
     repository.insertTask(
         task,
@@ -304,11 +339,14 @@ public class InspectionGenerationService {
               .collect(java.util.stream.Collectors.toSet()));
       p.put("_teams", new HashMap<Long, List<Long>>());
     }
+    var cache = new GenerationCache();
     boolean generationEnabled = yes(p.get("enabled"));
     if (generationEnabled && text(plan, "kind").equals("periodic-plans")) {
       var selectedType =
           views.definition(projectSource.raw("types", tenant, number(p.get("typeId")), true));
       generationEnabled = yes(selectedType.get("enabled"));
+      String typeName = text(selectedType, "name");
+      if (!typeName.isBlank()) cache.typeNames.put(number(p.get("typeId")), typeName);
     }
     int count = 0;
     if (generationEnabled) {
@@ -324,7 +362,7 @@ public class InspectionGenerationService {
             n < 100 && readyForGeneration(next, p) && !next.isAfter(end);
             n++) {
           if (!next.isBefore(start))
-            count += createTask(tenant, plan, p, details, next, "", "", null);
+            count += createTask(tenant, plan, p, details, next, "", "", null, cache);
           index++;
           next = advance(anchor, index, number(p.get("period")), text(p, "unit"));
         }
@@ -365,7 +403,8 @@ public class InspectionGenerationService {
                             occurrence.start(),
                             occurrence.key(),
                             occurrence.name(),
-                            occurrence.end());
+                            occurrence.end(),
+                            cache);
                 }
             } else {
               for (var shift : rows(p.get("shifts"))) {
@@ -386,7 +425,8 @@ public class InspectionGenerationService {
                           due,
                           text(shift, "id"),
                           text(shift, "name"),
-                          shiftEnd);
+                          shiftEnd,
+                          cache);
               }
             }
           }
