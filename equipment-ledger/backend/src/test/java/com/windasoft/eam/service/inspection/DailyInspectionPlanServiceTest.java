@@ -34,7 +34,14 @@ class DailyInspectionPlanServiceTest {
     var generation = mock(InspectionGenerationService.class);
     var service =
         new DailyInspectionPlanService(
-            auth, permissions, projects, validation, arrangements, storage, generation, new ObjectMapper());
+            auth,
+            permissions,
+            projects,
+            validation,
+            arrangements,
+            storage,
+            generation,
+            new ObjectMapper());
 
     when(auth.tenantId()).thenReturn(7L);
     when(auth.userId()).thenReturn(13L);
@@ -62,7 +69,14 @@ class DailyInspectionPlanServiceTest {
     var generation = mock(InspectionGenerationService.class);
     var service =
         new DailyInspectionPlanService(
-            auth, permissions, projects, validation, arrangements, storage, generation, new ObjectMapper());
+            auth,
+            permissions,
+            projects,
+            validation,
+            arrangements,
+            storage,
+            generation,
+            new ObjectMapper());
 
     when(auth.tenantId()).thenReturn(7L);
     when(auth.userId()).thenReturn(13L);
@@ -80,4 +94,51 @@ class DailyInspectionPlanServiceTest {
     assertThrows(IllegalArgumentException.class, () -> service.dailyPreview(body));
     verify(generation, never()).preview(anyLong(), anyMap(), anyInt());
   }
+  @Test
+  void dailyPreviewDelegatesEquipmentAuthorizationToValidationService() {
+    var auth = mock(AuthContext.class);
+    var permissions = mock(PermissionService.class);
+    var projects = mock(InspectionProjectService.class);
+    var validation = mock(InspectionValidationService.class);
+    var arrangements = mock(DailyArrangementService.class);
+    var storage = mock(DailyArrangementRepository.class);
+    var generation = mock(InspectionGenerationService.class);
+    var service =
+        new DailyInspectionPlanService(
+            auth,
+            permissions,
+            projects,
+            validation,
+            arrangements,
+            storage,
+            generation,
+            new ObjectMapper());
+
+    when(auth.tenantId()).thenReturn(7L);
+    when(auth.userId()).thenReturn(13L);
+    when(permissions.inspection("daily-plans", "新增"))
+        .thenReturn(new PermissionScope(true, null, Set.of(), false));
+    when(permissions.companyOfOrganization(3L)).thenReturn(2L);
+    var equipment =
+        Map.<String, Object>of(
+            "id", 11L,
+            "company_org_id", 2L,
+            "department_org_id", 3L,
+            "owner_user_id", 13L);
+    when(projects.equipment(7L, 11L)).thenReturn(equipment);
+    when(generation.preview(eq(7L), anyMap(), eq(7))).thenReturn(Map.of("count", 1));
+    var detail = Map.<String, Object>of("equipmentId", 11L);
+    var body =
+        Map.<String, Object>of(
+            "id", "",
+            "departmentId", 3L,
+            "startDate", "2026-11-05",
+            "endDate", "2026-11-06",
+            "details", List.of(detail));
+
+    assertEquals(Map.of("count", 1), service.dailyPreview(body));
+    verify(validation).checkEquipment(equipment, "daily-plans", "新增");
+    verify(projects).projects(eq(7L), anyMap(), eq(true));
+  }
+
 }
