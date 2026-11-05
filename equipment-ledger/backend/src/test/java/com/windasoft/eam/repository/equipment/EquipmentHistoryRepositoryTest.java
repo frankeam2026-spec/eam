@@ -12,10 +12,22 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.windasoft.eam.entity.equipment.EquipmentHistory;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import java.util.List;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 class EquipmentHistoryRepositoryTest {
+  @BeforeAll
+  static void initializeEquipmentHistoryTableMetadata() {
+    var assistant =
+        new MapperBuilderAssistant(new MybatisConfiguration(), "equipment-history-test");
+    assistant.setCurrentNamespace(EquipmentHistoryMapper.class.getName());
+    TableInfoHelper.initTableInfo(assistant, EquipmentHistory.class);
+  }
+
   @Test
   void inspectionRecordLookupIsScopedByTenantEquipmentAndRecordNumber() {
     var mapper = mock(EquipmentHistoryMapper.class);
