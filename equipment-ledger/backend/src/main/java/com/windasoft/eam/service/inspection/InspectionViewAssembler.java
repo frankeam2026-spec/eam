@@ -62,15 +62,6 @@ public class InspectionViewAssembler {
         text(row, "kind").equals("daily")
             && !text(v, "personMode").equals("现场直接点检")
             && ids(v.get("owners")).isEmpty());
-    v.put(
-        "canExempt",
-        text(row, "kind").equals("daily")
-            && access.access(row, "免检")
-            && Set.of(
-                InspectionTaskStatus.NOT_STARTED.code(),
-                InspectionTaskStatus.PENDING.code(),
-                InspectionTaskStatus.EXPIRED.code())
-            .contains(text(row, "status")));
     v.put("exemptionReason", text(row, "exemption_reason"));
     v.put("exemptedAt", text(row, "exempted_at"));
     v.put(
@@ -91,7 +82,7 @@ public class InspectionViewAssembler {
     var result =
         row.get("result") == null ? new LinkedHashMap<String, Object>() : decode(row.get("result"));
     v.put("result", result);
-    if (!text(result, "startedAt").isBlank()) v.put("canExempt", false);
+    v.put("canExempt", access.canExempt(row, result));
     boolean expiredStart =
         text(row, "kind").equals("daily")
             && row.get("arrangement_id") != null
