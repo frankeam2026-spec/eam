@@ -19,6 +19,7 @@ public class DailyInspectionPlanService {
   private final AuthContext auth;
   private final PermissionService permissions;
   private final InspectionProjectService projects;
+  private final InspectionValidationService validation;
   private final DailyArrangementService arrangements;
   private final DailyArrangementRepository storage;
   private final InspectionGenerationService generation;
@@ -28,6 +29,7 @@ public class DailyInspectionPlanService {
       AuthContext auth,
       PermissionService permissions,
       InspectionProjectService projects,
+      InspectionValidationService validation,
       DailyArrangementService arrangements,
       DailyArrangementRepository storage,
       InspectionGenerationService generation,
@@ -35,6 +37,7 @@ public class DailyInspectionPlanService {
     this.auth = auth;
     this.permissions = permissions;
     this.projects = projects;
+    this.validation = validation;
     this.arrangements = arrangements;
     this.storage = storage;
     this.generation = generation;
@@ -77,7 +80,7 @@ public class DailyInspectionPlanService {
         rows(data.get("details")).size() <= 500,
         com.windasoft.eam.common.MessageContext.text("daily.error.equipmentLimit"));
     for (var detail : rows(data.get("details"))) {
-      projects.checkEquipment(
+      validation.checkEquipment(
           projects.equipment(auth.tenantId(), number(detail.get("equipmentId"))),
           "daily-plans",
           text(data, "id").isBlank() ? "新增" : "编辑");
