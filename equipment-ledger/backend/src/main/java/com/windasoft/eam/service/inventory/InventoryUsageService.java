@@ -6,7 +6,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.inventory.InventoryMoney;
 import com.windasoft.eam.repository.inventory.InventoryUsageRepository;
-import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.inspection.InspectionTaskService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -23,7 +23,7 @@ public class InventoryUsageService {
   private final InventoryService masters;
   private final InventoryMutex mutex;
   private final MaintenanceService maintenance;
-  private final InspectionService inspection;
+  private final InspectionTaskService inspectionTasks;
   private final ObjectMapper json;
 
   public InventoryUsageService(
@@ -33,7 +33,7 @@ public class InventoryUsageService {
       InventoryService masters,
       InventoryMutex mutex,
       MaintenanceService maintenance,
-      InspectionService inspection,
+      InspectionTaskService inspectionTasks,
       ObjectMapper json) {
     this.repository = repository;
     this.auth = auth;
@@ -41,7 +41,7 @@ public class InventoryUsageService {
     this.masters = masters;
     this.mutex = mutex;
     this.maintenance = maintenance;
-    this.inspection = inspection;
+    this.inspectionTasks = inspectionTasks;
     this.json = json;
   }
 
@@ -76,7 +76,7 @@ public class InventoryUsageService {
     require(
         Set.of("保养", "点巡检").contains(kind),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0018"));
-    var view = kind.equals("保养") ? maintenance.task(task) : inspection.task(task);
+    var view = kind.equals("保养") ? maintenance.task(task) : inspectionTasks.task(task);
     if (write)
       require(
           Boolean.TRUE.equals(view.get("canExecute"))

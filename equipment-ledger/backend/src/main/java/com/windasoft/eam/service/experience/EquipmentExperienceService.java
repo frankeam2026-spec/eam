@@ -9,7 +9,7 @@ import com.windasoft.eam.service.equipment.EquipmentInstalledSpareService;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.experience.EquipmentExperienceRepository;
-import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
 import com.windasoft.eam.service.system.AuthContext;
@@ -25,7 +25,7 @@ public class EquipmentExperienceService {
   final PermissionService permissions;
   final RepairWorkflowService workflow;
   final MaintenanceService maintenance;
-  final InspectionService inspection;
+  final InspectionListService inspectionLists;
   final AnomalyService anomalies;
   final EquipmentInstalledSpareService installedSpares;
 
@@ -35,7 +35,7 @@ public class EquipmentExperienceService {
       PermissionService permissions,
       RepairWorkflowService workflow,
       MaintenanceService maintenance,
-      InspectionService inspection,
+      InspectionListService inspectionLists,
       AnomalyService anomalies,
       EquipmentInstalledSpareService installedSpares) {
     this.repository = repository;
@@ -43,7 +43,7 @@ public class EquipmentExperienceService {
     this.permissions = permissions;
     this.workflow = workflow;
     this.maintenance = maintenance;
-    this.inspection = inspection;
+    this.inspectionLists = inspectionLists;
     this.anomalies = anomalies;
     this.installedSpares = installedSpares;
   }
@@ -94,7 +94,7 @@ public class EquipmentExperienceService {
   }
 
   List<Map<String, Object>> inspectionRows(long eid) {
-    return inspection.tasks().stream()
+    return inspectionLists.tasks().stream()
         .filter(t -> rows(t.get("equipment")).stream().anyMatch(e -> id(e.get("id")) == eid))
         .toList();
   }

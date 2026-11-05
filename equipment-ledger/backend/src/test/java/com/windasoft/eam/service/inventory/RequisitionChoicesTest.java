@@ -23,7 +23,8 @@ import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
 import com.windasoft.eam.repository.inventory.RequisitionRepository;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
-import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.inspection.InspectionTaskService;
+import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -102,7 +103,8 @@ class RequisitionChoicesTest {
             auth,
             permissions,
             mock(MaintenanceService.class),
-            mock(InspectionService.class),
+            mock(InspectionTaskService.class),
+            mock(InspectionListService.class),
             new ObjectMapper(),
             mock(com.windasoft.eam.service.workflow.WorkflowRuntimeService.class),
             mock(InventoryListService.class),

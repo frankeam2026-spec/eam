@@ -712,49 +712,9 @@ public class InspectionService {
         repository.listCategories(auth.tenantId()));
   }
 
-  /** Compatibility for aggregate consumers; every batch is authorized and filtered in SQL. */
-  @Transactional(readOnly = true)
-  public List<Map<String, Object>> tasks(String kind) {
-    require(
-        Set.of("daily", "periodic").contains(kind),
-        com.windasoft.eam.common.MessageContext.text("server.inventory.message0018"));
-    var result = new ArrayList<Map<String, Object>>();
-    var query = com.windasoft.eam.dto.common.ListQuery.from(Map.of());
-    for (int page = 1; ; page++) {
-      var batch = listQueries.query(kind + "-tasks", query.at(page, 200));
-      result.addAll(batch.data());
-      if ((long) page * 200 >= batch.page().total()) return result;
-    }
-  }
-
-  @Transactional(readOnly = true)
-  public List<Map<String, Object>> tasks() {
-    var result = new ArrayList<>(tasks("daily"));
-    result.addAll(tasks("periodic"));
-    result.sort(
-        Comparator.<Map<String, Object>, String>comparing(
-                row -> Objects.toString(row.get("dueAt"), ""), Comparator.reverseOrder())
-            .thenComparing(row -> number(row.get("id")), Comparator.reverseOrder()));
-    return result;
-  }
-
-  public Map<String, Object> task(long id) {
-    return taskCommands.task(id);
-  }
-
   @Transactional
   public int generate(long tenant, long planId) {
     return generation.generate(tenant, planId);
-  }
-
-  @Transactional
-  public Map<String, Object> action(long id, String action, Map<String, Object> body) {
-    return taskCommands.action(id, action, body);
-  }
-
-  @Transactional
-  public void batchReview(List<Map<String, Object>> values) {
-    taskCommands.batchReview(values);
   }
 
   public List<Map<String, Object>> generationTargets() {
