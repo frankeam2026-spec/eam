@@ -40,23 +40,49 @@ public enum InspectionTaskStatus {
   }
 
   public static boolean canStart(String status) {
-    return STARTABLE.contains(status);
+    return status != null && STARTABLE.contains(status);
   }
 
   public static boolean canTransfer(String status) {
-    return TRANSFERABLE.contains(status);
+    return status != null && TRANSFERABLE.contains(status);
   }
 
   public static boolean isTerminal(String status) {
-    return TERMINAL.contains(status);
+    return status != null && TERMINAL.contains(status);
   }
 
   public static boolean canAmendResult(String status) {
-    return RESULT_AMENDABLE.contains(status);
+    return status != null && RESULT_AMENDABLE.contains(status);
   }
 
   /** Status candidates only; execution evidence is checked by the task access policy. */
   public static boolean isUnexecutedDailyCandidate(String status) {
-    return UNEXECUTED_DAILY_CANDIDATES.contains(status);
+    return status != null && UNEXECUTED_DAILY_CANDIDATES.contains(status);
+  }
+
+  /**
+   * Whether an action is valid for the current status. This is status eligibility only;
+   * tenant, task kind, ownership, permission, timing, and execution evidence remain separate checks.
+   */
+  public static boolean allows(InspectionTaskAction action, String status) {
+    if (action == null || !isKnown(status)) return false;
+    return switch (action) {
+      case START -> canStart(status);
+      case SCAN, DRAFT, SUBMIT, SUSPEND -> IN_PROGRESS.code.equals(status);
+      case RESUME -> SUSPENDED.code.equals(status);
+      case REVIEW -> PENDING_REVIEW.code.equals(status);
+      case TRANSFER -> canTransfer(status);
+      case EXEMPT -> isUnexecutedDailyCandidate(status);
+      case AMEND_RESULT -> canAmendResult(status);
+      case VOID -> !isTerminal(status);
+      // Periodic deletion is allowed for terminal tasks; daily deletion has extra evidence checks.
+      case DELETE -> true;
+    };
+  }
+
+  private static boolean isKnown(String status) {
+    if (status == null) return false;
+    for (var candidate : values()) if (candidate.code.equals(status)) return true;
+    return false;
   }
 }
