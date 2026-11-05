@@ -9,7 +9,6 @@ import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.common.DefinitionNumberService;
-import com.windasoft.eam.service.inventory.InventoryMutex;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.NotificationPolicyService;
 import com.windasoft.eam.service.system.PermissionService;
@@ -31,7 +30,6 @@ public class InspectionService {
 
   private final DailyArrangementService dailyArrangements;
   private final DailyArrangementRepository dailyStorage;
-  private final InventoryMutex dailyMutex;
 
   private final InspectionViewAssembler views;
 
@@ -39,7 +37,6 @@ public class InspectionService {
 
   private final InspectionGenerationService generation;
 
-  private final InspectionTaskService taskCommands;
 
   private final InspectionValidationService validation;
 
@@ -62,7 +59,6 @@ public class InspectionService {
       InspectionViewAssembler views,
       InspectionProjectService projectSource,
       InspectionGenerationService generation,
-      InspectionTaskService taskCommands,
       InspectionValidationService validation,
       InspectionNumbers numbers,
       InspectionListService listQueries,
@@ -70,12 +66,11 @@ public class InspectionService {
       DefinitionNumberService definitionNumbers,
       DailyArrangementService dailyArrangements,
       DailyArrangementRepository dailyStorage,
-      InventoryMutex dailyMutex) {
+      DailyArrangementRepository dailyStorage) {
     this.custom = custom;
     this.views = views;
     this.projectSource = projectSource;
     this.generation = generation;
-    this.taskCommands = taskCommands;
     this.validation = validation;
     this.numbers = numbers;
     this.listQueries = listQueries;
@@ -83,7 +78,6 @@ public class InspectionService {
     this.definitionNumbers = definitionNumbers;
     this.dailyArrangements = dailyArrangements;
     this.dailyStorage = dailyStorage;
-    this.dailyMutex = dailyMutex;
 
     this.references = references;
     this.repository = repository;
@@ -601,54 +595,6 @@ public class InspectionService {
     body.put("_supervisor", supervisor);
     VersionGuard.checkPayload((Number) plan.get("row_version"), body);
     return generation.manualEvent(auth.tenantId(), plan, body);
-  }
-
-  @Transactional
-  public Map<String, Object> dailyExemption(long id, Map<String, Object> body) {
-    dailyMutex.enter();
-    var plan = raw("daily-plans", auth.tenantId(), id, true);
-    if (!scoped(plan, "查看")) deny();
-    VersionGuard.checkPayload((Number) plan.get("row_version"), body);
-    var scope = permissions.inspection("daily", "免检");
-    Long department = nullable(plan.get("department_id"));
-    if (!scope.matches(
-        permissions.companyOfOrganization(department), department, null, auth.userId())) deny();
-    var data = decode(plan.get("payload"));
-    var known = rows(data.get("details")).stream().map(d -> number(d.get("equipmentId"))).toList();
-    var equipment = ids(body.get("equipmentIds"));
-    require(
-        !equipment.isEmpty() && equipment.size() <= 500 && known.containsAll(equipment),
-        "请选择计划内的设备");
-    var start = LocalDateTime.parse(text(body, "startAt"));
-    var end = LocalDateTime.parse(text(body, "endAt"));
-    require(
-        end.isAfter(start), com.windasoft.eam.common.MessageContext.text("daily.error.exemptEnd"));
-    String reason = text(body, "reason");
-    require(
-        !reason.isBlank() && reason.length() <= 1000,
-        com.windasoft.eam.common.MessageContext.text("daily.error.reason"));
-    int count = 0;
-    for (long eq : equipment.stream().sorted().toList()) {
-      dailyStorage.addExemption(
-          auth.tenantId(),
-          IdWorker.getId(),
-          id,
-          eq,
-          start.toString(),
-          end.toString(),
-          reason,
-          auth.userId());
-      for (var task :
-          dailyStorage.exemptionCandidates(
-              auth.tenantId(), id, eq, start.toString(), end.toString())) {
-        taskCommands.action(
-            number(task.get("id")),
-            "exempt",
-            Map.of("rowVersion", task.get("rowVersion"), "description", reason));
-        count++;
-      }
-    }
-    return Map.of("count", count);
   }
 
   public Map<String, Object> choices() {
