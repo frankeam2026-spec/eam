@@ -738,9 +738,6 @@ public class InspectionService {
     return result;
   }
 
-  public Map<String, Object> task(long id) {
-    return taskCommands.task(id);
-  }
 
   @Transactional
   public int generate(long tenant, long planId) {
@@ -748,14 +745,8 @@ public class InspectionService {
   }
 
   @Transactional
-  public Map<String, Object> action(long id, String action, Map<String, Object> body) {
-    return taskCommands.action(id, action, body);
-  }
 
   @Transactional
-  public void batchReview(List<Map<String, Object>> values) {
-    taskCommands.batchReview(values);
-  }
 
   public List<Map<String, Object>> generationTargets() {
     return repository.generationTargets();
