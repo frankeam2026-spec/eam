@@ -234,4 +234,31 @@ public class InspectionListService {
         query.size(),
         repository.count(selected));
   }
+
+  /** 读取指定类型的全部任务；分页加载，避免一次性查询造成大结果集。 */
+  @Transactional(readOnly = true)
+  public List<Map<String, Object>> tasks(String kind) {
+    require(
+        Set.of("daily", "periodic").contains(kind),
+        com.windasoft.eam.common.MessageContext.text("server.inventory.message0018"));
+    var result = new ArrayList<Map<String, Object>>();
+    var query = ListQuery.from(Map.of());
+    for (int page = 1; ; page++) {
+      var batch = query(kind + "-tasks", query.at(page, 200));
+      result.addAll(batch.data());
+      if ((long) page * 200 >= batch.page().total()) return result;
+    }
+  }
+
+  /** 聚合日常点检与周期巡检任务，统一排序口径供跨业务消费者使用。 */
+  @Transactional(readOnly = true)
+  public List<Map<String, Object>> tasks() {
+    var result = new ArrayList<>(tasks("daily"));
+    result.addAll(tasks("periodic"));
+    result.sort(
+        Comparator.<Map<String, Object>, String>comparing(
+                row -> Objects.toString(row.get("dueAt"), ""), Comparator.reverseOrder())
+            .thenComparing(row -> number(row.get("id")), Comparator.reverseOrder()));
+    return result;
+  }
 }
