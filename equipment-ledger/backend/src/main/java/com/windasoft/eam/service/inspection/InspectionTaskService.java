@@ -252,15 +252,16 @@ public class InspectionTaskService {
         require(
             InspectionTaskStatus.allows(operation, state),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0026"));
+        LocalDateTime startAt = now();
         require(
-            !now().isBefore(dateTime(row.get("due_at"))),
+            taskAccess.startDue(row, startAt),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0027"));
         require(
-            !now().isAfter(dateTime(row.get("expires_at"))) || yes(snap.get("allowLate")),
+            taskAccess.startWithinDeadline(row, snap, startAt),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0028"));
         owner = user;
         next = InspectionTaskStatus.IN_PROGRESS.code();
-        if (text(result, "startedAt").isBlank()) result.put("startedAt", now().toString());
+        if (text(result, "startedAt").isBlank()) result.put("startedAt", startAt.toString());
         journal.closeTodos(tenant, id);
         journal.notify(
             tenant, id, List.of(user), "点巡检待处理", text(snap, "equipmentName"), true, false);
