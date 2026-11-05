@@ -270,7 +270,6 @@ public class InspectionService {
   }
 
   @Transactional
-  @Transactional
   public Map<String, Object> save(String kind, Long id, Map<String, Object> body) {
     require(
         KINDS.contains(kind),
