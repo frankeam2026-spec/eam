@@ -2,6 +2,8 @@ package com.windasoft.eam.service.inspection;
 
 import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 
+import com.windasoft.eam.domain.inspection.InspectionTaskAction;
+import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
@@ -84,10 +86,19 @@ public class InspectionViewAssembler {
     v.put("canExempt", access.canExempt(row, result));
     v.put("canExecute", access.execute(row));
     v.put("canStart", access.canStart(row, v, now()));
-    v.put("canReview", access.review(row));
+    v.put(
+        "canReview",
+        InspectionTaskStatus.allows(InspectionTaskAction.REVIEW, text(row, "status"))
+            && access.review(row));
     v.put("canAmendResult", access.canAmendResult(row));
-    v.put("canTransfer", access.access(row, "转派"));
-    v.put("canVoid", access.access(row, "删除"));
+    v.put(
+        "canTransfer",
+        InspectionTaskStatus.allows(InspectionTaskAction.TRANSFER, text(row, "status"))
+            && access.access(row, "转派"));
+    v.put(
+        "canVoid",
+        InspectionTaskStatus.allows(InspectionTaskAction.VOID, text(row, "status"))
+            && access.access(row, "删除"));
     v.put("canDelete", access.canDelete(row));
     var items = rows(v.get("items"));
     var answers = rows(result.get("items"));
