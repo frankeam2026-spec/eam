@@ -27,6 +27,10 @@ public class InspectionFileRepository {
     Files.copy(content, path(id, extension), StandardCopyOption.REPLACE_EXISTING);
   }
 
+  public void delete(String id, String extension) throws IOException {
+    Files.deleteIfExists(path(id, extension));
+  }
+
   public List<Map<String, Object>> find(long tenant, String id) {
     return db.queryForList(
         "SELECT * FROM eam_inspection_file WHERE tenant_id=? AND id=?", tenant, id);
