@@ -652,8 +652,7 @@ public class InspectionGenerationService {
           || task.get("owner_id") != null) continue;
       var result = decode(task.get("result"));
       if (!text(result, "startedAt").isBlank()
-          || repository.listTaskEvents(tenant, number(task.get("id"))).stream()
-              .anyMatch(e -> text(e, "action").equals("转派"))) continue;
+          || journal.hasAction(tenant, number(task.get("id")), "转派")) continue;
       var a =
           current.stream()
               .filter(x -> text(x, "id").equals(text(task, "arrangement_id")))

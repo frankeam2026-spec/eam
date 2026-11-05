@@ -107,7 +107,7 @@ public class InspectionTaskService {
       v.put("submissions", dailyStorage.submissions(auth.tenantId(), id));
     v.put(
         "events",
-        repository.listTaskEvents(auth.tenantId(), id).stream()
+        journal.events(auth.tenantId(), id).stream()
             .map(
                 e -> {
                   e.put("details", decode(e.get("details")));

@@ -2,14 +2,12 @@ package com.windasoft.eam.repository.inspection;
 
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
-import com.windasoft.eam.repository.system.NotificationRepository;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class InspectionRepository {
-  private final NotificationRepository notifications;
   private final JdbcTemplate db;
   private final com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources;
   private final InspectionExecutionStorage executions;
@@ -21,10 +19,8 @@ public class InspectionRepository {
       NumberCounterMapper counter,
       InspectionDefinitionStorage definitions,
       InspectionExecutionStorage executions,
-      com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources,
-      NotificationRepository notifications) {
+      com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources) {
     this.db = db;
-    this.notifications = notifications;
     this.taskSources = taskSources;
     this.counter = counter;
     this.executions = executions;
@@ -256,86 +252,9 @@ public class InspectionRepository {
         "SELECT * FROM v_inspection_task WHERE tenant_id=? AND id=? AND deleted=0", tenantId, id);
   }
 
-  public List<Map<String, Object>> listTaskEvents(long tenantId, long id) {
-    return db.queryForList(
-        "SELECT action,actor_name actor,DATE_FORMAT(created_at,'%Y-%m-%d %H:%i:%s')"
-            + " time,details FROM eam_inspection_event WHERE tenant_id=? AND task_id=?"
-            + " ORDER BY created_at,id",
-        tenantId, id);
-  }
-
   public List<Map<String, Object>> findUserName(long tenantId, long id) {
     return db.queryForList(
         "SELECT display_name FROM eam_sys_user WHERE tenant_id=? AND id=?", tenantId, id);
-  }
-
-  public int insertTaskEvent(
-      long recordId,
-      long tenantId,
-      long taskId,
-      Long actorId,
-      Object name,
-      Object action,
-      String payload) {
-    return db.update(
-        "INSERT INTO eam_inspection_event(id,tenant_id,task_id,actor_id,actor_name,action,details)"
-            + " VALUES(?,?,?,?,?,?,?)",
-        recordId,
-        tenantId,
-        taskId,
-        actorId,
-        name,
-        action,
-        payload);
-  }
-
-  public int completeTodos(long tenantId, long taskId) {
-    return db.update(
-        "UPDATE eam_inspection_inbox SET done=1 WHERE tenant_id=? AND task_id=? AND is_todo=1 AND"
-            + " done=0",
-        tenantId,
-        taskId);
-  }
-
-  public int countNotice(long tenantId, long taskId, Object user, Object kind, boolean once) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_inspection_inbox WHERE tenant_id=? AND task_id=? AND"
-            + " user_id=? AND kind=?"
-            + (once ? "" : " AND done=0"),
-        Integer.class,
-        tenantId,
-        taskId,
-        user,
-        kind);
-  }
-
-  public int insertInbox(
-      long recordId,
-      long tenantId,
-      long taskId,
-      Object user,
-      Object kind,
-      Object title,
-      boolean todo) {
-    int count =
-        db.update(
-            "INSERT INTO eam_inspection_inbox(id,tenant_id,task_id,user_id,kind,title,is_todo)"
-                + " VALUES(?,?,?,?,?,?,?)",
-            recordId,
-            tenantId,
-            taskId,
-            user,
-            kind,
-            title,
-            todo);
-    db.update(
-        "UPDATE eam_inspection_inbox SET message_key=?,message_args=? WHERE tenant_id=? AND id=?",
-        com.windasoft.eam.common.NotificationMessages.key(kind),
-        com.windasoft.eam.common.NotificationMessages.arguments(kind, title),
-        tenantId,
-        recordId);
-    notifications.captureSource("eam_inspection_inbox", tenantId, recordId);
-    return count;
   }
 
   public List<Map<String, Object>> listActiveUsers(long tenantId) {

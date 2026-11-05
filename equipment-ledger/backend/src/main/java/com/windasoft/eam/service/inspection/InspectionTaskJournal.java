@@ -4,7 +4,7 @@ import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.windasoft.eam.repository.inspection.InspectionRepository;
+import com.windasoft.eam.repository.inspection.InspectionTaskJournalRepository;
 import com.windasoft.eam.service.system.*;
 import java.time.*;
 import java.util.*;
@@ -12,10 +12,10 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class InspectionTaskJournal {
-  private final InspectionRepository repository;
+  private final InspectionTaskJournalRepository repository;
   private final ObjectMapper json;
 
-  public InspectionTaskJournal(InspectionRepository repository, ObjectMapper json) {
+  public InspectionTaskJournal(InspectionTaskJournalRepository repository, ObjectMapper json) {
     this.repository = repository;
     this.json = json;
   }
@@ -40,6 +40,14 @@ public class InspectionTaskJournal {
     for (var user : users)
       if (repository.countNotice(tenant, task, user, kind, once) == 0)
         repository.insertInbox(IdWorker.getId(), tenant, task, user, kind, title, todo);
+  }
+
+  public List<Map<String, Object>> events(long tenant, long task) {
+    return repository.listTaskEvents(tenant, task);
+  }
+
+  boolean hasAction(long tenant, long task, String action) {
+    return repository.hasAction(tenant, task, action);
   }
 
   public String encode(Object value) {
