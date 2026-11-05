@@ -5,6 +5,7 @@ import static com.windasoft.eam.repository.common.SqlListFilters.Kind.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.system.PermissionScope;
+import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.repository.common.*;
 import java.util.*;
 import org.springframework.stereotype.Repository;
@@ -239,9 +240,13 @@ public class InspectionListRepository {
                 .and(owner.or(anyone))
                 .and(
                     SqlPredicate.of(
-                        "(t.owner_id IS NULL OR t.owner_id=?) AND t.status IN"
-                            + " ('未开始','待执行','执行中','已过期','审核不通过')",
-                        user));
+                        "(t.owner_id IS NULL OR t.owner_id=?) AND t.status IN (?,?,?,?,?)",
+                        user,
+                        InspectionTaskStatus.NOT_STARTED.code(),
+                        InspectionTaskStatus.PENDING.code(),
+                        InspectionTaskStatus.IN_PROGRESS.code(),
+                        InspectionTaskStatus.EXPIRED.code(),
+                        InspectionTaskStatus.REVIEW_REJECTED.code()));
       else if (query.queue().equals("我的待审核"))
         predicate =
             predicate
@@ -249,7 +254,7 @@ public class InspectionListRepository {
                     reviewers.or(
                         SqlScopes.scope(
                             reviewScope, "t.company_id", "t.department_id", "t.owner_id", user)))
-                .and(SqlPredicate.of("t.status='待审核'"));
+                .and(SqlPredicate.of("t.status=?", InspectionTaskStatus.PENDING_REVIEW.code()));
       else predicate = predicate.and(SqlPredicate.of("t.status=?", query.queue()));
     }
     var fields = fields(kind);
@@ -329,7 +334,15 @@ public class InspectionListRepository {
             : SqlPredicate.of("t.equipment_id=?", equipmentId);
     return device.and(
         SqlPredicate.of(
-            "t.due_at<=NOW() AND t.status NOT IN ('已作废','过期作废','已免检') AND (t.expires_at>=NOW() OR"
-                + " t.status IN ('待执行','执行中','挂起','已过期','审核不通过'))"));
+            "t.due_at<=NOW() AND t.status NOT IN (?,?,?) AND (t.expires_at>=NOW() OR"
+                + " t.status IN (?,?,?,?,?))",
+            InspectionTaskStatus.CANCELLED.code(),
+            InspectionTaskStatus.EXPIRED_CANCELLED.code(),
+            InspectionTaskStatus.EXEMPT.code(),
+            InspectionTaskStatus.PENDING.code(),
+            InspectionTaskStatus.IN_PROGRESS.code(),
+            InspectionTaskStatus.SUSPENDED.code(),
+            InspectionTaskStatus.EXPIRED.code(),
+            InspectionTaskStatus.REVIEW_REJECTED.code()));
   }
 }
