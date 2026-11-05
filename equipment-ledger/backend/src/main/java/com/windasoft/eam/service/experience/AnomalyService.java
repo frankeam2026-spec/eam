@@ -15,7 +15,7 @@ import com.windasoft.eam.event.experience.ExperienceEvents;
 import com.windasoft.eam.repository.experience.AnomalyRepository;
 import com.windasoft.eam.service.basedata.BaseDataReferenceService;
 import com.windasoft.eam.service.business.BusinessConfigService;
-import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.inspection.InspectionTaskService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.repair.RepairOrderService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
@@ -51,7 +51,7 @@ public class AnomalyService {
   final RepairOrderService repairs;
   final RepairWorkflowService workflow;
   final MaintenanceService maintenance;
-  final InspectionService inspection;
+  final InspectionTaskService inspectionTasks;
 
   public AnomalyService(
       AnomalyRepository repository,
@@ -61,7 +61,7 @@ public class AnomalyService {
       RepairOrderService repairs,
       RepairWorkflowService workflow,
       MaintenanceService maintenance,
-      InspectionService inspection,
+      InspectionTaskService inspectionTasks,
       BaseDataReferenceService references) {
     this.references = references;
     this.repository = repository;
@@ -71,7 +71,7 @@ public class AnomalyService {
     this.repairs = repairs;
     this.workflow = workflow;
     this.maintenance = maintenance;
-    this.inspection = inspection;
+    this.inspectionTasks = inspectionTasks;
   }
 
   Equipment eq(long id) {
@@ -97,7 +97,7 @@ public class AnomalyService {
 
   Map<String, Object> source(String kind, long id) {
     check(Set.of("保养", "点巡检").contains(kind), "异常来源类型无效");
-    return kind.equals("保养") ? maintenance.task(id) : inspection.task(id);
+    return kind.equals("保养") ? maintenance.task(id) : inspectionTasks.task(id);
   }
 
   public boolean canView(Map<String, Object> r) {
