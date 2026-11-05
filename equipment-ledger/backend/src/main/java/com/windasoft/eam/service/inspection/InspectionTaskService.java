@@ -218,7 +218,7 @@ public class InspectionTaskService {
             IdWorker.getId(),
             tenant,
             number(eq.get("id")),
-            task.get("code"),
+            text(task, "code"),
             text(snap, "planName"),
             userName(tenant, nullable(task.get("owner_id"))),
             status,
