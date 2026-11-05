@@ -610,7 +610,10 @@ public class DailyArrangementRepository {
         mode,
         followUp,
         tenant,
-        task);
+        task,
+        InspectionTaskStatus.NOT_STARTED.code(),
+        InspectionTaskStatus.PENDING.code(),
+        InspectionTaskStatus.EXPIRED.code());
   }
 
   public boolean pendingScheduleTasks(long tenant, long arrangement) {
