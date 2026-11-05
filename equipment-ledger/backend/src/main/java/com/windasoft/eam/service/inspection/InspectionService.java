@@ -12,7 +12,6 @@ import com.windasoft.eam.service.common.DefinitionNumberService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.NotificationPolicyService;
 import com.windasoft.eam.service.system.PermissionService;
-import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
 import org.springframework.stereotype.Service;
@@ -108,14 +107,6 @@ public class InspectionService {
     return projectSource.raw(kind, tenant, id, lock);
   }
 
-  Map<String, Object> cycleType(long tenant, Object id) {
-    var type = view(raw("types", tenant, number(id), true));
-    require(
-        yes(type.get("enabled")),
-        com.windasoft.eam.common.MessageContext.text("server.inspection.message0042"));
-    return type;
-  }
-
   boolean scoped(Map<String, Object> row, String action) {
     return projectSource.scoped(row, action);
   }
@@ -191,76 +182,6 @@ public class InspectionService {
     return result;
   }
 
-  Map<String, Object> equipment(long tenant, long id) {
-    return projectSource.equipment(tenant, id);
-  }
-
-  void checkEquipment(Map<String, Object> row, String kind, String action) {
-    var scope = permissions.inspection(kind, action);
-    if (!scope.matches(
-        nullable(row.get("company_org_id")),
-        nullable(row.get("department_org_id")),
-        nullable(row.get("owner_user_id")),
-        auth.userId())) deny();
-  }
-
-  void users(long tenant, Object value, boolean required) {
-    validation.users(tenant, value, required);
-  }
-
-  void attachments(long tenant, Object value, boolean images) {
-    validation.attachments(tenant, value, images);
-  }
-
-  void validateItems(long tenant, List<Map<String, Object>> items) {
-    require(
-        !items.isEmpty() && items.size() <= 1000,
-        com.windasoft.eam.common.MessageContext.text("server.inspection.message0044"));
-    var seen = new HashSet<String>();
-    for (var item : items) {
-      item.remove("module");
-      if (text(item, "id").isBlank()) item.put("id", Long.toString(IdWorker.getId()));
-      if (text(item, "code").isBlank()) item.put("code", "II-" + IdWorker.getId());
-      require(
-          seen.add(text(item, "id")),
-          com.windasoft.eam.common.MessageContext.text("server.inspection.message0045"));
-      require(
-          !text(item, "name").isBlank() && !text(item, "content").isBlank(),
-          com.windasoft.eam.common.MessageContext.text("server.inspection.message0046"));
-      var itemType = cycleType(tenant, item.get("typeId"));
-      item.put("typeId", itemType.get("id"));
-      item.put("typeName", itemType.get("name"));
-      String type = text(item, "valueType");
-      require(
-          Set.of("选项", "数值", "文本").contains(type),
-          com.windasoft.eam.common.MessageContext.text("server.inspection.message0047"));
-      if (type.equals("选项")) {
-        var options = strings(item.get("options"));
-        var normals = strings(item.get("normalOptions"));
-        require(
-            options.size() >= 2 && !normals.isEmpty() && options.containsAll(normals),
-            com.windasoft.eam.common.MessageContext.text("server.inspection.message0048"));
-      }
-      if (type.equals("数值")) {
-        BigDecimal
-            lower = text(item, "lower").isBlank() ? null : new BigDecimal(text(item, "lower")),
-            upper = text(item, "upper").isBlank() ? null : new BigDecimal(text(item, "upper"));
-        require(
-            lower == null || upper == null || lower.compareTo(upper) <= 0,
-            com.windasoft.eam.common.MessageContext.text("server.inspection.message0049"));
-      }
-      attachments(tenant, item.get("references"), false);
-    }
-  }
-
-  boolean applicable(Map<String, Object> standard, Map<String, Object> equipment, long tenant) {
-    return projectSource.applicable(standard, equipment, tenant);
-  }
-
-  List<Map<String, Object>> projects(long tenant, Map<String, Object> detail, boolean checkAccess) {
-    return projectSource.projects(tenant, detail, checkAccess);
-  }
-
   @Transactional
   public Map<String, Object> save(String kind, Long id, Map<String, Object> body) {
     require(
@@ -318,16 +239,16 @@ public class InspectionService {
     }
     if (kind.equals("standards")) {
       references.categories(tenant, data);
-      validateItems(tenant, rows(data.get("items")));
+      validation.validateItems(tenant, rows(data.get("items")));
       for (var eq : ids(data.get("equipmentIds")))
-        checkEquipment(equipment(tenant, eq), kind, action);
+        validation.checkEquipment(projectSource.equipment(tenant, eq), kind, action);
     }
     if (kind.endsWith("plans")) {
       require(
           Set.of("无需验收", "整机验收", "逐项审核").contains(text(data, "reviewMode")),
           com.windasoft.eam.common.MessageContext.text("server.inspection.message0055"));
-      users(tenant, data.get("owners"), !kind.equals("daily-plans"));
-      users(tenant, data.get("reviewers"), !text(data, "reviewMode").equals("无需验收"));
+      validation.users(tenant, data.get("owners"), !kind.equals("daily-plans"));
+      validation.users(tenant, data.get("reviewers"), !text(data, "reviewMode").equals("无需验收"));
       if (kind.equals("periodic-plans")) duration(data, "validHours", "validUnit", 1, 10);
       duration(data, "advanceHours", "advanceUnit", 0, 1);
       duration(data, "remindHours", "remindUnit", 0, 1);
@@ -360,13 +281,13 @@ public class InspectionService {
         require(
             equipmentIds.add(eq),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0059"));
-        checkEquipment(equipment(tenant, eq), kind, action);
-        projects(tenant, detail, true);
-        users(tenant, detail.get("owners"), false);
-        users(tenant, detail.get("reviewers"), false);
+        validation.checkEquipment(projectSource.equipment(tenant, eq), kind, action);
+        projectSource.projects(tenant, detail, true);
+        validation.users(tenant, detail.get("owners"), false);
+        validation.users(tenant, detail.get("reviewers"), false);
       }
       if (kind.equals("periodic-plans")) {
-        var selectedType = cycleType(tenant, data.get("typeId"));
+        var selectedType = validation.cycleType(tenant, data.get("typeId"));
         data.put("typeId", selectedType.get("id"));
         data.put("typeName", selectedType.get("name"));
         if (!data.containsKey("period")) data.put("period", selectedType.get("period"));
@@ -416,7 +337,7 @@ public class InspectionService {
       code =
           kind.equals("standards")
               ? definitionNumbers.next(tenant, "IS")
-              : nextCode(tenant, prefix);
+              : numbers.nextCode(tenant, prefix);
     }
     require(
         code.length() <= 64,
@@ -478,10 +399,6 @@ public class InspectionService {
           id == null);
     if (kind.endsWith("plans")) reminderPolicies.saveBinding(tenant, kind.equals("daily-plans") ? "daily" : "periodic", key, body);
     return definition(kind, key);
-  }
-
-  String nextCode(long tenant, String prefix) {
-    return numbers.nextCode(tenant, prefix);
   }
 
   @Transactional
@@ -561,11 +478,11 @@ public class InspectionService {
         rows(data.get("details")).size() <= 500,
         com.windasoft.eam.common.MessageContext.text("daily.error.equipmentLimit"));
     for (var detail : rows(data.get("details"))) {
-      checkEquipment(
-          equipment(auth.tenantId(), number(detail.get("equipmentId"))),
+      validation.checkEquipment(
+          projectSource.equipment(auth.tenantId(), number(detail.get("equipmentId"))),
           "daily-plans",
           text(data, "id").isBlank() ? "新增" : "编辑");
-      projects(auth.tenantId(), detail, true);
+      projectSource.projects(auth.tenantId(), detail, true);
     }
     dailyArrangements.validate(
         auth.tenantId(), text(data, "id").isBlank() ? null : number(data.get("id")), data);
