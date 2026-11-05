@@ -2,6 +2,7 @@ package com.windasoft.eam.controller.inspection;
 
 import com.windasoft.eam.service.business.BusinessQueryService;
 import com.windasoft.eam.service.inspection.DailyArrangementService;
+import com.windasoft.eam.service.inspection.DailyInspectionExemptionService;
 import com.windasoft.eam.service.inspection.InspectionCsvService;
 import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.inspection.InspectionService;
@@ -18,6 +19,7 @@ public class InspectionController {
   private final DailyArrangementService arrangements;
   private final InspectionService service;
   private final InspectionTaskService taskCommands;
+  private final DailyInspectionExemptionService exemptions;
 
   public InspectionController(
       BusinessQueryService customQuery,
@@ -25,13 +27,15 @@ public class InspectionController {
       InspectionCsvService csv,
       DailyArrangementService arrangements,
       InspectionService service,
-      InspectionTaskService taskCommands) {
+      InspectionTaskService taskCommands,
+      DailyInspectionExemptionService exemptions) {
     this.customQuery = customQuery;
     this.lists = lists;
     this.csv = csv;
     this.arrangements = arrangements;
     this.service = service;
     this.taskCommands = taskCommands;
+    this.exemptions = exemptions;
   }
 
   @GetMapping("/daily-device-options")
@@ -76,7 +80,7 @@ public class InspectionController {
 
   @PostMapping("/daily-plans/{id}/exemptions")
   public Object dailyExemption(@PathVariable long id, @RequestBody Map<String, Object> body) {
-    return Map.of("data", service.dailyExemption(id, body));
+    return Map.of("data", exemptions.exempt(id, body));
   }
 
   @GetMapping("/daily-operation-teams")
