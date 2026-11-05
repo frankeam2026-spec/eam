@@ -2,6 +2,7 @@ package com.windasoft.eam.repository.inspection;
 
 import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 
+import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -405,22 +406,28 @@ public class DailyArrangementRepository {
       long tenant, long plan, long equipment, String start, String end) {
     db.queryForList(
         "SELECT id FROM eam_inspection_task WHERE tenant_id=? AND plan_id=? AND equipment_id=? AND"
-            + " due_at>=? AND due_at<? AND status IN ('未开始','待执行','已过期') AND owner_id IS NULL ORDER"
+            + " due_at>=? AND due_at<? AND status IN (?,?,?) AND owner_id IS NULL ORDER"
             + " BY id FOR UPDATE",
         tenant,
         plan,
         equipment,
         start.replace('T', ' '),
-        end.replace('T', ' '));
+        end.replace('T', ' '),
+        InspectionTaskStatus.NOT_STARTED.code(),
+        InspectionTaskStatus.PENDING.code(),
+        InspectionTaskStatus.EXPIRED.code());
     return db.queryForList(
         "SELECT id,row_version rowVersion FROM eam_inspection_task WHERE tenant_id=? AND plan_id=?"
-            + " AND equipment_id=? AND due_at>=? AND due_at<? AND status IN ('未开始','待执行','已过期') AND"
+            + " AND equipment_id=? AND due_at>=? AND due_at<? AND status IN (?,?,?) AND"
             + " owner_id IS NULL ORDER BY id",
         tenant,
         plan,
         equipment,
         start.replace('T', ' '),
-        end.replace('T', ' '));
+        end.replace('T', ' '),
+        InspectionTaskStatus.NOT_STARTED.code(),
+        InspectionTaskStatus.PENDING.code(),
+        InspectionTaskStatus.EXPIRED.code());
   }
 
   public void submission(long tenant, long task, long actor, Map<String, Object> result) {
@@ -599,7 +606,7 @@ public class DailyArrangementRepository {
     db.update(
         "UPDATE eam_inspection_task SET"
             + " person_mode=?,follow_up_user_id=?,row_version=row_version+1,updated_at=NOW(6) WHERE"
-            + " tenant_id=? AND id=? AND owner_id IS NULL AND status IN ('未开始','待执行','已过期')",
+            + " tenant_id=? AND id=? AND owner_id IS NULL AND status IN (?,?,?)",
         mode,
         followUp,
         tenant,
@@ -609,11 +616,13 @@ public class DailyArrangementRepository {
   public boolean pendingScheduleTasks(long tenant, long arrangement) {
     return db.queryForObject(
             "SELECT COUNT(*) FROM eam_inspection_task WHERE tenant_id=? AND arrangement_id=? AND"
-                + " deleted=0 AND owner_id IS NULL AND status IN ('未开始','待执行') AND"
+                + " deleted=0 AND owner_id IS NULL AND status IN (?,?) AND"
                 + " expires_at>=NOW()",
             Long.class,
             tenant,
-            arrangement)
+            arrangement,
+            InspectionTaskStatus.NOT_STARTED.code(),
+            InspectionTaskStatus.PENDING.code())
         > 0;
   }
 
