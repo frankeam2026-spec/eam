@@ -45,6 +45,7 @@ class DailyStaffingMySqlIT {
   @MockitoBean com.windasoft.eam.scheduler.inventory.InventoryReservationCleanup cleanup;
   @MockitoBean com.windasoft.eam.scheduler.experience.RepairPlanScheduler repairScheduler;
   @Autowired InspectionService plans;
+  @Autowired InspectionGenerationService generation;
   @Autowired DailyInspectionPlanService dailyPlans;
   @Autowired InspectionTaskService tasks;
   @Autowired InspectionListService lists;
@@ -383,7 +384,7 @@ class DailyStaffingMySqlIT {
     assertTrue(
         lists.deviceTasks("", "QA-STAFFING-EQ", 1, 20).data().stream()
             .anyMatch(x -> number(x.get("id")) == id));
-    assertEquals(0, plans.generate(10001, number(p.get("id"))));
+    assertEquals(0, generation.generate(10001, number(p.get("id"))));
     var started = tasks.action(id, "start", Map.of("rowVersion", t.get("rowVersion")));
     assertEquals("73001", started.get("ownerId"));
     assertEquals("执行中", started.get("status"));
@@ -545,7 +546,7 @@ class DailyStaffingMySqlIT {
     p.put("monthlyRestDays", List.of());
     p = mutable(plans.save("daily-plans", id, p));
     assertEquals(3, db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE plan_id=?", Integer.class, id));
-    plans.generate(10001, id);
+    generation.generate(10001, id);
     assertEquals(3, db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE plan_id=?", Integer.class, id));
     assertTrue(ids(p.get("weeklyRestDays")).isEmpty());
     assertTrue(ids(p.get("monthlyRestDays")).isEmpty());
@@ -560,7 +561,7 @@ class DailyStaffingMySqlIT {
       arrangement(draft).put("slots", List.of());
     });
     long id = number(p.get("id"));
-    plans.generate(10001, id);
+    generation.generate(10001, id);
     assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE plan_id=?", Integer.class, id));
     var working = plan("open", "shift", draft -> {
       draft.put("weeklyRestDays", List.of(now().getDayOfWeek().getValue()));
@@ -605,7 +606,7 @@ class DailyStaffingMySqlIT {
     assertEquals(1, db.queryForObject("SELECT deleted FROM eam_inspection_task WHERE id=?", Integer.class, id));
     assertThrows(Exception.class, () -> tasks.task(id));
     plans.save("daily-plans", planId, p);
-    plans.generate(10001, planId);
+    generation.generate(10001, planId);
     assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE plan_id=?", Integer.class, planId));
     assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM eam_inspection_task WHERE plan_id=? AND deleted=0", Integer.class, planId));
   }
