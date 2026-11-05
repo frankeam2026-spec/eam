@@ -11,6 +11,7 @@ import com.windasoft.eam.domain.inspection.InspectionTaskAction;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
+import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
 import com.windasoft.eam.service.system.*;
 import java.math.BigDecimal;
 import java.time.*;
@@ -24,6 +25,7 @@ public class InspectionTaskService {
   private final DailyArrangementRepository dailyStorage;
 
   private final InspectionRepository repository;
+  private final EquipmentHistoryRepository equipmentHistory;
   private final ObjectMapper json;
   private final AuthContext auth;
   private final InspectionTaskAccessService taskAccess;
@@ -37,6 +39,7 @@ public class InspectionTaskService {
 
   public InspectionTaskService(
       InspectionRepository repository,
+      EquipmentHistoryRepository equipmentHistory,
       DailyArrangementRepository dailyStorage,
       ObjectMapper json,
       AuthContext auth,
@@ -49,6 +52,7 @@ public class InspectionTaskService {
       org.springframework.context.ApplicationEventPublisher publisher,
       com.windasoft.eam.service.experience.MaterialCustodyService custody) {
     this.repository = repository;
+    this.equipmentHistory = equipmentHistory;
     this.dailyStorage = dailyStorage;
     this.json = json;
     this.auth = auth;
@@ -208,8 +212,8 @@ public class InspectionTaskService {
               .filter(r -> text(r, "id").startsWith(text(eq, "id") + "/"))
               .map(r -> text(r, "value"))
               .collect(java.util.stream.Collectors.joining("、"));
-      if (repository.countEquipmentHistory(tenant, number(eq.get("id")), task.get("code")) == 0)
-        repository.insertEquipmentHistory(
+      if (!equipmentHistory.hasInspectionRecord(tenant, number(eq.get("id")), text(task, "code")))
+        equipmentHistory.insertInspection(
             IdWorker.getId(),
             tenant,
             number(eq.get("id")),
@@ -339,7 +343,7 @@ public class InspectionTaskService {
               .filter(r -> text(r, "id").startsWith(text(eq, "id") + "/"))
               .map(r -> text(r, "value"))
               .collect(java.util.stream.Collectors.joining("、"));
-          repository.updateEquipmentHistoryResult(tenant, number(eq.get("id")), row.get("code"), summary);
+          equipmentHistory.updateInspectionResult(tenant, number(eq.get("id")), text(row, "code"), summary);
         }
         label = "修改检查结果";
       }
