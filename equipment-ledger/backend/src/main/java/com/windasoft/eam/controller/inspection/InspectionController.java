@@ -3,6 +3,7 @@ package com.windasoft.eam.controller.inspection;
 import com.windasoft.eam.service.business.BusinessQueryService;
 import com.windasoft.eam.service.inspection.DailyArrangementService;
 import com.windasoft.eam.service.inspection.DailyInspectionExemptionService;
+import com.windasoft.eam.service.inspection.DailyInspectionPlanService;
 import com.windasoft.eam.service.inspection.InspectionCsvService;
 import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.inspection.InspectionService;
@@ -20,6 +21,7 @@ public class InspectionController {
   private final InspectionService service;
   private final InspectionTaskService taskCommands;
   private final DailyInspectionExemptionService exemptions;
+  private final DailyInspectionPlanService dailyPlans;
 
   public InspectionController(
       BusinessQueryService customQuery,
@@ -28,7 +30,8 @@ public class InspectionController {
       DailyArrangementService arrangements,
       InspectionService service,
       InspectionTaskService taskCommands,
-      DailyInspectionExemptionService exemptions) {
+      DailyInspectionExemptionService exemptions,
+      DailyInspectionPlanService dailyPlans) {
     this.customQuery = customQuery;
     this.lists = lists;
     this.csv = csv;
@@ -36,6 +39,7 @@ public class InspectionController {
     this.service = service;
     this.taskCommands = taskCommands;
     this.exemptions = exemptions;
+    this.dailyPlans = dailyPlans;
   }
 
   @GetMapping("/daily-device-options")
@@ -43,7 +47,7 @@ public class InspectionController {
       @RequestParam(defaultValue = "") String q,
       @RequestParam(defaultValue = "1") int page,
       @RequestParam(defaultValue = "20") int size) {
-    return service.dailyDeviceOptions(q, page, size);
+    return dailyPlans.dailyDeviceOptions(q, page, size);
   }
 
   @GetMapping("/daily-device-tasks")
@@ -57,7 +61,7 @@ public class InspectionController {
 
   @PostMapping("/daily-plans/assignment-impact")
   public Object assignmentImpact(@RequestBody Map<String, Object> body) {
-    return Map.of("data", service.assignmentImpact(body));
+    return Map.of("data", dailyPlans.assignmentImpact(body));
   }
 
   @GetMapping("/daily-event-options")
@@ -65,17 +69,17 @@ public class InspectionController {
       @RequestParam(defaultValue = "") String q,
       @RequestParam(defaultValue = "1") int page,
       @RequestParam(defaultValue = "20") int size) {
-    return service.dailyEventOptions(q, page, size);
+    return dailyPlans.dailyEventOptions(q, page, size);
   }
 
   @PostMapping("/daily-plans/preview")
   public Object dailyPreview(@RequestBody Map<String, Object> body) {
-    return Map.of("data", service.dailyPreview(body));
+    return Map.of("data", dailyPlans.dailyPreview(body));
   }
 
   @PostMapping("/daily-plans/{id}/events")
   public Object dailyEvent(@PathVariable long id, @RequestBody Map<String, Object> body) {
-    return Map.of("data", service.dailyEvent(id, body));
+    return Map.of("data", dailyPlans.dailyEvent(id, body));
   }
 
   @PostMapping("/daily-plans/{id}/exemptions")

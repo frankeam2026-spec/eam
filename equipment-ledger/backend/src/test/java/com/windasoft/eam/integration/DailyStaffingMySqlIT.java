@@ -45,6 +45,7 @@ class DailyStaffingMySqlIT {
   @MockitoBean com.windasoft.eam.scheduler.inventory.InventoryReservationCleanup cleanup;
   @MockitoBean com.windasoft.eam.scheduler.experience.RepairPlanScheduler repairScheduler;
   @Autowired InspectionService plans;
+  @Autowired DailyInspectionPlanService dailyPlans;
   @Autowired InspectionTaskService tasks;
   @Autowired InspectionListService lists;
   @Autowired DailyArrangementRepository staffing;
@@ -434,7 +435,7 @@ class DailyStaffingMySqlIT {
     long id = task(p);
     var a = arrangement(p);
     a.put("regularRoster", List.of(rule(73001)));
-    assertEquals(1, plans.assignmentImpact(p).get("count"));
+    assertEquals(1, dailyPlans.assignmentImpact(p).get("count"));
     p = mutable(plans.save("daily-plans", number(p.get("id")), p));
     a = arrangement(p);
     assertEquals(List.of(73001L), ids(tasks.task(id).get("owners")));
@@ -520,7 +521,7 @@ class DailyStaffingMySqlIT {
     var body = new LinkedHashMap<String, Object>();
     body.put("rowVersion", p.get("rowVersion"));
     assertThrows(com.windasoft.eam.common.LocalizedArgumentException.class,
-        () -> plans.dailyEvent(number(p.get("id")), body));
+        () -> dailyPlans.dailyEvent(number(p.get("id")), body));
   }
 
   @Test
@@ -587,7 +588,7 @@ class DailyStaffingMySqlIT {
     assertThrows(Exception.class, () -> plans.save("daily-plans", planId, invalidPeople));
     var old = mutable(p);
     old.put("rowVersion", -1);
-    assertThrows(Exception.class, () -> plans.assignmentImpact(old));
+    assertThrows(Exception.class, () -> dailyPlans.assignmentImpact(old));
   }
 
   @Test
