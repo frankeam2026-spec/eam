@@ -1,5 +1,7 @@
 package com.windasoft.eam.service.inspection;
 
+import static com.windasoft.eam.common.inspection.InspectionSupport.*;
+
 import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.common.SqlPredicate;
