@@ -6,7 +6,6 @@ import com.windasoft.eam.entity.equipment.EquipmentHistory;
 import java.util.List;
 import org.springframework.stereotype.Repository;
 
-/** 历史事件单对象数据访问，不处理维修和巡检业务规则。 */
 /** 设备历史事件仓储：保存和读取设备事件，事件产生时机由业务用例决定。 */
 @Repository
 public class EquipmentHistoryRepository {
