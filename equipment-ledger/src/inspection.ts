@@ -191,6 +191,7 @@ export type InspectionTask = CustomRecord & {
   onlyAbnormal: boolean;
   remark: string;
   canExecute: boolean;
+  canStart: boolean;
   canAmendResult?: boolean;
   canReview: boolean;
   canTransfer: boolean;
