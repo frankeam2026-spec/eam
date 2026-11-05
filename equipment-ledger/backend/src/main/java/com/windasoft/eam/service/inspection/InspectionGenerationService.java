@@ -328,6 +328,11 @@ public class InspectionGenerationService {
     return 1;
   }
 
+  @Transactional(readOnly = true)
+  public List<Map<String, Object>> generationTargets() {
+    return repository.generationTargets();
+  }
+
   @Transactional
   public int generate(long tenant, long planId) {
     var plans = repository.lockPlan(tenant, planId);

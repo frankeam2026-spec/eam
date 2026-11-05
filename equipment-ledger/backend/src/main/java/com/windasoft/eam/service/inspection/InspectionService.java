@@ -389,7 +389,7 @@ public class InspectionService {
       }
       if (kind.equals("daily-plans") && existing != null)
         generation.refreshAssignments(tenant, key, auth.userId());
-      generate(tenant, key);
+      generation.generate(tenant, key);
     }
     if (kind.endsWith("plans"))
       custom.save(
@@ -506,12 +506,4 @@ public class InspectionService {
         repository.listCategories(auth.tenantId()));
   }
 
-  @Transactional
-  public int generate(long tenant, long planId) {
-    return generation.generate(tenant, planId);
-  }
-
-  public List<Map<String, Object>> generationTargets() {
-    return repository.generationTargets();
-  }
 }

@@ -26,6 +26,7 @@ import com.windasoft.eam.repository.system.UserListRepository;
 import com.windasoft.eam.service.equipment.EquipmentCommandService;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
 import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.inspection.InspectionGenerationService;
 import com.windasoft.eam.service.inspection.InspectionTaskService;
 import com.windasoft.eam.service.inventory.InventoryFlowService;
 import com.windasoft.eam.service.inventory.InventoryListService;
@@ -81,6 +82,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Transactional
 class EngineeringQueryMySqlIT {
   @Autowired InspectionExecutionStorage inspectionExecution;
+  @Autowired InspectionGenerationService inspectionGeneration;
 
   @DynamicPropertySource
   static void database(DynamicPropertyRegistry properties) {
@@ -1666,7 +1668,7 @@ class EngineeringQueryMySqlIT {
                         planId,
                         Long.parseLong(inspectionType.get("id").toString()));
             assertEquals(1, count, "计划应生成一条类型归属正确的任务：" + kind);
-            inspectionDefinitions.generate(10001, planId);
+            inspectionGeneration.generate(10001, planId);
             assertEquals(
                 count,
                 db.queryForObject(
