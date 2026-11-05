@@ -42,7 +42,8 @@ class InspectionTaskJournalRepositoryTest {
             anyString(), eq(Long.class), eq(7L), eq(9L), eq("转派")))
         .thenReturn(1L);
 
-    var repository = new InspectionTaskJournalRepository(db, mock(NotificationRepository.class));
+    var repository =
+        new InspectionTaskJournalRepository(db, mock(NotificationRepository.class));
 
     assertTrue(repository.hasAction(7L, 9L, "转派"));
     verify(db)
@@ -62,7 +63,8 @@ class InspectionTaskJournalRepositoryTest {
 
     var repository = new InspectionTaskJournalRepository(db, notifications);
 
-    assertEquals(1, repository.insertInbox(11L, 7L, 9L, 13L, "点巡检待执行", "设备 A", true));
+    assertEquals(
+        1, repository.insertInbox(11L, 7L, 9L, 13L, "点巡检待执行", "设备 A", true));
 
     var order = inOrder(db, notifications);
     order.verify(db).update(
