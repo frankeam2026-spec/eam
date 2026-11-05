@@ -18,6 +18,7 @@ import com.windasoft.eam.entity.inventory.RequisitionLine;
 import com.windasoft.eam.repository.inventory.RequisitionDraftRepository;
 import com.windasoft.eam.repository.inventory.RequisitionRepository;
 import com.windasoft.eam.service.inspection.InspectionTaskService;
+import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -71,6 +72,7 @@ public class RequisitionService {
   private final PermissionService permissions;
   private final MaintenanceService maintenance;
   private final InspectionTaskService inspectionTasks;
+  private final InspectionListService inspectionLists;
   private final ObjectMapper json;
 
   public RequisitionService(
@@ -80,6 +82,7 @@ public class RequisitionService {
       PermissionService permissions,
       MaintenanceService maintenance,
       InspectionTaskService inspectionTasks,
+      InspectionListService inspectionLists,
       ObjectMapper json,
       WorkflowRuntimeService workflow,
       InventoryListService listQueries,
@@ -93,6 +96,7 @@ public class RequisitionService {
     this.permissions = permissions;
     this.maintenance = maintenance;
     this.inspectionTasks = inspectionTasks;
+    this.inspectionLists = inspectionLists;
     this.json = json;
     this.workflow = workflow;
     this.listQueries = listQueries;
@@ -452,7 +456,7 @@ public class RequisitionService {
                   : List.<Map<String, Object>>of())
               : ((permissions.allowed("inspectionDailyTask", "查看")
                       || permissions.allowed("inspectionPeriodicTask", "查看"))
-                  ? inspection.tasks()
+                  ? inspectionLists.tasks()
                   : List.<Map<String, Object>>of())) {
         if (!active(text(r, "status"))) continue;
         Task t;
@@ -955,7 +959,7 @@ public class RequisitionService {
                   : List.<Map<String, Object>>of())
               : ((permissions.allowed("inspectionDailyTask", "查看")
                       || permissions.allowed("inspectionPeriodicTask", "查看"))
-                  ? inspection.tasks()
+                  ? inspectionLists.tasks()
                   : List.<Map<String, Object>>of());
       for (var r : rows)
         if (active(text(r, "status")) && id(r.get("companyId")) != 0)
