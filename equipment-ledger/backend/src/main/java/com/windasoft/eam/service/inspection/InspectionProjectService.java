@@ -57,6 +57,15 @@ public class InspectionProjectService {
     }
   }
 
+  void checkEquipment(Map<String, Object> row, String kind, String action) {
+    var scope = permissions.inspection(kind, action);
+    if (!scope.matches(
+        nullable(row.get("company_org_id")),
+        nullable(row.get("department_org_id")),
+        nullable(row.get("owner_user_id")),
+        auth.userId())) deny();
+  }
+
   Map<String, Object> equipment(long tenant, long id) {
     var r = repository.loadEquipment(tenant, id);
     require(
