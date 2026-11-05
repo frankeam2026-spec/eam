@@ -35,6 +35,10 @@ public class InspectionGenerationService {
     }
   }
 
+  /**
+   * Reuses immutable lookup results only during one plan-generation transaction. A new cache is
+   * created for every invocation so later runs always observe current master data.
+   */
   private static final class GenerationCache {
     private final Map<Long, Map<String, Object>> equipment = new HashMap<>();
     private final Map<ProjectKey, List<Map<String, Object>>> projects = new HashMap<>();
@@ -218,7 +222,7 @@ public class InspectionGenerationService {
         equipmentList.stream()
             .map(e -> text(e, "code"))
             .collect(java.util.stream.Collectors.joining("、")));
-    long departmentId = number(plan.get("department_id"));
+    Long departmentId = nullable(plan.get("department_id"));
     String departmentName =
         cache.departmentNames.computeIfAbsent(
             departmentId,
@@ -269,7 +273,9 @@ public class InspectionGenerationService {
       company = cache.companyIds.get(departmentId);
     }
     Object taskDepartment =
-        open ? cache.equipment.get(equipmentId).get("department_org_id") : plan.get("department_id");
+        open
+            ? cache.equipment.get(equipmentId).get("department_org_id")
+            : plan.get("department_id");
     if (!exemption.isEmpty()) status = InspectionTaskStatus.EXEMPT.code();
     repository.insertTask(
         task,
