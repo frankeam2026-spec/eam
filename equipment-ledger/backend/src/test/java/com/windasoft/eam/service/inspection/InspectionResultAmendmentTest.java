@@ -55,9 +55,21 @@ class InspectionResultAmendmentTest {
     when(repository.loadTask(1L, 7L, true)).thenReturn(List.of(row));
     when(access.access(row, "查看")).thenReturn(true);
     when(access.canAmendResult(row)).thenReturn(true);
-    service = new InspectionTaskService(repository, equipmentHistory, dailyStorage, json, auth, access,
-        mock(InspectionViewAssembler.class), mock(InspectionValidationService.class), journal,
-        custom, mutex, publisher, custody) {
+    service =
+        new InspectionTaskService(
+            repository,
+            equipmentHistory,
+            dailyStorage,
+            json,
+            auth,
+            access,
+            mock(InspectionViewAssembler.class),
+            mock(InspectionValidationService.class),
+            journal,
+            custom,
+            mutex,
+            publisher,
+            custody) {
       @Override public Map<String, Object> task(long id) { return Map.of("id", id); }
     };
   }
