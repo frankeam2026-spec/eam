@@ -76,7 +76,8 @@ public class InspectionTaskAccessService {
   }
 
   public boolean canDelete(Map<String, Object> row) {
-    if (!access(row, "删除")) return false;
+    if (!InspectionTaskStatus.allows(InspectionTaskAction.DELETE, text(row, "status"))
+        || !access(row, "删除")) return false;
     if (!text(row, "kind").equals("daily")) return true;
     return unexecutedDailyTask(row);
   }
