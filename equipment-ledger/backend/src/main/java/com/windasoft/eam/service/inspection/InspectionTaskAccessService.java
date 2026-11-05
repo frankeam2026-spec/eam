@@ -58,6 +58,23 @@ public class InspectionTaskAccessService {
         && (row.get("owner_id") == null || number(row.get("owner_id")) == auth.userId());
   }
 
+  /** Whether the current user can start this task at the supplied instant. */
+  public boolean canStart(Map<String, Object> row, Map<String, Object> snapshot, LocalDateTime at) {
+    return InspectionTaskStatus.allows(InspectionTaskAction.START, text(row, "status"))
+        && execute(row)
+        && startDue(row, at)
+        && startWithinDeadline(row, snapshot, at);
+  }
+
+  boolean startDue(Map<String, Object> row, LocalDateTime at) {
+    return !at.isBefore(dateTime(row.get("due_at")));
+  }
+
+  boolean startWithinDeadline(
+      Map<String, Object> row, Map<String, Object> snapshot, LocalDateTime at) {
+    return !at.isAfter(dateTime(row.get("expires_at"))) || yes(snapshot.get("allowLate"));
+  }
+
   public boolean canDelete(Map<String, Object> row) {
     if (!access(row, "删除")) return false;
     if (!text(row, "kind").equals("daily")) return true;
