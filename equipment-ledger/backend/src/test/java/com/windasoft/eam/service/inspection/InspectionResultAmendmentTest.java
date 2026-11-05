@@ -9,6 +9,7 @@ import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
+import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
 import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.experience.MaterialCustodyService;
 import com.windasoft.eam.service.inventory.InventoryMutex;
@@ -23,6 +24,7 @@ class InspectionResultAmendmentTest {
   final ObjectMapper json = new ObjectMapper();
   final AuthContext auth = mock(AuthContext.class);
   final InspectionRepository repository = mock(InspectionRepository.class);
+  final EquipmentHistoryRepository equipmentHistory = mock(EquipmentHistoryRepository.class);
   final DailyArrangementRepository dailyStorage = mock(DailyArrangementRepository.class);
   final InspectionTaskAccessService access = mock(InspectionTaskAccessService.class);
   final InspectionTaskJournal journal = mock(InspectionTaskJournal.class);
@@ -53,7 +55,7 @@ class InspectionResultAmendmentTest {
     when(repository.loadTask(1L, 7L, true)).thenReturn(List.of(row));
     when(access.access(row, "查看")).thenReturn(true);
     when(access.canAmendResult(row)).thenReturn(true);
-    service = new InspectionTaskService(repository, dailyStorage, json, auth, access,
+    service = new InspectionTaskService(repository, equipmentHistory, dailyStorage, json, auth, access,
         mock(InspectionViewAssembler.class), mock(InspectionValidationService.class), journal,
         custom, mutex, publisher, custody) {
       @Override public Map<String, Object> task(long id) { return Map.of("id", id); }
@@ -80,7 +82,7 @@ class InspectionResultAmendmentTest {
       assertEquals("2026-10-23T08:00:00", result.get("startedAt").asText());
       assertEquals("accept", result.at("/review/decision").asText());
       assertEquals("30", result.at("/review/reviewerId").asText());
-      verify(repository).updateEquipmentHistoryResult(1L, 1L, "DJ7", "12");
+      verify(equipmentHistory).updateInspectionResult(1L, 1L, "DJ7", "12");
       var audit = ArgumentCaptor.forClass(Object.class);
       verify(journal).event(eq(1L), eq(7L), eq("修改检查结果"), eq(20L), eq("修订人"), audit.capture());
       assertTrue(((Map<?, ?>) audit.getValue()).containsKey("修改前"));
