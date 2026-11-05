@@ -370,13 +370,14 @@ public class InspectionRepository {
   public List<Map<String, Object>> lockOpenPlanTasks(long tenantId, Object planId) {
     return lockedTaskRows(
         "SELECT * FROM v_inspection_task WHERE tenant_id=? AND plan_id=? AND deleted=0 AND"
-            + " status NOT IN (?,?,?,?) ORDER BY id FOR UPDATE",
+            + " status NOT IN (?,?,?,?,?) ORDER BY id FOR UPDATE",
         tenantId,
         planId,
         InspectionTaskStatus.COMPLETED.code(),
         InspectionTaskStatus.REVIEWED.code(),
         InspectionTaskStatus.CANCELLED.code(),
-        InspectionTaskStatus.EXPIRED_CANCELLED.code());
+        InspectionTaskStatus.EXPIRED_CANCELLED.code(),
+        InspectionTaskStatus.EXEMPT.code());
   }
 
   public int activateTask(long tenantId, long id) {

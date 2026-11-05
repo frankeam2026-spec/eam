@@ -1286,8 +1286,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                         type="primary"
                         link
                         >{{
-                          (r as InspectionTask).canReview &&
-                          (r as InspectionTask).status === '待审核'
+                          (r as InspectionTask).canReview
                             ? tr('ui.equipment.text0294')
                             : (r as InspectionTask).canExecute &&
                                 [

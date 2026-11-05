@@ -2,8 +2,9 @@ package com.windasoft.eam.service.inspection;
 
 import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.windasoft.eam.domain.inspection.InspectionTaskAction;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.system.*;
@@ -83,22 +84,21 @@ public class InspectionViewAssembler {
         row.get("result") == null ? new LinkedHashMap<String, Object>() : decode(row.get("result"));
     v.put("result", result);
     v.put("canExempt", access.canExempt(row, result));
-    boolean expiredStart =
-        text(row, "kind").equals("daily")
-            && row.get("arrangement_id") != null
-            && Set.of(
-                InspectionTaskStatus.NOT_STARTED.code(),
-                InspectionTaskStatus.PENDING.code(),
-                InspectionTaskStatus.EXPIRED.code(),
-                InspectionTaskStatus.REVIEW_REJECTED.code())
-            .contains(text(row, "status"))
-            && now().isAfter(dateTime(row.get("expires_at")))
-            && !yes(v.get("allowLate"));
-    v.put("canExecute", access.execute(row) && !expiredStart);
-    v.put("canReview", access.review(row));
+    v.put("canExecute", access.execute(row));
+    v.put("canStart", access.canStart(row, v, now()));
+    v.put(
+        "canReview",
+        InspectionTaskStatus.allows(InspectionTaskAction.REVIEW, text(row, "status"))
+            && access.review(row));
     v.put("canAmendResult", access.canAmendResult(row));
-    v.put("canTransfer", access.access(row, "转派"));
-    v.put("canVoid", access.access(row, "删除"));
+    v.put(
+        "canTransfer",
+        InspectionTaskStatus.allows(InspectionTaskAction.TRANSFER, text(row, "status"))
+            && access.access(row, "转派"));
+    v.put(
+        "canVoid",
+        InspectionTaskStatus.allows(InspectionTaskAction.VOID, text(row, "status"))
+            && access.access(row, "删除"));
     v.put("canDelete", access.canDelete(row));
     var items = rows(v.get("items"));
     var answers = rows(result.get("items"));

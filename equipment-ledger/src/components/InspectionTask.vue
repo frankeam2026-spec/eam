@@ -313,17 +313,11 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           tr('ui.equipment.text0422')
         }}</ElButton
         ><ElButton
-          v-if="
-            task.canTransfer &&
-            ['未开始', '待执行', '执行中', '挂起', '已过期', '审核不通过'].includes(task.status)
-          "
+          v-if="task.canTransfer"
           @click="openDialog('transfer')"
           >{{ tr('ui.equipment.text0423') }}</ElButton
         ><ElButton
-          v-if="
-            task.canVoid &&
-            !['已完成', '已审核', '已作废', '过期作废', '已免检'].includes(task.status)
-          "
+          v-if="task.canVoid"
           @click="openDialog('void')"
           >{{ tr('ui.equipment.text0215') }}</ElButton
         ><ElButton v-if="task.canExempt" @click="openDialog('exempt')">{{
@@ -532,9 +526,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           editing ? tr('ui.equipment.text0157') : tr('ui.equipment.text0208')
         }}</ElButton
         ><ElButton
-          v-if="
-            task.canExecute && ['未开始', '待执行', '已过期', '审核不通过'].includes(task.status)
-          "
+          v-if="task.canStart"
           type="primary"
           :loading="busy"
           @click="action('start')"
@@ -557,7 +549,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           tr('ui.equipment.text0253')
         }}</ElButton
         ><ElButton
-          v-if="task.canReview && task.status === '待审核'"
+          v-if="task.canReview"
           type="primary"
           @click="reviewOpen = true"
           >{{ tr('ui.equipment.text0294') }}</ElButton
