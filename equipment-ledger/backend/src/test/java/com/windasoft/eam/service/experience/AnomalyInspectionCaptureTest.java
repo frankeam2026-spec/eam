@@ -53,13 +53,10 @@ class AnomalyInspectionCaptureTest {
             // Older result snapshots may only contain the equipment-level skip list.
             Map.<String, Object>of(
                 "id", "502/temperature", "value", "99", "abnormal", true));
-    when(inspectionTasks.task(88001L))
-        .thenReturn(
-            Map.of(
-                "items",
-                items,
-                "result",
-                Map.of("items", answers, "skippedEquipmentIds", List.of("502"))));
+    var taskView = new java.util.LinkedHashMap<String, Object>();
+    taskView.put("items", items);
+    taskView.put("result", Map.of("items", answers, "skippedEquipmentIds", List.of("502")));
+    when(inspectionTasks.task(88001L)).thenReturn(taskView);
 
     var service =
         new AnomalyService(
