@@ -5,6 +5,7 @@ import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.service.inspection.InspectionTaskService;
+import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
 import com.windasoft.eam.service.system.AuthContext;
@@ -24,6 +25,7 @@ public class WorkCenterService {
   final RepairWorkflowService workflow;
   final MaintenanceService maintenance;
   final InspectionTaskService inspectionTasks;
+  final InspectionListService inspectionLists;
   final WorkInboxService inbox;
   final MaterialCustodyService custody;
   final AnomalyService anomalies;
@@ -36,6 +38,7 @@ public class WorkCenterService {
       RepairWorkflowService workflow,
       MaintenanceService maintenance,
       InspectionTaskService inspectionTasks,
+      InspectionListService inspectionLists,
       WorkInboxService inbox,
       MaterialCustodyService custody,
       AnomalyService anomalies) {
@@ -46,6 +49,7 @@ public class WorkCenterService {
     this.workflow = workflow;
     this.maintenance = maintenance;
     this.inspectionTasks = inspectionTasks;
+    this.inspectionLists = inspectionLists;
     this.inbox = inbox;
     this.custody = custody;
     this.anomalies = anomalies;
@@ -119,7 +123,7 @@ public class WorkCenterService {
       out.add(v);
     }
     append(out, maintenance.tasks(), "maintenance", team);
-    append(out, inspection.tasks(), "inspection", team);
+    append(out, inspectionLists.tasks(), "inspection", team);
     return out;
   }
 
