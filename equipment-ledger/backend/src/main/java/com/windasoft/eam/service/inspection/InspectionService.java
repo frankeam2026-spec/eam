@@ -744,10 +744,6 @@ public class InspectionService {
     return generation.generate(tenant, planId);
   }
 
-  @Transactional
-
-  @Transactional
-
   public List<Map<String, Object>> generationTargets() {
     return repository.generationTargets();
   }
