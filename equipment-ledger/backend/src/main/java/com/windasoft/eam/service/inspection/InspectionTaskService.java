@@ -86,6 +86,13 @@ public class InspectionTaskService {
     return taskAccess.review(row);
   }
 
+  static String transferredStatus(
+      LocalDateTime now, LocalDateTime dueAt, LocalDateTime expiresAt) {
+    if (now.isBefore(dueAt)) return InspectionTaskStatus.NOT_STARTED.code();
+    if (now.isAfter(expiresAt)) return InspectionTaskStatus.EXPIRED.code();
+    return InspectionTaskStatus.PENDING.code();
+  }
+
   Map<String, Object> taskView(Map<String, Object> row) {
     return views.task(row);
   }
@@ -445,7 +452,9 @@ public class InspectionTaskService {
         snap.put("owners", strings(body.get("owners")));
         snap.put("personMode", "指定负责人");
         owner = null;
-        next = now().isBefore(dateTime(row.get("due_at"))) ? InspectionTaskStatus.NOT_STARTED.code() : InspectionTaskStatus.PENDING.code();
+        next =
+            transferredStatus(
+                now(), dateTime(row.get("due_at")), dateTime(row.get("expires_at")));
         journal.closeTodos(tenant, id);
         journal.notify(
             tenant,
