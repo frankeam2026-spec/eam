@@ -270,7 +270,7 @@ class InspectionGenerationServiceTest {
   void resolvesNotificationPolicyOnceForAllTasksInOnePlanMaintenanceRun() {
     var plan = new HashMap<String, Object>();
     plan.put("kind", "periodic-plans");
-    plan.put("payload", "{\\"enabled\\":false}");
+    plan.put("payload", "{\"enabled\":false}");
     when(repository.lockPlan(TENANT, PLAN_ID)).thenReturn(List.of(plan));
 
     var now = now();
@@ -288,7 +288,7 @@ class InspectionGenerationServiceTest {
     task.put("id", id);
     task.put("kind", "periodic");
     task.put("status", InspectionTaskStatus.PENDING.code());
-    task.put("snapshot", "{\\"allowLate\\":false,\\"owners\\":[]}");
+    task.put("snapshot", "{\"allowLate\":false,\"owners\":[]}");
     task.put("due_at", now.minusMinutes(5).toString());
     task.put("expires_at", now.plusHours(1).toString());
     return task;
