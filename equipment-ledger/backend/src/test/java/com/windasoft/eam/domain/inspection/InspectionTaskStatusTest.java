@@ -3,7 +3,6 @@ package com.windasoft.eam.domain.inspection;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-import java.util.EnumSet;
 import java.util.Set;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
