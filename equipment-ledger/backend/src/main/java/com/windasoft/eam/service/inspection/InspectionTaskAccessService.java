@@ -72,8 +72,7 @@ public class InspectionTaskAccessService {
   public boolean canAmendResult(Map<String, Object> row) {
     return number(row.get("tenant_id")) == auth.tenantId()
         && text(row, "kind").equals("daily")
-        && Set.of(InspectionTaskStatus.COMPLETED.code(), InspectionTaskStatus.REVIEWED.code())
-            .contains(text(row, "status"))
+        && InspectionTaskStatus.canAmendResult(text(row, "status"))
         && access(row, "修改结果");
   }
 
@@ -82,11 +81,7 @@ public class InspectionTaskAccessService {
   }
 
   boolean unexecutedDailyTask(Map<String, Object> row, Map<String, Object> result) {
-    if (!Set.of(
-            InspectionTaskStatus.NOT_STARTED.code(),
-            InspectionTaskStatus.PENDING.code(),
-            InspectionTaskStatus.EXPIRED.code())
-        .contains(text(row, "status"))) return false;
+    if (!InspectionTaskStatus.isUnexecutedDailyCandidate(text(row, "status"))) return false;
     return text(result, "startedAt").isBlank()
         && text(result, "finishedAt").isBlank()
         && text(result, "submittedAt").isBlank()
