@@ -5,14 +5,18 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 import com.windasoft.eam.repository.experience.HomeRepository;
+import com.windasoft.eam.repository.inspection.InspectionDefinitionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.service.experience.HomeService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
+import com.windasoft.eam.service.inspection.InspectionService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.util.Base64;
@@ -66,8 +70,10 @@ class InspectionQualityMySqlIT {
   @MockitoBean com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler knowledgeScheduler;
   @MockitoSpyBean HomeRepository homeRepository;
   @MockitoSpyBean MaintenanceRepository maintenanceRepository;
+  @MockitoSpyBean InspectionDefinitionStorage inspectionDefinitionStorage;
   @Autowired HomeService home;
   @Autowired MaintenanceService maintenance;
+  @Autowired InspectionService inspection;
   @Autowired JdbcTemplate db;
 
   @BeforeEach
@@ -80,6 +86,10 @@ class InspectionQualityMySqlIT {
   @AfterEach
   void cleanup() {
     // 测试没有外围事务，以便真实验证业务入口提交和回滚；只清理本用例专属租户。
+    db.update(
+        "DELETE FROM eam_inspection_type WHERE tenant_id=? AND code=?",
+        TENANT,
+        "IT-QA-ROLLBACK");
     for (String table :
         List.of(
             "eam_home_template_version_role",
@@ -118,6 +128,48 @@ class InspectionQualityMySqlIT {
     assertTrue(templates > 0);
     assertEquals(first.size(), home.templates().size());
     assertEquals(templates, count("eam_home_template"));
+  }
+
+  @Test
+  void inspectionDefinitionSaveRollsBackWhenLaterWorkFails() {
+    doAnswer(
+            call -> {
+              assertTrue(TransactionSynchronizationManager.isActualTransactionActive());
+              call.callRealMethod();
+              throw new IllegalStateException("模拟定义保存后的步骤失败");
+            })
+        .when(inspectionDefinitionStorage)
+        .insert(
+            anyLong(),
+            eq(TENANT),
+            eq("types"),
+            any(),
+            any(),
+            any(),
+            anyLong(),
+            anyString());
+
+    assertThrows(
+        IllegalStateException.class,
+        () ->
+            inspection.save(
+                "types",
+                null,
+                java.util.Map.of(
+                    "name", "事务回滚测试类型",
+                    "code", "IT-QA-ROLLBACK",
+                    "sortOrder", 1,
+                    "period", 1,
+                    "unit", "日",
+                    "enabled", true)));
+
+    assertEquals(
+        0L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM eam_inspection_type WHERE tenant_id=? AND code=?",
+            Long.class,
+            TENANT,
+            "IT-QA-ROLLBACK"));
   }
 
   @Test
