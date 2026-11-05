@@ -397,9 +397,6 @@ public class InspectionRepository {
         id);
   }
 
-
-
-
   public int updateTask(
       Object next,
       Object owner,
