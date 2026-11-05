@@ -37,7 +37,6 @@ public class InspectionService {
 
   private final InspectionGenerationService generation;
 
-
   private final InspectionValidationService validation;
 
   private final InspectionNumbers numbers;
@@ -65,7 +64,6 @@ public class InspectionService {
       NotificationPolicyService reminderPolicies,
       DefinitionNumberService definitionNumbers,
       DailyArrangementService dailyArrangements,
-      DailyArrangementRepository dailyStorage,
       DailyArrangementRepository dailyStorage) {
     this.custom = custom;
     this.views = views;
