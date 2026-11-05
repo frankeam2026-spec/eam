@@ -212,7 +212,8 @@ public class InspectionTaskService {
               .filter(r -> text(r, "id").startsWith(text(eq, "id") + "/"))
               .map(r -> text(r, "value"))
               .collect(java.util.stream.Collectors.joining("、"));
-      if (!equipmentHistory.hasInspectionRecord(tenant, number(eq.get("id")), text(task, "code")))
+      if (!equipmentHistory.hasInspectionRecord(
+          tenant, number(eq.get("id")), text(task, "code")))
         equipmentHistory.insertInspection(
             IdWorker.getId(),
             tenant,
@@ -343,7 +344,8 @@ public class InspectionTaskService {
               .filter(r -> text(r, "id").startsWith(text(eq, "id") + "/"))
               .map(r -> text(r, "value"))
               .collect(java.util.stream.Collectors.joining("、"));
-          equipmentHistory.updateInspectionResult(tenant, number(eq.get("id")), text(row, "code"), summary);
+          equipmentHistory.updateInspectionResult(
+              tenant, number(eq.get("id")), text(row, "code"), summary);
         }
         label = "修改检查结果";
       }
