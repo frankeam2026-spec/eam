@@ -5,6 +5,7 @@ import com.windasoft.eam.service.inspection.DailyArrangementService;
 import com.windasoft.eam.service.inspection.InspectionCsvService;
 import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.inspection.InspectionTaskService;
 import java.util.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,18 +17,21 @@ public class InspectionController {
   private final InspectionCsvService csv;
   private final DailyArrangementService arrangements;
   private final InspectionService service;
+  private final InspectionTaskService taskCommands;
 
   public InspectionController(
       BusinessQueryService customQuery,
       InspectionListService lists,
       InspectionCsvService csv,
       DailyArrangementService arrangements,
-      InspectionService service) {
+      InspectionService service,
+      InspectionTaskService taskCommands) {
     this.customQuery = customQuery;
     this.lists = lists;
     this.csv = csv;
     this.arrangements = arrangements;
     this.service = service;
+    this.taskCommands = taskCommands;
   }
 
   @GetMapping("/daily-device-options")
@@ -131,18 +135,18 @@ public class InspectionController {
 
   @GetMapping("/tasks/{id}")
   public Object task(@PathVariable long id) {
-    return Map.of("data", service.task(id));
+    return Map.of("data", taskCommands.task(id));
   }
 
   @PostMapping("/tasks/{id}/{action}")
   public Object action(
       @PathVariable long id, @PathVariable String action, @RequestBody Map<String, Object> body) {
-    return Map.of("data", service.action(id, action, body));
+    return Map.of("data", taskCommands.action(id, action, body));
   }
 
   @PostMapping("/batch-review")
   public Object review(@RequestBody List<Map<String, Object>> body) {
-    service.batchReview(body);
+    taskCommands.batchReview(body);
     return Map.of("success", true);
   }
 
