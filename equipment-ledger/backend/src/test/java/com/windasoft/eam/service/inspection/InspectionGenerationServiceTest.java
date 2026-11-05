@@ -202,7 +202,10 @@ class InspectionGenerationServiceTest {
             eq(InspectionTaskStatus.EXPIRED.code()),
             isNull(),
             eq("系统"),
-            eq(Map.of("原状态", InspectionTaskStatus.PENDING.code(), "新状态", InspectionTaskStatus.EXPIRED.code())));
+            eq(
+                Map.of(
+                    "原状态", InspectionTaskStatus.PENDING.code(),
+                    "新状态", InspectionTaskStatus.EXPIRED.code())));
     verify(journal, never())
         .notify(
             eq(TENANT), eq(TASK_ID), anyList(), eq("点巡检待执行"), anyString(), eq(true), eq(false));
@@ -238,7 +241,7 @@ class InspectionGenerationServiceTest {
   private void stubDisabledDailyPlan() {
     var plan = new HashMap<String, Object>();
     plan.put("kind", "daily-plans");
-    plan.put("payload", "{\\"enabled\\":false}");
+    plan.put("payload", "{\"enabled\":false}");
     when(repository.lockPlan(TENANT, PLAN_ID)).thenReturn(List.of(plan));
     when(dailyStorage.load(TENANT, PLAN_ID)).thenReturn(List.of());
     when(dailyStorage.workdays(TENANT, PLAN_ID)).thenReturn(List.of());
@@ -255,9 +258,9 @@ class InspectionGenerationServiceTest {
     task.put("status", InspectionTaskStatus.PENDING.code());
     task.put(
         "snapshot",
-        "{\\"allowLate\\":" + allowLate
-            + ",\\"owners\\":[\\"10\\"],"
-            + "\\"expireRemindHours\\":2,\\"expireRemindUnit\\":\\"时\\"}");
+        "{\"allowLate\":" + allowLate
+            + ",\"owners\":[\"10\"],"
+            + "\"expireRemindHours\":2,\"expireRemindUnit\":\"时\"}");
     task.put("due_at", now.minusHours(3).toString());
     task.put("expires_at", now.minusMinutes(1).toString());
     return task;
