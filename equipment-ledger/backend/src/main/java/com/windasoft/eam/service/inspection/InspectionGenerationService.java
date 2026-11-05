@@ -530,7 +530,11 @@ public class InspectionGenerationService {
   }
 
   void maintainTasks(long tenant, long planId) {
-    for (var task : repository.lockOpenPlanTasks(tenant, planId)) {
+    var tasks = repository.lockOpenPlanTasks(tenant, planId);
+    if (tasks.isEmpty()) return;
+    String kind = text(tasks.getFirst(), "kind");
+    boolean newReminders = notificationPolicies.replacesLegacy(tenant, kind, planId);
+    for (var task : tasks) {
       long id = number(task.get("id"));
       var snap = decode(task.get("snapshot"));
       String state = text(task, "status");
@@ -562,7 +566,6 @@ public class InspectionGenerationService {
           journal.closeTodos(tenant, id);
         state = next;
       }
-      boolean newReminders=notificationPolicies.replacesLegacy(tenant,text(task,"kind"),planId);
       if (!newReminders && text(task, "kind").equals("daily")
           && task.get("follow_up_user_id") != null
           && now().isAfter(expires)
