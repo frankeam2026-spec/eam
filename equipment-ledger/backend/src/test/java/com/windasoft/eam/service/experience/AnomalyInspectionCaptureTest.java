@@ -53,7 +53,7 @@ class AnomalyInspectionCaptureTest {
             // Older result snapshots may only contain the equipment-level skip list.
             Map.<String, Object>of(
                 "id", "502/temperature", "value", "99", "abnormal", true));
-    when(inspectionTasks.task(88001L)
+    when(inspectionTasks.task(88001L))
         .thenReturn(
             Map.of(
                 "items",
