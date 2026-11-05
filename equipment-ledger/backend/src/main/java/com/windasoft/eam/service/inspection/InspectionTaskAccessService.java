@@ -67,7 +67,6 @@ public class InspectionTaskAccessService {
   public boolean canExempt(Map<String, Object> row, Map<String, Object> result) {
     return text(row, "kind").equals("daily")
         && access(row, "免检")
-        && InspectionTaskStatus.allows(InspectionTaskAction.EXEMPT, text(row, "status"))
         && unexecutedDailyTask(row, result);
   }
 
@@ -83,7 +82,7 @@ public class InspectionTaskAccessService {
   }
 
   boolean unexecutedDailyTask(Map<String, Object> row, Map<String, Object> result) {
-    if (!InspectionTaskStatus.isUnexecutedDailyCandidate(text(row, "status"))) return false;
+    if (!InspectionTaskStatus.allows(InspectionTaskAction.EXEMPT, text(row, "status"))) return false;
     return text(result, "startedAt").isBlank()
         && text(result, "finishedAt").isBlank()
         && text(result, "submittedAt").isBlank()
