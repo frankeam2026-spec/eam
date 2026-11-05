@@ -82,7 +82,7 @@ class InspectionResultAmendmentTest {
 
   @Test void preservesTerminalStatusOperatorTimingAndReviewWithoutResubmission() throws Exception {
     for (String status : List.of("已完成", "已审核")) {
-      clearInvocations(repository, journal);
+      clearInvocations(repository, journal, equipmentHistory);
       row.put("status", status);
       service.action(7L, "amend-result", body());
       var saved = ArgumentCaptor.forClass(String.class);
