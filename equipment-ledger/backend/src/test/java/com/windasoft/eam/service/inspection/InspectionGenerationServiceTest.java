@@ -30,6 +30,7 @@ class InspectionGenerationServiceTest {
   private final InspectionViewAssembler views = mock(InspectionViewAssembler.class);
   private final InspectionTaskJournal journal = mock(InspectionTaskJournal.class);
   private final NotificationRepository notificationPolicies = mock(NotificationRepository.class);
+  private final DailyArrangementRepository dailyStorage = mock(DailyArrangementRepository.class);
   private final InspectionGenerationService service =
       new InspectionGenerationService(
           repository,
@@ -41,7 +42,7 @@ class InspectionGenerationServiceTest {
           numbers,
           notificationPolicies,
           mock(DailyArrangementService.class),
-          mock(DailyArrangementRepository.class));
+          dailyStorage);
 
   @Test
   void reusesEquipmentAndProjectLookupsAcrossCyclesInOneGenerationRun() {
@@ -182,5 +183,86 @@ class InspectionGenerationServiceTest {
     verify(repository)
         .changeTaskStatus(InspectionTaskStatus.EXPIRED_CANCELLED.code(), TENANT, TASK_ID);
     verify(journal).closeTodos(TENANT, TASK_ID);
+  }
+ 
+  @Test
+  void expiredDailyTaskWithoutLateExecutionClosesTodoAndSkipsExecutionReminders() {
+    stubDisabledDailyPlan();
+    var task = expiredDailyTask(false);
+    when(repository.lockOpenPlanTasks(TENANT, PLAN_ID)).thenReturn(List.of(task));
+
+    assertEquals(0, service.generate(TENANT, PLAN_ID));
+
+    verify(repository).changeTaskStatus(InspectionTaskStatus.EXPIRED.code(), TENANT, TASK_ID);
+    verify(journal).closeTodos(TENANT, TASK_ID);
+    verify(journal)
+        .event(
+            eq(TENANT),
+            eq(TASK_ID),
+            eq(InspectionTaskStatus.EXPIRED.code()),
+            isNull(),
+            eq("系统"),
+            eq(
+                Map.of(
+                    "原状态", InspectionTaskStatus.PENDING.code(),
+                    "新状态", InspectionTaskStatus.EXPIRED.code())));
+    verify(journal, never())
+        .notify(
+            eq(TENANT), eq(TASK_ID), anyList(), eq("点巡检待执行"), anyString(), eq(true), eq(false));
+    verify(journal, never())
+        .notify(
+            eq(TENANT), eq(TASK_ID), anyList(), eq("点巡检即将过期"), anyString(), eq(false), eq(true));
+  }
+
+  @Test
+  void expiredDailyTaskWithLateExecutionKeepsTodoButDoesNotSendExpiryWarning() {
+    stubDisabledDailyPlan();
+    var task = expiredDailyTask(true);
+    when(repository.lockOpenPlanTasks(TENANT, PLAN_ID)).thenReturn(List.of(task));
+
+    assertEquals(0, service.generate(TENANT, PLAN_ID));
+
+    verify(repository).changeTaskStatus(InspectionTaskStatus.EXPIRED.code(), TENANT, TASK_ID);
+    verify(journal, never()).closeTodos(TENANT, TASK_ID);
+    verify(journal)
+        .notify(
+            eq(TENANT),
+            eq(TASK_ID),
+            eq(List.of(10L)),
+            eq("点巡检待执行"),
+            anyString(),
+            eq(true),
+            eq(false));
+    verify(journal, never())
+        .notify(
+            eq(TENANT), eq(TASK_ID), anyList(), eq("点巡检即将过期"), anyString(), eq(false), eq(true));
+  }
+
+  private void stubDisabledDailyPlan() {
+    var plan = new HashMap<String, Object>();
+    plan.put("kind", "daily-plans");
+    plan.put("payload", "{\"enabled\":false}");
+    when(repository.lockPlan(TENANT, PLAN_ID)).thenReturn(List.of(plan));
+    when(dailyStorage.load(TENANT, PLAN_ID)).thenReturn(List.of());
+    when(dailyStorage.workdays(TENANT, PLAN_ID)).thenReturn(List.of());
+    when(dailyStorage.exemptions(TENANT, PLAN_ID)).thenReturn(List.of());
+    when(dailyStorage.activePeople(TENANT)).thenReturn(List.of());
+  }
+
+  private Map<String, Object> expiredDailyTask(boolean allowLate) {
+    var now = now();
+    var task = new HashMap<String, Object>();
+    task.put("id", TASK_ID);
+    task.put("kind", "daily");
+    task.put("arrangement_id", 123L);
+    task.put("status", InspectionTaskStatus.PENDING.code());
+    task.put(
+        "snapshot",
+        "{\"allowLate\":" + allowLate
+            + ",\"owners\":[\"10\"],"
+            + "\"expireRemindHours\":2,\"expireRemindUnit\":\"时\"}");
+    task.put("due_at", now.minusHours(3).toString());
+    task.put("expires_at", now.minusMinutes(1).toString());
+    return task;
   }
 }

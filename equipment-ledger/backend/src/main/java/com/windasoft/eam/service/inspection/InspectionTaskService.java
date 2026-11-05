@@ -543,6 +543,10 @@ public class InspectionTaskService {
     if (operation == InspectionTaskAction.SCAN) details.put("设备编号", text(body, "equipmentCode"));
     if (operation == InspectionTaskAction.TRANSFER)
       details.put("负责人", ids(body.get("owners")).stream().map(u -> userName(tenant, u)).toList());
+    if (!state.equals(next)) {
+      details.put("原状态", state);
+      details.put("新状态", next);
+    }
     journal.event(tenant, id, label, user, auth.user().getDisplayName(), details);
     if (operation == InspectionTaskAction.SUBMIT)
       experiencePublisher.publishEvent(
