@@ -63,6 +63,12 @@ public class InspectionTaskAccessService {
     return unexecutedDailyTask(row);
   }
 
+  public boolean canExempt(Map<String, Object> row, Map<String, Object> result) {
+    return text(row, "kind").equals("daily")
+        && access(row, "免检")
+        && unexecutedDailyTask(row, result);
+  }
+
   public boolean canAmendResult(Map<String, Object> row) {
     return number(row.get("tenant_id")) == auth.tenantId()
         && text(row, "kind").equals("daily")
@@ -72,12 +78,15 @@ public class InspectionTaskAccessService {
   }
 
   boolean unexecutedDailyTask(Map<String, Object> row) {
+    return unexecutedDailyTask(row, decode(row.get("result")));
+  }
+
+  boolean unexecutedDailyTask(Map<String, Object> row, Map<String, Object> result) {
     if (!Set.of(
             InspectionTaskStatus.NOT_STARTED.code(),
             InspectionTaskStatus.PENDING.code(),
             InspectionTaskStatus.EXPIRED.code())
         .contains(text(row, "status"))) return false;
-    var result = decode(row.get("result"));
     return text(result, "startedAt").isBlank()
         && text(result, "finishedAt").isBlank()
         && text(result, "submittedAt").isBlank()
