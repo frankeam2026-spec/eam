@@ -252,15 +252,10 @@ public class InspectionRepository {
         "SELECT * FROM v_inspection_task WHERE tenant_id=? AND id=? AND deleted=0", tenantId, id);
   }
 
-
   public List<Map<String, Object>> findUserName(long tenantId, long id) {
     return db.queryForList(
         "SELECT display_name FROM eam_sys_user WHERE tenant_id=? AND id=?", tenantId, id);
   }
-
-
-
-
 
   public List<Map<String, Object>> listActiveUsers(long tenantId) {
     return db.queryForList(
