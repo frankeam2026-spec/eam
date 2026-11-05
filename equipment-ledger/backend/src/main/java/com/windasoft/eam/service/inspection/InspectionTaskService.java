@@ -250,7 +250,7 @@ public class InspectionTaskService {
     switch (operation) {
       case START -> {
         require(
-            InspectionTaskStatus.canStart(state),
+            InspectionTaskStatus.allows(operation, state),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0026"));
         require(
             !now().isBefore(dateTime(row.get("due_at"))),
@@ -268,7 +268,7 @@ public class InspectionTaskService {
       }
       case SCAN -> {
         require(
-            state.equals(InspectionTaskStatus.IN_PROGRESS.code()) && Objects.equals(owner, user),
+            InspectionTaskStatus.allows(operation, state) && Objects.equals(owner, user),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0029"));
         var eq =
             rows(snap.get("equipment")).stream()
@@ -285,7 +285,7 @@ public class InspectionTaskService {
       }
       case DRAFT, SUBMIT -> {
         require(
-            state.equals(InspectionTaskStatus.IN_PROGRESS.code()) && Objects.equals(owner, user),
+            InspectionTaskStatus.allows(operation, state) && Objects.equals(owner, user),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0030"));
         boolean complete = operation == InspectionTaskAction.SUBMIT;
         var values = checkedResults(tenant, snap, body, complete);
@@ -351,7 +351,7 @@ public class InspectionTaskService {
       }
       case REVIEW -> {
         require(
-            state.equals(InspectionTaskStatus.PENDING_REVIEW.code()),
+            InspectionTaskStatus.allows(operation, state),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0032"));
         if (!review(row)) deny();
         var decision = AcceptanceDecision.parse(body.get("decision"));
@@ -428,7 +428,7 @@ public class InspectionTaskService {
       }
       case SUSPEND -> {
         require(
-            state.equals(InspectionTaskStatus.IN_PROGRESS.code()) && Objects.equals(owner, user),
+            InspectionTaskStatus.allows(operation, state) && Objects.equals(owner, user),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0035"));
         require(
             !text(body, "description").isBlank(),
@@ -439,7 +439,7 @@ public class InspectionTaskService {
       }
       case RESUME -> {
         require(
-            state.equals(InspectionTaskStatus.SUSPENDED.code()) && Objects.equals(owner, user),
+            InspectionTaskStatus.allows(operation, state) && Objects.equals(owner, user),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0037"));
         next = InspectionTaskStatus.IN_PROGRESS.code();
         journal.notify(
@@ -449,7 +449,7 @@ public class InspectionTaskService {
       case TRANSFER -> {
         if (!access(row, "转派")) deny();
         require(
-            InspectionTaskStatus.canTransfer(state),
+            InspectionTaskStatus.allows(operation, state),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0038"));
         require(
             !text(row, "kind").equals("daily") || !text(body, "description").isBlank(),
@@ -491,7 +491,7 @@ public class InspectionTaskService {
           require(taskAccess.canDelete(row),
               com.windasoft.eam.common.MessageContext.text("daily.error.deleteState"));
         require(
-            !InspectionTaskStatus.isTerminal(state) || operation == InspectionTaskAction.DELETE,
+            InspectionTaskStatus.allows(operation, state),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0039"));
         require(
             !text(body, "description").isBlank() && text(body, "description").length() <= 1000,
