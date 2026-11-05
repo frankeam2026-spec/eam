@@ -37,9 +37,18 @@ public class InspectionFileService {
     com.windasoft.eam.common.inspection.InspectionSupport.require(
         ext.matches("\\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv)"), "不支持该附件格式");
     String id = UUID.randomUUID().toString();
-    repository.store(id, ext, file.content());
     String type = Objects.toString(file.contentType(), "application/octet-stream");
-    repository.insert(id, auth.tenantId(), auth.userId(), name, ext, type, file.size());
+    try {
+      repository.store(id, ext, file.content());
+      repository.insert(id, auth.tenantId(), auth.userId(), name, ext, type, file.size());
+    } catch (Exception failure) {
+      try {
+        repository.delete(id, ext);
+      } catch (Exception cleanupFailure) {
+        failure.addSuppressed(cleanupFailure);
+      }
+      throw failure;
+    }
     return Map.of(
         "data",
         Map.of(
