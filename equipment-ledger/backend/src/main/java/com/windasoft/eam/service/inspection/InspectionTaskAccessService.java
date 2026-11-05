@@ -4,6 +4,7 @@ import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
+import com.windasoft.eam.domain.inspection.InspectionTaskAction;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.service.system.*;
 import java.time.*;
@@ -66,13 +67,14 @@ public class InspectionTaskAccessService {
   public boolean canExempt(Map<String, Object> row, Map<String, Object> result) {
     return text(row, "kind").equals("daily")
         && access(row, "免检")
+        && InspectionTaskStatus.allows(InspectionTaskAction.EXEMPT, text(row, "status"))
         && unexecutedDailyTask(row, result);
   }
 
   public boolean canAmendResult(Map<String, Object> row) {
     return number(row.get("tenant_id")) == auth.tenantId()
         && text(row, "kind").equals("daily")
-        && InspectionTaskStatus.canAmendResult(text(row, "status"))
+        && InspectionTaskStatus.allows(InspectionTaskAction.AMEND_RESULT, text(row, "status"))
         && access(row, "修改结果");
   }
 
