@@ -460,7 +460,7 @@ public class InspectionTaskService {
       case EXEMPT -> {
         if (!text(row, "kind").equals("daily") || !access(row, "免检")) deny();
         require(
-            Set.of(InspectionTaskStatus.NOT_STARTED.code(), InspectionTaskStatus.PENDING.code(), InspectionTaskStatus.EXPIRED.code()).contains(state) && text(result, "startedAt").isBlank(),
+            taskAccess.unexecutedDailyTask(row, result),
             com.windasoft.eam.common.MessageContext.text("daily.error.exemptState"));
         require(
             !text(body, "description").isBlank() && text(body, "description").length() <= 1000,
