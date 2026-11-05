@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -39,7 +40,7 @@ class DailyInspectionPlanServiceTest {
     var plan = Map.<String, Object>of("row_version", 4L);
     when(projects.raw("daily-plans", 7L, 99L, true)).thenReturn(plan);
     when(projects.scoped(plan, "编辑")).thenReturn(true);
-    when(generation.manualEvent(7L, plan, org.mockito.ArgumentMatchers.anyMap()))
+    when(generation.manualEvent(eq(7L), eq(plan), anyMap()))
         .thenReturn(Map.of("created", 1));
     var body = new LinkedHashMap<String, Object>(Map.of("rowVersion", 4L));
 
