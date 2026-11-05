@@ -28,12 +28,13 @@ class DailyInspectionPlanServiceTest {
     var auth = mock(AuthContext.class);
     var permissions = mock(PermissionService.class);
     var projects = mock(InspectionProjectService.class);
+    var validation = mock(InspectionValidationService.class);
     var arrangements = mock(DailyArrangementService.class);
     var storage = mock(DailyArrangementRepository.class);
     var generation = mock(InspectionGenerationService.class);
     var service =
         new DailyInspectionPlanService(
-            auth, permissions, projects, arrangements, storage, generation, new ObjectMapper());
+            auth, permissions, projects, validation, arrangements, storage, generation, new ObjectMapper());
 
     when(auth.tenantId()).thenReturn(7L);
     when(auth.userId()).thenReturn(13L);
@@ -55,12 +56,13 @@ class DailyInspectionPlanServiceTest {
     var auth = mock(AuthContext.class);
     var permissions = mock(PermissionService.class);
     var projects = mock(InspectionProjectService.class);
+    var validation = mock(InspectionValidationService.class);
     var arrangements = mock(DailyArrangementService.class);
     var storage = mock(DailyArrangementRepository.class);
     var generation = mock(InspectionGenerationService.class);
     var service =
         new DailyInspectionPlanService(
-            auth, permissions, projects, arrangements, storage, generation, new ObjectMapper());
+            auth, permissions, projects, validation, arrangements, storage, generation, new ObjectMapper());
 
     when(auth.tenantId()).thenReturn(7L);
     when(auth.userId()).thenReturn(13L);
