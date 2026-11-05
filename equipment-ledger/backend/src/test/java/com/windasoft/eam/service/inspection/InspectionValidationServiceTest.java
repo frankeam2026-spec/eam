@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.windasoft.eam.dto.system.PermissionScope;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -13,13 +14,13 @@ import org.springframework.web.server.ResponseStatusException;
 
 class InspectionValidationServiceTest {
   final InspectionRepository repository = mock(InspectionRepository.class);
-  final InspectionProjectService projects = mock(InspectionProjectService.class);
-  final InspectionViewAssembler views = mock(InspectionViewAssembler.class);
+  final InspectionProjectService projects =
+      new InspectionProjectService(repository, new ObjectMapper(), auth, permissions);
   final AuthContext auth = mock(AuthContext.class);
   final PermissionService permissions = mock(PermissionService.class);
 
   InspectionValidationService service() {
-    return new InspectionValidationService(repository, projects, views, auth, permissions);
+    return new InspectionValidationService(repository, projects, auth, permissions);
   }
 
   Map<String, Object> item(String valueType) {
@@ -37,10 +38,13 @@ class InspectionValidationServiceTest {
   }
 
   void enabledType() {
-    var row = Map.<String, Object>of("id", 7L, "kind", "types");
-    when(projects.raw("types", 1L, 7L, true)).thenReturn(row);
-    when(views.definition(row))
-        .thenReturn(Map.of("id", "7", "name", "温度检查", "enabled", true));
+    var row =
+        Map.<String, Object>of(
+            "id", 7L,
+            "kind", "types",
+            "name", "温度检查",
+            "payload", "{\"enabled\":true}");
+    when(repository.loadDefinition(1L, "types", 7L, true)).thenReturn(List.of(row));
   }
 
   @Test
@@ -53,16 +57,19 @@ class InspectionValidationServiceTest {
     assertFalse(item.containsKey("module"));
     assertEquals("7", item.get("typeId"));
     assertEquals("温度检查", item.get("typeName"));
-    verify(projects).raw("types", 1L, 7L, true);
-    verifyNoInteractions(repository);
+    verify(repository).loadDefinition(1L, "types", 7L, true);
+    verifyNoMoreInteractions(repository);
   }
 
   @Test
   void disabledCycleTypeCannotBeUsedByInspectionStandard() {
-    var row = Map.<String, Object>of("id", 7L, "kind", "types");
-    when(projects.raw("types", 1L, 7L, true)).thenReturn(row);
-    when(views.definition(row))
-        .thenReturn(Map.of("id", "7", "name", "停用类型", "enabled", false));
+    var row =
+        Map.<String, Object>of(
+            "id", 7L,
+            "kind", "types",
+            "name", "停用类型",
+            "payload", "{\"enabled\":false}");
+    when(repository.loadDefinition(1L, "types", 7L, true)).thenReturn(List.of(row));
 
     assertThrows(IllegalArgumentException.class, () -> service().validateItems(1L, List.of(item("文本"))));
   }
