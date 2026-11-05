@@ -30,7 +30,8 @@ public class InspectionTaskJournalRepository {
   public boolean hasAction(long tenantId, long taskId, String action) {
     Long count =
         db.queryForObject(
-            "SELECT COUNT(*) FROM eam_inspection_event WHERE tenant_id=? AND task_id=? AND action=?",
+            "SELECT COUNT(*) FROM eam_inspection_event WHERE tenant_id=? AND task_id=?"
+                + " AND action=?",
             Long.class,
             tenantId,
             taskId,
