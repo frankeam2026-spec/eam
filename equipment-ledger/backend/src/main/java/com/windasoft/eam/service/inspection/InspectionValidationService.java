@@ -15,25 +15,25 @@ import org.springframework.stereotype.Service;
 public class InspectionValidationService {
   private final InspectionRepository repository;
   private final InspectionProjectService projectSource;
-  private final InspectionViewAssembler views;
   private final AuthContext auth;
   private final PermissionService permissions;
 
   public InspectionValidationService(
       InspectionRepository repository,
       InspectionProjectService projectSource,
-      InspectionViewAssembler views,
       AuthContext auth,
       PermissionService permissions) {
     this.repository = repository;
     this.projectSource = projectSource;
-    this.views = views;
     this.auth = auth;
     this.permissions = permissions;
   }
 
   Map<String, Object> cycleType(long tenant, Object id) {
-    var type = views.definition(projectSource.raw("types", tenant, number(id), true));
+    var row = projectSource.raw("types", tenant, number(id), true);
+    var type = projectSource.decode(row.get("payload"));
+    type.put("id", row.get("id").toString());
+    type.put("name", row.get("name"));
     require(
         yes(type.get("enabled")),
         com.windasoft.eam.common.MessageContext.text("server.inspection.message0042"));
