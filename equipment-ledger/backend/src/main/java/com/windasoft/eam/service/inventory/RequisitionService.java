@@ -17,7 +17,7 @@ import com.windasoft.eam.entity.inventory.RequisitionHeader;
 import com.windasoft.eam.entity.inventory.RequisitionLine;
 import com.windasoft.eam.repository.inventory.RequisitionDraftRepository;
 import com.windasoft.eam.repository.inventory.RequisitionRepository;
-import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.inspection.InspectionTaskService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -70,7 +70,7 @@ public class RequisitionService {
   private final AuthContext auth;
   private final PermissionService permissions;
   private final MaintenanceService maintenance;
-  private final InspectionService inspection;
+  private final InspectionTaskService inspectionTasks;
   private final ObjectMapper json;
 
   public RequisitionService(
@@ -79,7 +79,7 @@ public class RequisitionService {
       AuthContext auth,
       PermissionService permissions,
       MaintenanceService maintenance,
-      InspectionService inspection,
+      InspectionTaskService inspectionTasks,
       ObjectMapper json,
       WorkflowRuntimeService workflow,
       InventoryListService listQueries,
@@ -92,7 +92,7 @@ public class RequisitionService {
     this.auth = auth;
     this.permissions = permissions;
     this.maintenance = maintenance;
-    this.inspection = inspection;
+    this.inspectionTasks = inspectionTasks;
     this.json = json;
     this.workflow = workflow;
     this.listQueries = listQueries;
@@ -171,7 +171,7 @@ public class RequisitionService {
         if (kind.equals("保养")) {
           maintenance.task(taskId);
         } else {
-          inspection.task(taskId);
+          inspectionTasks.task(taskId);
         }
       }
       company = source.companyId();
@@ -360,7 +360,7 @@ public class RequisitionService {
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0214"));
       permissions.checkRepair(order, "查看");
     } else {
-      var view = kind.equals("保养") ? maintenance.task(taskId) : inspection.task(taskId);
+      var view = kind.equals("保养") ? maintenance.task(taskId) : inspectionTasks.task(taskId);
       require(
           Boolean.TRUE.equals(view.get("canExecute"))
               && Set.of("执行中", "挂起").contains(text(view, "status")),
