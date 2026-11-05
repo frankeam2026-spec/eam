@@ -36,7 +36,7 @@ public class InspectionGenerationService {
   }
 
   /**
-   * Reuses immutable lookup results only during one plan-generation transaction. A new cache is
+   * Reuses lookup results without mutating them, only during one plan-generation transaction. A new cache is
    * created for every invocation so later runs always observe current master data.
    */
   private static final class GenerationCache {
