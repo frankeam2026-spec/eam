@@ -10,7 +10,7 @@ import com.windasoft.eam.service.equipment.EquipmentInstalledSpareService;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.experience.EquipmentExperienceRepository;
-import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
 import com.windasoft.eam.service.system.AuthContext;
@@ -28,7 +28,7 @@ class EquipmentExperienceServiceTest {
   PermissionService permissions = mock(PermissionService.class);
   RepairWorkflowService repair = mock(RepairWorkflowService.class);
   MaintenanceService maintenance = mock(MaintenanceService.class);
-  InspectionService inspection = mock(InspectionService.class);
+  InspectionListService inspectionLists = mock(InspectionListService.class);
   AnomalyService anomalies = mock(AnomalyService.class);
   EquipmentInstalledSpareService installedSpares = mock(EquipmentInstalledSpareService.class);
   EquipmentExperienceService service;
@@ -49,7 +49,7 @@ class EquipmentExperienceServiceTest {
         .thenReturn(Map.of("data", List.of(), "total", 0));
     service =
         new EquipmentExperienceService(
-            repo, auth, permissions, repair, maintenance, inspection, anomalies, installedSpares);
+            repo, auth, permissions, repair, maintenance, inspectionLists, anomalies, installedSpares);
   }
 
   Map<String, Object> task(String id, String status, String deadline) {
@@ -236,7 +236,7 @@ class EquipmentExperienceServiceTest {
     var expired = new HashMap<>(check);
     expired.put("id", "46");
     expired.put("status", "过期作废");
-    when(inspection.tasks()).thenReturn(List.of(check, other, approved, expired));
+    when(inspectionLists.tasks()).thenReturn(List.of(check, other, approved, expired));
     var open =
         Map.<String, Object>of(
             "id",

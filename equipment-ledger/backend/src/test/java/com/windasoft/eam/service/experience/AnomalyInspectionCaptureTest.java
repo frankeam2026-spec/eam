@@ -8,7 +8,9 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.repository.experience.AnomalyRepository;
 import com.windasoft.eam.service.basedata.BaseDataReferenceService;
-import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.inspection.InspectionTaskService;
+import com.windasoft.eam.service.inspection.InspectionListService;
+import com.windasoft.eam.service.business.BusinessConfigService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.repair.RepairOrderService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
@@ -24,7 +26,8 @@ class AnomalyInspectionCaptureTest {
   void skippedInspectionAnswersDoNotCreateAnomalies() {
     var repository = mock(AnomalyRepository.class);
     var auth = mock(AuthContext.class);
-    var inspection = mock(InspectionService.class);
+    var inspectionTasks = mock(InspectionTaskService.class);
+    var inspectionLists = mock(InspectionListService.class);
     when(auth.tenantId()).thenReturn(10001L);
     when(repository.findSourceActor(10001L, 88001L, "提交检查结果", "点巡检"))
         .thenReturn(
@@ -50,13 +53,10 @@ class AnomalyInspectionCaptureTest {
             // Older result snapshots may only contain the equipment-level skip list.
             Map.<String, Object>of(
                 "id", "502/temperature", "value", "99", "abnormal", true));
-    when(inspection.task(88001L))
-        .thenReturn(
-            Map.of(
-                "items",
-                items,
-                "result",
-                Map.of("items", answers, "skippedEquipmentIds", List.of("502"))));
+    var taskView = new java.util.LinkedHashMap<String, Object>();
+    taskView.put("items", items);
+    taskView.put("result", Map.of("items", answers, "skippedEquipmentIds", List.of("502")));
+    when(inspectionTasks.task(88001L)).thenReturn(taskView);
 
     var service =
         new AnomalyService(
@@ -67,12 +67,14 @@ class AnomalyInspectionCaptureTest {
             mock(RepairOrderService.class),
             mock(RepairWorkflowService.class),
             mock(MaintenanceService.class),
-            inspection,
+            inspectionTasks,
+            inspectionLists,
+            mock(BusinessConfigService.class),
             mock(BaseDataReferenceService.class));
 
     service.capture("点巡检", 88001L);
 
-    verify(inspection).task(88001L);
+    verify(inspectionTasks).task(88001L);
     verify(repository).findSourceActor(10001L, 88001L, "提交检查结果", "点巡检");
     verifyNoMoreInteractions(repository);
   }

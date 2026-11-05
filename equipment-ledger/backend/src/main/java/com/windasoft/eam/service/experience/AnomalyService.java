@@ -15,7 +15,8 @@ import com.windasoft.eam.event.experience.ExperienceEvents;
 import com.windasoft.eam.repository.experience.AnomalyRepository;
 import com.windasoft.eam.service.basedata.BaseDataReferenceService;
 import com.windasoft.eam.service.business.BusinessConfigService;
-import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.inspection.InspectionTaskService;
+import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.repair.RepairOrderService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
@@ -31,7 +32,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -41,7 +41,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AnomalyService {
-  @Autowired private BusinessConfigService businessConfig;
+  private final BusinessConfigService businessConfig;
 
   private final BaseDataReferenceService references;
   final AnomalyRepository repository;
@@ -51,7 +51,8 @@ public class AnomalyService {
   final RepairOrderService repairs;
   final RepairWorkflowService workflow;
   final MaintenanceService maintenance;
-  final InspectionService inspection;
+  final InspectionTaskService inspectionTasks;
+  final InspectionListService inspectionLists;
 
   public AnomalyService(
       AnomalyRepository repository,
@@ -61,7 +62,9 @@ public class AnomalyService {
       RepairOrderService repairs,
       RepairWorkflowService workflow,
       MaintenanceService maintenance,
-      InspectionService inspection,
+      InspectionTaskService inspectionTasks,
+      InspectionListService inspectionLists,
+      BusinessConfigService businessConfig,
       BaseDataReferenceService references) {
     this.references = references;
     this.repository = repository;
@@ -71,7 +74,9 @@ public class AnomalyService {
     this.repairs = repairs;
     this.workflow = workflow;
     this.maintenance = maintenance;
-    this.inspection = inspection;
+    this.inspectionTasks = inspectionTasks;
+    this.inspectionLists = inspectionLists;
+    this.businessConfig = businessConfig;
   }
 
   Equipment eq(long id) {
@@ -97,7 +102,7 @@ public class AnomalyService {
 
   Map<String, Object> source(String kind, long id) {
     check(Set.of("保养", "点巡检").contains(kind), "异常来源类型无效");
-    return kind.equals("保养") ? maintenance.task(id) : inspection.task(id);
+    return kind.equals("保养") ? maintenance.task(id) : inspectionTasks.task(id);
   }
 
   public boolean canView(Map<String, Object> r) {
@@ -619,7 +624,7 @@ public class AnomalyService {
   public Object backfill() {
     permissions.require("anomaly", "新增");
     for (var t : maintenance.tasks()) capture("保养", id(t.get("id")), true);
-    for (var t : inspection.tasks()) capture("点巡检", id(t.get("id")), true);
+    for (var t : inspectionLists.tasks()) capture("点巡检", id(t.get("id")), true);
     return Map.of("success", true);
   }
 

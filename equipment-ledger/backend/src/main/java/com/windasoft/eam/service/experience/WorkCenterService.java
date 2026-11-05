@@ -4,7 +4,8 @@ import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.windasoft.eam.entity.repair.RepairOrder;
-import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.inspection.InspectionTaskService;
+import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
 import com.windasoft.eam.service.system.AuthContext;
@@ -23,7 +24,8 @@ public class WorkCenterService {
   final PermissionService permissions;
   final RepairWorkflowService workflow;
   final MaintenanceService maintenance;
-  final InspectionService inspection;
+  final InspectionTaskService inspectionTasks;
+  final InspectionListService inspectionLists;
   final WorkInboxService inbox;
   final MaterialCustodyService custody;
   final AnomalyService anomalies;
@@ -35,7 +37,8 @@ public class WorkCenterService {
       PermissionService permissions,
       RepairWorkflowService workflow,
       MaintenanceService maintenance,
-      InspectionService inspection,
+      InspectionTaskService inspectionTasks,
+      InspectionListService inspectionLists,
       WorkInboxService inbox,
       MaterialCustodyService custody,
       AnomalyService anomalies) {
@@ -45,7 +48,8 @@ public class WorkCenterService {
     this.permissions = permissions;
     this.workflow = workflow;
     this.maintenance = maintenance;
-    this.inspection = inspection;
+    this.inspectionTasks = inspectionTasks;
+    this.inspectionLists = inspectionLists;
     this.inbox = inbox;
     this.custody = custody;
     this.anomalies = anomalies;
@@ -119,7 +123,7 @@ public class WorkCenterService {
       out.add(v);
     }
     append(out, maintenance.tasks(), "maintenance", team);
-    append(out, inspection.tasks(), "inspection", team);
+    append(out, inspectionLists.tasks(), "inspection", team);
     return out;
   }
 
@@ -431,7 +435,7 @@ public class WorkCenterService {
       }
       if (url.matches("/(maintenance|inspection)/task/[0-9]+")) {
         long key = Long.parseLong(url.substring(url.lastIndexOf('/') + 1));
-        var t = url.startsWith("/maintenance") ? maintenance.task(key) : inspection.task(key);
+        var t = url.startsWith("/maintenance") ? maintenance.task(key) : inspectionTasks.task(key);
         return Map.of(
             "id", url, "name", text(t, "code") + " · " + text(t, "equipmentName"), "url", url);
       }
