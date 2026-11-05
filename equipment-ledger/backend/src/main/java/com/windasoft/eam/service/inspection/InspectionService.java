@@ -196,12 +196,7 @@ public class InspectionService {
   }
 
   void checkEquipment(Map<String, Object> row, String kind, String action) {
-    var scope = permissions.inspection(kind, action);
-    if (!scope.matches(
-        nullable(row.get("company_org_id")),
-        nullable(row.get("department_org_id")),
-        nullable(row.get("owner_user_id")),
-        auth.userId())) deny();
+    projectSource.checkEquipment(row, kind, action);
   }
 
   void users(long tenant, Object value, boolean required) {
@@ -526,73 +521,6 @@ public class InspectionService {
         com.windasoft.eam.common.MessageContext.text("daily.error.exemptPlanDelete"));
     repository.deletePlanSchedules(auth.tenantId(), id);
     repository.deleteDefinition(auth.tenantId(), id);
-  }
-
-  public Object dailyDeviceOptions(String keyword, int page, int size) {
-    return dailyStorage.deviceEquipment(
-        auth.tenantId(),
-        auth.userId(),
-        permissions.inspection("daily", "执行"),
-        keyword,
-        Math.max(1, page),
-        Math.max(1, Math.min(100, size)));
-  }
-
-  public Object dailyEventOptions(String keyword, int page, int size) {
-    permissions.require("inspectionDailyTask", "查看");
-    permissions.require("inspectionDailyTask", "执行");
-    return new com.windasoft.eam.dto.common.PageResult<>(List.of(), Math.max(1, page),
-        Math.max(1, Math.min(200, size)), 0);
-  }
-
-  @Transactional(readOnly = true)
-  public Map<String, Object> dailyPreview(Map<String, Object> body) {
-    permissions.require("inspectionDailyPlan", "查看");
-    var data = decode(encode(body));
-    long department = number(data.get("departmentId"));
-    var scope = permissions.inspection("daily-plans", text(data, "id").isBlank() ? "新增" : "编辑");
-    if (!scope.matches(
-        permissions.companyOfOrganization(department), department, auth.userId(), auth.userId()))
-      deny();
-    require(
-        !LocalDate.parse(text(data, "endDate")).isBefore(LocalDate.parse(text(data, "startDate"))),
-        com.windasoft.eam.common.MessageContext.text("daily.error.dateRange"));
-    require(
-        rows(data.get("details")).size() <= 500,
-        com.windasoft.eam.common.MessageContext.text("daily.error.equipmentLimit"));
-    for (var detail : rows(data.get("details"))) {
-      checkEquipment(
-          equipment(auth.tenantId(), number(detail.get("equipmentId"))),
-          "daily-plans",
-          text(data, "id").isBlank() ? "新增" : "编辑");
-      projects(auth.tenantId(), detail, true);
-    }
-    dailyArrangements.validate(
-        auth.tenantId(), text(data, "id").isBlank() ? null : number(data.get("id")), data);
-    return generation.preview(
-        auth.tenantId(), data, Math.toIntExact(number(data.getOrDefault("previewDays", 7))));
-  }
-
-  @Transactional
-  public Map<String, Object> assignmentImpact(Map<String, Object> body) {
-    long id = number(body.get("id"));
-    var plan = raw("daily-plans", auth.tenantId(), id, true);
-    if (!scoped(plan, "编辑")) deny();
-    VersionGuard.checkPayload((Number) plan.get("row_version"), body);
-    dailyPreview(body);
-    var draft = decode(encode(body));
-    return Map.of("count", generation.assignmentImpact(auth.tenantId(), id, draft));
-  }
-
-  @Transactional
-  public Map<String, Object> dailyEvent(long id, Map<String, Object> body) {
-    var plan = raw("daily-plans", auth.tenantId(), id, true);
-    boolean supervisor = scoped(plan, "编辑");
-    if (!supervisor) permissions.require("inspectionDailyTask", "执行");
-    body.put("_actorId", Long.toString(auth.userId()));
-    body.put("_supervisor", supervisor);
-    VersionGuard.checkPayload((Number) plan.get("row_version"), body);
-    return generation.manualEvent(auth.tenantId(), plan, body);
   }
 
   public Map<String, Object> choices() {
