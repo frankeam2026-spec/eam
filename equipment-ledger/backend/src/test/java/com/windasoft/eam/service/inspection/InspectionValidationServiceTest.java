@@ -14,10 +14,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 class InspectionValidationServiceTest {
   final InspectionRepository repository = mock(InspectionRepository.class);
-  final InspectionProjectService projects =
-      new InspectionProjectService(repository, new ObjectMapper(), auth, permissions);
   final AuthContext auth = mock(AuthContext.class);
   final PermissionService permissions = mock(PermissionService.class);
+  final InspectionProjectService projects =
+      new InspectionProjectService(repository, new ObjectMapper(), auth, permissions);
 
   InspectionValidationService service() {
     return new InspectionValidationService(repository, projects, auth, permissions);
