@@ -315,7 +315,11 @@ public class InspectionGenerationService {
         "生成任务",
         null,
         "系统",
-        Map.of("计划", plan.get("name"), "开始时间", due.toString(), "班次", shiftName));
+        Map.of(
+            "计划", plan.get("name"),
+            "开始时间", due.toString(),
+            "班次", shiftName,
+            "新状态", status));
     if (exemption.isEmpty() && !due.isAfter(now()))
       journal.notify(
           tenant,
@@ -533,8 +537,11 @@ public class InspectionGenerationService {
       LocalDateTime due = dateTime(task.get("due_at")), expires = dateTime(task.get("expires_at"));
       if (state.equals(InspectionTaskStatus.NOT_STARTED.code()) && !due.isAfter(now())) {
         repository.activateTask(tenant, id);
+        String previous = state;
         state = InspectionTaskStatus.PENDING.code();
-        journal.event(tenant, id, "任务到期开始", null, "系统", Map.of());
+        journal.event(
+            tenant, id, "任务到期开始", null, "系统",
+            Map.of("原状态", previous, "新状态", state));
       }
       if (now().isAfter(expires)
           && Set.of(
@@ -546,8 +553,11 @@ public class InspectionGenerationService {
                 : (yes(snap.get("allowLate"))
                     ? InspectionTaskStatus.EXPIRED.code()
                     : InspectionTaskStatus.EXPIRED_CANCELLED.code());
+        String previous = state;
         repository.changeTaskStatus(next, tenant, id);
-        journal.event(tenant, id, next, null, "系统", Map.of());
+        journal.event(
+            tenant, id, next, null, "系统",
+            Map.of("原状态", previous, "新状态", next));
         if (next.equals(InspectionTaskStatus.EXPIRED_CANCELLED.code()))
           journal.closeTodos(tenant, id);
         state = next;
@@ -571,8 +581,11 @@ public class InspectionGenerationService {
             text(snap, "equipmentName"),
             false,
             true);
-      if (Set.of(InspectionTaskStatus.PENDING.code(), InspectionTaskStatus.EXPIRED.code())
-          .contains(state))
+      boolean lateExecutionAllowed = yes(snap.get("allowLate"));
+      if (state.equals(InspectionTaskStatus.EXPIRED.code()) && !lateExecutionAllowed)
+        journal.closeTodos(tenant, id);
+      if (state.equals(InspectionTaskStatus.PENDING.code())
+          || (state.equals(InspectionTaskStatus.EXPIRED.code()) && lateExecutionAllowed))
         journal.notify(
             tenant,
             id,
@@ -597,9 +610,10 @@ public class InspectionGenerationService {
                   InspectionTaskStatus.PENDING.code(),
                   InspectionTaskStatus.IN_PROGRESS.code(),
                   InspectionTaskStatus.SUSPENDED.code(),
-                  InspectionTaskStatus.EXPIRED.code())
+                  InspectionTaskStatus.REVIEW_REJECTED.code())
               .contains(state)
           && number(snap.get("expireRemindHours")) > 0
+          && now().isBefore(expires)
           && !now()
               .isBefore(shiftDuration(expires, snap, "expireRemindHours", "expireRemindUnit", -1)))
         journal.notify(
