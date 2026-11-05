@@ -532,9 +532,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           editing ? tr('ui.equipment.text0157') : tr('ui.equipment.text0208')
         }}</ElButton
         ><ElButton
-          v-if="
-            task.canExecute && ['未开始', '待执行', '已过期', '审核不通过'].includes(task.status)
-          "
+          v-if="task.canStart"
           type="primary"
           :loading="busy"
           @click="action('start')"
