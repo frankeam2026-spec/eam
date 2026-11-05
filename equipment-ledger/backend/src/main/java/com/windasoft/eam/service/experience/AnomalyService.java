@@ -16,6 +16,7 @@ import com.windasoft.eam.repository.experience.AnomalyRepository;
 import com.windasoft.eam.service.basedata.BaseDataReferenceService;
 import com.windasoft.eam.service.business.BusinessConfigService;
 import com.windasoft.eam.service.inspection.InspectionTaskService;
+import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.repair.RepairOrderService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
@@ -31,7 +32,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -41,7 +41,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AnomalyService {
-  @Autowired private BusinessConfigService businessConfig;
+  private final BusinessConfigService businessConfig;
 
   private final BaseDataReferenceService references;
   final AnomalyRepository repository;
@@ -52,6 +52,7 @@ public class AnomalyService {
   final RepairWorkflowService workflow;
   final MaintenanceService maintenance;
   final InspectionTaskService inspectionTasks;
+  final InspectionListService inspectionLists;
 
   public AnomalyService(
       AnomalyRepository repository,
@@ -62,6 +63,8 @@ public class AnomalyService {
       RepairWorkflowService workflow,
       MaintenanceService maintenance,
       InspectionTaskService inspectionTasks,
+      InspectionListService inspectionLists,
+      BusinessConfigService businessConfig,
       BaseDataReferenceService references) {
     this.references = references;
     this.repository = repository;
@@ -72,6 +75,8 @@ public class AnomalyService {
     this.workflow = workflow;
     this.maintenance = maintenance;
     this.inspectionTasks = inspectionTasks;
+    this.inspectionLists = inspectionLists;
+    this.businessConfig = businessConfig;
   }
 
   Equipment eq(long id) {
@@ -619,7 +624,7 @@ public class AnomalyService {
   public Object backfill() {
     permissions.require("anomaly", "新增");
     for (var t : maintenance.tasks()) capture("保养", id(t.get("id")), true);
-    for (var t : inspection.tasks()) capture("点巡检", id(t.get("id")), true);
+    for (var t : inspectionLists.tasks()) capture("点巡检", id(t.get("id")), true);
     return Map.of("success", true);
   }
 
