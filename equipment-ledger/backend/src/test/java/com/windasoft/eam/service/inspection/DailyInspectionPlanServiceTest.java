@@ -11,7 +11,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.service.system.AuthContext;
@@ -75,7 +74,7 @@ class DailyInspectionPlanServiceTest {
             "endDate", "2026-11-05",
             "details", List.of());
 
-    assertThrows(LocalizedArgumentException.class, () -> service.dailyPreview(body));
+    assertThrows(IllegalArgumentException.class, () -> service.dailyPreview(body));
     verify(generation, never()).preview(anyLong(), anyMap(), anyInt());
   }
 }
