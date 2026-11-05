@@ -62,7 +62,6 @@ public class InspectionViewAssembler {
         text(row, "kind").equals("daily")
             && !text(v, "personMode").equals("现场直接点检")
             && ids(v.get("owners")).isEmpty());
-    v.put("canExempt", false);
     v.put("exemptionReason", text(row, "exemption_reason"));
     v.put("exemptedAt", text(row, "exempted_at"));
     v.put(
