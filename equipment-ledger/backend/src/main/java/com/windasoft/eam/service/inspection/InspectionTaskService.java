@@ -250,7 +250,7 @@ public class InspectionTaskService {
     switch (operation) {
       case START -> {
         require(
-            Set.of(InspectionTaskStatus.PENDING.code(), InspectionTaskStatus.NOT_STARTED.code(), InspectionTaskStatus.EXPIRED.code(), InspectionTaskStatus.REVIEW_REJECTED.code()).contains(state),
+            InspectionTaskStatus.canStart(state),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0026"));
         require(
             !now().isBefore(dateTime(row.get("due_at"))),
@@ -449,7 +449,7 @@ public class InspectionTaskService {
       case TRANSFER -> {
         if (!access(row, "转派")) deny();
         require(
-            Set.of(InspectionTaskStatus.NOT_STARTED.code(), InspectionTaskStatus.PENDING.code(), InspectionTaskStatus.IN_PROGRESS.code(), InspectionTaskStatus.SUSPENDED.code(), InspectionTaskStatus.EXPIRED.code(), InspectionTaskStatus.REVIEW_REJECTED.code()).contains(state),
+            InspectionTaskStatus.canTransfer(state),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0038"));
         require(
             !text(row, "kind").equals("daily") || !text(body, "description").isBlank(),
@@ -491,7 +491,7 @@ public class InspectionTaskService {
           require(taskAccess.canDelete(row),
               com.windasoft.eam.common.MessageContext.text("daily.error.deleteState"));
         require(
-            !Set.of(InspectionTaskStatus.REVIEWED.code(), InspectionTaskStatus.COMPLETED.code(), InspectionTaskStatus.CANCELLED.code(), InspectionTaskStatus.EXPIRED_CANCELLED.code(), InspectionTaskStatus.EXEMPT.code()).contains(state) || operation == InspectionTaskAction.DELETE,
+            !InspectionTaskStatus.isTerminal(state) || operation == InspectionTaskAction.DELETE,
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0039"));
         require(
             !text(body, "description").isBlank() && text(body, "description").length() <= 1000,
