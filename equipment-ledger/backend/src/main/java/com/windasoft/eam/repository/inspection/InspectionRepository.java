@@ -397,46 +397,6 @@ public class InspectionRepository {
         id);
   }
 
-  public int countEquipmentHistory(long tenantId, Object id, Object code) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_equipment_history WHERE tenant_id=? AND equipment_id=? AND"
-            + " record_type='INSPECTION' AND record_no=?",
-        Integer.class,
-        tenantId,
-        id,
-        code);
-  }
-
-  public int updateEquipmentHistoryResult(long tenantId, Object id, Object code, String summary) {
-    return db.update(
-        "UPDATE eam_equipment_history SET result=? WHERE tenant_id=? AND equipment_id=?"
-            + " AND record_type='INSPECTION' AND record_no=?",
-        summary, tenantId, id, code);
-  }
-
-  public int insertEquipmentHistory(
-      long recordId,
-      long tenantId,
-      Object id,
-      Object code,
-      String value,
-      Object ownerId,
-      Object status,
-      Object summary) {
-    return db.update(
-        "INSERT INTO"
-            + " eam_equipment_history(id,tenant_id,equipment_id,record_type,record_no,occurred_at,description,operator_name,status,result)"
-            + " VALUES(?,?,?,'INSPECTION',?,NOW(),?,?,?,?)",
-        recordId,
-        tenantId,
-        id,
-        code,
-        value,
-        ownerId,
-        status,
-        summary);
-  }
-
   public int updateTask(
       Object next,
       Object owner,
