@@ -265,4 +265,32 @@ class InspectionGenerationServiceTest {
     task.put("expires_at", now.minusMinutes(1).toString());
     return task;
   }
+
+  @Test
+  void resolvesNotificationPolicyOnceForAllTasksInOnePlanMaintenanceRun() {
+    var plan = new HashMap<String, Object>();
+    plan.put("kind", "periodic-plans");
+    plan.put("payload", "{\"enabled\":false}");
+    when(repository.lockPlan(TENANT, PLAN_ID)).thenReturn(List.of(plan));
+
+    var now = now();
+    var first = openPeriodicTask(TASK_ID, now);
+    var second = openPeriodicTask(TASK_ID + 1, now);
+    when(repository.lockOpenPlanTasks(TENANT, PLAN_ID)).thenReturn(List.of(first, second));
+
+    assertEquals(0, service.generate(TENANT, PLAN_ID));
+
+    verify(notificationPolicies, times(1)).replacesLegacy(TENANT, "periodic", PLAN_ID);
+  }
+
+  private Map<String, Object> openPeriodicTask(long id, LocalDateTime now) {
+    var task = new HashMap<String, Object>();
+    task.put("id", id);
+    task.put("kind", "periodic");
+    task.put("status", InspectionTaskStatus.PENDING.code());
+    task.put("snapshot", "{\"allowLate\":false,\"owners\":[]}");
+    task.put("due_at", now.minusMinutes(5).toString());
+    task.put("expires_at", now.plusHours(1).toString());
+    return task;
+  }
 }
