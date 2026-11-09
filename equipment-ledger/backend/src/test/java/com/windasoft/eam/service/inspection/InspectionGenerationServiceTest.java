@@ -40,7 +40,7 @@ class InspectionGenerationServiceTest {
           views,
           journal,
           numbers,
-          notificationPolicies,
+          new InspectionTaskLifecycleService(repository, notificationPolicies, journal, new ObjectMapper()),
           mock(DailyArrangementService.class),
           dailyStorage);
 
