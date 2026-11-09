@@ -38,8 +38,6 @@ class InspectionGenerationServiceTest {
           projectSource,
           views,
           new InspectionTaskLifecycleService(repository, notificationPolicies, journal, new ObjectMapper()),
-          mock(DailyArrangementService.class),
-          dailyStorage,
           new InspectionTaskCreationService(
               repository,
               new ObjectMapper(),
@@ -48,7 +46,9 @@ class InspectionGenerationServiceTest {
               journal,
               numbers,
               mock(DailyArrangementService.class),
-              dailyStorage));
+              dailyStorage),
+          mock(DailyArrangementService.class),
+          dailyStorage);
 
   @Test
   void reusesEquipmentAndProjectLookupsAcrossCyclesInOneGenerationRun() {
