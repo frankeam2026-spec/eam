@@ -35,12 +35,18 @@ class InspectionGenerationServiceTest {
       new InspectionGenerationService(
           repository,
           new ObjectMapper(),
-          permissions,
           projectSource,
           views,
-          journal,
-          numbers,
           new InspectionTaskLifecycleService(repository, notificationPolicies, journal, new ObjectMapper()),
+          new InspectionTaskCreationService(
+              repository,
+              new ObjectMapper(),
+              permissions,
+              projectSource,
+              journal,
+              numbers,
+              mock(DailyArrangementService.class),
+              dailyStorage),
           mock(DailyArrangementService.class),
           dailyStorage);
 
