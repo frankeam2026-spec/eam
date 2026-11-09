@@ -5,7 +5,6 @@ import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -23,17 +22,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class InspectionPlanScheduleService {
   private final InspectionRepository repository;
-  private final DailyArrangementRepository dailyStorage;
   private final InspectionGenerationService generation;
   private final ObjectMapper json;
 
   public InspectionPlanScheduleService(
       InspectionRepository repository,
-      DailyArrangementRepository dailyStorage,
       InspectionGenerationService generation,
       ObjectMapper json) {
     this.repository = repository;
-    this.dailyStorage = dailyStorage;
     this.generation = generation;
     this.json = json;
   }
