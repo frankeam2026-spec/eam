@@ -106,6 +106,7 @@ class DailyInspectionPlanServiceTest {
     var arrangements = mock(DailyArrangementService.class);
     var storage = mock(DailyArrangementRepository.class);
     var generation = mock(InspectionGenerationService.class);
+    var assignments = mock(InspectionTaskAssignmentService.class);
     var service =
         new DailyInspectionPlanService(
             auth,
@@ -115,6 +116,7 @@ class DailyInspectionPlanServiceTest {
             arrangements,
             storage,
             generation,
+            assignments,
             new ObjectMapper());
 
     when(auth.tenantId()).thenReturn(7L);
