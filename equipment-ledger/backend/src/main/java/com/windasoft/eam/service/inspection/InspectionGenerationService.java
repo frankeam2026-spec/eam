@@ -43,25 +43,6 @@ public class InspectionGenerationService {
     this.dailyStorage = dailyStorage;
   }
 
-  List<Long> effectiveOwners(
-      long tenant,
-      Map<String, Object> plan,
-      Map<String, Object> detail,
-      LocalDate date,
-      String shiftId) {
-    if (text(plan, "personMode").equals("任何人可点检"))
-      return repository.listActiveUsers(tenant).stream().map(r -> number(r.get("id"))).toList();
-    if (text(plan, "personMode").equals("按照排班表"))
-      return rows(plan.get("roster")).stream()
-          .filter(
-              r -> text(r, "date").equals(date.toString()) && text(r, "shiftId").equals(shiftId))
-          .flatMap(r -> ids(r.get("users")).stream())
-          .distinct()
-          .toList();
-    return ids(detail.get("owners")).isEmpty()
-        ? ids(plan.get("owners"))
-        : ids(detail.get("owners"));
-  }
 
   LocalDateTime advance(LocalDateTime anchor, long index, long period, String unit) {
     long n = Math.multiplyExact(index, period);
