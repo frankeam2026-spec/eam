@@ -18,13 +18,15 @@ import org.junit.jupiter.api.Test;
 class InspectionPlanScheduleServiceTest {
   private InspectionRepository repository;
   private InspectionGenerationService generation;
+  private InspectionTaskAssignmentService assignments;
   private InspectionPlanScheduleService service;
 
   @BeforeEach
   void setUp() {
     repository = mock(InspectionRepository.class);
     generation = mock(InspectionGenerationService.class);
-    service = new InspectionPlanScheduleService(repository, generation, new ObjectMapper());
+    assignments = mock(InspectionTaskAssignmentService.class);
+    service = new InspectionPlanScheduleService(repository, generation, assignments, new ObjectMapper());
   }
 
   @Test
@@ -44,7 +46,7 @@ class InspectionPlanScheduleServiceTest {
     verify(repository).setPlanType(11L, 22L, null);
     verify(repository).insertSchedule(anyLong(), org.mockito.ArgumentMatchers.eq(11L),
         org.mockito.ArgumentMatchers.eq(22L), any(), any());
-    verify(generation).refreshAssignments(11L, 22L, 33L);
+    verify(assignments).refreshPendingAssignments(11L, 22L, 33L);
     verify(generation).generate(11L, 22L);
   }
 
