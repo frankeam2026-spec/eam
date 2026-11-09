@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
-import com.windasoft.eam.repository.system.NotificationRepository;
 import com.windasoft.eam.service.system.*;
 import java.time.*;
 import java.util.*;
@@ -17,7 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class InspectionGenerationService {
-  private final NotificationRepository notificationPolicies;
   private final DailyArrangementService arrangements;
   private final DailyArrangementRepository dailyStorage;
 
@@ -28,6 +26,7 @@ public class InspectionGenerationService {
   private final InspectionViewAssembler views;
   private final InspectionTaskJournal journal;
   private final InspectionNumbers numbers;
+  private final InspectionTaskLifecycleService taskLifecycle;
 
   private record ProjectKey(List<String> references) {
     private ProjectKey {
@@ -55,7 +54,7 @@ public class InspectionGenerationService {
       InspectionViewAssembler views,
       InspectionTaskJournal journal,
       InspectionNumbers numbers,
-      NotificationRepository notificationPolicies,
+      InspectionTaskLifecycleService taskLifecycle,
       DailyArrangementService arrangements,
       DailyArrangementRepository dailyStorage) {
     this.repository = repository;
@@ -65,7 +64,7 @@ public class InspectionGenerationService {
     this.views = views;
     this.journal = journal;
     this.numbers = numbers;
-    this.notificationPolicies = notificationPolicies;
+    this.taskLifecycle = taskLifecycle;
     this.arrangements = arrangements;
     this.dailyStorage = dailyStorage;
   }
@@ -451,7 +450,7 @@ public class InspectionGenerationService {
       }
       repository.advanceSchedule(next, index, tenant, planId);
     }
-    maintainTasks(tenant, planId);
+    taskLifecycle.maintainOpenTasks(tenant, planId);
     return count;
   }
 
@@ -529,106 +528,6 @@ public class InspectionGenerationService {
     throw new com.windasoft.eam.common.LocalizedArgumentException("daily.error.shiftOnly");
   }
 
-  void maintainTasks(long tenant, long planId) {
-    var tasks = repository.lockOpenPlanTasks(tenant, planId);
-    if (tasks.isEmpty()) return;
-    String kind = text(tasks.getFirst(), "kind");
-    boolean newReminders = notificationPolicies.replacesLegacy(tenant, kind, planId);
-    for (var task : tasks) {
-      long id = number(task.get("id"));
-      var snap = decode(task.get("snapshot"));
-      String state = text(task, "status");
-      LocalDateTime due = dateTime(task.get("due_at")), expires = dateTime(task.get("expires_at"));
-      if (state.equals(InspectionTaskStatus.NOT_STARTED.code()) && !due.isAfter(now())) {
-        repository.activateTask(tenant, id);
-        String previous = state;
-        state = InspectionTaskStatus.PENDING.code();
-        journal.event(
-            tenant, id, "任务到期开始", null, "系统",
-            Map.of("原状态", previous, "新状态", state));
-      }
-      if (now().isAfter(expires)
-          && Set.of(
-                  InspectionTaskStatus.NOT_STARTED.code(), InspectionTaskStatus.PENDING.code())
-              .contains(state)) {
-        String next =
-            text(task, "kind").equals("daily") && task.get("arrangement_id") != null
-                ? InspectionTaskStatus.EXPIRED.code()
-                : (yes(snap.get("allowLate"))
-                    ? InspectionTaskStatus.EXPIRED.code()
-                    : InspectionTaskStatus.EXPIRED_CANCELLED.code());
-        String previous = state;
-        repository.changeTaskStatus(next, tenant, id);
-        journal.event(
-            tenant, id, next, null, "系统",
-            Map.of("原状态", previous, "新状态", next));
-        if (next.equals(InspectionTaskStatus.EXPIRED_CANCELLED.code()))
-          journal.closeTodos(tenant, id);
-        state = next;
-      }
-      if (!newReminders && text(task, "kind").equals("daily")
-          && task.get("follow_up_user_id") != null
-          && now().isAfter(expires)
-          && Set.of(
-                  InspectionTaskStatus.PENDING.code(),
-                  InspectionTaskStatus.EXPIRED.code(),
-                  InspectionTaskStatus.IN_PROGRESS.code(),
-                  InspectionTaskStatus.SUSPENDED.code(),
-                  InspectionTaskStatus.REVIEW_REJECTED.code())
-              .contains(state))
-        journal.notify(
-            tenant,
-            id,
-            List.of(number(task.get("follow_up_user_id"))),
-            "点巡检超期提醒",
-            text(snap, "equipmentName"),
-            false,
-            true);
-      boolean lateExecutionAllowed = yes(snap.get("allowLate"));
-      if (state.equals(InspectionTaskStatus.EXPIRED.code()) && !lateExecutionAllowed)
-        journal.closeTodos(tenant, id);
-      if (state.equals(InspectionTaskStatus.PENDING.code())
-          || (state.equals(InspectionTaskStatus.EXPIRED.code()) && lateExecutionAllowed))
-        journal.notify(
-            tenant,
-            id,
-            ids(snap.get("owners")),
-            "点巡检待执行",
-            text(snap, "equipmentName"),
-            true,
-            false);
-      if (state.equals(InspectionTaskStatus.NOT_STARTED.code())
-          && number(snap.get("remindHours")) > 0
-          && !now().isBefore(shiftDuration(due, snap, "remindHours", "remindUnit", -1)))
-        journal.notify(
-            tenant,
-            id,
-            ids(snap.get("owners")),
-            "点巡检开始提醒",
-            text(snap, "equipmentName"),
-            false,
-            true);
-      if (!newReminders
-          && Set.of(
-                  InspectionTaskStatus.PENDING.code(),
-                  InspectionTaskStatus.IN_PROGRESS.code(),
-                  InspectionTaskStatus.SUSPENDED.code(),
-                  InspectionTaskStatus.REVIEW_REJECTED.code())
-              .contains(state)
-          && number(snap.get("expireRemindHours")) > 0
-          && now().isBefore(expires)
-          && !now()
-              .isBefore(shiftDuration(expires, snap, "expireRemindHours", "expireRemindUnit", -1)))
-        journal.notify(
-            tenant,
-            id,
-            ids(snap.get("owners")),
-            "点巡检即将过期",
-            text(snap, "equipmentName"),
-            false,
-            true);
-    }
-  }
 
   Map<String, Object> decode(Object value) {
     try {
