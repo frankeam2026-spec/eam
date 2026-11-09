@@ -23,14 +23,17 @@ import org.springframework.stereotype.Service;
 public class InspectionPlanScheduleService {
   private final InspectionRepository repository;
   private final InspectionGenerationService generation;
+  private final InspectionTaskAssignmentService assignments;
   private final ObjectMapper json;
 
   public InspectionPlanScheduleService(
       InspectionRepository repository,
       InspectionGenerationService generation,
+      InspectionTaskAssignmentService assignments,
       ObjectMapper json) {
     this.repository = repository;
     this.generation = generation;
+    this.assignments = assignments;
     this.json = json;
   }
 
@@ -74,7 +77,7 @@ public class InspectionPlanScheduleService {
     }
 
     if (kind.equals("daily-plans") && existing != null) {
-      generation.refreshAssignments(tenant, planId, actor);
+      assignments.refreshPendingAssignments(tenant, planId, actor);
     }
     generation.generate(tenant, planId);
   }
