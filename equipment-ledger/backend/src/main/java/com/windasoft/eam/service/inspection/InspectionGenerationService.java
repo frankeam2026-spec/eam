@@ -110,7 +110,7 @@ public class InspectionGenerationService {
           views.definition(projectSource.raw("types", tenant, number(p.get("typeId")), true));
       generationEnabled = yes(selectedType.get("enabled"));
       String typeName = text(selectedType, "name");
-      if (!typeName.isBlank()) cache.typeNames.put(number(p.get("typeId")), typeName);
+      if (!typeName.isBlank()) cache.rememberTypeName(number(p.get("typeId")), typeName);
     }
     int count = 0;
     if (generationEnabled) {
