@@ -103,7 +103,7 @@ public class InspectionGenerationService {
               .collect(java.util.stream.Collectors.toSet()));
       p.put("_teams", new HashMap<Long, List<Long>>());
     }
-    var cache = new GenerationCache();
+    var cache = new InspectionTaskCreationService.GenerationCache();
     boolean generationEnabled = yes(p.get("enabled"));
     if (generationEnabled && text(plan, "kind").equals("periodic-plans")) {
       var selectedType =
