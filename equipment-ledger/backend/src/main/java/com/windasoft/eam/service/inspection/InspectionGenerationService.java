@@ -1,18 +1,39 @@
 package com.windasoft.eam.service.inspection;
 
-import static com.windasoft.eam.common.inspection.InspectionSupport.*;
+import static com.windasoft.eam.common.inspection.InspectionSupport.dateTime;
+import static com.windasoft.eam.common.inspection.InspectionSupport.generationDeadline;
+import static com.windasoft.eam.common.inspection.InspectionSupport.now;
+import static com.windasoft.eam.common.inspection.InspectionSupport.number;
+import static com.windasoft.eam.common.inspection.InspectionSupport.periodicBoundary;
+import static com.windasoft.eam.common.inspection.InspectionSupport.readyForGeneration;
+import static com.windasoft.eam.common.inspection.InspectionSupport.require;
+import static com.windasoft.eam.common.inspection.InspectionSupport.rows;
+import static com.windasoft.eam.common.inspection.InspectionSupport.strings;
+import static com.windasoft.eam.common.inspection.InspectionSupport.text;
+import static com.windasoft.eam.common.inspection.InspectionSupport.yes;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
-import java.time.*;
-import java.util.*;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class InspectionGenerationService {
+  private static final int DAILY_TASK_BATCH_LIMIT = 2000;
   private final DailyArrangementService arrangements;
   private final DailyArrangementRepository dailyStorage;
 
@@ -22,7 +43,6 @@ public class InspectionGenerationService {
   private final InspectionViewAssembler views;
   private final InspectionTaskLifecycleService taskLifecycle;
   private final InspectionTaskCreationService taskCreation;
-
 
   public InspectionGenerationService(
       InspectionRepository repository,
@@ -43,7 +63,6 @@ public class InspectionGenerationService {
     this.dailyStorage = dailyStorage;
   }
 
-
   LocalDateTime advance(LocalDateTime anchor, long index, long period, String unit) {
     long n = Math.multiplyExact(index, period);
     return switch (unit) {
@@ -51,9 +70,7 @@ public class InspectionGenerationService {
       case "周" -> anchor.plusWeeks(n);
       case "月" -> anchor.plusMonths(n);
       case "年" -> anchor.plusYears(n);
-      default ->
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.maintenance.message0008");
+      default -> throw new LocalizedArgumentException("server.maintenance.message0008");
     };
   }
 
@@ -61,12 +78,15 @@ public class InspectionGenerationService {
     return DailyInspectionSchedule.rest(plan, date);
   }
 
-
   @Transactional(readOnly = true)
   public List<Map<String, Object>> generationTargets() {
     return repository.generationTargets();
   }
 
+  /**
+   * 先锁计划再锁调度，任务、关联、事件和游标在同一事务提交或回滚。 日常预算只计本批新增任务，重复发生不消耗预算；设备明细中途停下时保留当天，下一轮去重后继续。
+   * 完整处理的日期才推进，周期巡检仍按自己的锚点和索引逐周期推进。
+   */
   @Transactional
   public int generate(long tenant, long planId) {
     var plans = repository.lockPlan(tenant, planId);
@@ -81,7 +101,7 @@ public class InspectionGenerationService {
           "_activeIds",
           dailyStorage.activePeople(tenant).stream()
               .map(u -> number(u.get("id")))
-              .collect(java.util.stream.Collectors.toSet()));
+              .collect(Collectors.toSet()));
       p.put("_teams", new HashMap<Long, List<Long>>());
     }
     var cache = new InspectionTaskCreationService.GenerationCache();
@@ -103,9 +123,7 @@ public class InspectionGenerationService {
       if (text(plan, "kind").equals("periodic-plans")) {
         LocalDateTime start = periodicBoundary(p.get("startDate"), false),
             end = periodicBoundary(p.get("endDate"), true);
-        for (int n = 0;
-            n < 100 && readyForGeneration(next, p) && !next.isAfter(end);
-            n++) {
+        for (int n = 0; n < 100 && readyForGeneration(next, p) && !next.isAfter(end); n++) {
           if (!next.isBefore(start))
             count += taskCreation.createTask(tenant, plan, p, details, next, "", "", null, cache);
           index++;
@@ -121,24 +139,26 @@ public class InspectionGenerationService {
                 && !next.toLocalDate().isAfter(end);
             n++) {
           LocalDate date = next.toLocalDate();
-          boolean allStarted = true;
+          boolean dayComplete = true;
           if (!date.isBefore(start)
               && (!rest(p, date) || strings(p.get("workdays")).contains(date.toString()))) {
             if (!rows(p.get("arrangements")).isEmpty()) {
-              for (var a : rows(p.get("arrangements")))
+              arrangedOccurrences:
+              for (var a : rows(p.get("arrangements"))) {
                 for (var occurrence : DailyInspectionSchedule.on(p, a, date)) {
                   if (!readyForGeneration(occurrence.start(), p)
                       || (text(a, "personMode").equals("open")
                           && occurrence.start().isAfter(now()))) {
-                    allStarted = false;
-                    continue;
-                  }
-                  if (count >= 2000) {
-                    allStarted = false;
+                    dayComplete = false;
                     continue;
                   }
                   var adjusted = adjust(p, a, occurrence, "");
-                  for (var detail : arrangements.details(p, a))
+                  for (var detail : arrangements.details(p, a)) {
+                    if (count >= DAILY_TASK_BATCH_LIMIT) {
+                      // 退出当天的安排遍历，不能只退出设备循环后把日期误当成已完成。
+                      dayComplete = false;
+                      break arrangedOccurrences;
+                    }
                     count +=
                         taskCreation.createTask(
                             tenant,
@@ -150,17 +170,25 @@ public class InspectionGenerationService {
                             occurrence.name(),
                             occurrence.end(),
                             cache);
+                  }
                 }
+              }
             } else {
+              legacyShifts:
               for (var shift : rows(p.get("shifts"))) {
                 LocalDateTime due = date.atTime(LocalTime.parse(text(shift, "start"))),
                     shiftEnd = date.atTime(LocalTime.parse(text(shift, "end")));
                 if (!shiftEnd.isAfter(due)) shiftEnd = shiftEnd.plusDays(1);
                 if (!readyForGeneration(due, p)) {
-                  allStarted = false;
+                  dayComplete = false;
                   continue;
                 }
-                for (var detail : details)
+                for (var detail : details) {
+                  if (count >= DAILY_TASK_BATCH_LIMIT) {
+                    // 旧班次计划沿用相同新增预算和日期续跑规则，不改变其人员及班次解析。
+                    dayComplete = false;
+                    break legacyShifts;
+                  }
                   count +=
                       taskCreation.createTask(
                           tenant,
@@ -172,10 +200,11 @@ public class InspectionGenerationService {
                           text(shift, "name"),
                           shiftEnd,
                           cache);
+                }
               }
             }
           }
-          if (!allStarted) break;
+          if (!dayComplete) break;
           next = date.plusDays(1).atStartOfDay();
         }
       }
@@ -203,9 +232,7 @@ public class InspectionGenerationService {
   }
 
   public Map<String, Object> preview(long tenant, Map<String, Object> plan, int days) {
-    require(
-        days == 7 || days == 30,
-        com.windasoft.eam.common.MessageContext.text("daily.error.previewDays"));
+    require(days == 7 || days == 30, MessageContext.text("daily.error.previewDays"));
     LocalDate start = LocalDate.parse(text(plan, "startDate"));
     if (start.isBefore(now().toLocalDate())) start = now().toLocalDate();
     LocalDate end = start.plusDays(days - 1), last = LocalDate.parse(text(plan, "endDate"));
@@ -216,9 +243,7 @@ public class InspectionGenerationService {
       for (var a : rows(plan.get("arrangements")))
         for (var o : DailyInspectionSchedule.on(plan, a, date))
           for (var detail : arrangements.details(plan, a)) {
-            require(
-                ++count <= 100000,
-                com.windasoft.eam.common.MessageContext.text("daily.error.previewLimit"));
+            require(++count <= 100000, MessageContext.text("daily.error.previewLimit"));
             var people =
                 arrangements.ownersAt(tenant, plan, a, detail, date, o.rosterShiftId(), o.start());
             if (people.isEmpty() && !arrangements.open(a, detail)) unstaffed++;
@@ -256,17 +281,15 @@ public class InspectionGenerationService {
   /** Retained endpoint fails explicitly for old clients; tasks now require a shift. */
   public Map<String, Object> manualEvent(
       long tenant, Map<String, Object> plan, Map<String, Object> body) {
-    throw new com.windasoft.eam.common.LocalizedArgumentException("daily.error.shiftOnly");
+    throw new LocalizedArgumentException("daily.error.shiftOnly");
   }
-
 
   Map<String, Object> decode(Object value) {
     try {
       return json.readValue(
           Objects.toString(value, "{}"), new TypeReference<LinkedHashMap<String, Object>>() {});
     } catch (Exception e) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException(
-          "server.inspection.message0012");
+      throw new LocalizedArgumentException("server.inspection.message0012");
     }
   }
 
@@ -274,10 +297,7 @@ public class InspectionGenerationService {
     try {
       return json.writeValueAsString(value);
     } catch (Exception e) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException(
-          "server.inspection.message0012");
+      throw new LocalizedArgumentException("server.inspection.message0012");
     }
   }
-
-
 }
