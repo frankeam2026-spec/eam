@@ -59,6 +59,10 @@ public class InspectionTaskCreationService {
     private final Map<Long, Long> companyIds = new HashMap<>();
     private final Map<Long, String> departmentNames = new HashMap<>();
     private final Map<Long, String> typeNames = new HashMap<>();
+
+    void rememberTypeName(long typeId, String name) {
+      typeNames.put(typeId, name);
+    }
   }
 
 
