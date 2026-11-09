@@ -79,6 +79,7 @@ class DailyInspectionPlanServiceTest {
             arrangements,
             storage,
             generation,
+            assignments,
             new ObjectMapper());
 
     when(auth.tenantId()).thenReturn(7L);
