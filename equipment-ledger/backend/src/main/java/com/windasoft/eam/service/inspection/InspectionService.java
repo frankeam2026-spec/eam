@@ -34,7 +34,7 @@ public class InspectionService {
 
   private final InspectionProjectService projectSource;
 
-  private final InspectionGenerationService generation;
+  private final InspectionPlanScheduleService planSchedules;
 
   private final InspectionValidationService validation;
 
@@ -56,7 +56,7 @@ public class InspectionService {
       com.windasoft.eam.service.business.BusinessValueService custom,
       InspectionViewAssembler views,
       InspectionProjectService projectSource,
-      InspectionGenerationService generation,
+      InspectionPlanScheduleService planSchedules,
       InspectionValidationService validation,
       InspectionNumbers numbers,
       InspectionListService listQueries,
@@ -67,7 +67,7 @@ public class InspectionService {
     this.custom = custom;
     this.views = views;
     this.projectSource = projectSource;
-    this.generation = generation;
+    this.planSchedules = planSchedules;
     this.validation = validation;
     this.numbers = numbers;
     this.listQueries = listQueries;
@@ -360,36 +360,7 @@ public class InspectionService {
     if (kind.equals("daily-plans"))
       dailyStorage.save(tenant, key, rows(data.get("arrangements")), data.get("workdays"));
     if (kind.endsWith("plans")) {
-      repository.setPlanType(
-          tenant, key, kind.equals("daily-plans") ? null : number(data.get("typeId")));
-      var cursors = repository.lockPlanSchedules(tenant, key);
-      LocalDateTime next = kind.equals("periodic-plans")
-          ? periodicBoundary(data.get("startDate"), false)
-          : LocalDate.parse(text(data, "startDate")).atStartOfDay();
-      if (cursors.isEmpty()) repository.insertSchedule(IdWorker.getId(), tenant, key, next, next);
-      else if (kind.equals("periodic-plans")
-          && ((repository.countPlanTasks(tenant, key) == 0
-                  && !next.equals(dateTime(cursors.getFirst().get("anchor_at"))))
-              || (existing != null
-                  && (!periodicBoundary(decode(existing.get("payload")).get("startDate"), false).equals(next)
-                      || !text(decode(existing.get("payload")), "typeId").equals(text(data, "typeId"))
-                      || number(decode(existing.get("payload")).get("period"))
-                          != number(data.get("period"))
-                      || !text(decode(existing.get("payload")), "unit")
-                          .equals(text(data, "unit")))))) {
-        require(
-            repository.countTasksAtOrAfter(tenant, key, next) == 0,
-            com.windasoft.eam.common.MessageContext.text("server.inspection.message0067"));
-        repository.resetScheduleDate(next, next, tenant, key);
-      } else if (kind.equals("daily-plans")) {
-        LocalDateTime revisit = now().toLocalDate().atStartOfDay();
-        if (next.isAfter(revisit)) revisit = next;
-        if (dateTime(cursors.getFirst().get("next_at")).isAfter(revisit))
-          repository.revisitSchedule(revisit, tenant, key);
-      }
-      if (kind.equals("daily-plans") && existing != null)
-        generation.refreshAssignments(tenant, key, auth.userId());
-      generation.generate(tenant, key);
+      planSchedules.maintain(kind, tenant, key, data, existing, auth.userId());
     }
     if (kind.endsWith("plans"))
       custom.save(
