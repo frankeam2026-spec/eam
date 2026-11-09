@@ -23,6 +23,7 @@ public class DailyInspectionPlanService {
   private final DailyArrangementService arrangements;
   private final DailyArrangementRepository storage;
   private final InspectionGenerationService generation;
+  private final InspectionTaskAssignmentService assignments;
   private final ObjectMapper json;
 
   public DailyInspectionPlanService(
@@ -33,6 +34,7 @@ public class DailyInspectionPlanService {
       DailyArrangementService arrangements,
       DailyArrangementRepository storage,
       InspectionGenerationService generation,
+      InspectionTaskAssignmentService assignments,
       ObjectMapper json) {
     this.auth = auth;
     this.permissions = permissions;
@@ -41,6 +43,7 @@ public class DailyInspectionPlanService {
     this.arrangements = arrangements;
     this.storage = storage;
     this.generation = generation;
+    this.assignments = assignments;
     this.json = json;
   }
 
@@ -99,7 +102,7 @@ public class DailyInspectionPlanService {
     if (!projects.scoped(plan, "编辑")) deny();
     VersionGuard.checkPayload((Number) plan.get("row_version"), body);
     dailyPreview(body);
-    return Map.of("count", generation.assignmentImpact(auth.tenantId(), planId, copy(body)));
+    return Map.of("count", assignments.assignmentImpact(auth.tenantId(), planId, copy(body)));
   }
 
   @Transactional
