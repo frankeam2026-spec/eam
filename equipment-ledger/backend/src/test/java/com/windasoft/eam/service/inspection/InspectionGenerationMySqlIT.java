@@ -568,6 +568,7 @@ class InspectionGenerationMySqlIT {
     assertTrue(page.path("data").get(0).path("id").isTextual());
     assertEquals(Long.toString(firstId), page.path("data").get(0).path("id").asText());
     assertEquals("SEL-A", page.path("data").get(0).path("code").asText());
+    assertEquals("候选设备", page.path("data").get(0).path("name").asText());
     var second = json.valueToTree(service.dailyDeviceOptions("", 2, 2));
     assertEquals(Long.toString(firstId + 2), second.path("data").get(0).path("id").asText());
     when(permissions.inspection("daily", "执行"))

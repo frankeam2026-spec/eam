@@ -54,6 +54,8 @@ class InspectionDeviceOptionContractTest {
     assertEquals(2, body.size());
     assertEquals(3, body.path("data").get(0).size());
     assertEquals("9007199254740993", body.path("data").get(0).path("id").asText());
+    assertEquals("设备", body.path("data").get(0).path("name").asText());
+    assertEquals("EQ-1", body.path("data").get(0).path("code").asText());
     assertTrue(body.path("data").get(0).path("id").isTextual());
     assertTrue(body.path("page").path("total").isIntegralNumber());
     assertEquals(2, body.path("page").path("number").asInt());
