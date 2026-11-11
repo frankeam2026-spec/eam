@@ -7,7 +7,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -79,26 +78,18 @@ class InspectionGenerationBudgetTest {
     doAnswer(
             call -> {
               List<Map<String, Object>> details = call.getArgument(3);
+              InspectionTaskCreationContext context = call.getArgument(4);
               return created.add(
-                      call.getArgument(4)
+                      context.due()
                           + "/"
-                          + call.getArgument(5)
+                          + context.shiftId()
                           + "/"
                           + details.getFirst().get("equipmentId"))
                   ? 1
                   : 0;
             })
         .when(creation)
-        .createTask(
-            anyLong(),
-            anyMap(),
-            anyMap(),
-            anyList(),
-            any(),
-            anyString(),
-            anyString(),
-            any(),
-            any());
+        .createTask(anyLong(), anyMap(), anyMap(), anyList(), any(), any());
   }
 
   private static List<Map<String, Object>> details(int count) {
