@@ -13,7 +13,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.PermissionScope;
-import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.util.LinkedHashMap;
@@ -30,7 +30,7 @@ class DailyInspectionPlanServiceTest {
     var projects = mock(InspectionProjectService.class);
     var validation = mock(InspectionValidationService.class);
     var arrangements = mock(DailyArrangementService.class);
-    var storage = mock(DailyArrangementRepository.class);
+    var storage = mock(EquipmentQueryRepository.class);
     var generation = mock(InspectionGenerationService.class);
     var assignments = mock(InspectionTaskAssignmentService.class);
     var service =
@@ -50,8 +50,7 @@ class DailyInspectionPlanServiceTest {
     var plan = Map.<String, Object>of("row_version", 4L);
     when(projects.raw("daily-plans", 7L, 99L, true)).thenReturn(plan);
     when(projects.scoped(plan, "编辑")).thenReturn(true);
-    when(generation.manualEvent(eq(7L), eq(plan), anyMap()))
-        .thenReturn(Map.of("created", 1));
+    when(generation.manualEvent(eq(7L), eq(plan), anyMap())).thenReturn(Map.of("created", 1));
     var body = new LinkedHashMap<String, Object>(Map.of("rowVersion", 4L));
 
     assertEquals(Map.of("created", 1), service.dailyEvent(99L, body));
@@ -67,7 +66,7 @@ class DailyInspectionPlanServiceTest {
     var projects = mock(InspectionProjectService.class);
     var validation = mock(InspectionValidationService.class);
     var arrangements = mock(DailyArrangementService.class);
-    var storage = mock(DailyArrangementRepository.class);
+    var storage = mock(EquipmentQueryRepository.class);
     var generation = mock(InspectionGenerationService.class);
     var assignments = mock(InspectionTaskAssignmentService.class);
     var service =
@@ -98,6 +97,7 @@ class DailyInspectionPlanServiceTest {
     assertThrows(IllegalArgumentException.class, () -> service.dailyPreview(body));
     verify(generation, never()).preview(anyLong(), anyMap(), anyInt());
   }
+
   @Test
   void dailyPreviewDelegatesEquipmentAuthorizationToValidationService() {
     var auth = mock(AuthContext.class);
@@ -105,7 +105,7 @@ class DailyInspectionPlanServiceTest {
     var projects = mock(InspectionProjectService.class);
     var validation = mock(InspectionValidationService.class);
     var arrangements = mock(DailyArrangementService.class);
-    var storage = mock(DailyArrangementRepository.class);
+    var storage = mock(EquipmentQueryRepository.class);
     var generation = mock(InspectionGenerationService.class);
     var assignments = mock(InspectionTaskAssignmentService.class);
     var service =
@@ -146,5 +146,4 @@ class DailyInspectionPlanServiceTest {
     verify(validation).checkEquipment(equipment, "daily-plans", "新增");
     verify(projects).projects(eq(7L), anyMap(), eq(true));
   }
-
 }

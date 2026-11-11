@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.dto.inspection.InspectionGenerationTarget;
 import com.windasoft.eam.dto.system.PermissionScope;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionDefinitionStorage;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
@@ -130,6 +131,7 @@ class InspectionGenerationMySqlIT {
   @MockitoSpyBean InspectionRepository repository;
   @MockitoSpyBean InspectionTaskJournalRepository journal;
   @Autowired InspectionGenerationService generation;
+  @Autowired EquipmentQueryRepository equipmentQueries;
   @Autowired InspectionTaskLifecycleService lifecycle;
   @Autowired InspectionDefinitionStorage definitions;
   @MockitoSpyBean DailyArrangementRepository storage;
@@ -478,7 +480,7 @@ class InspectionGenerationMySqlIT {
             permissions,
             caller,
             new InspectionValidationService(repository, projects, caller, permissions)),
-        storage,
+        equipmentQueries,
         generation,
         mock(InspectionTaskAssignmentService.class),
         json);
@@ -535,6 +537,115 @@ class InspectionGenerationMySqlIT {
         "重复失败不重复激活事件");
     assertEquals(1, inbox("点巡检待执行"), "两次回退只能产生一条待执行通知");
     assertEquals(1, count("eam_notify_message"));
+  }
+
+  @Test
+  void deviceCandidatePageKeepsShapeIdsOrderingAndAuthorization() throws Exception {
+    notificationUser();
+    long firstId = 9007199254740993L;
+    candidate(firstId, "SEL-A", USER, null, false);
+    candidate(firstId + 1, "SEL-B", null, ORGANIZATION, false);
+    candidate(firstId + 2, "SEL-C", null, null, false);
+    candidate(firstId + 3, "SEL-D", USER, ORGANIZATION, true);
+    when(permissions.inspection("daily", "执行"))
+        .thenReturn(new PermissionScope(true, null, Set.of(), false));
+    var service = deviceCandidateService(TENANT);
+    var tx = new TransactionTemplate(transactions);
+    tx.setReadOnly(true);
+    var page =
+        tx.execute(
+            status -> {
+              long before = selectCount();
+              var result = json.valueToTree(service.dailyDeviceOptions("", 1, 2));
+              assertEquals(2, selectCount() - before, "非空候选页只做计数和数据查询");
+              return result;
+            });
+    assertEquals(2, page.size());
+    assertEquals(3, page.path("page").size());
+    assertEquals(3L, page.path("page").path("total").asLong());
+    assertEquals(2, page.path("data").size());
+    assertEquals(3, page.path("data").get(0).size());
+    assertTrue(page.path("data").get(0).path("id").isTextual());
+    assertEquals(Long.toString(firstId), page.path("data").get(0).path("id").asText());
+    assertEquals("SEL-A", page.path("data").get(0).path("code").asText());
+    var second = json.valueToTree(service.dailyDeviceOptions("", 2, 2));
+    assertEquals(Long.toString(firstId + 2), second.path("data").get(0).path("id").asText());
+    when(permissions.inspection("daily", "执行"))
+        .thenReturn(new PermissionScope(false, null, Set.of(ORGANIZATION), true));
+    assertEquals(
+        2,
+        json.valueToTree(service.dailyDeviceOptions("", 1, 20))
+            .path("page")
+            .path("total")
+            .asLong());
+    when(permissions.inspection("daily", "执行"))
+        .thenReturn(new PermissionScope(false, null, Set.of(), false));
+    assertEquals(
+        0,
+        json.valueToTree(service.dailyDeviceOptions("", 1, 20))
+            .path("page")
+            .path("total")
+            .asLong());
+    when(permissions.inspection("daily", "执行"))
+        .thenReturn(new PermissionScope(true, null, Set.of(), false));
+    assertEquals(
+        0,
+        json.valueToTree(deviceCandidateService(TENANT + 1).dailyDeviceOptions("", 1, 20))
+            .path("page")
+            .path("total")
+            .asLong());
+  }
+
+  @Test
+  void deviceCandidateKeywordEscapesWildcardsAndKeepsPageClamping() {
+    notificationUser();
+    candidate(9007199254740993L, "REF-100%_X", USER, null, false);
+    candidate(9007199254740994L, "REF-100ABX", USER, null, false);
+    when(permissions.inspection("daily", "执行"))
+        .thenReturn(new PermissionScope(true, null, Set.of(), false));
+    var result =
+        json.valueToTree(deviceCandidateService(TENANT).dailyDeviceOptions("100%_", 0, 1000));
+    assertEquals(1, result.path("data").size());
+    assertEquals("REF-100%_X", result.path("data").get(0).path("code").asText());
+    assertEquals(1, result.path("page").path("number").asInt());
+    assertEquals(100, result.path("page").path("size").asInt());
+  }
+
+  private void candidate(long id, String code, Long owner, Long department, boolean deleted) {
+    db.update(
+        "INSERT INTO"
+            + " eam_equipment(id,tenant_id,equipment_code,name,category,company,department,owner_user_id,department_org_id,deleted)"
+            + " VALUES(?,?,?,'候选设备','分类','公司','部门',?,?,?)",
+        id,
+        TENANT,
+        code,
+        owner,
+        department,
+        deleted);
+  }
+
+  private long selectCount() {
+    return Long.parseLong(
+        db.queryForList("SHOW SESSION STATUS LIKE 'Com_select'")
+            .getFirst()
+            .get("Value")
+            .toString());
+  }
+
+  private DailyInspectionPlanService deviceCandidateService(long tenant) {
+    var caller = mock(AuthContext.class);
+    when(caller.tenantId()).thenReturn(tenant);
+    when(caller.userId()).thenReturn(USER);
+    return new DailyInspectionPlanService(
+        caller,
+        permissions,
+        projects,
+        mock(InspectionValidationService.class),
+        mock(DailyArrangementService.class),
+        equipmentQueries,
+        generation,
+        mock(InspectionTaskAssignmentService.class),
+        json);
   }
 
   @Test

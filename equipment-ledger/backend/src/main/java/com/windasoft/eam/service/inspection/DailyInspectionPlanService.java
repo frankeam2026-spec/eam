@@ -12,7 +12,9 @@ import com.windasoft.eam.common.FieldValidationException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.MessageRef;
 import com.windasoft.eam.common.VersionGuard;
-import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
+import com.windasoft.eam.dto.common.PageResult;
+import com.windasoft.eam.dto.inspection.InspectionDeviceOption;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.time.LocalDate;
@@ -31,7 +33,7 @@ public class DailyInspectionPlanService {
   private final InspectionProjectService projects;
   private final InspectionValidationService validation;
   private final DailyArrangementService arrangements;
-  private final DailyArrangementRepository storage;
+  private final EquipmentQueryRepository equipmentQueries;
   private final InspectionGenerationService generation;
   private final InspectionTaskAssignmentService assignments;
   private final ObjectMapper json;
@@ -42,7 +44,7 @@ public class DailyInspectionPlanService {
       InspectionProjectService projects,
       InspectionValidationService validation,
       DailyArrangementService arrangements,
-      DailyArrangementRepository storage,
+      EquipmentQueryRepository equipmentQueries,
       InspectionGenerationService generation,
       InspectionTaskAssignmentService assignments,
       ObjectMapper json) {
@@ -51,27 +53,35 @@ public class DailyInspectionPlanService {
     this.projects = projects;
     this.validation = validation;
     this.arrangements = arrangements;
-    this.storage = storage;
+    this.equipmentQueries = equipmentQueries;
     this.generation = generation;
     this.assignments = assignments;
     this.json = json;
   }
 
-  public Object dailyDeviceOptions(String keyword, int page, int size) {
-    return storage.deviceEquipment(
-        auth.tenantId(),
-        auth.userId(),
-        permissions.inspection("daily", "执行"),
-        keyword,
-        Math.max(1, page),
-        Math.max(1, Math.min(100, size)));
+  /** 候选按点检执行权限查询，不能借用设备台账查看范围；分页裁剪保持原选择器契约。 */
+  public PageResult<InspectionDeviceOption> dailyDeviceOptions(String keyword, int page, int size) {
+    int effectivePage = Math.max(1, page), effectiveSize = Math.max(1, Math.min(100, size));
+    var result =
+        equipmentQueries.deviceCandidates(
+            auth.tenantId(),
+            auth.userId(),
+            permissions.inspection("daily", "执行"),
+            keyword,
+            effectivePage,
+            effectiveSize);
+    var rows =
+        result.getRecords().stream()
+            .map(e -> new InspectionDeviceOption(e.getId(), e.getName(), e.getEquipmentCode()))
+            .toList();
+    return new PageResult<>(rows, effectivePage, effectiveSize, result.getTotal());
   }
 
-  public Object dailyEventOptions(String keyword, int page, int size) {
+  /** 人工事件已停用，旧客户端仍收到原空页；Void明确无候选模型，不为关闭的能力虚构字段。 */
+  public PageResult<Void> dailyEventOptions(String keyword, int page, int size) {
     permissions.require("inspectionDailyTask", "查看");
     permissions.require("inspectionDailyTask", "执行");
-    return new com.windasoft.eam.dto.common.PageResult<>(
-        List.of(), Math.max(1, page), Math.max(1, Math.min(200, size)), 0);
+    return new PageResult<>(List.of(), Math.max(1, page), Math.max(1, Math.min(200, size)), 0);
   }
 
   /** 编辑预览可能补回原安排的排班，必须先复核原计划，再校验目标部门及设备；否则可借请求部门绕过对象范围。 校验只修改请求副本，不锁定计划、不保存安排，也不创建任务或通知。 */

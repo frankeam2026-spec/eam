@@ -1,5 +1,7 @@
 package com.windasoft.eam.controller.inspection;
 
+import com.windasoft.eam.dto.common.PageResult;
+import com.windasoft.eam.dto.inspection.InspectionDeviceOption;
 import com.windasoft.eam.service.business.BusinessQueryService;
 import com.windasoft.eam.service.inspection.DailyArrangementService;
 import com.windasoft.eam.service.inspection.DailyInspectionExemptionService;
@@ -8,8 +10,17 @@ import com.windasoft.eam.service.inspection.InspectionCsvService;
 import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.inspection.InspectionService;
 import com.windasoft.eam.service.inspection.InspectionTaskService;
-import java.util.*;
-import org.springframework.web.bind.annotation.*;
+import java.util.List;
+import java.util.Map;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/inspection")
@@ -43,7 +54,7 @@ public class InspectionController {
   }
 
   @GetMapping("/daily-device-options")
-  public Object dailyDeviceOptions(
+  public PageResult<InspectionDeviceOption> dailyDeviceOptions(
       @RequestParam(defaultValue = "") String q,
       @RequestParam(defaultValue = "1") int page,
       @RequestParam(defaultValue = "20") int size) {
@@ -65,7 +76,7 @@ public class InspectionController {
   }
 
   @GetMapping("/daily-event-options")
-  public Object eventOptions(
+  public PageResult<Void> eventOptions(
       @RequestParam(defaultValue = "") String q,
       @RequestParam(defaultValue = "1") int page,
       @RequestParam(defaultValue = "20") int size) {

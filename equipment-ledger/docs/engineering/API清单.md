@@ -345,3 +345,10 @@ Controller/Service使用明确查询及响应类型，设备关联Repository复�
 ### 维修审查整改（2026-11-02）
 
 既有 /api/v1/repairs 路由不变。创建/编辑/动作使用 DataResponse<RepairOrderView>，列表保留 data/page/counts，处理详情使用 RepairWorkflowDetail；工作流动作改为 RepairWorkflowCommand，审批重提交版本必填且非负。上传、下载和绑定核对文件原归属，固定接口字段及日期/编号语义由兼容测试核对。动态扩展字段及附件元数据维持既有验证边界。详见[维修模块审查整改](../plans/维修模块审查整改-20261102.md)。
+
+## 点巡检入口类型迁移（2026-11-11）
+
+- POST `/api/v1/inspection/files`：沿用multipart的file字段和200响应，返回`DataResponse<InspectionFileUploadResult>`；业务Service直接返回五字段结果，不返回HTTP包装。原权限、20MB、格式和失败清理规则不变。
+- GET `/api/v1/inspection/daily-device-options`：q/page/size参数及原裁剪不变，返回`PageResult<InspectionDeviceOption>`，id为十进制字符串、name/code为原字段，分页数值不变。按日常点检执行范围在数据库授权过滤，设备Mapper完成查询及分页。
+- GET `/api/v1/inspection/daily-event-options`：停用人工事件的兼容空页返回`PageResult<Void>`；继续检查原查看/执行权限、保持空数组和原分页裁剪，不启用该能力。
+- 前端仍由`src/inspection.ts`的`inspectionUpload`和`deviceEquipmentOptions`读取，JSON层级不变。证据及其余入口边界见[本批记录](../plans/点巡检Map入口类型治理-20261111.md)。
