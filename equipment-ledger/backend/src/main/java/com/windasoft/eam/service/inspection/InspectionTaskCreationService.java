@@ -1,15 +1,34 @@
 package com.windasoft.eam.service.inspection;
 
-import static com.windasoft.eam.common.inspection.InspectionSupport.*;
+import static com.windasoft.eam.common.inspection.InspectionSupport.dateTime;
+import static com.windasoft.eam.common.inspection.InspectionSupport.executionTodoEligible;
+import static com.windasoft.eam.common.inspection.InspectionSupport.ids;
+import static com.windasoft.eam.common.inspection.InspectionSupport.now;
+import static com.windasoft.eam.common.inspection.InspectionSupport.nullable;
+import static com.windasoft.eam.common.inspection.InspectionSupport.number;
+import static com.windasoft.eam.common.inspection.InspectionSupport.rows;
+import static com.windasoft.eam.common.inspection.InspectionSupport.shiftDuration;
+import static com.windasoft.eam.common.inspection.InspectionSupport.text;
+import static com.windasoft.eam.common.inspection.InspectionSupport.yes;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.system.PermissionService;
-import java.time.*;
-import java.util.*;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 /** Builds and persists task snapshots and the business records created with each task. */
@@ -50,8 +69,8 @@ public class InspectionTaskCreationService {
   }
 
   /**
-   * Reuses lookup results without mutating them, only during one plan-generation transaction. A new cache is
-   * created for every invocation so later runs always observe current master data.
+   * Reuses lookup results without mutating them, only during one plan-generation transaction. A new
+   * cache is created for every invocation so later runs always observe current master data.
    */
   static final class GenerationCache {
     private final Map<Long, Map<String, Object>> equipment = new HashMap<>();
@@ -64,7 +83,6 @@ public class InspectionTaskCreationService {
       typeNames.put(typeId, name);
     }
   }
-
 
   List<Long> effectiveOwners(
       long tenant,
@@ -86,7 +104,7 @@ public class InspectionTaskCreationService {
         : ids(detail.get("owners"));
   }
 
-
+  /** 在调用方持有计划及调度锁的事务内创建一次发生，任务快照、关联、事件和初始通知参与同一提交。 已有发生先返回0，不再分配编号或重复写事件；缓存由本轮生成传入，不跨生成请求保留。 */
   public int createTask(
       long tenant,
       Map<String, Object> plan,
@@ -194,19 +212,14 @@ public class InspectionTaskCreationService {
     snap.put("shiftDate", due.toLocalDate().toString());
     snap.put(
         "equipmentName",
-        equipmentList.stream()
-            .map(e -> text(e, "name"))
-            .collect(java.util.stream.Collectors.joining("、")));
+        equipmentList.stream().map(e -> text(e, "name")).collect(Collectors.joining("、")));
     snap.put(
         "equipmentCode",
-        equipmentList.stream()
-            .map(e -> text(e, "code"))
-            .collect(java.util.stream.Collectors.joining("、")));
+        equipmentList.stream().map(e -> text(e, "code")).collect(Collectors.joining("、")));
     Long departmentId = nullable(plan.get("department_id"));
     String departmentName =
         cache.departmentNames.computeIfAbsent(
-            departmentId,
-            id -> Objects.toString(repository.findOrganizationName(tenant, id), ""));
+            departmentId, id -> Objects.toString(repository.findOrganizationName(tenant, id), ""));
     snap.put("department", departmentName);
     boolean open =
         p.get("_arrangement") instanceof Map<?, ?>
@@ -248,8 +261,7 @@ public class InspectionTaskCreationService {
       company = nullable(eq.get("company_org_id"));
     } else {
       if (!cache.companyIds.containsKey(departmentId))
-        cache.companyIds.put(
-            departmentId, permissions.companyOfOrganization(tenant, departmentId));
+        cache.companyIds.put(departmentId, permissions.companyOfOrganization(tenant, departmentId));
       company = cache.companyIds.get(departmentId);
     }
     Object taskDepartment =
@@ -274,20 +286,12 @@ public class InspectionTaskCreationService {
         encode(snap));
     if (p.get("_arrangement") instanceof Map<?, ?>) {
       var a = (Map<String, Object>) p.get("_arrangement");
+      Long followUp = nullable(a.get("followUpUserId"));
       dailyStorage.taskMetadata(tenant, task, a, text(p, "_businessDate"), text(p, "_eventKey"));
       if (!exemption.isEmpty()) dailyStorage.scheduledExemption(tenant, task, exemption);
-      if (exemption.isEmpty()
-          && owners.isEmpty()
-          && !open
-          && nullable(a.get("followUpUserId")) != null)
+      if (exemption.isEmpty() && owners.isEmpty() && !open && followUp != null && followUp > 0)
         journal.notify(
-            tenant,
-            task,
-            List.of(number(a.get("followUpUserId"))),
-            "点巡检待安排",
-            text(snap, "equipmentName"),
-            true,
-            false);
+            tenant, task, List.of(followUp), "点巡检待安排", text(snap, "equipmentName"), true, false);
     }
     journal.event(
         tenant,
@@ -295,12 +299,9 @@ public class InspectionTaskCreationService {
         "生成任务",
         null,
         "系统",
-        Map.of(
-            "计划", plan.get("name"),
-            "开始时间", due.toString(),
-            "班次", shiftName,
-            "新状态", status));
-    if (exemption.isEmpty() && !due.isAfter(now()))
+        Map.of("计划", plan.get("name"), "开始时间", due.toString(), "班次", shiftName, "新状态", status));
+    // 资格须在写入公共通知来源之前判定，事后关闭待办不能撤回已入队的通知。
+    if (executionTodoEligible(status, due, expires, yes(p.get("allowLate")), now()))
       journal.notify(
           tenant,
           task,
@@ -312,13 +313,11 @@ public class InspectionTaskCreationService {
     return 1;
   }
 
-
   private String encode(Object value) {
     try {
       return json.writeValueAsString(value);
     } catch (Exception e) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException(
-          "server.inspection.message0012");
+      throw new LocalizedArgumentException("server.inspection.message0012");
     }
   }
 }

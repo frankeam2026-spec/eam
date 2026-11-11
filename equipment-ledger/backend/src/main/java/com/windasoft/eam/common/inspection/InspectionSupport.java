@@ -1,7 +1,18 @@
 package com.windasoft.eam.common.inspection;
 
-import java.time.*;
-import java.util.*;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.common.LocalizedStatusException;
+import com.windasoft.eam.common.MessageContext;
+import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import org.springframework.http.HttpStatus;
 
 /** Shared value and calendar rules, independent of Spring business services. */
@@ -17,7 +28,7 @@ public final class InspectionSupport {
   public static long number(Object value) {
     return value == null || value.toString().isBlank()
         ? 0
-        : new java.math.BigDecimal(value.toString()).longValueExact();
+        : new BigDecimal(value.toString()).longValueExact();
   }
 
   public static boolean yes(Object v) {
@@ -29,8 +40,7 @@ public final class InspectionSupport {
   }
 
   public static void deny() {
-    throw new com.windasoft.eam.common.LocalizedStatusException(
-        HttpStatus.FORBIDDEN, "server.inspection.message0007");
+    throw new LocalizedStatusException(HttpStatus.FORBIDDEN, "server.inspection.message0007");
   }
 
   public static List<Map<String, Object>> rows(Object value) {
@@ -51,8 +61,27 @@ public final class InspectionSupport {
     return LocalDateTime.now(ZONE);
   }
 
+  /**
+   * 创建和后续维护共用的待执行通知资格。
+   *
+   * <p>补生成的任务即使暂存为待执行，超过截止且不可补检时也不能催执行；已免检、已作废和未来任务不生成此待办。
+   *
+   * <p>超期跟进等其他提醒仍按各自规则处理，执行权限继续由业务入口校验。
+   */
+  public static boolean executionTodoEligible(
+      String status,
+      LocalDateTime due,
+      LocalDateTime expires,
+      boolean allowLate,
+      LocalDateTime at) {
+    return (InspectionTaskStatus.PENDING.code().equals(status)
+            || (InspectionTaskStatus.EXPIRED.code().equals(status) && allowLate))
+        && !due.isAfter(at)
+        && (allowLate || !at.isAfter(expires));
+  }
+
   public static LocalDateTime dateTime(Object value) {
-    return value instanceof java.sql.Timestamp t
+    return value instanceof Timestamp t
         ? t.toLocalDateTime()
         : LocalDateTime.parse(value.toString().replace(' ', 'T'));
   }
@@ -65,8 +94,8 @@ public final class InspectionSupport {
       return day.atTime(end ? LocalTime.of(23, 59, 59) : LocalTime.MIDNIGHT);
     }
     LocalDateTime result = dateTime(text);
-    require(result.getNano() == 0,
-        com.windasoft.eam.common.MessageContext.text("server.inspection.message0017", "planTime"));
+    require(
+        result.getNano() == 0, MessageContext.text("server.inspection.message0017", "planTime"));
     return result;
   }
 
@@ -77,8 +106,7 @@ public final class InspectionSupport {
   public static void range(Map<String, Object> data, String key, long min, long max) {
     long value = number(data.get(key));
     require(
-        value >= min && value <= max,
-        com.windasoft.eam.common.MessageContext.text("server.inspection.message0017", key));
+        value >= min && value <= max, MessageContext.text("server.inspection.message0017", key));
   }
 
   public static LocalDateTime shiftDuration(
@@ -90,9 +118,7 @@ public final class InspectionSupport {
       case "日" -> base.plusDays(amount);
       case "周" -> base.plusWeeks(amount);
       case "月" -> base.plusMonths(amount);
-      default ->
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.inspection.message0008");
+      default -> throw new LocalizedArgumentException("server.inspection.message0008");
     };
   }
 
@@ -106,9 +132,7 @@ public final class InspectionSupport {
           case "日" -> 365L * maxYears;
           case "周" -> 52L * maxYears;
           case "月" -> 12L * maxYears;
-          default ->
-              throw new com.windasoft.eam.common.LocalizedArgumentException(
-                  "server.inspection.message0008");
+          default -> throw new LocalizedArgumentException("server.inspection.message0008");
         };
     range(data, key, min, max);
   }
