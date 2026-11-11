@@ -1,10 +1,19 @@
 package com.windasoft.eam.service.inspection;
 
-import com.windasoft.eam.dto.inspection.*;
+import static com.windasoft.eam.common.inspection.InspectionSupport.deny;
+import static com.windasoft.eam.common.inspection.InspectionSupport.number;
+import static com.windasoft.eam.common.inspection.InspectionSupport.require;
+
+import com.windasoft.eam.dto.inspection.InspectionDownload;
+import com.windasoft.eam.dto.inspection.InspectionFileUploadResult;
+import com.windasoft.eam.dto.inspection.InspectionUpload;
 import com.windasoft.eam.repository.inspection.InspectionFileRepository;
-import com.windasoft.eam.service.system.*;
-import java.nio.file.*;
-import java.util.*;
+import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.PermissionService;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Objects;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -25,16 +34,15 @@ public class InspectionFileService {
     this.lists = lists;
   }
 
-  public Object upload(InspectionUpload file) throws Exception {
-    com.windasoft.eam.common.inspection.InspectionSupport.require(
-        permissions.anyInspection("查看"), "没有点巡检访问权限");
-    com.windasoft.eam.common.inspection.InspectionSupport.require(
-        !file.empty() && file.size() <= 20L * 1024 * 1024, "请选择不超过20MB的附件");
+  /** 文件与元数据登记成功后返回业务结果；登记失败仍清理文件，data响应包装由Controller负责。 */
+  public InspectionFileUploadResult upload(InspectionUpload file) throws Exception {
+    require(permissions.anyInspection("查看"), "没有点巡检访问权限");
+    require(!file.empty() && file.size() <= 20L * 1024 * 1024, "请选择不超过20MB的附件");
     String name = Objects.toString(file.name(), "附件");
     name = Path.of(name).getFileName().toString();
     int dot = name.lastIndexOf('.');
     String ext = dot < 0 ? "" : name.substring(dot).toLowerCase();
-    com.windasoft.eam.common.inspection.InspectionSupport.require(
+    require(
         ext.matches("\\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv)"), "不支持该附件格式");
     String id = UUID.randomUUID().toString();
     String type = Objects.toString(file.contentType(), "application/octet-stream");
@@ -49,35 +57,20 @@ public class InspectionFileService {
       }
       throw failure;
     }
-    return Map.of(
-        "data",
-        Map.of(
-            "id",
-            id,
-            "name",
-            name,
-            "contentType",
-            type,
-            "size",
-            file.size(),
-            "url",
-            "/api/v1/inspection/files/" + id));
+    return new InspectionFileUploadResult(
+        id, name, type, file.size(), "/api/v1/inspection/files/" + id);
   }
 
   public InspectionDownload download(String id) {
-    com.windasoft.eam.common.inspection.InspectionSupport.require(
-        id.matches("[0-9a-f-]{36}"), "附件不存在");
+    require(id.matches("[0-9a-f-]{36}"), "附件不存在");
     var files = repository.find(auth.tenantId(), id);
-    com.windasoft.eam.common.inspection.InspectionSupport.require(!files.isEmpty(), "附件不存在");
+    require(!files.isEmpty(), "附件不存在");
     var f = files.getFirst();
-    boolean allowed =
-        com.windasoft.eam.common.inspection.InspectionSupport.number(f.get("user_id"))
-            == auth.userId();
+    boolean allowed = number(f.get("user_id")) == auth.userId();
     if (!allowed) allowed = lists.hasFile(id);
-    if (!allowed) com.windasoft.eam.common.inspection.InspectionSupport.deny();
+    if (!allowed) deny();
     var file = repository.path(id, Objects.toString(f.get("extension")));
-    com.windasoft.eam.common.inspection.InspectionSupport.require(
-        Files.isRegularFile(file), "附件不存在");
+    require(Files.isRegularFile(file), "附件不存在");
     String ext = Objects.toString(f.get("extension"));
     String type =
         switch (ext) {

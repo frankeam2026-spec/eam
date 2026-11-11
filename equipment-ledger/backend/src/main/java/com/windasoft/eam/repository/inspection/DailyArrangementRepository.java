@@ -651,35 +651,4 @@ public class DailyArrangementRepository {
             InspectionTaskStatus.PENDING.code())
         > 0;
   }
-
-  public com.windasoft.eam.dto.common.PageResult<Map<String, Object>> deviceEquipment(
-      long tenant,
-      long user,
-      com.windasoft.eam.dto.system.PermissionScope scope,
-      String keyword,
-      int page,
-      int size) {
-    var predicate =
-        com.windasoft.eam.repository.common.SqlScopes.scope(
-                scope, "e.company_org_id", "e.department_org_id", "e.owner_user_id", user)
-            .and(
-                com.windasoft.eam.repository.common.SqlPredicate.of(
-                    "e.tenant_id=? AND e.deleted=0", tenant))
-            .and(
-                com.windasoft.eam.repository.common.SqlListFilters.contains(
-                    "CONCAT_WS(' ',e.equipment_code,e.name)", keyword));
-    String from = " FROM eam_equipment e WHERE " + predicate.sql();
-    long count =
-        db.queryForObject("SELECT COUNT(*)" + from, Long.class, predicate.arguments().toArray());
-    var args = new ArrayList<>(predicate.arguments());
-    args.add(size);
-    args.add((page - 1) * size);
-    var data =
-        db.queryForList(
-            "SELECT CAST(e.id AS CHAR) id,e.name,e.equipment_code code"
-                + from
-                + " ORDER BY e.equipment_code,e.id LIMIT ? OFFSET ?",
-            args.toArray());
-    return new com.windasoft.eam.dto.common.PageResult<>(data, page, size, count);
-  }
 }

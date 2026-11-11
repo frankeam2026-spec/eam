@@ -5,8 +5,11 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery;
+import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.repository.common.SqlListFilters;
 import com.windasoft.eam.repository.common.SqlPredicate;
+import com.windasoft.eam.repository.common.SqlScopes;
 import java.util.List;
 import java.util.function.Consumer;
 import org.springframework.stereotype.Repository;
@@ -60,6 +63,28 @@ public class EquipmentQueryRepository {
     }
     // 关键词可能包含OR，必须作为完整条件与租户和授权范围相交。
     query.apply("(" + sql + ")", predicate.arguments().toArray());
+  }
+
+  /** 供业务选择器读取设备的最小投影。范围由调用Service解析，这里只将租户、授权和转义关键词相交； 不加载媒体或设备关联，沿用设备Mapper的逻辑删除及MySQL分页能力。 */
+  public Page<Equipment> deviceCandidates(
+      long tenant, long user, PermissionScope scope, String keyword, int page, int size) {
+    var query =
+        new LambdaQueryWrapper<Equipment>()
+            .eq(Equipment::getTenantId, tenant)
+            .select(Equipment::getId, Equipment::getName, Equipment::getEquipmentCode)
+            .orderByAsc(Equipment::getEquipmentCode, Equipment::getId);
+    var predicate =
+        SqlScopes.scope(
+                scope,
+                "eam_equipment.company_org_id",
+                "eam_equipment.department_org_id",
+                "eam_equipment.owner_user_id",
+                user)
+            .and(
+                SqlListFilters.contains(
+                    "CONCAT_WS(' ',eam_equipment.equipment_code,eam_equipment.name)", keyword));
+    apply(query, predicate);
+    return equipment.selectPage(new Page<>(page, size), query);
   }
 
   private static void applyScope(

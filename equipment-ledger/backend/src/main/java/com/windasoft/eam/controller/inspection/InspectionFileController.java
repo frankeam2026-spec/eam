@@ -1,10 +1,18 @@
 package com.windasoft.eam.controller.inspection;
 
+import com.windasoft.eam.dto.common.DataResponse;
+import com.windasoft.eam.dto.inspection.InspectionFileUploadResult;
 import com.windasoft.eam.dto.inspection.InspectionUpload;
 import com.windasoft.eam.service.inspection.InspectionFileService;
 import org.springframework.core.io.FileSystemResource;
-import org.springframework.http.*;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
@@ -17,15 +25,17 @@ public class InspectionFileController {
   }
 
   @PostMapping
-  public Object upload(@RequestPart("file") MultipartFile file) throws Exception {
+  public DataResponse<InspectionFileUploadResult> upload(@RequestPart("file") MultipartFile file)
+      throws Exception {
     try (var input = file.getInputStream()) {
-      return service.upload(
-          new InspectionUpload(
-              file.getOriginalFilename(),
-              file.getContentType(),
-              file.getSize(),
-              file.isEmpty(),
-              input));
+      return new DataResponse<>(
+          service.upload(
+              new InspectionUpload(
+                  file.getOriginalFilename(),
+                  file.getContentType(),
+                  file.getSize(),
+                  file.isEmpty(),
+                  input)));
     }
   }
 

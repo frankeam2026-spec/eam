@@ -17,7 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.controller.inspection.InspectionController;
 import com.windasoft.eam.dto.system.PermissionScope;
-import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.service.business.BusinessQueryService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -61,7 +61,7 @@ class InspectionPreviewContractTest {
             projects,
             mock(InspectionValidationService.class),
             arrangements,
-            mock(DailyArrangementRepository.class),
+            mock(EquipmentQueryRepository.class),
             generation,
             mock(InspectionTaskAssignmentService.class),
             json);
