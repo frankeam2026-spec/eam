@@ -341,6 +341,7 @@ public class DailyArrangementRepository {
 
   public void taskMetadata(
       long tenant, long task, Map<String, Object> a, String businessDate, String eventKey) {
+    // 开放点检允许未指定跟进人，沿用安排本体的空白→null语义，不能写成不存在的用户0。
     db.update(
         "UPDATE eam_inspection_task SET"
             + " arrangement_id=?,arrangement_name=?,business_date=?,follow_up_user_id=?,event_key=?,source_assignment_mode=?,source_team_id=?"
@@ -348,7 +349,7 @@ public class DailyArrangementRepository {
         number(a.get("id")),
         text(a, "name"),
         businessDate,
-        number(a.get("followUpUserId")),
+        text(a, "followUpUserId").isBlank() ? null : number(a.get("followUpUserId")),
         eventKey,
         text(a, "personMode"),
         text(a, "teamId").isBlank() ? null : number(a.get("teamId")),
