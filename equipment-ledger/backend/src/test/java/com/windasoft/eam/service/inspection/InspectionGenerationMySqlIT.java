@@ -12,6 +12,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,6 +29,7 @@ import com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler;
 import com.windasoft.eam.scheduler.maintenance.MaintenanceScheduler;
 import com.windasoft.eam.scheduler.system.NotificationScheduler;
 import com.windasoft.eam.service.system.PermissionService;
+import java.sql.Date;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -122,7 +124,7 @@ class InspectionGenerationMySqlIT {
   @MockitoSpyBean InspectionTaskJournalRepository journal;
   @Autowired InspectionGenerationService generation;
   @Autowired InspectionDefinitionStorage definitions;
-  @Autowired DailyArrangementRepository storage;
+  @MockitoSpyBean DailyArrangementRepository storage;
   @Autowired PlatformTransactionManager transactions;
   @Autowired ObjectMapper json;
   @Autowired JdbcTemplate db;
@@ -287,6 +289,98 @@ class InspectionGenerationMySqlIT {
     assertCreated(2);
     assertEquals(0, generation.generate(TENANT, PLAN));
     assertCreated(2);
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  void overnightSnapshotAndArrangementMetadataKeepTheirExistingMeaning(boolean arranged)
+      throws Exception {
+    fixture(arranged, 1, 1, Map.of("useShiftEnd", true, "onlyAbnormal", true));
+    db.update(
+        "UPDATE "
+            + (arranged ? "eam_inspection_daily_arrangement_slot" : "eam_inspection_daily_shift")
+            + " SET start_time='23:30:00',end_time='07:15:00' WHERE tenant_id=?",
+        TENANT);
+    assertEquals(1, generation.generate(TENANT, PLAN));
+    var task = db.queryForMap("SELECT * FROM eam_inspection_task WHERE tenant_id=?", TENANT);
+    verify(storage).exemptions(TENANT, PLAN);
+    var snapshot =
+        json.readTree(
+            repository
+                .loadTask(TENANT, ((Number) task.get("id")).longValue(), false)
+                .getFirst()
+                .get("snapshot")
+                .toString());
+    assertEquals("班次0", snapshot.path("shiftName").asText());
+    assertEquals(day.toString(), snapshot.path("shiftDate").asText());
+    assertEquals(arranged ? "现场直接点检" : "指定负责人", snapshot.path("personMode").asText());
+    assertEquals(!arranged, snapshot.path("onlyAbnormal").asBoolean());
+    assertEquals(false, snapshot.path("allowLate").asBoolean());
+    assertEquals("测试设备", snapshot.path("equipmentName").asText());
+    assertEquals("1/1:1", snapshot.path("items").get(0).path("id").asText());
+    assertEquals("1", snapshot.path("equipment").get(0).path("id").asText());
+    snapshot.fieldNames().forEachRemaining(key -> assertTrue(!key.startsWith("_"), key));
+    assertTrue(
+        !snapshot.has("arrangements") && !snapshot.has("details") && !snapshot.has("roster"));
+    assertEquals(arranged ? ARRANGEMENT : null, task.get("arrangement_id"));
+    assertEquals(arranged ? Date.valueOf(day) : null, task.get("business_date"));
+    assertEquals(arranged ? ARRANGEMENT + ":0" : "0", task.get("shift_id"));
+    assertEquals(
+        day.atTime(23, 30).toString(),
+        db.queryForObject(
+            "SELECT DATE_FORMAT(due_at,'%Y-%m-%dT%H:%i') FROM eam_inspection_task WHERE"
+                + " tenant_id=?",
+            String.class, TENANT));
+    assertEquals(
+        day.plusDays(1).atTime(7, 15).toString(),
+        db.queryForObject(
+            "SELECT DATE_FORMAT(expires_at,'%Y-%m-%dT%H:%i') FROM eam_inspection_task WHERE"
+                + " tenant_id=?",
+            String.class, TENANT));
+  }
+
+  @Test
+  void rosterUsesOriginalShiftKeyRatherThanPrefixedTaskKey() throws Exception {
+    notificationUser();
+    fixture(
+        true,
+        1,
+        1,
+        Map.of(
+            "personMode",
+            "roster",
+            "allowLate",
+            true,
+            "dateRoster",
+            List.of(
+                Map.of(
+                    "key",
+                    "day-shift",
+                    "date",
+                    day.toString(),
+                    "slotId",
+                    "0",
+                    "start",
+                    "00:00",
+                    "end",
+                    "00:00",
+                    "unassigned",
+                    false,
+                    "users",
+                    List.of(Long.toString(USER))))));
+    assertEquals(1, generation.generate(TENANT, PLAN));
+    assertEquals(
+        USER,
+        db.queryForObject(
+            "SELECT user_id FROM eam_inspection_task_person WHERE tenant_id=? AND"
+                + " role_code='owner'",
+            Long.class,
+            TENANT));
+    assertEquals(
+        ARRANGEMENT + ":0",
+        db.queryForObject(
+            "SELECT shift_id FROM eam_inspection_task WHERE tenant_id=?", String.class, TENANT));
+    assertEquals(1, inbox("点巡检待执行"));
   }
 
   @Test
@@ -468,6 +562,16 @@ class InspectionGenerationMySqlIT {
         InspectionTaskStatus.EXEMPT.code(),
         db.queryForObject(
             "SELECT status FROM eam_inspection_task WHERE tenant_id=?", String.class, TENANT));
+    assertEquals(
+        1L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM eam_inspection_task t JOIN eam_inspection_daily_exemption e ON"
+                + " e.tenant_id=t.tenant_id AND e.plan_id=t.plan_id AND"
+                + " e.equipment_id=t.equipment_id WHERE t.tenant_id=? AND"
+                + " t.exemption_reason=e.reason AND t.exempted_by=e.approved_by AND"
+                + " t.exempted_at=e.approved_at",
+            Long.class,
+            TENANT));
     assertEquals(0, count("eam_inspection_inbox"));
     assertEquals(0, count("eam_notify_message"));
   }

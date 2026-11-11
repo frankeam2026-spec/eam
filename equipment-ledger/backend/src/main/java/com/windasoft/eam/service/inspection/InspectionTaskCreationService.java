@@ -1,6 +1,5 @@
 package com.windasoft.eam.service.inspection;
 
-import static com.windasoft.eam.common.inspection.InspectionSupport.dateTime;
 import static com.windasoft.eam.common.inspection.InspectionSupport.executionTodoEligible;
 import static com.windasoft.eam.common.inspection.InspectionSupport.ids;
 import static com.windasoft.eam.common.inspection.InspectionSupport.now;
@@ -15,6 +14,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
+import com.windasoft.eam.dto.inspection.ScheduledInspectionExemption;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.system.PermissionService;
@@ -31,7 +31,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
-/** Builds and persists task snapshots and the business records created with each task. */
+/** 在生成事务内装配任务快照并写入关联、履历与初始通知；不推进计划调度游标。 */
 @Service
 public class InspectionTaskCreationService {
   private final InspectionRepository repository;
@@ -68,16 +68,19 @@ public class InspectionTaskCreationService {
     }
   }
 
-  /**
-   * Reuses lookup results without mutating them, only during one plan-generation transaction. A new
-   * cache is created for every invocation so later runs always observe current master data.
-   */
+  /** 缓存仅属于本轮计划生成事务，不跨请求复用，避免后续轮次看不到人员、项目或免检变更。 */
   static final class GenerationCache {
     private final Map<Long, Map<String, Object>> equipment = new HashMap<>();
     private final Map<ProjectKey, List<Map<String, Object>>> projects = new HashMap<>();
     private final Map<Long, Long> companyIds = new HashMap<>();
     private final Map<Long, String> departmentNames = new HashMap<>();
     private final Map<Long, String> typeNames = new HashMap<>();
+
+    private List<ScheduledInspectionExemption> exemptions = List.of();
+
+    void rememberExemptions(List<ScheduledInspectionExemption> periods) {
+      exemptions = List.copyOf(periods);
+    }
 
     void rememberTypeName(long typeId, String name) {
       typeNames.put(typeId, name);
@@ -110,11 +113,14 @@ public class InspectionTaskCreationService {
       Map<String, Object> plan,
       Map<String, Object> p,
       List<Map<String, Object>> details,
-      LocalDateTime due,
-      String shiftId,
-      String shiftName,
-      LocalDateTime shiftEnd,
+      InspectionTaskCreationContext context,
       GenerationCache cache) {
+    var daily = context.daily();
+    LocalDateTime due = context.due();
+    String shiftId = context.shiftId(), shiftName = context.shiftName();
+    LocalDateTime shiftEnd = context.shiftEnd();
+    boolean allowLate =
+        yes(daily == null ? p.get("allowLate") : daily.definition().get("allowLate"));
     String kind = text(plan, "kind").equals("daily-plans") ? "daily" : "periodic";
     long equipmentId = kind.equals("daily") ? number(details.getFirst().get("equipmentId")) : 0;
     long planId = number(plan.get("id"));
@@ -122,15 +128,13 @@ public class InspectionTaskCreationService {
     var snap = new LinkedHashMap<String, Object>(p);
     snap.remove("details");
     snap.remove("roster");
-    snap.remove("_arrangement");
     snap.remove("arrangements");
-    snap.remove("_eventKey");
     snap.remove("_activeIds");
     snap.remove("_teams");
-    snap.remove("_exemptions");
-    snap.remove("_businessDate");
-    snap.remove("_rosterShift");
-    snap.remove("_windowEnd");
+    if (daily != null) {
+      snap.put("allowLate", allowLate);
+      snap.put("onlyAbnormal", false);
+    }
     var equipmentList = new ArrayList<Map<String, Object>>();
     var items = new ArrayList<Map<String, Object>>();
     var owners = new LinkedHashSet<Long>();
@@ -141,16 +145,15 @@ public class InspectionTaskCreationService {
           cache.equipment.computeIfAbsent(
               detailEquipmentId, id -> projectSource.equipment(tenant, id));
       if (kind.equals("periodic")) owners.addAll(ids(p.get("owners")));
-      else if (p.get("_arrangement") instanceof Map<?, ?>) {
-        var a = (Map<String, Object>) p.get("_arrangement");
+      else if (daily != null) {
         owners.addAll(
             arrangements.ownersAt(
                 tenant,
                 p,
-                a,
+                daily.definition(),
                 detail,
-                LocalDate.parse(text(p, "_businessDate")),
-                text(p, "_rosterShift"),
+                daily.businessDate(),
+                daily.rosterShiftId(),
                 due));
       } else owners.addAll(effectiveOwners(tenant, p, detail, due.toLocalDate(), shiftId));
       reviewers.addAll(ids(detail.get("reviewers")));
@@ -183,7 +186,10 @@ public class InspectionTaskCreationService {
         items.add(item);
       }
     }
-    if (kind.equals("daily") && text(p, "personMode").equals("按照排班表") && owners.isEmpty()) {
+    if (daily == null
+        && kind.equals("daily")
+        && text(p, "personMode").equals("按照排班表")
+        && owners.isEmpty()) {
       if (yes(p.get("skipUnstaffed"))) return 0;
       owners.addAll(ids(p.get("owners")));
     }
@@ -221,26 +227,23 @@ public class InspectionTaskCreationService {
         cache.departmentNames.computeIfAbsent(
             departmentId, id -> Objects.toString(repository.findOrganizationName(tenant, id), ""));
     snap.put("department", departmentName);
-    boolean open =
-        p.get("_arrangement") instanceof Map<?, ?>
-            && arrangements.open((Map<String, Object>) p.get("_arrangement"), details.getFirst());
+    boolean open = daily != null && arrangements.open(daily.definition(), details.getFirst());
     snap.put(
         "personMode",
-        open ? "现场直接点检" : (kind.equals("periodic") ? "指定负责人" : text(p, "personMode")));
-    Map<String, Object> exemption = Map.of();
-    if (p.containsKey("_arrangement")) {
-      var periods =
-          (List<Map<String, Object>>)
-              p.computeIfAbsent("_exemptions", ignored -> dailyStorage.exemptions(tenant, planId));
+        open
+            ? "现场直接点检"
+            : (daily != null || kind.equals("periodic") ? "指定负责人" : text(p, "personMode")));
+    ScheduledInspectionExemption exemption = null;
+    if (daily != null) {
       exemption =
-          periods.stream()
+          cache.exemptions.stream()
               .filter(
                   e ->
-                      number(e.get("equipmentId")) == equipmentId
-                          && !due.isBefore(dateTime(e.get("startAt")))
-                          && due.isBefore(dateTime(e.get("endAt"))))
+                      e.equipmentId() == equipmentId
+                          && !due.isBefore(e.startAt())
+                          && due.isBefore(e.endAt()))
               .findFirst()
-              .orElse(Map.of());
+              .orElse(null);
     }
     long task = IdWorker.getId();
     String code = numbers.nextCode(tenant, kind.equals("daily") ? "DJ" : "XJ");
@@ -250,10 +253,11 @@ public class InspectionTaskCreationService {
         due.isAfter(now())
             ? InspectionTaskStatus.NOT_STARTED.code()
             : InspectionTaskStatus.PENDING.code();
-    if (p.containsKey("_arrangement")) {
-      expires = dateTime(p.get("_windowEnd"));
-      if (now().isAfter(expires)) status = InspectionTaskStatus.EXPIRED.code();
-      snap.put("onlyAbnormal", false);
+    if (daily != null) {
+      expires = context.shiftEnd();
+      if (now().isAfter(expires)) {
+        status = InspectionTaskStatus.EXPIRED.code();
+      }
     }
     Long company;
     if (open) {
@@ -268,7 +272,9 @@ public class InspectionTaskCreationService {
         open
             ? cache.equipment.get(equipmentId).get("department_org_id")
             : plan.get("department_id");
-    if (!exemption.isEmpty()) status = InspectionTaskStatus.EXEMPT.code();
+    if (exemption != null) {
+      status = InspectionTaskStatus.EXEMPT.code();
+    }
     repository.insertTask(
         task,
         tenant,
@@ -284,14 +290,18 @@ public class InspectionTaskCreationService {
         expires,
         status,
         encode(snap));
-    if (p.get("_arrangement") instanceof Map<?, ?>) {
-      var a = (Map<String, Object>) p.get("_arrangement");
+    if (daily != null) {
+      var a = daily.definition();
       Long followUp = nullable(a.get("followUpUserId"));
-      dailyStorage.taskMetadata(tenant, task, a, text(p, "_businessDate"), text(p, "_eventKey"));
-      if (!exemption.isEmpty()) dailyStorage.scheduledExemption(tenant, task, exemption);
-      if (exemption.isEmpty() && owners.isEmpty() && !open && followUp != null && followUp > 0)
+      // 当前只按班次生成，不再携带已停用的人工事件键；保留任务列的空字符串语义。
+      dailyStorage.taskMetadata(tenant, task, a, daily.businessDate().toString(), "");
+      if (exemption != null) {
+        dailyStorage.scheduledExemption(tenant, task, exemption);
+      }
+      if (exemption == null && owners.isEmpty() && !open && followUp != null && followUp > 0) {
         journal.notify(
             tenant, task, List.of(followUp), "点巡检待安排", text(snap, "equipmentName"), true, false);
+      }
     }
     journal.event(
         tenant,
@@ -301,7 +311,7 @@ public class InspectionTaskCreationService {
         "系统",
         Map.of("计划", plan.get("name"), "开始时间", due.toString(), "班次", shiftName, "新状态", status));
     // 资格须在写入公共通知来源之前判定，事后关闭待办不能撤回已入队的通知。
-    if (executionTodoEligible(status, due, expires, yes(p.get("allowLate")), now()))
+    if (executionTodoEligible(status, due, expires, allowLate, now())) {
       journal.notify(
           tenant,
           task,
@@ -310,6 +320,7 @@ public class InspectionTaskCreationService {
           text(snap, "equipmentName"),
           true,
           false);
+    }
     return 1;
   }
 

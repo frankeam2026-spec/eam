@@ -93,10 +93,11 @@ public class InspectionGenerationService {
     if (plans.isEmpty()) return 0;
     var plan = plans.getFirst();
     var p = decode(plan.get("payload"));
+    var cache = new InspectionTaskCreationService.GenerationCache();
     if (text(plan, "kind").equals("daily-plans")) {
       p.put("arrangements", dailyStorage.load(tenant, planId));
       p.put("workdays", dailyStorage.workdays(tenant, planId));
-      p.put("_exemptions", dailyStorage.exemptions(tenant, planId));
+      cache.rememberExemptions(dailyStorage.exemptions(tenant, planId));
       p.put(
           "_activeIds",
           dailyStorage.activePeople(tenant).stream()
@@ -104,7 +105,6 @@ public class InspectionGenerationService {
               .collect(Collectors.toSet()));
       p.put("_teams", new HashMap<Long, List<Long>>());
     }
-    var cache = new InspectionTaskCreationService.GenerationCache();
     boolean generationEnabled = yes(p.get("enabled"));
     if (generationEnabled && text(plan, "kind").equals("periodic-plans")) {
       var selectedType =
@@ -124,8 +124,16 @@ public class InspectionGenerationService {
         LocalDateTime start = periodicBoundary(p.get("startDate"), false),
             end = periodicBoundary(p.get("endDate"), true);
         for (int n = 0; n < 100 && readyForGeneration(next, p) && !next.isAfter(end); n++) {
-          if (!next.isBefore(start))
-            count += taskCreation.createTask(tenant, plan, p, details, next, "", "", null, cache);
+          if (!next.isBefore(start)) {
+            count +=
+                taskCreation.createTask(
+                    tenant,
+                    plan,
+                    p,
+                    details,
+                    InspectionTaskCreationContext.scheduled(next, "", "", null),
+                    cache);
+          }
           index++;
           next = advance(anchor, index, number(p.get("period")), text(p, "unit"));
         }
@@ -152,7 +160,7 @@ public class InspectionGenerationService {
                     dayComplete = false;
                     continue;
                   }
-                  var adjusted = adjust(p, a, occurrence, "");
+                  var context = InspectionTaskCreationContext.arranged(a, occurrence);
                   for (var detail : arrangements.details(p, a)) {
                     if (count >= DAILY_TASK_BATCH_LIMIT) {
                       // 退出当天的安排遍历，不能只退出设备循环后把日期误当成已完成。
@@ -160,16 +168,7 @@ public class InspectionGenerationService {
                       break arrangedOccurrences;
                     }
                     count +=
-                        taskCreation.createTask(
-                            tenant,
-                            plan,
-                            adjusted,
-                            List.of(detail),
-                            occurrence.start(),
-                            occurrence.key(),
-                            occurrence.name(),
-                            occurrence.end(),
-                            cache);
+                        taskCreation.createTask(tenant, plan, p, List.of(detail), context, cache);
                   }
                 }
               }
@@ -195,10 +194,8 @@ public class InspectionGenerationService {
                           plan,
                           p,
                           List.of(detail),
-                          due,
-                          text(shift, "id"),
-                          text(shift, "name"),
-                          shiftEnd,
+                          InspectionTaskCreationContext.scheduled(
+                              due, text(shift, "id"), text(shift, "name"), shiftEnd),
                           cache);
                 }
               }
@@ -212,23 +209,6 @@ public class InspectionGenerationService {
     }
     taskLifecycle.maintainOpenTasks(tenant, planId);
     return count;
-  }
-
-  private Map<String, Object> adjust(
-      Map<String, Object> plan,
-      Map<String, Object> a,
-      DailyInspectionSchedule.Occurrence o,
-      String eventKey) {
-    var p = new LinkedHashMap<String, Object>(plan);
-    p.put("_arrangement", a);
-    p.put("_businessDate", o.businessDate().toString());
-    p.put("_rosterShift", o.rosterShiftId());
-    p.put("_windowEnd", o.end().toString());
-    p.put("_eventKey", eventKey);
-    p.put("personMode", "指定负责人");
-    p.put("allowLate", yes(a.get("allowLate")));
-    p.put("onlyAbnormal", false);
-    return p;
   }
 
   public Map<String, Object> preview(long tenant, Map<String, Object> plan, int days) {

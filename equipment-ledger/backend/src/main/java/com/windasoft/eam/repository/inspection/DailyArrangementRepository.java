@@ -1,9 +1,22 @@
 package com.windasoft.eam.repository.inspection;
 
-import static com.windasoft.eam.common.inspection.InspectionSupport.*;
+import static com.windasoft.eam.common.inspection.InspectionSupport.ids;
+import static com.windasoft.eam.common.inspection.InspectionSupport.number;
+import static com.windasoft.eam.common.inspection.InspectionSupport.rows;
+import static com.windasoft.eam.common.inspection.InspectionSupport.strings;
+import static com.windasoft.eam.common.inspection.InspectionSupport.text;
+import static com.windasoft.eam.common.inspection.InspectionSupport.yes;
 
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
-import java.util.*;
+import com.windasoft.eam.dto.inspection.ScheduledInspectionExemption;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -371,11 +384,20 @@ public class DailyArrangementRepository {
         > 0;
   }
 
-  public List<Map<String, Object>> exemptions(long tenant, long plan) {
-    return db.queryForList(
+  /** 保留原有租户、计划过滤及批准时间优先顺序，仅将生成所需的固定字段映射为只读投影。 */
+  public List<ScheduledInspectionExemption> exemptions(long tenant, long plan) {
+    return db.query(
         "SELECT id,equipment_id equipmentId,start_at startAt,end_at endAt,reason,approved_by"
             + " approvedBy,approved_at approvedAt FROM eam_inspection_daily_exemption WHERE"
             + " tenant_id=? AND plan_id=? ORDER BY approved_at DESC,id DESC",
+        (row, index) ->
+            new ScheduledInspectionExemption(
+                row.getLong("equipmentId"),
+                row.getObject("startAt", LocalDateTime.class),
+                row.getObject("endAt", LocalDateTime.class),
+                row.getString("reason"),
+                row.getLong("approvedBy"),
+                row.getObject("approvedAt", LocalDateTime.class)),
         tenant,
         plan);
   }
@@ -503,13 +525,13 @@ public class DailyArrangementRepository {
         task);
   }
 
-  public void scheduledExemption(long tenant, long task, Map<String, Object> record) {
+  public void scheduledExemption(long tenant, long task, ScheduledInspectionExemption record) {
     db.update(
         "UPDATE eam_inspection_task SET exemption_reason=?,exempted_by=?,exempted_at=? WHERE"
             + " tenant_id=? AND id=?",
-        text(record, "reason"),
-        number(record.get("approvedBy")),
-        record.get("approvedAt"),
+        record.reason(),
+        record.approvedBy(),
+        record.approvedAt(),
         tenant,
         task);
   }
