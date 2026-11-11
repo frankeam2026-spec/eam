@@ -1,15 +1,25 @@
 package com.windasoft.eam.service.inspection;
 
-import static com.windasoft.eam.common.inspection.InspectionSupport.*;
+import static com.windasoft.eam.common.inspection.InspectionSupport.deny;
+import static com.windasoft.eam.common.inspection.InspectionSupport.number;
+import static com.windasoft.eam.common.inspection.InspectionSupport.require;
+import static com.windasoft.eam.common.inspection.InspectionSupport.rows;
+import static com.windasoft.eam.common.inspection.InspectionSupport.text;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.FieldValidationException;
+import com.windasoft.eam.common.MessageContext;
+import com.windasoft.eam.common.MessageRef;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.time.LocalDate;
-import java.util.*;
+import java.time.format.DateTimeParseException;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,35 +74,47 @@ public class DailyInspectionPlanService {
         List.of(), Math.max(1, page), Math.max(1, Math.min(200, size)), 0);
   }
 
+  /** 编辑预览可能补回原安排的排班，必须先复核原计划，再校验目标部门及设备；否则可借请求部门绕过对象范围。 校验只修改请求副本，不锁定计划、不保存安排，也不创建任务或通知。 */
   @Transactional(readOnly = true)
   public Map<String, Object> dailyPreview(Map<String, Object> body) {
     permissions.require("inspectionDailyPlan", "查看");
     var data = copy(body);
+    Long planId = text(data, "id").isBlank() ? null : number(data.get("id"));
+    String action = planId == null ? "新增" : "编辑";
+    if (planId != null) {
+      var existing = projects.raw("daily-plans", auth.tenantId(), planId, false);
+      if (!projects.scoped(existing, action)) {
+        deny();
+      }
+    }
     long department = number(data.get("departmentId"));
-    var scope =
-        permissions.inspection(
-            "daily-plans", text(data, "id").isBlank() ? "新增" : "编辑");
+    var scope = permissions.inspection("daily-plans", action);
     if (!scope.matches(
-        permissions.companyOfOrganization(department), department, auth.userId(), auth.userId()))
+        permissions.companyOfOrganization(department), department, auth.userId(), auth.userId())) {
       deny();
+    }
+    LocalDate start = previewDate(data, "startDate"), end = previewDate(data, "endDate");
+    require(!end.isBefore(start), MessageContext.text("daily.error.dateRange"));
     require(
-        !LocalDate.parse(text(data, "endDate"))
-            .isBefore(LocalDate.parse(text(data, "startDate"))),
-        com.windasoft.eam.common.MessageContext.text("daily.error.dateRange"));
-    require(
-        rows(data.get("details")).size() <= 500,
-        com.windasoft.eam.common.MessageContext.text("daily.error.equipmentLimit"));
+        rows(data.get("details")).size() <= 500, MessageContext.text("daily.error.equipmentLimit"));
     for (var detail : rows(data.get("details"))) {
       validation.checkEquipment(
           projects.equipment(auth.tenantId(), number(detail.get("equipmentId"))),
           "daily-plans",
-          text(data, "id").isBlank() ? "新增" : "编辑");
+          action);
       projects.projects(auth.tenantId(), detail, true);
     }
-    arrangements.validate(
-        auth.tenantId(), text(data, "id").isBlank() ? null : number(data.get("id")), data);
+    arrangements.validate(auth.tenantId(), planId, data);
     return generation.preview(
         auth.tenantId(), data, Math.toIntExact(number(data.getOrDefault("previewDays", 7))));
+  }
+
+  private LocalDate previewDate(Map<String, Object> data, String field) {
+    try {
+      return LocalDate.parse(text(data, field));
+    } catch (DateTimeParseException invalid) {
+      throw new FieldValidationException(field, MessageRef.of("daily.error.date"));
+    }
   }
 
   @Transactional

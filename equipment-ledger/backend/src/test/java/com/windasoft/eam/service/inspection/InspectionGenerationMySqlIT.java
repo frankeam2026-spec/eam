@@ -12,11 +12,13 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
+import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionDefinitionStorage;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
@@ -28,6 +30,7 @@ import com.windasoft.eam.scheduler.inventory.InventoryReservationCleanup;
 import com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler;
 import com.windasoft.eam.scheduler.maintenance.MaintenanceScheduler;
 import com.windasoft.eam.scheduler.system.NotificationScheduler;
+import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -37,6 +40,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -58,6 +62,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 /** 在真实事务、唯一约束及多连接下验证生成预算、续跑、事件幂等和失败恢复。 */
 @SpringBootTest
@@ -381,6 +386,99 @@ class InspectionGenerationMySqlIT {
         db.queryForObject(
             "SELECT shift_id FROM eam_inspection_task WHERE tenant_id=?", String.class, TENANT));
     assertEquals(1, inbox("点巡检待执行"));
+  }
+
+  @Test
+  void previewRejectsAnotherCreatorsPlanEvenWhenRequestedEquipmentIsOwned() throws Exception {
+    fixture(true, 1, 1);
+    when(permissions.inspection("daily-plans", "编辑"))
+        .thenReturn(new PermissionScope(false, null, Set.of(), true));
+    var body = previewDraft();
+    var previewService = previewService(TENANT);
+    var error =
+        assertThrows(ResponseStatusException.class, () -> previewService.dailyPreview(body));
+    assertEquals(403, error.getStatusCode().value());
+    assertCreated(0);
+  }
+
+  @Test
+  void previewCannotResolvePlanFromAnotherTenant() throws Exception {
+    fixture(true, 1, 1);
+    when(permissions.inspection("daily-plans", "编辑"))
+        .thenReturn(new PermissionScope(true, null, Set.of(), false));
+    var body = previewDraft();
+    var previewService = previewService(TENANT + 1);
+    var error =
+        assertThrows(ResponseStatusException.class, () -> previewService.dailyPreview(body));
+    assertEquals(404, error.getStatusCode().value());
+    assertCreated(0);
+  }
+
+  @Test
+  void permittedDraftPreviewIsReadOnlyAndDoesNotAdvanceSavedPlan() throws Exception {
+    fixture(true, 1, 1);
+    when(permissions.inspection("daily-plans", "编辑"))
+        .thenReturn(new PermissionScope(true, null, Set.of(), false));
+    var body = previewDraft();
+    String before = json.writeValueAsString(body);
+    var previewService = previewService(TENANT);
+    var tx = new TransactionTemplate(transactions);
+    tx.setReadOnly(true);
+    var result = tx.execute(status -> previewService.dailyPreview(body));
+    assertEquals(7L, result.get("total"));
+    verify(repository).loadDefinition(TENANT, "daily-plans", PLAN, false);
+    assertEquals(0L, result.get("unstaffed"), "开放点检没有指定人员不属于缺人");
+    assertEquals(before, json.writeValueAsString(body), "预览校验不能改写编辑中的请求对象");
+    assertEquals(day.atStartOfDay(), cursor());
+    assertCreated(0);
+    assertEquals(0, count("eam_inspection_inbox"));
+    assertEquals(0, count("eam_notify_message"));
+  }
+
+  private Map<String, Object> previewDraft() {
+    var tomorrow = now().toLocalDate().plusDays(1);
+    var body = new LinkedHashMap<String, Object>();
+    body.put("id", Long.toString(PLAN));
+    body.put("departmentId", "90002");
+    body.put("startDate", tomorrow.toString());
+    body.put("endDate", tomorrow.plusDays(6).toString());
+    body.put(
+        "details",
+        List.of(
+            Map.of(
+                "equipmentId",
+                "1",
+                "projectRefs",
+                List.of(Map.of("standardId", "1", "itemId", "1")))));
+    body.put("arrangements", storage.load(TENANT, PLAN));
+    return body;
+  }
+
+  /** 原计划查询与范围判断使用真实 Repository/PermissionScope，设备及标准资料沿用本类的受控替身。 */
+  private DailyInspectionPlanService previewService(long tenant) {
+    var caller = mock(AuthContext.class);
+    when(caller.tenantId()).thenReturn(tenant);
+    when(caller.userId()).thenReturn(USER);
+    var actualProjects = new InspectionProjectService(repository, json, caller, permissions);
+    when(projects.raw("daily-plans", tenant, PLAN, false))
+        .thenAnswer(call -> actualProjects.raw("daily-plans", tenant, PLAN, false));
+    when(projects.scoped(anyMap(), eq("编辑")))
+        .thenAnswer(call -> actualProjects.scoped(call.getArgument(0), "编辑"));
+    when(projects.equipment(tenant, 1L)).thenReturn(Map.of("id", 1L, "owner_user_id", USER));
+    return new DailyInspectionPlanService(
+        caller,
+        permissions,
+        projects,
+        new InspectionValidationService(repository, projects, caller, permissions),
+        new DailyArrangementService(
+            storage,
+            permissions,
+            caller,
+            new InspectionValidationService(repository, projects, caller, permissions)),
+        storage,
+        generation,
+        mock(InspectionTaskAssignmentService.class),
+        json);
   }
 
   @Test
