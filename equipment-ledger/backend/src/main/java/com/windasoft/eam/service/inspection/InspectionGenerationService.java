@@ -16,6 +16,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.MessageContext;
+import com.windasoft.eam.dto.inspection.InspectionGenerationTarget;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import java.time.LocalDate;
@@ -79,7 +80,7 @@ public class InspectionGenerationService {
   }
 
   @Transactional(readOnly = true)
-  public List<Map<String, Object>> generationTargets() {
+  public List<InspectionGenerationTarget> generationTargets() {
     return repository.generationTargets();
   }
 

@@ -26,13 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Maintains the lifecycle of already-created inspection tasks after a generation pass.
- *
- * <p>This is intentionally separate from creating tasks: disabling a plan or its periodic type must
- * stop future generation without preventing existing tasks from being activated, expired, or
- * receiving the appropriate reminders.
- */
+/** 维护已创建任务的到期状态和提醒；计划停用或本轮创建失败，不应持续阻断既有任务的维护。 */
 @Service
 public class InspectionTaskLifecycleService {
   private final InspectionRepository repository;
@@ -51,7 +45,20 @@ public class InspectionTaskLifecycleService {
     this.json = json;
   }
 
-  /** 参与计划生成事务，任务状态、事件和待办一并提交或回滚。待执行通知复用创建阶段的时间资格； 超期跟进使用独立资格，不能因为任务禁止补检就一并取消跟进提醒。 */
+  /**
+   * 调度器在生成代理调用抛错、原事务已经退出后调用本入口，重新开启维护事务。 沿用计划→调度→任务的锁顺序，与同计划生成串行；维护不创建任务、不推进游标，失败仅回滚维护本身。
+   * 不在失败的生成事务内部catch后调用，否则会加入已标记回滚的事务。
+   */
+  @Transactional
+  public void maintainAfterGenerationFailure(long tenant, long planId) {
+    if (repository.lockPlan(tenant, planId).isEmpty()) {
+      return;
+    }
+    repository.lockSchedule(tenant, planId);
+    maintainOpenTasks(tenant, planId);
+  }
+
+  /** 参与调用方事务，任务状态、事件和待办一并提交或回滚。待执行通知复用创建阶段的时间资格； 超期跟进使用独立资格，不能因为任务禁止补检就一并取消跟进提醒。 */
   @Transactional(propagation = Propagation.MANDATORY)
   public void maintainOpenTasks(long tenant, long planId) {
     var tasks = repository.lockOpenPlanTasks(tenant, planId);
