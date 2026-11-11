@@ -538,6 +538,46 @@ class InspectionGenerationMySqlIT {
   }
 
   @Test
+  void fallbackMaintenanceRollsBackStateWhenJournalFails() throws Exception {
+    fixture(true, 1, 1);
+    long existingTask = PLAN + 90;
+    repository.insertTask(
+        existingTask,
+        TENANT,
+        "daily",
+        "EXISTING",
+        PLAN,
+        null,
+        1L,
+        "existing",
+        90001L,
+        90002L,
+        now().minusMinutes(10),
+        now().plusHours(1),
+        InspectionTaskStatus.NOT_STARTED.code(),
+        "{}");
+    doAnswer(
+            call -> {
+              throw new IllegalStateException("维护履历失败");
+            })
+        .when(journal)
+        .insertTaskEvent(anyLong(), eq(TENANT), anyLong(), any(), any(), eq("任务到期开始"), anyString());
+    assertThrows(
+        IllegalStateException.class, () -> lifecycle.maintainAfterGenerationFailure(TENANT, PLAN));
+    assertEquals(
+        InspectionTaskStatus.NOT_STARTED.code(),
+        db.queryForObject(
+            "SELECT status FROM eam_inspection_task WHERE tenant_id=? AND id=?",
+            String.class,
+            TENANT,
+            existingTask));
+    assertEquals(0, count("eam_inspection_event"));
+    assertEquals(0, count("eam_inspection_inbox"));
+    assertEquals(0, count("eam_notify_message"));
+    assertEquals(day.atStartOfDay(), cursor());
+  }
+
+  @Test
   void generationTargetsPreserveFullTenantAndPlanIds() throws Exception {
     fixture(true, 1, 1);
     var ownTargets =
