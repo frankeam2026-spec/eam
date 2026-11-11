@@ -18,6 +18,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
+import com.windasoft.eam.dto.inspection.InspectionGenerationTarget;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionDefinitionStorage;
@@ -44,6 +45,7 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
@@ -128,6 +130,7 @@ class InspectionGenerationMySqlIT {
   @MockitoSpyBean InspectionRepository repository;
   @MockitoSpyBean InspectionTaskJournalRepository journal;
   @Autowired InspectionGenerationService generation;
+  @Autowired InspectionTaskLifecycleService lifecycle;
   @Autowired InspectionDefinitionStorage definitions;
   @MockitoSpyBean DailyArrangementRepository storage;
   @Autowired PlatformTransactionManager transactions;
@@ -480,6 +483,118 @@ class InspectionGenerationMySqlIT {
         mock(InspectionTaskAssignmentService.class),
         json);
   }
+
+  @Test
+  void schedulerMaintainsExistingTaskAfterCreationTransactionRollsBack() throws Exception {
+    notificationUser();
+    fixture(true, 1, 1);
+    long existingTask = PLAN + 90;
+    repository.insertTask(
+        existingTask,
+        TENANT,
+        "daily",
+        "EXISTING",
+        PLAN,
+        null,
+        1L,
+        "existing",
+        90001L,
+        90002L,
+        now().minusMinutes(10),
+        now().plusHours(1),
+        InspectionTaskStatus.NOT_STARTED.code(),
+        json.writeValueAsString(
+            Map.of("owners", List.of(Long.toString(USER)), "equipmentName", "既有任务")));
+    doReturn(List.of(new InspectionGenerationTarget(TENANT, PLAN)))
+        .when(repository)
+        .generationTargets();
+    doAnswer(
+            call -> {
+              throw new IllegalStateException("模拟新任务创建事件失败");
+            })
+        .when(journal)
+        .insertTaskEvent(anyLong(), eq(TENANT), anyLong(), any(), any(), eq("生成任务"), anyString());
+    var scheduler = new InspectionScheduler(generation, lifecycle);
+    scheduler.generate();
+    scheduler.generate();
+    assertEquals(1, count("eam_inspection_task"), "创建批次必须回滚，保留此前的任务");
+    assertEquals(day.atStartOfDay(), cursor(), "失败批次不能推进游标");
+    assertEquals(
+        InspectionTaskStatus.PENDING.code(),
+        db.queryForObject(
+            "SELECT status FROM eam_inspection_task WHERE tenant_id=? AND id=?",
+            String.class,
+            TENANT,
+            existingTask));
+    assertEquals(
+        1L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM eam_inspection_event WHERE tenant_id=? AND action='任务到期开始'",
+            Long.class,
+            TENANT),
+        "重复失败不重复激活事件");
+    assertEquals(1, inbox("点巡检待执行"), "两次回退只能产生一条待执行通知");
+    assertEquals(1, count("eam_notify_message"));
+  }
+
+  @Test
+  void generationTargetsPreserveFullTenantAndPlanIds() throws Exception {
+    fixture(true, 1, 1);
+    var ownTargets =
+        repository.generationTargets().stream().filter(t -> t.tenantId() == TENANT).toList();
+    assertEquals(List.of(new InspectionGenerationTarget(TENANT, PLAN)), ownTargets);
+  }
+
+  @Test
+  @EnabledIfEnvironmentVariable(named = "EAM_INSPECTION_LOAD_TEST", matches = "true")
+  void concurrentGenerationLoad() throws Exception {
+    // 仅显式开启时执行。使用隔离库、真实事务和8个并发连接，不冒充多JVM或生产容量验收。
+    fixture(true, 250, 4);
+    int workerCount = 8;
+    var ready = new CountDownLatch(workerCount);
+    var start = new CountDownLatch(1);
+    var workers = Executors.newFixedThreadPool(workerCount);
+    var calls = new ArrayList<Future<LoadObservation>>();
+    long began = System.nanoTime();
+    try {
+      for (int i = 0; i < workerCount; i++) {
+        calls.add(
+            workers.submit(
+                () -> {
+                  ready.countDown();
+                  start.await();
+                  long before = System.nanoTime();
+                  int count = generation.generate(TENANT, PLAN);
+                  return new LoadObservation(
+                      count, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - before));
+                }));
+      }
+      assertTrue(ready.await(10, TimeUnit.SECONDS));
+      start.countDown();
+      var observations = new ArrayList<LoadObservation>();
+      for (var call : calls) observations.add(call.get(180, TimeUnit.SECONDS));
+      long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began);
+      assertEquals(1000, observations.stream().mapToInt(LoadObservation::generated).sum());
+      assertCreated(1000);
+      assertEquals(day.plusDays(1).atStartOfDay(), cursor());
+      var latencies =
+          observations.stream().mapToLong(LoadObservation::elapsedMs).sorted().toArray();
+      System.out.printf(
+          "INSPECTION_LOAD workers=%d devices=250 shifts=4 tasks=1000 errors=0 elapsedMs=%d"
+              + " p50Ms=%d p95Ms=%d%n",
+          workerCount, elapsedMs, latencies[3], latencies[7]);
+    } finally {
+      start.countDown();
+      workers.shutdownNow();
+      boolean stopped = workers.awaitTermination(30, TimeUnit.SECONDS);
+      if (!stopped) {
+        ownsFixture = false;
+      }
+      assertTrue(stopped, "连接未退出，保留专用租户数据，禁止并发清理");
+    }
+  }
+
+  private record LoadObservation(int generated, long elapsedMs) {}
 
   @Test
   void eventFailureRollsBackBatchAndCursorThenRetrySucceeds() throws Exception {

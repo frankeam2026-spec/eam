@@ -1,8 +1,10 @@
 package com.windasoft.eam.repository.inspection;
 
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
+import com.windasoft.eam.dto.inspection.InspectionGenerationTarget;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -420,10 +422,12 @@ public class InspectionRepository {
         id);
   }
 
-  public List<Map<String, Object>> generationTargets() {
-    return db.queryForList(
+  public List<InspectionGenerationTarget> generationTargets() {
+    return db.query(
         "SELECT tenant_id,id FROM v_inspection_definition WHERE kind IN"
-            + " ('daily-plans','periodic-plans') ORDER BY tenant_id,id");
+            + " ('daily-plans','periodic-plans') ORDER BY tenant_id,id",
+        (row, index) ->
+            new InspectionGenerationTarget(row.getLong("tenant_id"), row.getLong("id")));
   }
 
   private List<Map<String, Object>> lockedTaskRows(String sql, Object... args) {
