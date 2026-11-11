@@ -1,48 +1,27 @@
 package com.windasoft.eam.repository.maintenance;
 
-import java.io.*;
-import java.nio.file.*;
-import java.util.*;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.windasoft.eam.entity.maintenance.MaintenanceFile;
 import org.springframework.stereotype.Repository;
 
+/** 只维护保养附件元数据；文件读写及登记失败后的补偿由 Service 协调。 */
 @Repository
 public class MaintenanceFileRepository {
-  private final JdbcTemplate db;
-  private final Path directory;
+  private final MaintenanceFileMapper mapper;
 
-  public MaintenanceFileRepository(
-      JdbcTemplate db, @Value("${eam.upload.directory:./data/uploads}") String directory) {
-    this.db = db;
-    this.directory = Path.of(directory, "maintenance").toAbsolutePath().normalize();
+  public MaintenanceFileRepository(MaintenanceFileMapper mapper) {
+    this.mapper = mapper;
   }
 
-  public Path path(String id, String extension) {
-    return directory.resolve(id + extension).normalize();
+  /** UUID 不替代租户隔离；必须先命中当前租户的登记记录，才能继续核实下载权限。 */
+  public MaintenanceFile find(long tenant, String id) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<MaintenanceFile>()
+            .eq(MaintenanceFile::getTenantId, tenant)
+            .eq(MaintenanceFile::getId, id));
   }
 
-  public void store(String id, String extension, InputStream content) throws IOException {
-    Files.createDirectories(directory);
-    Files.copy(content, path(id, extension), StandardCopyOption.REPLACE_EXISTING);
-  }
-
-  public List<Map<String, Object>> find(long tenant, String id) {
-    return db.queryForList(
-        "SELECT * FROM eam_maintenance_file WHERE tenant_id=? AND id=?", tenant, id);
-  }
-
-  public void insert(
-      String id, long tenant, long user, String name, String extension, String type, long size) {
-    db.update(
-        "INSERT INTO eam_maintenance_file(id,tenant_id,user_id,name,extension,content_type,size)"
-            + " VALUES(?,?,?,?,?,?,?)",
-        id,
-        tenant,
-        user,
-        name,
-        extension,
-        type,
-        size);
+  public void insert(MaintenanceFile file) {
+    mapper.insert(file);
   }
 }

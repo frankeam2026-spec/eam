@@ -352,3 +352,8 @@ Controller/Service使用明确查询及响应类型，设备关联Repository复�
 - GET `/api/v1/inspection/daily-device-options`：q/page/size参数及原裁剪不变，返回`PageResult<InspectionDeviceOption>`，id为十进制字符串、name/code为原字段，分页数值不变。按日常点检执行范围在数据库授权过滤，设备Mapper完成查询及分页。
 - GET `/api/v1/inspection/daily-event-options`：停用人工事件的兼容空页返回`PageResult<Void>`；继续检查原查看/执行权限、保持空数组和原分页裁剪，不启用该能力。
 - 前端仍由`src/inspection.ts`的`inspectionUpload`和`deviceEquipmentOptions`读取，JSON层级不变。证据及其余入口边界见[本批记录](../plans/点巡检Map入口类型治理-20261111.md)。
+
+## 保养附件类型契约（2026-11-11）
+
+- `POST /api/v1/maintenance/files`：multipart `file`，返回 `DataResponse<MaintenanceFileView>`；`id/name/contentType/size/url` 五字段不变，size为字节数值。Service 返回业务结果，元数据通过 MaintenanceFileRepository/Mapper 存取。
+- `GET /api/v1/maintenance/files/{id}`：FileSystemResource 文件响应不变；当前租户的上传者或能查看附件引用单据者可下载，其余403；不存在和非法标识沿用400。调用方为 `src/maintenance.ts` 和保养附件控件；无协议升级，无前端变更。
