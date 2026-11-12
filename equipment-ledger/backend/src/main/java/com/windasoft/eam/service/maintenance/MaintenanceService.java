@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.repository.maintenance.MaintenanceInboxRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.system.AuthContext;
@@ -42,6 +43,7 @@ public class MaintenanceService {
 
   private final MaintenanceRepository repository;
   private final OrgUnitRepository organizations;
+  private final MaintenanceInboxRepository inbox;
   private final ObjectMapper json;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -50,6 +52,7 @@ public class MaintenanceService {
   public MaintenanceService(
       MaintenanceRepository repository,
       OrgUnitRepository organizations,
+      MaintenanceInboxRepository inbox,
       ObjectMapper json,
       AuthContext auth,
       PermissionService permissions,
@@ -72,6 +75,7 @@ public class MaintenanceService {
     this.references = references;
     this.repository = repository;
     this.organizations = organizations;
+    this.inbox = inbox;
     this.json = json;
     this.auth = auth;
     this.permissions = permissions;
@@ -684,7 +688,7 @@ public class MaintenanceService {
   }
 
   public void read(long id) {
-    repository.markInboxRead(auth.tenantId(), auth.userId(), id);
+    inbox.markRead(auth.tenantId(), auth.userId(), id);
   }
 
   public List<Map<String, Object>> generationTargets() {

@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.maintenance;
 
 import static com.windasoft.eam.common.maintenance.MaintenanceSupport.*;
+import static com.windasoft.eam.service.maintenance.MaintenanceTaskJournal.EXECUTION_NOTICE;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -162,7 +163,7 @@ public class MaintenanceGenerationService {
                   tenant,
                   task,
                   ids(snap.get("owners")),
-                  "保养待执行",
+                  EXECUTION_NOTICE,
                   text(snap, "equipmentName"),
                   true);
           }
@@ -192,12 +193,12 @@ public class MaintenanceGenerationService {
       if (!((java.sql.Date) r.get("due_date"))
               .toLocalDate()
               .isAfter(today.plusDays(number(snap.get("remindDays"))))
-          && repository.countExecutionNotices(tenant, r.get("id")) == 0)
+          && !journal.hasExecutionNotice(tenant, number(r.get("id"))))
         journal.notify(
             tenant,
             number(r.get("id")),
             ids(snap.get("owners")),
-            "保养待执行",
+            EXECUTION_NOTICE,
             text(snap, "equipmentName"),
             true);
     }

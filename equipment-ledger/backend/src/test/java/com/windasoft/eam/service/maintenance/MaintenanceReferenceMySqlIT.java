@@ -5,17 +5,21 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.MessageContext;
+import com.windasoft.eam.common.NotificationMessages;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.maintenance.MaintenanceDefinitionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.system.NotificationRepository;
 import com.windasoft.eam.scheduler.experience.RepairPlanScheduler;
 import com.windasoft.eam.scheduler.inspection.InspectionScheduler;
 import com.windasoft.eam.scheduler.inventory.InventoryReservationCleanup;
@@ -106,6 +110,9 @@ class MaintenanceReferenceMySqlIT {
   @MockitoBean RepairPlanScheduler repairScheduler;
   @MockitoBean KnowledgeScheduler knowledgeScheduler;
   @MockitoSpyBean MaintenanceRepository repository;
+  @MockitoSpyBean NotificationRepository notifications;
+  @Autowired MaintenanceTaskJournal journal;
+  @Autowired ObjectMapper json;
   @Autowired MaintenanceValidationService validation;
   @Autowired MaintenanceService definitions;
   @Autowired MaintenanceTaskService tasks;
@@ -305,6 +312,185 @@ class MaintenanceReferenceMySqlIT {
     assertEquals(0L, count("eam_notify_message"));
     assertEquals(0L, count("eam_maintenance_inbox"));
     assertEquals(0L, count("eam_maintenance_event"));
+  }
+
+  @Test
+  void journalPreservesMetadataSystemActorAndEventResponse() {
+    pendingAcceptance();
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              long before = updates();
+              journal.notify(TENANT, TASK, List.of(USER), "保养待执行", "保养设备", true);
+              System.out.println("maintenance_notify_updates=" + (updates() - before));
+              journal.event(TENANT, TASK, "生成任务", null, "系统", Map.of("计划", "保养计划"));
+            });
+    var inbox = db.queryForMap("SELECT * FROM eam_maintenance_inbox WHERE tenant_id=?", TENANT);
+    assertEquals(NotificationMessages.key("保养待执行"), inbox.get("message_key"));
+    assertEquals(
+        "保养设备",
+        db.queryForObject(
+            "SELECT JSON_UNQUOTE(JSON_EXTRACT(message_args,'$.title')) FROM eam_maintenance_inbox"
+                + " WHERE tenant_id=?",
+            String.class,
+            TENANT));
+    assertNotNull(inbox.get("created_at"));
+    assertEquals(1L, count("eam_notify_message"));
+    assertEquals(
+        null,
+        db.queryForObject(
+            "SELECT actor_id FROM eam_maintenance_event WHERE tenant_id=?", Long.class, TENANT));
+    var event = json.valueToTree(tasks.task(TASK)).path("events").get(0);
+    assertEquals(4, event.size());
+    assertEquals("生成任务", event.path("action").asText());
+    assertEquals("系统", event.path("actor").asText());
+    assertTrue(event.path("time").asText().matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"));
+    assertEquals(
+        db.queryForObject(
+            "SELECT DATE_FORMAT(created_at,'%Y-%m-%d %H:%i:%s') FROM eam_maintenance_event WHERE"
+                + " tenant_id=?",
+            String.class, TENANT),
+        event.path("time").asText());
+    assertEquals("保养计划", event.path("details").path("计划").asText());
+  }
+
+  @Test
+  void inboxCompletionReadAndNoticeLookupKeepTheirDistinctScopes() {
+    pendingAcceptance();
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              journal.notify(TENANT, TASK, List.of(USER), "保养待执行", "设备", true);
+              journal.notify(TENANT, TASK, List.of(DELETED), "保养已完成", "设备", false);
+            });
+    long own =
+        db.queryForObject(
+            "SELECT id FROM eam_maintenance_inbox WHERE tenant_id=? AND user_id=?",
+            Long.class,
+            TENANT,
+            USER);
+    long otherUser =
+        db.queryForObject(
+            "SELECT id FROM eam_maintenance_inbox WHERE tenant_id=? AND user_id=?",
+            Long.class,
+            TENANT,
+            DELETED);
+    long foreign = TASK + 500, otherTask = TASK + 501;
+    db.update(
+        "INSERT INTO eam_maintenance_inbox(id,tenant_id,task_id,user_id,kind,title,is_todo)"
+            + " VALUES(?,?,?,?,'保养待执行','隔离',1),(?,?,?,?,'保养待执行','其他任务',1)",
+        foreign,
+        TENANT + 1,
+        TASK,
+        USER,
+        otherTask,
+        TENANT,
+        TASK + 1,
+        USER);
+    definitions.read(otherUser);
+    definitions.read(foreign);
+    definitions.read(own);
+    assertEquals(
+        1L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM eam_maintenance_inbox WHERE id IN (?,?,?) AND read_at IS NOT"
+                + " NULL",
+            Long.class,
+            own,
+            otherUser,
+            foreign));
+    journal.closeTodos(TENANT, TASK);
+    assertEquals(
+        1,
+        db.queryForObject("SELECT done FROM eam_maintenance_inbox WHERE id=?", Integer.class, own));
+    assertEquals(
+        0L,
+        db.queryForObject(
+            "SELECT SUM(done) FROM eam_maintenance_inbox WHERE id IN (?,?,?)",
+            Long.class,
+            otherUser,
+            foreign,
+            otherTask));
+    assertTrue(journal.hasExecutionNotice(TENANT, TASK));
+    assertEquals(false, journal.hasExecutionNotice(TENANT, TASK + 2));
+  }
+
+  @Test
+  void taskDeletionCompletesAllMessagesAndPreservesExistingReadTime() {
+    pendingAcceptance();
+    db.update(
+        "DELETE FROM eam_maintenance_execution WHERE tenant_id=? AND task_id=?", TENANT, TASK);
+    db.update(
+        "UPDATE eam_maintenance_task SET status='待执行',owner_id=NULL WHERE tenant_id=? AND id=?",
+        TENANT,
+        TASK);
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              journal.notify(TENANT, TASK, List.of(USER), "保养待执行", "设备", true);
+              journal.notify(TENANT, TASK, List.of(DELETED), "保养已完成", "设备", false);
+            });
+    db.update(
+        "UPDATE eam_maintenance_inbox SET read_at='2001-01-01 00:00:00' WHERE tenant_id=? AND"
+            + " user_id=?",
+        TENANT,
+        USER);
+    var originalReadTime =
+        db.queryForObject(
+            "SELECT read_at FROM eam_maintenance_inbox WHERE tenant_id=? AND user_id=?",
+            Timestamp.class,
+            TENANT,
+            USER);
+    tasks.batchDelete(List.of(Map.of("id", TASK, "rowVersion", 0)));
+    assertEquals(
+        1,
+        db.queryForObject(
+            "SELECT deleted FROM eam_maintenance_task WHERE tenant_id=? AND id=?",
+            Integer.class,
+            TENANT,
+            TASK));
+    assertEquals(
+        2L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM eam_maintenance_inbox WHERE tenant_id=? AND task_id=? AND done=1"
+                + " AND read_at IS NOT NULL",
+            Long.class,
+            TENANT,
+            TASK));
+    assertEquals(
+        originalReadTime,
+        db.queryForObject(
+            "SELECT read_at FROM eam_maintenance_inbox WHERE tenant_id=? AND user_id=?",
+            Timestamp.class,
+            TENANT,
+            USER));
+  }
+
+  @Test
+  void captureFailureRollsBackLegacyMessagePublicMessageAndTask() {
+    pendingAcceptance();
+    doAnswer(
+            call -> {
+              call.callRealMethod();
+              throw new IllegalStateException("公共通知捕获失败");
+            })
+        .when(notifications)
+        .captureSource(eq("eam_maintenance_inbox"), eq(TENANT), anyLong());
+    assertThrows(IllegalStateException.class, () -> tasks.action(TASK, "accept", accept()));
+    assertEquals(0L, count("eam_maintenance_inbox"));
+    assertEquals(0L, count("eam_notify_message"));
+    assertEquals(
+        "待验收",
+        db.queryForObject(
+            "SELECT status FROM eam_maintenance_task WHERE tenant_id=? AND id=?",
+            String.class,
+            TENANT,
+            TASK));
+  }
+
+  private long updates() {
+    return db.queryForObject(
+        "SHOW SESSION STATUS LIKE 'Com_update'", (row, index) -> Long.parseLong(row.getString(2)));
   }
 
   private void pendingAcceptance() {

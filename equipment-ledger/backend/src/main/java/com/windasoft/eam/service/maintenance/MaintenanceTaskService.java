@@ -327,7 +327,9 @@ public class MaintenanceTaskService {
           !repository.hasTaskExecutionOrMaterials(tenant, id),
           com.windasoft.eam.common.MessageContext.text(
               "server.maintenance.message0067", text(task, "code")));
+      // 保留原先待办、全部消息、任务主体的更新顺序，迁移职责时不改变加锁路径。
       journal.closeTodos(tenant, id);
+      journal.completeForDeletion(tenant, id);
       repository.softDeleteTask(tenant, id, auth.userId());
       journal.event(
           tenant,
@@ -416,17 +418,9 @@ public class MaintenanceTaskService {
     if (!taskAccess(r, "查看")) deny();
     var v = taskView(r);
     custom.attach("maintenance_task", v);
-    var events = repository.listTaskEvents(auth.tenantId(), id);
+    var events = journal.events(auth.tenantId(), id);
     v.put("statistics", statistics.summarize(v, events));
-    v.put(
-        "events",
-        events.stream()
-            .map(
-                e -> {
-                  e.put("details", decode(e.get("details")));
-                  return e;
-                })
-            .toList());
+    v.put("events", events);
     return v;
   }
 
