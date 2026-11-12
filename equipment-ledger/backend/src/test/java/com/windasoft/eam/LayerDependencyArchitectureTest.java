@@ -48,6 +48,11 @@ class LayerDependencyArchitectureTest {
         "(?is).*\\b(?:INSERT\\s+(?:IGNORE\\s+)?INTO|UPDATE|DELETE\\s+FROM)\\s+`?eam_equipment_history`?\\b.*");
   }
 
+  static boolean writesMaintenanceJournal(String sql) {
+    return sql.matches(
+        "(?is).*\\b(?:INSERT\\s+(?:IGNORE\\s+)?INTO|UPDATE|DELETE\\s+FROM)\\s+`?eam_maintenance_(?:inbox|event)`?\\b.*");
+  }
+
   @Test
   void maintenanceMayReadHistoryButCannotOwnItsWrites() {
     assertTrue(writesEquipmentHistory("INSERT INTO eam_equipment_history(id) VALUES(?)"));
@@ -55,6 +60,10 @@ class LayerDependencyArchitectureTest {
     assertTrue(writesEquipmentHistory("DELETE FROM eam_equipment_history WHERE tenant_id=?"));
     assertFalse(writesEquipmentHistory("SELECT id FROM eam_equipment_history WHERE tenant_id=?"));
     assertFalse(writesEquipmentHistory("INSERT INTO eam_maintenance_event(id) VALUES(?)"));
+    assertTrue(writesMaintenanceJournal("INSERT INTO eam_maintenance_event(id) VALUES(?)"));
+    assertTrue(writesMaintenanceJournal("UPDATE eam_maintenance_inbox SET done=1"));
+    assertFalse(writesMaintenanceJournal("SELECT id FROM eam_maintenance_inbox"));
+    assertFalse(writesMaintenanceJournal("UPDATE eam_maintenance_task SET deleted=1"));
   }
 
   @Test
@@ -111,6 +120,9 @@ class LayerDependencyArchitectureTest {
                           && file.startsWith(root.resolve("repository/maintenance"))
                           && value instanceof String text) {
                         assertFalse(writesEquipmentHistory(text), file + " directly writes equipment history");
+                        if (file.getFileName().toString().equals("MaintenanceRepository.class")) {
+                          assertFalse(writesMaintenanceJournal(text), file + " owns journal writes that belong to dedicated repositories");
+                        }
                       }
                       if (sqlFree && value instanceof String text)
                         assertFalse(

@@ -7,8 +7,6 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class MaintenanceRepository {
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.repository.system.NotificationRepository notifications;
   private final MaintenanceDefinitionStorage definitions;
   private final JdbcTemplate db;
   private final com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources;
@@ -270,11 +268,6 @@ public class MaintenanceRepository {
   }
 
   public int softDeleteTask(long tenant, long id, long actor) {
-    db.update(
-        "UPDATE eam_maintenance_inbox SET done=1,read_at=COALESCE(read_at,NOW()) WHERE tenant_id=?"
-            + " AND task_id=?",
-        tenant,
-        id);
     return db.update(
         "UPDATE eam_maintenance_task SET"
             + " deleted=1,deleted_at=NOW(6),deleted_by=?,row_version=row_version+1,updated_at=NOW()"
@@ -291,70 +284,6 @@ public class MaintenanceRepository {
         date,
         tenant,
         id);
-  }
-
-  public List<Map<String, Object>> listTaskEvents(long tenantId, long id) {
-    return db.queryForList(
-        "SELECT action,actor_name actor,DATE_FORMAT(created_at,'%Y-%m-%d %H:%i:%s')"
-            + " time,details FROM eam_maintenance_event WHERE tenant_id=? AND task_id=?"
-            + " ORDER BY created_at,id",
-        tenantId, id);
-  }
-
-  public int insertTaskEvent(
-      long recordId,
-      long tenantId,
-      long taskId,
-      Long actorId,
-      Object name,
-      Object action,
-      String payload) {
-    return db.update(
-        "INSERT INTO eam_maintenance_event(id,tenant_id,task_id,actor_id,actor_name,action,details)"
-            + " VALUES(?,?,?,?,?,?,?)",
-        recordId,
-        tenantId,
-        taskId,
-        actorId,
-        name,
-        action,
-        payload);
-  }
-
-  public int insertInbox(
-      long recordId,
-      long tenantId,
-      long taskId,
-      Object user,
-      Object kind,
-      Object title,
-      boolean todo) {
-    int count =
-        db.update(
-            "INSERT INTO eam_maintenance_inbox(id,tenant_id,task_id,user_id,kind,title,is_todo)"
-                + " VALUES(?,?,?,?,?,?,?)",
-            recordId,
-            tenantId,
-            taskId,
-            user,
-            kind,
-            title,
-            todo);
-    db.update(
-        "UPDATE eam_maintenance_inbox SET message_key=?,message_args=? WHERE tenant_id=? AND id=?",
-        com.windasoft.eam.common.NotificationMessages.key(kind),
-        com.windasoft.eam.common.NotificationMessages.arguments(kind, title),
-        tenantId,
-        recordId);
-    if (notifications != null) notifications.captureSource("eam_maintenance_inbox", tenantId, recordId);
-    return count;
-  }
-
-  public int completeTodos(long tenantId, long taskId) {
-    return db.update(
-        "UPDATE eam_maintenance_inbox SET done=1 WHERE tenant_id=? AND task_id=? AND is_todo=1",
-        tenantId,
-        taskId);
   }
 
   public int resetScheduleDate(Object date, Object date2, long tenantId, Object scheduleId) {
@@ -520,15 +449,6 @@ public class MaintenanceRepository {
         "SELECT * FROM v_maintenance_task WHERE tenant_id=? AND status='待执行'", tenantId);
   }
 
-  public int countExecutionNotices(long tenantId, Object id) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_maintenance_inbox WHERE tenant_id=? AND task_id=? AND"
-            + " kind='保养待执行'",
-        Integer.class,
-        tenantId,
-        id);
-  }
-
   public List<Map<String, Object>> listInbox(long tenantId, long userId) {
     return db.queryForList(
         "SELECT CAST(i.id AS CHAR) id,CAST(t.id AS CHAR) orderId,'maintenance' module,t.code"
@@ -540,14 +460,6 @@ public class MaintenanceRepository {
             + " t.tenant_id=i.tenant_id WHERE i.tenant_id=? AND i.user_id=? ORDER BY i.created_at"
             + " DESC,i.id DESC LIMIT 300",
         tenantId, userId);
-  }
-
-  public int markInboxRead(long tenantId, long userId, long id) {
-    return db.update(
-        "UPDATE eam_maintenance_inbox SET read_at=NOW() WHERE tenant_id=? AND user_id=? AND id=?",
-        tenantId,
-        userId,
-        id);
   }
 
   public List<Map<String, Object>> generationTargets() {

@@ -2,6 +2,8 @@ package com.windasoft.eam.service.maintenance;
 
 import static com.windasoft.eam.common.maintenance.MaintenanceSupport.*;
 
+import com.windasoft.eam.dto.maintenance.MaintenanceTaskEventView;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.*;
@@ -20,11 +22,11 @@ public class MaintenanceTaskStatisticsService {
       boolean submitted,
       boolean reliable) {}
 
-  public Statistics summarize(Map<String, Object> task, List<Map<String, Object>> events) {
+  public Statistics summarize(Map<String, Object> task, List<MaintenanceTaskEventView> events) {
     var items = rows(task.get("items"));
     var result = object(task.get("result"));
     boolean submitted =
-        events.stream().anyMatch(e -> "提交保养".equals(e.get("action")))
+        events.stream().anyMatch(e -> "提交保养".equals(e.action()))
             || (!text(result, "startAt").isBlank() && !text(result, "endAt").isBlank());
     boolean reliable = submitted || !Set.of("已完成", "待验收").contains(text(task, "status"));
     if (!reliable)
