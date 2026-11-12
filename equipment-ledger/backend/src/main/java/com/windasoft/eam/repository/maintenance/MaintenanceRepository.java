@@ -62,32 +62,6 @@ public class MaintenanceRepository {
         id);
   }
 
-  public int countActiveUser(long tenantId, long id) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_sys_user WHERE tenant_id=? AND id=? AND deleted=0 AND"
-            + " status=1",
-        Integer.class,
-        tenantId,
-        id);
-  }
-
-  public int countAttachment(long tenantId, Object value) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_maintenance_file WHERE tenant_id=? AND id=?",
-        Integer.class,
-        tenantId,
-        value);
-  }
-
-  public int countImageAttachment(long tenantId, Object value) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_maintenance_file WHERE tenant_id=? AND id=? AND"
-            + " extension IN ('.jpg','.jpeg','.png','.gif','.webp')",
-        Integer.class,
-        tenantId,
-        value);
-  }
-
   public List<Map<String, Object>> loadEquipment(long tenantId, long id) {
     return db.queryForList(
         "SELECT * FROM eam_equipment WHERE tenant_id=? AND id=? AND deleted=0", tenantId, id);
@@ -98,14 +72,6 @@ public class MaintenanceRepository {
         "SELECT id,parent_id,name FROM eam_base_item WHERE tenant_id=? AND item_type='CATEGORY'"
             + " AND deleted=0",
         tenantId);
-  }
-
-  public int countDepartment(long tenantId, Object department) {
-    return db.queryForObject(
-        "SELECT COUNT(*) FROM eam_org_unit WHERE tenant_id=? AND id=? AND deleted=0",
-        Integer.class,
-        tenantId,
-        department);
   }
 
   public List<Map<String, Object>> loadLegacyStock(long tenantId, Object stockId) {
@@ -391,29 +357,6 @@ public class MaintenanceRepository {
         taskId);
   }
 
-  public int insertEquipmentHistory(
-      long recordId,
-      long tenantId,
-      Object equipmentId,
-      Object code,
-      String value,
-      Object value6,
-      Object value7,
-      String value8) {
-    return db.update(
-        "INSERT INTO"
-            + " eam_equipment_history(id,tenant_id,equipment_id,record_type,record_no,occurred_at,description,operator_name,status,result)"
-            + " VALUES(?,?,?,'MAINTENANCE',?,NOW(),?,?,?,?)",
-        recordId,
-        tenantId,
-        equipmentId,
-        code,
-        value,
-        value6,
-        value7,
-        value8);
-  }
-
   public int resetScheduleDate(Object date, Object date2, long tenantId, Object scheduleId) {
     return db.update(
         "UPDATE eam_maintenance_plan_device SET next_date=?,anchor_date=?,cycle_index=0 WHERE"
@@ -438,11 +381,6 @@ public class MaintenanceRepository {
         executions.historicalSnapshot(payload),
         tenantId,
         id);
-  }
-
-  public List<Map<String, Object>> findUserName(long tenantId, long id) {
-    return db.queryForList(
-        "SELECT display_name FROM eam_sys_user WHERE tenant_id=? AND id=?", tenantId, id);
   }
 
   public List<Map<String, Object>> lockPlans(long tenant, Long planId) {

@@ -7,6 +7,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.math.BigDecimal;
@@ -40,6 +41,7 @@ public class MaintenanceService {
   private final MaintenanceListService listQueries;
 
   private final MaintenanceRepository repository;
+  private final OrgUnitRepository organizations;
   private final ObjectMapper json;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -47,6 +49,7 @@ public class MaintenanceService {
 
   public MaintenanceService(
       MaintenanceRepository repository,
+      OrgUnitRepository organizations,
       ObjectMapper json,
       AuthContext auth,
       PermissionService permissions,
@@ -68,6 +71,7 @@ public class MaintenanceService {
 
     this.references = references;
     this.repository = repository;
+    this.organizations = organizations;
     this.json = json;
     this.auth = auth;
     this.permissions = permissions;
@@ -234,8 +238,9 @@ public class MaintenanceService {
     if (!kind.equals("types")) {
       require(
           department > 0, com.windasoft.eam.common.MessageContext.text("ui.equipment.text0099"));
+      // 沿用原归属存在性校验：同租户且未删除，不额外限制组织类型或启用状态。
       require(
-          repository.countDepartment(tenant, department) > 0,
+          organizations.organization(tenant, department) != null,
           com.windasoft.eam.common.MessageContext.text("server.maintenance.message0021"));
       var scope = permissions.maintenance(kind, action);
       if (!scope.matches(null, department, auth.userId(), auth.userId())) deny();

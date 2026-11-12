@@ -43,6 +43,20 @@ class LayerDependencyArchitectureTest {
     return result;
   }
 
+  static boolean writesEquipmentHistory(String sql) {
+    return sql.matches(
+        "(?is).*\\b(?:INSERT\\s+(?:IGNORE\\s+)?INTO|UPDATE|DELETE\\s+FROM)\\s+`?eam_equipment_history`?\\b.*");
+  }
+
+  @Test
+  void maintenanceMayReadHistoryButCannotOwnItsWrites() {
+    assertTrue(writesEquipmentHistory("INSERT INTO eam_equipment_history(id) VALUES(?)"));
+    assertTrue(writesEquipmentHistory("UPDATE eam_equipment_history SET result=?"));
+    assertTrue(writesEquipmentHistory("DELETE FROM eam_equipment_history WHERE tenant_id=?"));
+    assertFalse(writesEquipmentHistory("SELECT id FROM eam_equipment_history WHERE tenant_id=?"));
+    assertFalse(writesEquipmentHistory("INSERT INTO eam_maintenance_event(id) VALUES(?)"));
+  }
+
   @Test
   void descriptorAndGenericReferencesCannotHideDatabaseDependencies() {
     assertTrue(
@@ -92,6 +106,12 @@ class LayerDependencyArchitectureTest {
                     }
 
                     void queryLiteral(Object value) {
+                      // 保养只决定履历产生时机，不能把设备履历写入重新放回保养仓储。
+                      if (layer.equals("repository")
+                          && file.startsWith(root.resolve("repository/maintenance"))
+                          && value instanceof String text) {
+                        assertFalse(writesEquipmentHistory(text), file + " directly writes equipment history");
+                      }
                       if (sqlFree && value instanceof String text)
                         assertFalse(
                             text.matches(

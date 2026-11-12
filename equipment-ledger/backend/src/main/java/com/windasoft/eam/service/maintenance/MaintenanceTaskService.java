@@ -9,7 +9,10 @@ import com.windasoft.eam.common.AcceptanceDecision;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.domain.maintenance.MaintenanceTaskAction;
 import com.windasoft.eam.domain.maintenance.MaintenanceTaskStatus;
+import com.windasoft.eam.entity.equipment.EquipmentHistory;
+import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
 import com.windasoft.eam.service.system.*;
 import java.math.BigDecimal;
 import java.time.*;
@@ -18,9 +21,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/** 保养任务动作及批量操作的事务编排；履历和关联资料分别交给所属领域的仓储读写。 */
 @Service
 public class MaintenanceTaskService {
+  private static final String HISTORY_RECORD_TYPE = "MAINTENANCE";
   private final MaintenanceRepository repository;
+  private final EquipmentHistoryRepository histories;
+  private final SystemUserRepository users;
   private final ObjectMapper json;
   private final AuthContext auth;
   private final MaintenanceTaskAccessService taskAccess;
@@ -35,6 +42,8 @@ public class MaintenanceTaskService {
 
   public MaintenanceTaskService(
       MaintenanceRepository repository,
+      EquipmentHistoryRepository histories,
+      SystemUserRepository users,
       ObjectMapper json,
       AuthContext auth,
       MaintenanceTaskAccessService taskAccess,
@@ -47,6 +56,8 @@ public class MaintenanceTaskService {
       org.springframework.context.ApplicationEventPublisher publisher,
       com.windasoft.eam.service.experience.MaterialCustodyService custody) {
     this.repository = repository;
+    this.histories = histories;
+    this.users = users;
     this.json = json;
     this.auth = auth;
     this.taskAccess = taskAccess;
@@ -60,6 +71,10 @@ public class MaintenanceTaskService {
     this.materialCustody = custody;
   }
 
+  /**
+   * 按原库存互斥、任务行锁顺序办理状态动作。首次转为已完成时产生设备履历，
+   * 履历、执行记录、待办和通知事件必须随任务一起回滚，不能单独开启事务提交履历。
+   */
   @Transactional
   public Map<String, Object> action(long id, String action, Map<String, Object> body) {
     experienceInventoryMutex.enter();
@@ -235,15 +250,18 @@ public class MaintenanceTaskService {
       throw new com.windasoft.eam.common.LocalizedArgumentException(
           "server.inspection.message0011");
     if (next.equals(MaintenanceTaskStatus.COMPLETED.code()) && !state.equals(MaintenanceTaskStatus.COMPLETED.code())) {
-      repository.insertEquipmentHistory(
-          IdWorker.getId(),
-          tenant,
-          r.get("equipment_id"),
-          r.get("code"),
-          text(result, "description"),
-          userName(tenant, owner),
-          MaintenanceTaskStatus.COMPLETED.code(),
-          text(body, "description"));
+      // 保留履历产生时机和原字段口径；复用设备仓储的数据库时间写入，后续保存失败时一并回滚。
+      var history = new EquipmentHistory();
+      history.setId(IdWorker.getId());
+      history.setTenantId(tenant);
+      history.setEquipmentId(number(r.get("equipment_id")));
+      history.setRecordType(HISTORY_RECORD_TYPE);
+      history.setRecordNo(Objects.toString(r.get("code")));
+      history.setDescription(text(result, "description"));
+      history.setOperatorName(userName(tenant, owner));
+      history.setStatus(MaintenanceTaskStatus.COMPLETED.code());
+      history.setResult(text(body, "description"));
+      histories.insert(history);
       if ("完成时间".equals(text(snap, "calculation"))) {
         var cycle = decode(snap.get("cycle"));
         LocalDate date =
@@ -412,10 +430,12 @@ public class MaintenanceTaskService {
     return v;
   }
 
+  /** 设备履历保留历史执行人姓名，不能用当前启用人员校验过滤已停用或删除的执行人。 */
   String userName(long tenant, Long id) {
-    if (id == null) return "";
-    var users = repository.findUserName(tenant, id);
-    return users.isEmpty() ? "" : Objects.toString(users.getFirst().get("display_name"));
+    if (id == null) {
+      return "";
+    }
+    return Objects.toString(users.displayNameIncludingDeleted(tenant, id), "");
   }
 
   Map<String, Object> decode(Object value) {
