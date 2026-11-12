@@ -132,4 +132,9 @@ public class SystemUserRepository {
             .eq(SystemUser::getId, id)
             .eq(SystemUser::getStatus, 1));
   }
+
+  /** 历史执行人可能已停用或删除；仅按租户和标识读取姓名，不因此恢复其业务操作资格。 */
+  public String displayNameIncludingDeleted(long tenant, long id) {
+    return mapper.displayNameIncludingDeleted(tenant, id);
+  }
 }
