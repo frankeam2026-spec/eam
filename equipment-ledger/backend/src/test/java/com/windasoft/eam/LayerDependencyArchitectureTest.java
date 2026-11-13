@@ -53,6 +53,10 @@ class LayerDependencyArchitectureTest {
         "(?is).*\\b(?:INSERT\\s+(?:IGNORE\\s+)?INTO|UPDATE|DELETE\\s+FROM)\\s+`?eam_maintenance_(?:inbox|event)`?\\b.*");
   }
 
+  static boolean readsLegacyStock(String sql) {
+    return sql.matches("(?is).*\\bFROM\\s+`?eam_spare_stock`?\\b.*");
+  }
+
   @Test
   void maintenanceMayReadHistoryButCannotOwnItsWrites() {
     assertTrue(writesEquipmentHistory("INSERT INTO eam_equipment_history(id) VALUES(?)"));
@@ -64,6 +68,9 @@ class LayerDependencyArchitectureTest {
     assertTrue(writesMaintenanceJournal("UPDATE eam_maintenance_inbox SET done=1"));
     assertFalse(writesMaintenanceJournal("SELECT id FROM eam_maintenance_inbox"));
     assertFalse(writesMaintenanceJournal("UPDATE eam_maintenance_task SET deleted=1"));
+    assertTrue(readsLegacyStock("SELECT * FROM eam_spare_stock WHERE tenant_id=?"));
+    assertFalse(readsLegacyStock("SELECT * FROM eam_maintenance_item_spare"));
+    assertFalse(readsLegacyStock("SELECT * FROM eam_spare_stock_archive"));
   }
 
   @Test
@@ -122,6 +129,7 @@ class LayerDependencyArchitectureTest {
                         assertFalse(writesEquipmentHistory(text), file + " directly writes equipment history");
                         if (file.getFileName().toString().equals("MaintenanceRepository.class")) {
                           assertFalse(writesMaintenanceJournal(text), file + " owns journal writes that belong to dedicated repositories");
+                          assertFalse(readsLegacyStock(text), file + " reads inventory stock outside its owning repository");
                         }
                       }
                       if (sqlFree && value instanceof String text)

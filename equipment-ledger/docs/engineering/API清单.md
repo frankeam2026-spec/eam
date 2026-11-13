@@ -362,3 +362,8 @@ Controller/Service使用明确查询及响应类型，设备关联Repository复�
 
 - `GET /api/v1/maintenance/tasks/{id}`：嵌套events改由`MaintenanceTaskEventView`建模，仍返回action/actor/time/details四字段；时间保留`yyyy-MM-dd HH:mm:ss`，details保留各审计动作的动态历史内容。任务根响应不在本批迁移。
 - `PATCH /api/v1/maintenance/inbox/{id}/read`：响应及授权不变，仍仅按当前tenant/user/id标记已读，使用数据库时间。前端及工作台调用无需修改。
+
+## 保养旧库存选项契约（2026-11-13）
+
+- `GET /api/v1/maintenance/choices`的stocks使用`MaintenanceLegacyStockOption`，保持id/code/name/model/quantity五字段；id为字符串，quantity保持数值。按可查看保养标准/计划/任务菜单的公司范围并集过滤，paged=true保持空列表。其他根字段和调用方`src/maintenance.ts`不变。
+- `POST /api/v1/maintenance/standards`及`PUT /api/v1/maintenance/standards/{id}`仍校验本租户旧备件存在性及本次写权限，不预留或扣减旧库存；请求和响应格式不变。
