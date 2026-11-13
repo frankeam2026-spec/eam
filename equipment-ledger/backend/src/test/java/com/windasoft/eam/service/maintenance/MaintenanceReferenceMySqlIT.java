@@ -151,6 +151,13 @@ class MaintenanceReferenceMySqlIT {
   @BeforeEach
   void setup() {
     for (String table : TABLES) assertEquals(0L, count(table), table);
+    assertEquals(
+        0L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM sys_number_counter WHERE rule_code IN (?,?)",
+            Long.class,
+            "maintenance-" + TENANT,
+            "maintenance-" + (TENANT + 1)));
     ownsFixture = true;
     when(auth.tenantId()).thenReturn(TENANT);
     when(auth.userId()).thenReturn(USER);
@@ -208,6 +215,11 @@ class MaintenanceReferenceMySqlIT {
             + " m.tenant_id IN (?,?)",
         TENANT,
         TENANT + 1);
+    // 生成会写入专属租户的编号规则；与业务夹具一同清理，不能留下测试运行的递增状态。
+    db.update(
+        "DELETE FROM sys_number_counter WHERE rule_code IN (?,?)",
+        "maintenance-" + TENANT,
+        "maintenance-" + (TENANT + 1));
     for (String table : TABLES) {
       if (table.equals("eam_org_unit"))
         db.update(
@@ -845,8 +857,7 @@ class MaintenanceReferenceMySqlIT {
             TASK);
     assertEquals(3, generated.size());
     for (int i = 0; i < generated.size(); i++) {
-      assertEquals(
-          start.plusDays(i), ((Date) generated.get(i).get("due_date")).toLocalDate());
+      assertEquals(start.plusDays(i), ((Date) generated.get(i).get("due_date")).toLocalDate());
       var snapshot = projects.decode(generated.get(i).get("snapshot"));
       assertEquals(
           standard + ":second",
