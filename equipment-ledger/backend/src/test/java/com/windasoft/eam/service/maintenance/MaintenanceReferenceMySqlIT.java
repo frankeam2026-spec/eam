@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.maintenance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -8,11 +9,15 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.ApiExceptionHandler;
@@ -37,8 +42,11 @@ import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import com.windasoft.eam.support.ContractTypes;
 import java.math.BigDecimal;
+import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -125,6 +133,10 @@ class MaintenanceReferenceMySqlIT {
   @MockitoBean KnowledgeScheduler knowledgeScheduler;
   @MockitoSpyBean MaintenanceRepository repository;
   @MockitoSpyBean NotificationRepository notifications;
+  @Autowired MaintenanceListService lists;
+  @Autowired MaintenanceFileService fileService;
+  @Autowired MaintenanceProjectService projects;
+  @Autowired MaintenanceGenerationService generation;
   @Autowired MaintenanceTaskJournal journal;
   @Autowired ObjectMapper json;
   @Autowired MaintenanceValidationService validation;
@@ -139,6 +151,13 @@ class MaintenanceReferenceMySqlIT {
   @BeforeEach
   void setup() {
     for (String table : TABLES) assertEquals(0L, count(table), table);
+    assertEquals(
+        0L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM sys_number_counter WHERE rule_code IN (?,?)",
+            Long.class,
+            "maintenance-" + TENANT,
+            "maintenance-" + (TENANT + 1)));
     ownsFixture = true;
     when(auth.tenantId()).thenReturn(TENANT);
     when(auth.userId()).thenReturn(USER);
@@ -196,6 +215,11 @@ class MaintenanceReferenceMySqlIT {
             + " m.tenant_id IN (?,?)",
         TENANT,
         TENANT + 1);
+    // 生成会写入专属租户的编号规则；与业务夹具一同清理，不能留下测试运行的递增状态。
+    db.update(
+        "DELETE FROM sys_number_counter WHERE rule_code IN (?,?)",
+        "maintenance-" + TENANT,
+        "maintenance-" + (TENANT + 1));
     for (String table : TABLES) {
       if (table.equals("eam_org_unit"))
         db.update(
@@ -580,6 +604,280 @@ class MaintenanceReferenceMySqlIT {
                     "SELECT quantity FROM eam_spare_stock WHERE id=?",
                     BigDecimal.class,
                     9007199254741661L)));
+  }
+
+  @Test
+  void ordinaryTextCannotGrantFileDownloadOrReferenceRights() {
+    pendingAcceptance();
+    db.update("UPDATE eam_maintenance_file SET user_id=? WHERE tenant_id=?", DELETED, TENANT);
+    definitionStorage.insert(
+        TYPE + 10,
+        TENANT,
+        "standards",
+        "FILE-STANDARD",
+        "标准",
+        ORG,
+        USER,
+        jsonText(Map.of("remark", PDF)));
+    executions.save(TENANT, TASK, jsonText(Map.of("description", PDF)));
+    assertFalse(lists.hasFile(PDF), "备注和处理说明中的UUID不是附件关联");
+    assertEquals(
+        403,
+        assertThrows(ResponseStatusException.class, () -> fileService.download(PDF))
+            .getStatusCode()
+            .value());
+    assertEquals(
+        403,
+        assertThrows(
+                ResponseStatusException.class,
+                () -> validation.validAttachments(attachment(PDF), false))
+            .getStatusCode()
+            .value());
+  }
+
+  @Test
+  void referenceValidationRejectsUnownedFileAndMismatchedId() {
+    db.update("UPDATE eam_maintenance_file SET user_id=? WHERE id=?", DELETED, PDF);
+    assertEquals(
+        403,
+        assertThrows(
+                ResponseStatusException.class,
+                () -> validation.validAttachments(attachment(PDF), false))
+            .getStatusCode()
+            .value());
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            validation.validAttachments(
+                List.of(Map.of("id", PDF, "url", "/api/v1/maintenance/files/" + IMAGE)), false));
+  }
+
+  @Test
+  void exactFileRelationsRespectVisibilityAndKeepHistoricalSnapshots() {
+    pendingAcceptance();
+    db.update("UPDATE eam_maintenance_file SET user_id=? WHERE tenant_id=?", DELETED, TENANT);
+    var item =
+        Map.of("id", "file-item", "typeId", Long.toString(TYPE), "references", fileReference(PDF));
+    definitionStorage.insert(
+        TYPE + 10,
+        TENANT,
+        "standards",
+        "FILE-STANDARD",
+        "标准",
+        ORG,
+        USER,
+        jsonText(Map.of("items", List.of(item))));
+    assertTrue(lists.hasFile(PDF));
+    validation.validAttachments(fileReference(PDF), false);
+    when(permissions.maintenance("standards", "查看"))
+        .thenReturn(new PermissionScope(false, null, Set.of(), false));
+    assertFalse(lists.hasFile(PDF));
+    db.update(
+        "UPDATE eam_maintenance_task SET snapshot=? WHERE tenant_id=? AND id=?",
+        jsonText(Map.of("items", List.of(item))),
+        TENANT,
+        TASK);
+    assertTrue(lists.hasFile(PDF), "任务历史资料不依赖当前标准可见性");
+    db.update("DELETE FROM eam_maintenance_standard WHERE tenant_id=?", TENANT);
+    assertTrue(lists.hasFile(PDF), "删除标准不能破坏任务历史附件");
+    db.update(
+        "UPDATE eam_maintenance_task SET snapshot='{}' WHERE tenant_id=? AND id=?", TENANT, TASK);
+    for (var result :
+        List.of(
+            Map.of("attachments", fileReference(PDF)),
+            Map.of("acceptance", Map.of("attachments", fileReference(PDF))),
+            Map.of("items", List.of(Map.of("id", "image", "images", fileReference(PDF)))))) {
+      executions.save(TENANT, TASK, jsonText(result));
+      assertTrue(lists.hasFile(PDF));
+    }
+    executions.save(TENANT, TASK, jsonText(Map.of("attachments", fileReference(FOREIGN_FILE))));
+    assertThrows(IllegalArgumentException.class, () -> fileService.download(FOREIGN_FILE));
+    executions.save(TENANT, TASK, jsonText(Map.of("attachments", fileReference(PDF))));
+    db.update("DELETE FROM eam_maintenance_task_person WHERE tenant_id=?", TENANT);
+    when(permissions.maintenance("tasks", "查看"))
+        .thenReturn(new PermissionScope(false, null, Set.of(), false));
+    assertFalse(lists.hasFile(PDF), "不能借另一授权范围下载任务文件");
+  }
+
+  @Test
+  void referenceUsesUrlAuthorityRatherThanForgedIdOrName() {
+    pendingAcceptance();
+    var forged = Map.of("id", PDF, "url", "/api/v1/maintenance/files/" + IMAGE, "name", PDF);
+    executions.save(TENANT, TASK, jsonText(Map.of("attachments", List.of(forged))));
+    assertFalse(lists.hasFile(PDF));
+    assertTrue(lists.hasFile(IMAGE));
+    db.update(
+        "UPDATE eam_maintenance_task SET snapshot=? WHERE tenant_id=? AND id=?",
+        jsonText(Map.of("items", List.of(Map.of("references", List.of(forged))))),
+        TENANT,
+        TASK);
+    assertFalse(lists.hasFile(PDF));
+    assertTrue(lists.hasFile(IMAGE));
+    executions.save(TENANT, TASK, "{}");
+    db.update(
+        "UPDATE eam_maintenance_task SET snapshot=? WHERE tenant_id=? AND id=?",
+        jsonText(Map.of("items", List.of(Map.of("references", List.of(Map.of("id", PDF)))))),
+        TENANT,
+        TASK);
+    assertTrue(lists.hasFile(PDF), "历史快照仅有ID时仍按明确附件字段匹配");
+  }
+
+  @Test
+  void projectResolutionReadsOneStandardOnceAndPreservesOrderAndLegacyKeys() {
+    definitionStorage.insert(TYPE, TENANT, "types", "PROJECT-TYPE", "类型", ORG, USER, "{}");
+    var items = new ArrayList<Map<String, Object>>();
+    var refs = new ArrayList<Map<String, Object>>();
+    long standard = TYPE + 10;
+    for (int i = 0; i < 100; i++) {
+      items.add(Map.of("id", "item-" + i, "typeId", Long.toString(TYPE), "name", "项目" + i));
+      refs.add(Map.of("standardId", Long.toString(standard), "itemId", "item-" + (99 - i)));
+    }
+    definitionStorage.insert(
+        standard,
+        TENANT,
+        "standards",
+        "PROJECT-STANDARD",
+        "标准",
+        ORG,
+        USER,
+        jsonText(Map.of("items", items)));
+    var cycle = Map.<String, Object>of("typeId", Long.toString(TYPE), "projectRefs", refs);
+    selects(
+        1,
+        () -> {
+          var resolved = projects.planProjects(cycle, TENANT, Map.of(), true);
+          assertEquals(100, resolved.size());
+          assertEquals(standard + ":item-99", resolved.getFirst().get("id"));
+          assertEquals(standard + ":item-0", resolved.getLast().get("id"));
+        });
+    selects(
+        2,
+        () -> {
+          var legacy =
+              projects.planProjects(
+                  Map.of("standardId", Long.toString(standard), "typeId", Long.toString(TYPE)),
+                  TENANT,
+                  Map.of(),
+                  true);
+          assertEquals("item-0", legacy.getFirst().get("id"));
+          assertEquals(100, legacy.size());
+        });
+    assertThrows(
+        ResponseStatusException.class,
+        () -> projects.planProjects(cycle, TENANT + 1, Map.of(), false));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            projects.planProjects(
+                Map.of("typeId", "999", "projectRefs", refs), TENANT, Map.of(), false));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            projects.planProjects(
+                Map.of(
+                    "typeId",
+                    Long.toString(TYPE),
+                    "projectRefs",
+                    List.of(Map.of("standardId", Long.toString(standard), "itemId", "missing"))),
+                TENANT,
+                Map.of(),
+                false));
+    refs.add(refs.getFirst());
+    assertEquals(100, projects.planProjects(cycle, TENANT, Map.of(), true).size());
+    when(permissions.maintenance("standards", "查看"))
+        .thenReturn(new PermissionScope(false, null, Set.of(), false));
+    assertThrows(
+        ResponseStatusException.class, () -> projects.planProjects(cycle, TENANT, Map.of(), true));
+  }
+
+  @Test
+  void catchUpReusesFactsButKeepsDatesSnapshotsAndIdempotency() {
+    pendingAcceptance();
+    db.update(
+        "UPDATE eam_maintenance_task SET due_date=? WHERE tenant_id=? AND id=?",
+        LocalDate.now(ZoneId.of("Asia/Shanghai")).plusDays(10),
+        TENANT,
+        TASK);
+    long standard = TYPE + 10;
+    definitionStorage.insert(
+        standard,
+        TENANT,
+        "standards",
+        "CATCH-UP",
+        "生成标准",
+        ORG,
+        USER,
+        jsonText(
+            Map.of(
+                "items",
+                List.of(
+                    Map.of("id", "first", "typeId", Long.toString(TYPE), "name", "项目一"),
+                    Map.of("id", "second", "typeId", Long.toString(TYPE), "name", "项目二")))));
+    var start = LocalDate.now(ZoneId.of("Asia/Shanghai")).minusDays(2);
+    definitionStorage.device(
+        false,
+        TENANT,
+        SCHEDULE,
+        PLAN,
+        EQUIPMENT,
+        TYPE,
+        start,
+        start,
+        0,
+        jsonText(
+            Map.of(
+                "typeId",
+                Long.toString(TYPE),
+                "period",
+                1,
+                "unit",
+                "日",
+                "projectRefs",
+                List.of(
+                    Map.of("standardId", Long.toString(standard), "itemId", "second"),
+                    Map.of("standardId", Long.toString(standard), "itemId", "first")))));
+    clearInvocations(repository);
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              long before = selectCount();
+              assertEquals(3, generation.generate(TENANT, PLAN));
+              long queries = selectCount() - before;
+              System.out.println("保养补生成3次、每次2项目：实际Com_select=" + queries);
+              assertEquals(22, queries);
+            });
+    verify(repository, times(1)).loadDefinition(TENANT, "standards", standard, false);
+    verify(repository, times(1)).loadEquipment(TENANT, EQUIPMENT);
+    verify(repository, times(1)).loadDefinition(TENANT, "types", TYPE, false);
+    var generated =
+        db.queryForList(
+            "SELECT due_date,snapshot FROM eam_maintenance_task WHERE tenant_id=? AND id<>? ORDER"
+                + " BY due_date",
+            TENANT,
+            TASK);
+    assertEquals(3, generated.size());
+    for (int i = 0; i < generated.size(); i++) {
+      assertEquals(start.plusDays(i), ((Date) generated.get(i).get("due_date")).toLocalDate());
+      var snapshot = projects.decode(generated.get(i).get("snapshot"));
+      assertEquals(
+          standard + ":second",
+          json.valueToTree(snapshot).path("items").get(0).path("id").asText());
+      assertEquals("保养设备", snapshot.get("equipmentName"));
+    }
+    assertEquals(0, generation.generate(TENANT, PLAN));
+    assertEquals(4L, count("eam_maintenance_task"));
+  }
+
+  private String jsonText(Object value) {
+    try {
+      return json.writeValueAsString(value);
+    } catch (JsonProcessingException e) {
+      throw new AssertionError(e);
+    }
+  }
+
+  private static List<Map<String, Object>> fileReference(String id) {
+    return List.of(Map.of("id", id, "url", "/api/v1/maintenance/files/" + id));
   }
 
   private Map<String, Object> spareStandard(long stock) {
