@@ -190,24 +190,52 @@ public class MaintenanceListRepository {
     return result;
   }
 
+  /**
+   * 在调用方的查看范围内匹配真实附件字段。备注、文件名及其他自由文本不构成授权依据。 标准和执行结果使用关系表；任务资料必须读取生成时的历史快照，不能追到已修改的当前标准。 URL
+   * 是原接口实际访问的文件；仅旧记录缺少 URL 时回退到附件 ID，避免伪造另一 ID 扩权。
+   */
   public boolean referencesFile(Selection selection, String id) {
-    boolean task = selection.kind().endsWith("tasks");
-    String source = task ? "snapshot" : "payload";
+    String url = "/api/v1/maintenance/files/" + id;
     var match =
-        com.windasoft.eam.repository.common.SqlListFilters.contains(
-            "CAST(t." + source + " AS CHAR)", id);
-    if (task)
-      match =
-          match.or(
-              com.windasoft.eam.repository.common.SqlListFilters.contains(
-                  "CAST(t.result AS CHAR)", id));
+        switch (selection.kind()) {
+          case "standards" ->
+              SqlPredicate.of(
+                  """
+                  EXISTS(SELECT 1 FROM eam_maintenance_item_file f
+                    WHERE f.tenant_id=t.tenant_id AND f.standard_id=t.id
+                      AND (f.url_snapshot=? OR (f.url_snapshot='' AND f.file_id=?)))
+                  """,
+                  url,
+                  id);
+          case "tasks" ->
+              SqlPredicate.of(
+                  """
+                  (EXISTS(SELECT 1 FROM eam_maintenance_execution_file f
+                    WHERE f.tenant_id=t.tenant_id AND f.task_id=t.id
+                      AND (f.url_snapshot=? OR (f.url_snapshot='' AND f.file_id=?)))
+                  OR EXISTS(SELECT 1 FROM eam_maintenance_execution_image f
+                    WHERE f.tenant_id=t.tenant_id AND f.task_id=t.id
+                      AND (f.url_snapshot=? OR (f.url_snapshot='' AND f.file_id=?)))
+                  OR EXISTS(SELECT 1 FROM JSON_TABLE(t.snapshot, '$.items[*].references[*]'
+                    COLUMNS(file_id VARCHAR(64) PATH '$.id', url VARCHAR(1000) PATH '$.url')) f
+                    WHERE f.url=? OR (COALESCE(f.url,'')='' AND f.file_id=?)))
+                  """,
+                  url,
+                  id,
+                  url,
+                  id,
+                  url,
+                  id);
+          // 计划头没有附件字段；项目资料属于标准或生成任务的快照。
+          default -> SqlPredicate.of("1=0");
+        };
     return !lists
         .rows(
             "t.id",
             selection.from(),
             selection.predicate().and(match),
             "t.id",
-            com.windasoft.eam.dto.common.ListQuery.from(Map.of("size", "1")))
+            ListQuery.from(Map.of("size", "1")))
         .isEmpty();
   }
 

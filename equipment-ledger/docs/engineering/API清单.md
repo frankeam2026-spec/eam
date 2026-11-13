@@ -367,3 +367,9 @@ Controller/Service使用明确查询及响应类型，设备关联Repository复�
 
 - `GET /api/v1/maintenance/choices`的stocks使用`MaintenanceLegacyStockOption`，保持id/code/name/model/quantity五字段；id为字符串，quantity保持数值。按可查看保养标准/计划/任务菜单的公司范围并集过滤，paged=true保持空列表。其他根字段和调用方`src/maintenance.ts`不变。
 - `POST /api/v1/maintenance/standards`及`PUT /api/v1/maintenance/standards/{id}`仍校验本租户旧备件存在性及本次写权限，不预留或扣减旧库存；请求和响应格式不变。
+
+
+## 保养附件授权修复（2026-11-13）
+
+- 原文件下载、标准保存、任务执行/验收接口及响应结构不变。仅真实附件字段或关系可授权下载，备注和说明中的 UUID 不授予访问权。
+- 保存附件须为本租户本人上传或已有可见关联的文件；显式 ID 必须与 URL 一致。无权引用返回403，格式不符沿用400。保留历史快照附件，未修改已有数据。见[修复与验证记录](../plans/保养审查问题修复-20261113.md)。
