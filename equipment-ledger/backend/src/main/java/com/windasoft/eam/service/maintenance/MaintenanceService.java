@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.dto.maintenance.MaintenanceLegacyStockOption;
+import com.windasoft.eam.repository.inventory.LegacySpareStockRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceInboxRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
@@ -44,6 +46,7 @@ public class MaintenanceService {
   private final MaintenanceRepository repository;
   private final OrgUnitRepository organizations;
   private final MaintenanceInboxRepository inbox;
+  private final LegacySpareStockRepository legacyStocks;
   private final ObjectMapper json;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -53,6 +56,7 @@ public class MaintenanceService {
       MaintenanceRepository repository,
       OrgUnitRepository organizations,
       MaintenanceInboxRepository inbox,
+      LegacySpareStockRepository legacyStocks,
       ObjectMapper json,
       AuthContext auth,
       PermissionService permissions,
@@ -76,6 +80,7 @@ public class MaintenanceService {
     this.repository = repository;
     this.organizations = organizations;
     this.inbox = inbox;
+    this.legacyStocks = legacyStocks;
     this.json = json;
     this.auth = auth;
     this.permissions = permissions;
@@ -311,21 +316,21 @@ public class MaintenanceService {
         validAttachments(item.get("references"), false);
         var spareSummary = new ArrayList<String>();
         for (var spare : rows(item.get("spareRequirements"))) {
-          var stock = repository.loadLegacyStock(tenant, number(spare.get("stockId")));
+          var stock = legacyStocks.find(tenant, number(spare.get("stockId")));
           require(
-              !stock.isEmpty(),
+              stock != null,
               com.windasoft.eam.common.MessageContext.text("server.maintenance.message0029"));
           var scope = permissions.maintenance(kind, action);
           if (!scope.all()
-              && !scope.companyIds().contains(number(stock.getFirst().get("company_id")))) deny();
+              && !scope.companyIds().contains(stock.getCompanyId())) deny();
           var quantity = new BigDecimal(text(spare, "quantity"));
           require(
               quantity.signum() > 0,
               com.windasoft.eam.common.MessageContext.text("server.maintenance.message0030"));
           spareSummary.add(
-              text(stock.getFirst(), "name")
+              Objects.toString(stock.getName(), "").trim()
                   + " · "
-                  + text(stock.getFirst(), "model")
+                  + Objects.toString(stock.getModel(), "").trim()
                   + " × "
                   + quantity.stripTrailingZeros().toPlainString());
         }
@@ -594,31 +599,26 @@ public class MaintenanceService {
         o -> {
           if ("0".equals(o.get("parentId"))) o.put("parentId", "");
         });
-    var allStocks =
-        List.of("standards", "plans", "tasks").stream()
-            .anyMatch(
-                k ->
-                    permissions.allowed(PermissionService.maintenanceMenu(k), "查看")
-                        && permissions.maintenance(k, "查看").all());
+    // 查看范围取各保养菜单的公司并集；不能用这份并集代替保存标准时的写权限。
+    boolean allStocks = false;
+    var stockCompanies = new HashSet<Long>();
+    for (String kind : List.of("standards", "plans", "tasks")) {
+      if (!permissions.allowed(PermissionService.maintenanceMenu(kind), "查看")) {
+        continue;
+      }
+      var scope = permissions.maintenance(kind, "查看");
+      stockCompanies.addAll(scope.companyIds());
+      if (scope.all()) {
+        allStocks = true;
+        break;
+      }
+    }
     var stocks =
-        (paged ? List.<Map<String, Object>>of() : repository.listLegacyStock(auth.tenantId()))
-            .stream()
-                .filter(
-                    r ->
-                        allStocks
-                            || List.of("standards", "plans", "tasks").stream()
-                                .anyMatch(
-                                    k ->
-                                        permissions.allowed(PermissionService.maintenanceMenu(k), "查看")
-                                            && permissions.companyAllowed(
-                                                PermissionService.maintenanceMenu(k),
-                                                "查看",
-                                                number(r.get("company_id")))))
-                .map(
-                    r -> {
-                      r.remove("company_id");
-                      return r;
-                    })
+        paged
+            ? List.<MaintenanceLegacyStockOption>of()
+            : legacyStocks.listVisible(auth.tenantId(), allStocks, stockCompanies).stream()
+                .map(stock -> new MaintenanceLegacyStockOption(
+                    stock.getId(), stock.getCode(), stock.getName(), stock.getModel(), stock.getQuantity()))
                 .toList();
     return Map.of(
         "types",

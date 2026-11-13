@@ -72,11 +72,6 @@ public class MaintenanceRepository {
         tenantId);
   }
 
-  public List<Map<String, Object>> loadLegacyStock(long tenantId, Object stockId) {
-    return db.queryForList(
-        "SELECT * FROM eam_spare_stock WHERE tenant_id=? AND id=?", tenantId, stockId);
-  }
-
   public int insertDefinition(
       long definitionId,
       long tenantId,
@@ -213,13 +208,6 @@ public class MaintenanceRepository {
         "SELECT CAST(id AS CHAR) id,name,CAST(COALESCE(parent_id,0) AS CHAR)"
             + " parentId,COALESCE(display_type,org_type) type FROM eam_org_unit WHERE"
             + " tenant_id=? AND deleted=0 AND status=1",
-        tenantId);
-  }
-
-  public List<Map<String, Object>> listLegacyStock(long tenantId) {
-    return db.queryForList(
-        "SELECT CAST(id AS CHAR) id,code,name,model,quantity,company_id FROM"
-            + " eam_spare_stock WHERE tenant_id=? ORDER BY name",
         tenantId);
   }
 

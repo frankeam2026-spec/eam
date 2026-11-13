@@ -10,10 +10,16 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.NotificationMessages;
+import com.windasoft.eam.controller.maintenance.MaintenanceController;
+import com.windasoft.eam.dto.maintenance.MaintenanceLegacyStockOption;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.maintenance.MaintenanceDefinitionStorage;
@@ -29,8 +35,11 @@ import com.windasoft.eam.scheduler.system.NotificationScheduler;
 import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
+import com.windasoft.eam.support.ContractTypes;
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -40,14 +49,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 /** 真实读写保养与履历数据，固定身份和权限；不启动渠道发送，不使用外围测试事务掩盖回滚。 */
 @SpringBootTest
@@ -76,7 +88,9 @@ class MaintenanceReferenceMySqlIT {
           "eam_maintenance_task",
           "eam_maintenance_plan_device",
           "eam_maintenance_plan",
+          "eam_maintenance_standard",
           "eam_maintenance_type",
+          "eam_spare_stock",
           "eam_maintenance_file",
           "eam_equipment",
           "eam_sys_user",
@@ -486,6 +500,142 @@ class MaintenanceReferenceMySqlIT {
             String.class,
             TENANT,
             TASK));
+  }
+
+  @Test
+  void stockChoicesKeepCompanyUnionHttpNumbersAndPagedOmission() throws Exception {
+    ContractTypes.assertExplicit(MaintenanceLegacyStockOption.class);
+    stocks();
+    when(permissions.anyMaintenance("查看")).thenReturn(true);
+    stockView("standards", new PermissionScope(false, ORG, Set.of(ORG), false));
+    stockView("plans", new PermissionScope(false, ORG + 1, Set.of(), false));
+    var mvc =
+        MockMvcBuilders.standaloneSetup(new MaintenanceController(definitions))
+            .setMessageConverters(new MappingJackson2HttpMessageConverter(json))
+            .setControllerAdvice(new ApiExceptionHandler())
+            .build();
+    var response =
+        mvc.perform(get("/api/v1/maintenance/choices").param("paged", "false"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    var root = json.readTree(response.getContentAsByteArray());
+    assertEquals(6, root.size());
+    var options = root.path("stocks");
+    assertEquals(2, options.size());
+    var first = options.get(0);
+    assertEquals(5, first.size());
+    assertEquals("9007199254741661", first.path("id").asText());
+    assertTrue(first.path("id").isTextual());
+    assertEquals(" 轴承 ", first.path("name").asText());
+    assertEquals(" M-1 ", first.path("model").asText());
+    assertEquals("", options.get(1).path("model").asText());
+    assertTrue(first.path("quantity").isNumber());
+    assertEquals(0, new BigDecimal("0.125").compareTo(first.path("quantity").decimalValue()));
+    selects(6, () -> definitions.choices(false));
+    selects(
+        3,
+        () -> assertEquals(0, json.valueToTree(definitions.choices(true)).path("stocks").size()));
+    stockView("plans", new PermissionScope(true, null, Set.of(), false));
+    assertEquals(3, json.valueToTree(definitions.choices(false)).path("stocks").size());
+    stockView("standards", new PermissionScope(false, null, Set.of(), true));
+    stockView("plans", new PermissionScope(false, null, Set.of(ORG), false));
+    assertEquals(0, json.valueToTree(definitions.choices(false)).path("stocks").size());
+  }
+
+  @Test
+  void spareRequirementUsesWriteScopeAndPreservesSummaryAndQuantity() {
+    stocks();
+    definitionStorage.insert(TYPE, TENANT, "types", "STOCK-TYPE", "保养类型", ORG, USER, "{}");
+    stockView("standards", new PermissionScope(false, ORG, Set.of(ORG), false));
+    when(permissions.maintenance("standards", "新增"))
+        .thenReturn(new PermissionScope(false, ORG + 1, Set.of(ORG), false));
+    var denied =
+        assertThrows(
+            ResponseStatusException.class,
+            () -> definitions.save("standards", null, spareStandard(9007199254741661L)));
+    assertEquals(403, denied.getStatusCode().value());
+    assertEquals(0L, count("eam_maintenance_standard"));
+    when(permissions.maintenance("standards", "新增"))
+        .thenReturn(new PermissionScope(false, ORG, Set.of(ORG), false));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> definitions.save("standards", null, spareStandard(9007199254741663L)));
+    var saved = definitions.save("standards", null, spareStandard(9007199254741661L));
+    assertEquals(
+        "轴承 · M-1 × 1.5", json.valueToTree(saved).path("items").get(0).path("spares").asText());
+    assertEquals(
+        0,
+        new BigDecimal("1.50")
+            .compareTo(
+                db.queryForObject(
+                    "SELECT quantity FROM eam_maintenance_item_spare WHERE tenant_id=?",
+                    BigDecimal.class,
+                    TENANT)));
+    assertEquals(
+        0,
+        new BigDecimal("0.125")
+            .compareTo(
+                db.queryForObject(
+                    "SELECT quantity FROM eam_spare_stock WHERE id=?",
+                    BigDecimal.class,
+                    9007199254741661L)));
+  }
+
+  private Map<String, Object> spareStandard(long stock) {
+    return json.convertValue(
+        Map.of(
+            "name",
+            "备件标准",
+            "code",
+            "STOCK-STANDARD",
+            "departmentId",
+            Long.toString(ORG),
+            "items",
+            List.of(
+                Map.of(
+                    "id",
+                    "stock-item",
+                    "code",
+                    "stock-item",
+                    "name",
+                    "检查",
+                    "content",
+                    "检查部位",
+                    "typeId",
+                    Long.toString(TYPE),
+                    "valueType",
+                    "文本",
+                    "spareRequirements",
+                    List.of(Map.of("stockId", Long.toString(stock), "quantity", "1.500"))))),
+        new TypeReference<LinkedHashMap<String, Object>>() {});
+  }
+
+  private void stockView(String kind, PermissionScope scope) {
+    String menu = PermissionService.maintenanceMenu(kind);
+    when(permissions.allowed(menu, "查看")).thenReturn(true);
+    when(permissions.maintenance(kind, "查看")).thenReturn(scope);
+    when(permissions.companyAllowed(eq(menu), eq("查看"), anyLong()))
+        .thenAnswer(call -> scope.all() || scope.companyIds().contains(call.getArgument(2)));
+  }
+
+  private void stocks() {
+    db.update(
+        "INSERT INTO eam_spare_stock(id,tenant_id,company_id,code,name,model,quantity)"
+            + " VALUES(?,?,?,'STOCK-A',' 轴承 ',' M-1"
+            + " ',0.125),(?,?,?,'STOCK-B','油杯','',2),(?,?,?,'STOCK-F','外租户','',1),(?,?,?,'STOCK-N','禁止','',0)",
+        9007199254741661L,
+        TENANT,
+        ORG,
+        9007199254741662L,
+        TENANT,
+        ORG + 1,
+        9007199254741663L,
+        TENANT + 1,
+        ORG + 3,
+        9007199254741664L,
+        TENANT,
+        ORG + 99);
   }
 
   private long updates() {
