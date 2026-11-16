@@ -14,10 +14,12 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
-import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
-import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
+import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -29,12 +31,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class MaintenanceGenerationService {
   private final MaintenanceRepository repository;
+  private final MaintenanceTypeRepository types;
   private final MaintenanceExecutionStorage executions;
   private final TaskSourceRelationsRepository taskSources;
   private final ObjectMapper json;
@@ -45,6 +49,7 @@ public class MaintenanceGenerationService {
 
   public MaintenanceGenerationService(
       MaintenanceRepository repository,
+      MaintenanceTypeRepository types,
       MaintenanceExecutionStorage executions,
       TaskSourceRelationsRepository taskSources,
       ObjectMapper json,
@@ -53,6 +58,7 @@ public class MaintenanceGenerationService {
       MaintenanceViewAssembler views,
       MaintenanceTaskJournal journal) {
     this.repository = repository;
+    this.types = types;
     this.executions = executions;
     this.taskSources = taskSources;
     this.json = json;
@@ -76,8 +82,10 @@ public class MaintenanceGenerationService {
       var schedules = repository.lockPlanSchedules(tenant, plan.get("id"));
       for (var schedule : schedules) {
         var cycle = decode(schedule.get("payload"));
-        var typeRow = projectSource.raw("types", tenant, number(schedule.get("type_id")), false);
-        if (!yes(decode(typeRow.get("payload")).get("enabled"))) continue;
+        var type = types.find(tenant, number(schedule.get("type_id")), false);
+        if (type == null)
+          throw new LocalizedStatusException(HttpStatus.NOT_FOUND, "server.inspection.message0013");
+        if (!Boolean.TRUE.equals(type.getEnabled())) continue;
         LocalDate due = ((Date) schedule.get("next_date")).toLocalDate();
         LocalDate anchor = ((Date) schedule.get("anchor_date")).toLocalDate();
         long index = number(schedule.get("cycle_index"));
@@ -90,7 +98,6 @@ public class MaintenanceGenerationService {
           var equipment = projectSource.equipment(tenant, number(schedule.get("equipment_id")));
           var projects = projectSource.planProjects(cycle, tenant, equipment, false);
           require(!projects.isEmpty(), MessageContext.text("server.maintenance.message0074"));
-          var type = views.definition(typeRow);
           for (int n = 0; n < 100 && !due.isAfter(generationDeadline); n++) {
             var snap = new LinkedHashMap<String, Object>();
             snap.put("planName", plan.get("name"));
@@ -99,8 +106,8 @@ public class MaintenanceGenerationService {
             snap.put("model", Objects.toString(equipment.getModel(), ""));
             snap.put("department", Objects.toString(equipment.getDepartment(), ""));
             snap.put("functionLocation", Objects.toString(equipment.getFunctionLocation(), ""));
-            snap.put("typeId", type.get("id"));
-            snap.put("typeName", type.get("name"));
+            snap.put("typeId", Long.toString(type.getId()));
+            snap.put("typeName", type.getName());
             snap.put("calculation", p.get("calculation"));
             boolean needsAcceptance = !text(p, "reviewMode").equals("无需验收");
             snap.put("reviewMode", needsAcceptance ? "整机验收" : "无需验收");
@@ -156,10 +163,10 @@ public class MaintenanceGenerationService {
                     expires,
                     encode(views.historicalSnapshot(snap)));
             if (added > 0) {
-            // 唯一键重复时不覆盖人员或来源；新任务仍按主体→人员→来源的原顺序写入同一事务。
-            String content = encode(snap);
-            executions.participants(tenant, task, content);
-            taskSources.maintenance(tenant, task, equipment.getId(), content);
+              // 唯一键重复时不覆盖人员或来源；新任务仍按主体→人员→来源的原顺序写入同一事务。
+              String content = encode(snap);
+              executions.participants(tenant, task, content);
+              taskSources.maintenance(tenant, task, equipment.getId(), content);
               if ("上次结果".equals(text(p, "autoFill"))) {
                 var previous =
                     repository.findLastCompletedResult(
