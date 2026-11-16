@@ -24,6 +24,7 @@ import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.NotificationMessages;
 import com.windasoft.eam.controller.maintenance.MaintenanceController;
+import com.windasoft.eam.controller.maintenance.MaintenanceStandardController;
 import com.windasoft.eam.controller.maintenance.MaintenanceTypeController;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
@@ -31,6 +32,9 @@ import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantResult;
 import com.windasoft.eam.dto.maintenance.MaintenanceLegacyStockOption;
 import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
+import com.windasoft.eam.dto.maintenance.MaintenanceStandardRequest;
+import com.windasoft.eam.dto.maintenance.MaintenanceStandardRow;
+import com.windasoft.eam.dto.maintenance.MaintenanceStandardView;
 import com.windasoft.eam.dto.maintenance.MaintenanceTypeRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceTypeView;
 import com.windasoft.eam.dto.system.PermissionScope;
@@ -40,6 +44,7 @@ import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceDefinitionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
+import com.windasoft.eam.repository.maintenance.MaintenanceItemSpareRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.repository.system.NotificationRepository;
@@ -56,6 +61,7 @@ import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import com.windasoft.eam.support.ContractTypes;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.LocalDate;
@@ -116,6 +122,7 @@ class MaintenanceReferenceMySqlIT {
           "eam_spare_stock",
           "eam_maintenance_file",
           "eam_equipment",
+          "eam_base_item",
           "eam_sys_user",
           "eam_org_unit",
           "inv_tenant_lock");
@@ -148,11 +155,14 @@ class MaintenanceReferenceMySqlIT {
   @MockitoBean KnowledgeScheduler knowledgeScheduler;
   @MockitoSpyBean MaintenanceRepository repository;
   @MockitoSpyBean MaintenanceTypeRepository typeFacts;
+  @MockitoSpyBean MaintenanceItemSpareRepository standardSpares;
   @MockitoSpyBean EquipmentQueryRepository equipmentFacts;
   @MockitoSpyBean NotificationRepository notifications;
   @Autowired PlanningSelectorService selectors;
   @Autowired MaintenanceListService lists;
   @Autowired MaintenanceTypeService typeService;
+  @Autowired MaintenanceController maintenanceController;
+  @Autowired MaintenanceStandardService standardService;
   @Autowired MaintenanceViewAssembler viewAssembler;
   @Autowired AiBusinessQueryService aiQueries;
   @Autowired MaintenanceFileService fileService;
@@ -1040,7 +1050,11 @@ class MaintenanceReferenceMySqlIT {
     assertFalse(created.system());
     assertEquals(21, json.valueToTree(created).size());
     assertEquals(
-        json.valueToTree(viewAssembler.definition(repository.loadDefinition(TENANT,"types",Long.parseLong(created.id()),false).getFirst())),
+        json.valueToTree(
+            viewAssembler.definition(
+                repository
+                    .loadDefinition(TENANT, "types", Long.parseLong(created.id()), false)
+                    .getFirst())),
         json.valueToTree(created));
     var updated =
         typeService.save(
@@ -1088,6 +1102,210 @@ class MaintenanceReferenceMySqlIT {
     when(auth.tenantId()).thenReturn(TENANT);
     typeService.delete(Long.parseLong(created.id()));
     assertEquals(0L, count("eam_maintenance_type"));
+  }
+
+  @Test
+  void typedStandardsPreserveDetailsListsAndReplaceRelationsAtomically() throws Exception {
+    ContractTypes.assertExplicit(MaintenanceStandardRequest.class);
+    ContractTypes.assertExplicit(MaintenanceStandardView.class);
+    ContractTypes.assertExplicit(MaintenanceStandardRow.class);
+    stocks();
+    definitionStorage.insert(TYPE, TENANT, "types", "STANDARD-TYPE", "类型", ORG, USER, "{}");
+    db.update(
+        "INSERT INTO eam_base_item(id,tenant_id,item_type,code,name,status)"
+            + " VALUES(?,?,'CATEGORY','STANDARD-CATEGORY','实际分类',1)",
+        TYPE + 20,
+        TENANT);
+    var raw = spareStandard(9007199254741661L);
+    raw.put("categoryIds", List.of(Long.toString(TYPE + 20)));
+    var initialItem = (Map<String, Object>) ((List<?>) raw.get("items")).getFirst();
+    initialItem.put("valueType", "数值");
+    initialItem.put("lower", "1.25");
+    initialItem.put("upper", "9.50");
+    var input = json.convertValue(raw, MaintenanceStandardRequest.class);
+    var saved = standardService.save(null, input);
+    assertEquals(1, saved.items().size());
+    assertEquals(List.of("实际分类"), saved.categoryNames());
+    assertEquals("轴承 · M-1 × 1.5", saved.items().getFirst().spares());
+    long id = Long.parseLong(saved.id());
+    // 旧公开协议作为独立对照，数值按实际JSON解析比较，避免BigDecimal和Double内存类型差异。
+    assertEquals(
+        json.readTree(
+            json.writeValueAsString(
+                viewAssembler.definition(
+                    repository.loadDefinition(TENANT, "standards", id, false).getFirst()))),
+        json.readTree(json.writeValueAsString(saved)));
+    var page = standardService.query(ListQuery.from(Map.of("page", "1", "size", "20")), false);
+    assertEquals(1L, page.page().total());
+    assertEquals(saved.id(), page.data().getFirst().detail().id());
+    assertFalse(json.valueToTree(page.data().getFirst()).has("owner"));
+    assertEquals(1, standardService.all("[]").size());
+    var mvc =
+        MockMvcBuilders.standaloneSetup(
+                new MaintenanceStandardController(standardService), maintenanceController)
+            .setMessageConverters(new MappingJackson2HttpMessageConverter(json))
+            .setControllerAdvice(new ApiExceptionHandler())
+            .build();
+    var response =
+        mvc.perform(get("/api/v1/maintenance/standards").param("page", "1").param("size", "20"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    var http = json.readTree(response.getContentAsByteArray());
+    assertEquals(saved.id(), http.path("data").get(0).path("id").asText());
+    assertTrue(http.has("page"));
+    var csv =
+        mvc.perform(
+                get("/api/v1/maintenance/standards/export").param("columns", "[\"code\",\"name\"]"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString(StandardCharsets.UTF_8);
+    assertTrue(csv.contains("STOCK-STANDARD"));
+    mvc.perform(get("/api/v1/maintenance/standards/export.csv"))
+        .andExpect(status().isTemporaryRedirect());
+    var update = json.convertValue(raw, new TypeReference<LinkedHashMap<String, Object>>() {});
+    update.put("rowVersion", 0);
+    var item = (Map<String, Object>) ((List<?>) update.get("items")).get(0);
+    item.put("lower", "");
+    item.put("upper", "");
+    item.put("references", fileReference(PDF));
+    item.put("spareRequirements", List.of());
+    // 故障发生在旧备件已清理后，必须一起回滚主体版本、附件和备件，不能因批次执行提前提交。
+    doAnswer(
+            call -> {
+              call.callRealMethod();
+              throw new IllegalStateException("标准明细写入失败");
+            })
+        .when(standardSpares)
+        .insertAll(org.mockito.ArgumentMatchers.anyList());
+    assertThrows(
+        IllegalStateException.class,
+        () ->
+            standardService.save(id, json.convertValue(update, MaintenanceStandardRequest.class)));
+    assertEquals(0, standardService.get(id).rowVersion());
+    assertEquals(0, standardService.get(id).items().getFirst().references().size());
+    assertEquals(1, standardService.get(id).items().getFirst().spareRequirements().size());
+    org.mockito.Mockito.doCallRealMethod()
+        .when(standardSpares)
+        .insertAll(org.mockito.ArgumentMatchers.anyList());
+    var changed =
+        standardService.save(id, json.convertValue(update, MaintenanceStandardRequest.class));
+    assertEquals(1, changed.rowVersion());
+    assertEquals("", changed.items().getFirst().lower());
+    assertEquals("", changed.items().getFirst().upper());
+    assertEquals(1, changed.items().getFirst().references().size());
+    assertEquals(0, changed.items().getFirst().spareRequirements().size());
+    assertEquals(
+        0L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM eam_maintenance_item_spare WHERE tenant_id=?",
+            Long.class,
+            TENANT));
+    assertEquals(
+        409,
+        assertThrows(
+                ResponseStatusException.class,
+                () ->
+                    standardService.save(
+                        id, json.convertValue(update, MaintenanceStandardRequest.class)))
+            .getStatusCode()
+            .value());
+    when(auth.tenantId()).thenReturn(TENANT + 1);
+    assertEquals(
+        404,
+        assertThrows(ResponseStatusException.class, () -> standardService.get(id))
+            .getStatusCode()
+            .value());
+    when(auth.tenantId()).thenReturn(TENANT);
+    standardService.delete(id);
+    assertEquals(0L, count("eam_maintenance_standard"));
+    assertEquals(
+        0L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM eam_maintenance_item_file WHERE tenant_id=?",
+            Long.class,
+            TENANT));
+  }
+
+  @Test
+  void standardReferencedProjectAndTargetDepartmentRemainProtected() {
+    stocks();
+    definitionStorage.insert(TYPE, TENANT, "types", "REFERENCE-TYPE", "类型", ORG, USER, "{}");
+    var body = spareStandard(9007199254741661L);
+    var created =
+        standardService.save(null, json.convertValue(body, MaintenanceStandardRequest.class));
+    long standard = Long.parseLong(created.id());
+    definitionStorage.insert(PLAN, TENANT, "plans", "REFERENCE-PLAN", "计划", ORG, USER, "{}");
+    var date = LocalDate.of(2026, 11, 16);
+    definitionStorage.device(
+        true,
+        TENANT,
+        SCHEDULE,
+        PLAN,
+        EQUIPMENT,
+        TYPE,
+        date,
+        date,
+        0,
+        jsonText(
+            Map.of(
+                "projectRefs",
+                List.of(Map.of("standardId", created.id(), "itemId", "stock-item")))));
+    body.put("rowVersion", 0);
+    var item = (Map<String, Object>) ((List<?>) body.get("items")).getFirst();
+    item.put("id", "replacement");
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            standardService.save(
+                standard, json.convertValue(body, MaintenanceStandardRequest.class)));
+    assertEquals(0, standardService.get(standard).rowVersion());
+    assertEquals("stock-item", standardService.get(standard).items().getFirst().id());
+    assertThrows(IllegalArgumentException.class, () -> standardService.delete(standard));
+    item.put("id", "stock-item");
+    body.put("departmentId", Long.toString(ORG + 1));
+    when(permissions.maintenance("standards", "编辑"))
+        .thenReturn(new PermissionScope(false, null, Set.of(ORG), false));
+    assertEquals(
+        403,
+        assertThrows(
+                ResponseStatusException.class,
+                () ->
+                    standardService.save(
+                        standard, json.convertValue(body, MaintenanceStandardRequest.class)))
+            .getStatusCode()
+            .value());
+    assertEquals(Long.toString(ORG), standardService.get(standard).departmentId());
+    db.update(
+        "UPDATE eam_maintenance_plan_device SET enabled=0 WHERE tenant_id=? AND id=?",
+        TENANT,
+        SCHEDULE);
+    standardService.delete(standard);
+    assertEquals(0L, count("eam_maintenance_standard"));
+  }
+
+  @Test
+  void repeatedProjectFactsAreReadOncePerStandardSave() {
+    stocks();
+    definitionStorage.insert(TYPE, TENANT, "types", "PROFILE-TYPE", "类型", ORG, USER, "{}");
+    var body = spareStandard(9007199254741661L);
+    var prepared = new ArrayList<Map<String, Object>>();
+    var template = ((List<Map<String, Object>>) body.get("items")).getFirst();
+    for (int i = 0; i < 50; i++) {
+      var row = new LinkedHashMap<>(template);
+      row.put("id", "profile-" + i);
+      prepared.add(row);
+    }
+    // 旧实现103次基线已记录；删除重复规则后，仅约束新链路的真实数据库开销。
+    body.put("items", prepared);
+    body.put("code", "PROFILE-TYPED");
+    clearInvocations(typeFacts);
+    selects(
+        15,
+        () ->
+            standardService.save(null, json.convertValue(body, MaintenanceStandardRequest.class)));
+    verify(typeFacts, times(1)).find(TENANT, TYPE, true);
   }
 
   private String jsonText(Object value) {

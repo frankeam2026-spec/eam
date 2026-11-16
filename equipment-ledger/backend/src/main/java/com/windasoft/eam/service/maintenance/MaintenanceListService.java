@@ -1,16 +1,16 @@
 package com.windasoft.eam.service.maintenance;
 
-import com.windasoft.eam.dto.common.*;
-import com.windasoft.eam.dto.system.PermissionScope;
-import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
-import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.dto.common.*;
+import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantResult;
+import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
 import com.windasoft.eam.dto.maintenance.MaintenanceOrganizationOption;
-import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.common.SqlPredicate;
 import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.business.*;
 import com.windasoft.eam.service.system.*;
 import java.util.*;
@@ -39,7 +39,8 @@ public class MaintenanceListService {
       OrganizationScopeService organizationScopes,
       AuthContext auth,
       BusinessQueryService customQuery,
-      BusinessValueService values, ObjectMapper json) {
+      BusinessValueService values,
+      ObjectMapper json) {
     this.metadata = metadata;
     this.repository = repository;
     this.views = views;
@@ -66,7 +67,10 @@ public class MaintenanceListService {
   @Transactional(readOnly = true)
   public MaintenanceListContext context(String kind) {
     var scope = scope(kind, "查看");
-    var organizations = metadata.organizations(auth.tenantId(), true).stream().map(row -> views.organization(row, false)).toList();
+    var organizations =
+        metadata.organizations(auth.tenantId(), true).stream()
+            .map(row -> views.organization(row, false))
+            .toList();
     var keep = new HashSet<Long>();
     var byId = new HashMap<Long, MaintenanceOrganizationOption>();
     for (var org : organizations) {
@@ -101,9 +105,7 @@ public class MaintenanceListService {
       }
     }
     return new MaintenanceListContext(
-        organizations.stream()
-            .filter(row -> keep.contains(Long.parseLong(row.id())))
-            .toList());
+        organizations.stream().filter(row -> keep.contains(Long.parseLong(row.id()))).toList());
   }
 
   @Transactional(readOnly = true)
@@ -136,22 +138,43 @@ public class MaintenanceListService {
   }
 
   /** 与保养列表共用查看范围；内部计划也重新校验白名单，不能通过直接构造请求绕过。 */
-  @Transactional(readOnly=true)
+  @Transactional(readOnly = true)
   public MaintenanceAssistantResult queryAssistant(MaintenanceAssistantRequest request) {
-    var plan=AiBusinessPlan.parse(json.valueToTree(request.plan()));
-    var verified=new MaintenanceAssistantRequest(plan,request.equipmentId(),request.page(),request.size(),request.evaluatedAt(),request.start(),request.end());
-    String kind=verified.kind();
-    permissions.require(PermissionService.maintenanceMenu(kind),"查看");
-    var selected=repository.select(auth.tenantId(),auth.userId(),kind,scope(kind,"查看"),false,null,ListQuery.from(Map.of()),SqlPredicate.of("1=1"),null);
-    return repository.queryAssistant(selected,verified,auth.tenantId(),auth.userId());
+    var plan = AiBusinessPlan.parse(json.valueToTree(request.plan()));
+    var verified =
+        new MaintenanceAssistantRequest(
+            plan,
+            request.equipmentId(),
+            request.page(),
+            request.size(),
+            request.evaluatedAt(),
+            request.start(),
+            request.end());
+    String kind = verified.kind();
+    permissions.require(PermissionService.maintenanceMenu(kind), "查看");
+    var selected =
+        repository.select(
+            auth.tenantId(),
+            auth.userId(),
+            kind,
+            scope(kind, "查看"),
+            false,
+            null,
+            ListQuery.from(Map.of()),
+            SqlPredicate.of("1=1"),
+            null);
+    return repository.queryAssistant(selected, verified, auth.tenantId(), auth.userId());
   }
 
-  public PageResult<Map<String, Object>> query(String kind, ListQuery query, boolean export) {
+  /** 权限与组织筛选的事实；不传SQL，供逐步类型化的列表链复用同一授权口径。 */
+  public record Access(PermissionScope operation, PermissionScope read, Set<Long> organizations) {
+    public Access {
+      if (organizations != null) organizations = Set.copyOf(organizations);
+    }
+  }
+
+  public Access access(String kind, ListQuery query, boolean export) {
     var scope = scope(kind, export ? "导出" : "查看");
-    String object =
-        kind.equals("tasks")
-            ? "maintenance_task"
-            : kind.equals("plans") ? "maintenance_plan" : null;
     Set<Long> organizations = null;
     if (!query.organization().isBlank()) {
       try {
@@ -163,6 +186,17 @@ public class MaintenanceListService {
             "server.inspection.message0015");
       }
     }
+    return new Access(scope, export ? scope(kind, "查看") : null, organizations);
+  }
+
+  public PageResult<Map<String, Object>> query(String kind, ListQuery query, boolean export) {
+    var access = access(kind, query, export);
+    var scope = access.operation();
+    var organizations = access.organizations();
+    String object =
+        kind.equals("tasks")
+            ? "maintenance_task"
+            : kind.equals("plans") ? "maintenance_plan" : null;
     var selected =
         repository.select(
             auth.tenantId(),
@@ -180,7 +214,7 @@ public class MaintenanceListService {
               auth.tenantId(),
               auth.userId(),
               kind,
-              scope(kind, "查看"),
+              access.read(),
               false,
               organizations,
               query,

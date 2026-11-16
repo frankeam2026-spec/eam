@@ -1,5 +1,7 @@
 package com.windasoft.eam.entity.maintenance;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.math.BigDecimal;
 import lombok.Data;
@@ -16,10 +18,18 @@ public class MaintenanceStandardItem {
   private String moduleName;
   private String name;
   private String content;
+
+  @TableField(updateStrategy = FieldStrategy.ALWAYS)
   private Long typeId;
+
   private String valueType;
+
+  @TableField(updateStrategy = FieldStrategy.ALWAYS)
   private BigDecimal lowerBound;
+
+  @TableField(updateStrategy = FieldStrategy.ALWAYS)
   private BigDecimal upperBound;
+
   private Boolean required;
   private Boolean photoRequired;
   private String remark;
