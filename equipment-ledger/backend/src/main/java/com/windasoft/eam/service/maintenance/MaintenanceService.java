@@ -165,10 +165,10 @@ public class MaintenanceService {
     require(
         KINDS.contains(kind),
         com.windasoft.eam.common.MessageContext.text("server.system.message0045"));
-    permissions.require(PermissionService.maintenanceMenu(kind), "查看");
     if (kind.equals("types")) {
       return types.list("[]", false).stream().map(this::legacyType).toList();
     }
+    permissions.require(PermissionService.maintenanceMenu(kind), "查看");
     return definitionBatches(kind);
   }
 

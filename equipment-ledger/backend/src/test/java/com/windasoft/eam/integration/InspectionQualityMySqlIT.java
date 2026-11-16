@@ -13,7 +13,7 @@ import static org.mockito.Mockito.when;
 
 import com.windasoft.eam.repository.experience.HomeRepository;
 import com.windasoft.eam.repository.inspection.InspectionDefinitionStorage;
-import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.service.experience.HomeService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.inspection.InspectionService;
@@ -69,7 +69,7 @@ class InspectionQualityMySqlIT {
   @MockitoBean com.windasoft.eam.scheduler.experience.RepairPlanScheduler repairScheduler;
   @MockitoBean com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler knowledgeScheduler;
   @MockitoSpyBean HomeRepository homeRepository;
-  @MockitoSpyBean MaintenanceRepository maintenanceRepository;
+  @MockitoSpyBean MaintenanceTypeRepository maintenanceRepository;
   @MockitoSpyBean InspectionDefinitionStorage inspectionDefinitionStorage;
   @Autowired HomeService home;
   @Autowired MaintenanceService maintenance;
@@ -181,7 +181,7 @@ class InspectionQualityMySqlIT {
               return call.callRealMethod();
             })
         .when(maintenanceRepository)
-        .listDefinitions(TENANT, "types");
+        .list(TENANT);
     assertEquals(List.of(), maintenance.exportRows("types"));
     org.mockito.Mockito.verify(permissions).require("maintenanceType", "导出");
     org.mockito.Mockito.verify(permissions).require("maintenanceType", "查看");
