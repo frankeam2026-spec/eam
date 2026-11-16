@@ -24,12 +24,24 @@ import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.NotificationMessages;
 import com.windasoft.eam.controller.maintenance.MaintenanceController;
+import com.windasoft.eam.controller.maintenance.MaintenanceTypeController;
+import com.windasoft.eam.dto.common.ListQuery;
+import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
+import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
+import com.windasoft.eam.dto.maintenance.MaintenanceAssistantResult;
 import com.windasoft.eam.dto.maintenance.MaintenanceLegacyStockOption;
+import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
+import com.windasoft.eam.dto.maintenance.MaintenanceTypeRequest;
+import com.windasoft.eam.dto.maintenance.MaintenanceTypeView;
 import com.windasoft.eam.dto.system.PermissionScope;
+import com.windasoft.eam.dto.system.UserNameOption;
+import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.system.SystemUser;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceDefinitionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.repository.system.NotificationRepository;
 import com.windasoft.eam.scheduler.experience.RepairPlanScheduler;
 import com.windasoft.eam.scheduler.inspection.InspectionScheduler;
@@ -38,6 +50,8 @@ import com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler;
 import com.windasoft.eam.scheduler.maintenance.MaintenanceScheduler;
 import com.windasoft.eam.scheduler.system.NotificationScheduler;
 import com.windasoft.eam.service.business.BusinessValueService;
+import com.windasoft.eam.service.knowledge.AiBusinessQueryService;
+import com.windasoft.eam.service.planning.PlanningSelectorService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import com.windasoft.eam.support.ContractTypes;
@@ -45,6 +59,7 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -132,8 +147,14 @@ class MaintenanceReferenceMySqlIT {
   @MockitoBean RepairPlanScheduler repairScheduler;
   @MockitoBean KnowledgeScheduler knowledgeScheduler;
   @MockitoSpyBean MaintenanceRepository repository;
+  @MockitoSpyBean MaintenanceTypeRepository typeFacts;
+  @MockitoSpyBean EquipmentQueryRepository equipmentFacts;
   @MockitoSpyBean NotificationRepository notifications;
+  @Autowired PlanningSelectorService selectors;
   @Autowired MaintenanceListService lists;
+  @Autowired MaintenanceTypeService typeService;
+  @Autowired MaintenanceViewAssembler viewAssembler;
+  @Autowired AiBusinessQueryService aiQueries;
   @Autowired MaintenanceFileService fileService;
   @Autowired MaintenanceProjectService projects;
   @Autowired MaintenanceGenerationService generation;
@@ -330,7 +351,7 @@ class MaintenanceReferenceMySqlIT {
               throw new IllegalStateException("任务保存后失败");
             })
         .when(repository)
-        .updateTask(any(), any(), anyString(), anyString(), eq(TENANT), eq(TASK));
+        .updateTask(anyString(), any(), anyString(), eq(TENANT), eq(TASK));
     assertThrows(IllegalStateException.class, () -> tasks.action(TASK, "accept", accept()));
     assertEquals(
         "待验收",
@@ -745,7 +766,7 @@ class MaintenanceReferenceMySqlIT {
     selects(
         1,
         () -> {
-          var resolved = projects.planProjects(cycle, TENANT, Map.of(), true);
+          var resolved = projects.planProjects(cycle, TENANT, new Equipment(), true);
           assertEquals(100, resolved.size());
           assertEquals(standard + ":item-99", resolved.getFirst().get("id"));
           assertEquals(standard + ":item-0", resolved.getLast().get("id"));
@@ -757,19 +778,19 @@ class MaintenanceReferenceMySqlIT {
               projects.planProjects(
                   Map.of("standardId", Long.toString(standard), "typeId", Long.toString(TYPE)),
                   TENANT,
-                  Map.of(),
+                  new Equipment(),
                   true);
           assertEquals("item-0", legacy.getFirst().get("id"));
           assertEquals(100, legacy.size());
         });
     assertThrows(
         ResponseStatusException.class,
-        () -> projects.planProjects(cycle, TENANT + 1, Map.of(), false));
+        () -> projects.planProjects(cycle, TENANT + 1, new Equipment(), false));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             projects.planProjects(
-                Map.of("typeId", "999", "projectRefs", refs), TENANT, Map.of(), false));
+                Map.of("typeId", "999", "projectRefs", refs), TENANT, new Equipment(), false));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -780,14 +801,15 @@ class MaintenanceReferenceMySqlIT {
                     "projectRefs",
                     List.of(Map.of("standardId", Long.toString(standard), "itemId", "missing"))),
                 TENANT,
-                Map.of(),
+                new Equipment(),
                 false));
     refs.add(refs.getFirst());
-    assertEquals(100, projects.planProjects(cycle, TENANT, Map.of(), true).size());
+    assertEquals(100, projects.planProjects(cycle, TENANT, new Equipment(), true).size());
     when(permissions.maintenance("standards", "查看"))
         .thenReturn(new PermissionScope(false, null, Set.of(), false));
     assertThrows(
-        ResponseStatusException.class, () -> projects.planProjects(cycle, TENANT, Map.of(), true));
+        ResponseStatusException.class,
+        () -> projects.planProjects(cycle, TENANT, new Equipment(), true));
   }
 
   @Test
@@ -836,7 +858,7 @@ class MaintenanceReferenceMySqlIT {
                 List.of(
                     Map.of("standardId", Long.toString(standard), "itemId", "second"),
                     Map.of("standardId", Long.toString(standard), "itemId", "first")))));
-    clearInvocations(repository);
+    clearInvocations(repository, equipmentFacts, typeFacts);
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
             status -> {
@@ -847,8 +869,8 @@ class MaintenanceReferenceMySqlIT {
               assertEquals(22, queries);
             });
     verify(repository, times(1)).loadDefinition(TENANT, "standards", standard, false);
-    verify(repository, times(1)).loadEquipment(TENANT, EQUIPMENT);
-    verify(repository, times(1)).loadDefinition(TENANT, "types", TYPE, false);
+    verify(equipmentFacts, times(1)).findFacts(TENANT, EQUIPMENT);
+    verify(typeFacts, times(1)).find(TENANT, TYPE, false);
     var generated =
         db.queryForList(
             "SELECT due_date,snapshot FROM eam_maintenance_task WHERE tenant_id=? AND id<>? ORDER"
@@ -866,6 +888,206 @@ class MaintenanceReferenceMySqlIT {
     }
     assertEquals(0, generation.generate(TENANT, PLAN));
     assertEquals(4L, count("eam_maintenance_task"));
+  }
+
+  @Test
+  void equipmentFactsKeepTenantDeletionNullsAndSingleRead() {
+    pendingAcceptance();
+    selects(
+        1,
+        () -> {
+          var device = projects.equipment(TENANT, EQUIPMENT);
+          assertEquals(EQUIPMENT, device.getId());
+          assertEquals("MAINT-EQ", device.getEquipmentCode());
+          assertEquals(null, device.getCompanyOrgId());
+        });
+    assertEquals(0, equipmentFacts.scopedFacts(TENANT, USER, List.of()).size());
+    db.update(
+        "UPDATE eam_equipment SET company_org_id=?,department_org_id=?,owner_user_id=? WHERE"
+            + " tenant_id=? AND id=?",
+        ORG,
+        ORG + 1,
+        USER,
+        TENANT,
+        EQUIPMENT);
+    assertEquals(
+        1,
+        equipmentFacts
+            .scopedFacts(TENANT, USER, List.of(new PermissionScope(false, ORG, Set.of(), false)))
+            .size());
+    assertEquals(
+        1,
+        equipmentFacts
+            .scopedFacts(
+                TENANT, USER, List.of(new PermissionScope(false, null, Set.of(ORG + 1), false)))
+            .size());
+    assertEquals(
+        1,
+        equipmentFacts
+            .scopedFacts(TENANT, USER, List.of(new PermissionScope(false, null, Set.of(), true)))
+            .size());
+    assertEquals(
+        0,
+        equipmentFacts
+            .scopedFacts(
+                TENANT, DELETED, List.of(new PermissionScope(false, ORG + 99, Set.of(), true)))
+            .size());
+    assertEquals(
+        0,
+        equipmentFacts
+            .scopedFacts(
+                TENANT + 1, USER, List.of(new PermissionScope(true, null, Set.of(), false)))
+            .size());
+    assertThrows(IllegalArgumentException.class, () -> projects.equipment(TENANT + 1, EQUIPMENT));
+    db.update("UPDATE eam_equipment SET deleted=1 WHERE tenant_id=? AND id=?", TENANT, EQUIPMENT);
+    assertThrows(IllegalArgumentException.class, () -> projects.equipment(TENANT, EQUIPMENT));
+  }
+
+  @Test
+  void sharedStandardSelectorKeepsCategoryAncestryAfterRepositoryChange() {
+    pendingAcceptance();
+    // 无类别限制的标准仍适用于可选设备；实际Service授权和类别父链SQL均执行。
+    definitionStorage.insert(
+        TYPE + 10, TENANT, "standards", "SELECT-STANDARD", "选择标准", ORG, USER, "{}");
+    var selected = selectors.standards("maintenance", ListQuery.from(Map.of()), EQUIPMENT, null);
+    assertEquals(1L, selected.page().total());
+    assertEquals(Long.toString(TYPE + 10), selected.data().getFirst().get("id"));
+  }
+
+  @Test
+  void organizationContextAndChoiceUsersKeepExistingFieldsAndActiveRules() {
+    when(permissions.anyMaintenance("查看")).thenReturn(true);
+    var choices = json.valueToTree(definitions.choices(false));
+    var orgs = choices.path("organizations");
+    assertEquals(1, orgs.size());
+    assertEquals(Long.toString(ORG + 1), orgs.get(0).path("id").asText());
+    assertEquals(Long.toString(ORG), orgs.get(0).path("parentId").asText());
+    assertEquals(4, orgs.get(0).size());
+    assertEquals("公司", orgs.get(0).path("type").asText());
+    var people = choices.path("users");
+    assertEquals(1, people.size());
+    assertEquals(Long.toString(USER), people.get(0).path("id").asText());
+    assertEquals("归属组织", people.get(0).path("department").asText());
+    assertEquals(4, people.get(0).size());
+    var context = lists.context("standards");
+    assertEquals(1, context.organizations().size());
+    assertEquals(Long.toString(ORG + 1), context.organizations().getFirst().id());
+    ContractTypes.assertExplicit(MaintenanceListContext.class);
+    ContractTypes.assertExplicit(UserNameOption.class);
+  }
+
+  @Test
+  void assistantUsesTheSameVisibilityAndKeepsLegacyResponse() {
+    pendingAcceptance();
+    for (String domain :
+        List.of(MaintenanceAssistantRequest.TASK_DOMAIN, MaintenanceAssistantRequest.PLAN_DOMAIN)) {
+      var input = json.valueToTree(Map.of("domain", domain, "operation", "COUNT", "period", "all"));
+      var request =
+          new MaintenanceAssistantRequest(
+              AiBusinessPlan.parse(input), null, 1, 20, LocalDateTime.now(), null, null);
+      var answer = (MaintenanceAssistantResult.Count) lists.queryAssistant(request);
+      assertEquals(0, BigDecimal.ONE.compareTo(answer.value()));
+      assertEquals(1L, answer.total());
+      var response = aiQueries.query(input, null, 1, 20);
+      assertEquals(0, BigDecimal.ONE.compareTo((BigDecimal) response.get("value")));
+      assertEquals(domain, ((AiBusinessPlan) response.get("plan")).domain());
+      assertTrue(response.containsKey("conditions"));
+      when(auth.tenantId()).thenReturn(TENANT + 1);
+      assertEquals(0L, ((MaintenanceAssistantResult.Count) lists.queryAssistant(request)).total());
+      when(auth.tenantId()).thenReturn(TENANT);
+    }
+    var input =
+        json.valueToTree(Map.of("domain", "maintenanceTask", "operation", "LIST", "period", "all"));
+    var request =
+        new MaintenanceAssistantRequest(
+            AiBusinessPlan.parse(input), null, 1, 20, LocalDateTime.now(), null, null);
+    var table = (MaintenanceAssistantResult.Table) lists.queryAssistant(request);
+    assertEquals(1L, table.total());
+    assertEquals(Long.toString(TASK), table.data().getFirst().get("id"));
+    assertTrue(table.columns().contains("equipmentName"));
+    var none = new PermissionScope(false, null, Set.of(), false);
+    when(permissions.maintenance("tasks", "查看")).thenReturn(none);
+    // 原列表允许参与人查看，即使菜单范围为空；不能把AI查询简单收紧为只看公司权限。
+    assertEquals(1L, ((MaintenanceAssistantResult.Table) lists.queryAssistant(request)).total());
+    db.update("DELETE FROM eam_maintenance_task_person WHERE tenant_id=?", TENANT);
+    assertEquals(0L, ((MaintenanceAssistantResult.Table) lists.queryAssistant(request)).total());
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new MaintenanceAssistantRequest(
+                AiBusinessPlan.parse(
+                    json.valueToTree(
+                        Map.of("domain", "repair", "operation", "COUNT", "period", "all"))),
+                null,
+                1,
+                20,
+                LocalDateTime.now(),
+                null,
+                null));
+  }
+
+  @Test
+  void typedMaintenanceTypesKeepLifecycleAndRejectStaleVersions() throws Exception {
+    ContractTypes.assertExplicit(MaintenanceTypeRequest.class);
+    ContractTypes.assertExplicit(MaintenanceTypeView.class);
+    var created =
+        typeService.save(
+            null,
+            new MaintenanceTypeRequest("TYPE-CODE", "类型", "", 2L, "月", "A", true, "说明", null));
+    assertEquals(0, created.rowVersion());
+    assertEquals(2, created.period());
+    assertEquals("", created.departmentId());
+    assertFalse(created.system());
+    assertEquals(21, json.valueToTree(created).size());
+    assertEquals(
+        json.valueToTree(viewAssembler.definition(repository.loadDefinition(TENANT,"types",Long.parseLong(created.id()),false).getFirst())),
+        json.valueToTree(created));
+    var updated =
+        typeService.save(
+            Long.parseLong(created.id()),
+            new MaintenanceTypeRequest("TYPE-CODE", "类型改", "", 3L, "周", "", false, "", 0));
+    assertEquals(1, updated.rowVersion());
+    assertEquals("类型改", updated.name());
+    assertFalse(updated.enabled());
+    assertEquals(
+        409,
+        assertThrows(
+                ResponseStatusException.class,
+                () ->
+                    typeService.save(
+                        Long.parseLong(created.id()),
+                        new MaintenanceTypeRequest(
+                            "TYPE-CODE", "覆盖", "", 3L, "周", "", true, "", 0)))
+            .getStatusCode()
+            .value());
+    var mvc =
+        MockMvcBuilders.standaloneSetup(new MaintenanceTypeController(typeService))
+            .setMessageConverters(new MappingJackson2HttpMessageConverter(json))
+            .setControllerAdvice(new ApiExceptionHandler())
+            .build();
+    var response =
+        mvc.perform(get("/api/v1/maintenance/types/" + created.id()))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    assertEquals(
+        created.id(),
+        json.readTree(response.getContentAsByteArray()).path("data").path("id").asText());
+    for (String invalid : List.of("0.5", "\"0\"", "true")) {
+      assertThrows(
+          com.fasterxml.jackson.core.JsonProcessingException.class,
+          () -> json.readValue("{\"rowVersion\":" + invalid + "}", MaintenanceTypeRequest.class));
+    }
+    when(auth.tenantId()).thenReturn(TENANT + 1);
+    assertEquals(
+        404,
+        assertThrows(
+                ResponseStatusException.class, () -> typeService.get(Long.parseLong(created.id())))
+            .getStatusCode()
+            .value());
+    when(auth.tenantId()).thenReturn(TENANT);
+    typeService.delete(Long.parseLong(created.id()));
+    assertEquals(0L, count("eam_maintenance_type"));
   }
 
   private String jsonText(Object value) {

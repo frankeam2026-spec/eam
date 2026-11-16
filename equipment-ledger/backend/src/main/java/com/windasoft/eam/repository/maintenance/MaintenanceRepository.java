@@ -9,20 +9,14 @@ import org.springframework.stereotype.Repository;
 public class MaintenanceRepository {
   private final MaintenanceDefinitionStorage definitions;
   private final JdbcTemplate db;
-  private final com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources;
-  private final MaintenanceExecutionStorage executions;
   private final NumberCounterMapper counter;
 
   public MaintenanceRepository(
       JdbcTemplate db,
       NumberCounterMapper counter,
-      MaintenanceDefinitionStorage definitions,
-      MaintenanceExecutionStorage executions,
-      com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources) {
+      MaintenanceDefinitionStorage definitions) {
     this.db = db;
-    this.taskSources = taskSources;
     this.counter = counter;
-    this.executions = executions;
     this.definitions = definitions;
   }
 
@@ -58,18 +52,6 @@ public class MaintenanceRepository {
             + " enabled=1 ORDER BY id",
         tenantId,
         id);
-  }
-
-  public List<Map<String, Object>> loadEquipment(long tenantId, long id) {
-    return db.queryForList(
-        "SELECT * FROM eam_equipment WHERE tenant_id=? AND id=? AND deleted=0", tenantId, id);
-  }
-
-  public List<Map<String, Object>> listCategoryParents(long tenantId) {
-    return db.queryForList(
-        "SELECT id,parent_id,name FROM eam_base_item WHERE tenant_id=? AND item_type='CATEGORY'"
-            + " AND deleted=0",
-        tenantId);
   }
 
   public int insertDefinition(
@@ -197,37 +179,6 @@ public class MaintenanceRepository {
     return definitions.delete(tenantId, id);
   }
 
-  public List<Map<String, Object>> listEquipment(long tenantId) {
-    return db.queryForList(
-        "SELECT * FROM eam_equipment WHERE tenant_id=? AND deleted=0 ORDER BY" + " equipment_code",
-        tenantId);
-  }
-
-  public List<Map<String, Object>> listOrganizations(long tenantId) {
-    return db.queryForList(
-        "SELECT CAST(id AS CHAR) id,name,CAST(COALESCE(parent_id,0) AS CHAR)"
-            + " parentId,COALESCE(display_type,org_type) type FROM eam_org_unit WHERE"
-            + " tenant_id=? AND deleted=0 AND status=1",
-        tenantId);
-  }
-
-  public List<Map<String, Object>> listUsers(long tenantId) {
-    return db.queryForList(
-        "SELECT CAST(u.id AS CHAR) id,u.display_name name,u.account,COALESCE(o.name,'')"
-            + " department FROM eam_sys_user u LEFT JOIN eam_org_unit o ON o.id=u.org_id AND"
-            + " o.tenant_id=u.tenant_id WHERE u.tenant_id=? AND u.deleted=0 AND u.status=1"
-            + " ORDER BY u.display_name",
-        tenantId);
-  }
-
-  public List<Map<String, Object>> listCategories(long tenantId) {
-    return db.queryForList(
-        "SELECT CAST(id AS CHAR) id,name,CAST(COALESCE(parent_id,0) AS CHAR) parentId FROM"
-            + " eam_base_item WHERE tenant_id=? AND item_type='CATEGORY' AND deleted=0 AND"
-            + " status=1",
-        tenantId);
-  }
-
   public List<Map<String, Object>> loadTask(long tenantId, long id, boolean lock) {
     if (lock)
       db.queryForList(
@@ -285,9 +236,7 @@ public class MaintenanceRepository {
   }
 
   public int updateTask(
-      Object next, Object owner, String payload, String payload4, long tenantId, long id) {
-    executions.participants(tenantId, id, payload);
-    executions.save(tenantId, id, payload4);
+      String next, Long owner, String snapshot, long tenantId, long id) {
     return db.update(
         "UPDATE eam_maintenance_task SET"
             + " submitted_at=IF(?='待验收' AND status<>'待验收',NOW(6),submitted_at),status=?,owner_id=?,snapshot=?,row_version=row_version+1,updated_at=NOW() WHERE"
@@ -295,7 +244,7 @@ public class MaintenanceRepository {
         next,
         next,
         owner,
-        executions.historicalSnapshot(payload),
+        snapshot,
         tenantId,
         id);
   }
@@ -374,11 +323,7 @@ public class MaintenanceRepository {
             departmentOrgId,
             due,
             expires,
-            executions.historicalSnapshot(payload));
-    if (inserted > 0) {
-      executions.participants(tenantId, taskId, payload);
-      taskSources.maintenance(tenantId, taskId, id6, payload);
-    }
+            payload);
     return inserted;
   }
 
@@ -389,11 +334,6 @@ public class MaintenanceRepository {
         tenantId,
         id,
         id3);
-  }
-
-  public int updateTaskResult(String payload, long tenantId, long taskId) {
-    executions.save(tenantId, taskId, payload);
-    return 1;
   }
 
   public int resetScheduleDate47(Object due, Object due2, long tenantId, Object id) {

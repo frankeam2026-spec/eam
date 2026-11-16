@@ -3,6 +3,13 @@ package com.windasoft.eam.repository.maintenance;
 import static com.windasoft.eam.repository.common.SqlListFilters.Kind.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.windasoft.eam.dto.knowledge.AiBusinessCatalog;
+import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
+import com.windasoft.eam.dto.maintenance.MaintenanceAssistantResult;
+import com.windasoft.eam.repository.knowledge.AiBusinessQueryRepository;
+import com.windasoft.eam.repository.knowledge.AiBusinessFilters;
+import java.math.BigDecimal;
 import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.common.*;
@@ -13,15 +20,17 @@ import org.springframework.stereotype.Repository;
 public class MaintenanceListRepository {
   private final JdbcListRepository lists;
   private final ObjectMapper json;
+  private final AiBusinessQueryRepository assistant;
 
-  public MaintenanceListRepository(JdbcListRepository lists, ObjectMapper json) {
+  public MaintenanceListRepository(JdbcListRepository lists, ObjectMapper json, AiBusinessQueryRepository assistant) {
     this.lists = lists;
     this.json = json;
+    this.assistant = assistant;
   }
 
   public record Selection(String kind, String from, SqlPredicate predicate, String order) {}
 
-  public AssistantReadSource assistantSource(Selection selected){
+  private AssistantReadSource assistantSource(Selection selected){
     String select="CAST(t.id AS CHAR) id,t.code,COALESCE(o.name,'') department,CAST(t.department_id AS CHAR) departmentId,t.created_at createdAt";
     if(selected.kind().equals("tasks")){
       for(String key:List.of("equipmentName","equipmentCode","planName","owner","dueDate","expiresDate","actualStartAt","actualEndAt"))select+=","+fields("tasks").get(key).expression()+" `"+key+"`";
@@ -29,6 +38,39 @@ public class MaintenanceListRepository {
     }else select+=",t.name,"+fields(selected.kind()).get("enabledLabel").expression()+" status";
     return AssistantReadSource.selected(select,selected.from(),selected.predicate());
   }
+
+  /** 所有模型过滤与Service取得的授权相交；查询源只在仓储间使用，不流出业务Service。 */
+  public MaintenanceAssistantResult queryAssistant(Selection selection, MaintenanceAssistantRequest request, long tenant, long user) {
+    var plan=request.plan();
+    var domain=AiBusinessCatalog.ALL.get(plan.domain());
+    var source=assistantSource(selection);
+    var filter=AiBusinessFilters.compile(plan.where(),domain,request.evaluatedAt(),user,tenant);
+    if(request.equipmentId()!=null) filter=filter.and(assistant.equipmentFilter(plan,tenant,request.equipmentId()));
+    if(request.start()!=null) filter=filter.and(assistant.timeFilter(plan.timeField(),request.start(),request.end()));
+    checkNames(plan.where(),domain,source,filter);
+    var result=assistant.execute(source,filter,plan,request.page(),request.size());
+    long total=((Number)result.get("total")).longValue();
+    if(plan.operation().equals("COUNT")) {
+      var value=result.get("value");
+      return new MaintenanceAssistantResult.Count(value==null?null:new BigDecimal(value.toString()),total);
+    }
+    return new MaintenanceAssistantResult.Table(rows(result.get("data")),total,((Number)result.get("records")).longValue(),strings(result.get("columns")));
+  }
+
+  private void checkNames(JsonNode node,AiBusinessCatalog.Domain domain,AssistantReadSource source,SqlPredicate filter) {
+    if(node.isMissingNode()||node.isNull()) return;
+    if(node.has("children")) {for(var child:node.path("children")) checkNames(child,domain,source,filter);return;}
+    var field=domain.fields().get(node.path("field").asText());
+    if(node.path("op").asText().equals("eq")&&field!=null&&!field.identity().isEmpty()
+        &&assistant.ambiguousIdentity(source,filter,node.path("field").asText(),field.identity(),node.path("values").get(0).asText()))
+      throw new IllegalArgumentException("所选"+field.label()+"存在同名对象，请补充公司、部门或编号限定，不能将同名对象合并");
+  }
+
+  // 公共动态执行器的框架行映射只在此边界转换；固定总数和列目录不以任意Map跨Service传递。
+  @SuppressWarnings("unchecked")
+  private static List<Map<String,Object>> rows(Object value){return (List<Map<String,Object>>) value;}
+  @SuppressWarnings("unchecked")
+  private static List<String> strings(Object value){return (List<String>)value;}
 
   private static SqlListFilters.Field f(String sql, SqlListFilters.Kind kind) {
     return new SqlListFilters.Field(sql, kind);

@@ -8,7 +8,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.windasoft.eam.entity.maintenance.MaintenanceEvent;
-import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -38,9 +37,7 @@ class MaintenanceRepositoryTest {
         new MaintenanceRepository(
             db,
             mock(NumberCounterMapper.class),
-            mock(MaintenanceDefinitionStorage.class),
-            mock(MaintenanceExecutionStorage.class),
-            mock(TaskSourceRelationsRepository.class));
+            mock(MaintenanceDefinitionStorage.class));
     assertThrows(
         IllegalArgumentException.class,
         () -> repository.countScheduleReferences(10001L, 1L, "id OR 1=1"));

@@ -1,6 +1,8 @@
 package com.windasoft.eam.service.maintenance;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.entity.system.OrgUnit;
+import com.windasoft.eam.dto.maintenance.MaintenanceOrganizationOption;
 import com.windasoft.eam.service.system.AuthContext;
 import java.util.*;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,13 @@ public class MaintenanceViewAssembler {
     this.access = access;
   }
 
+  /** 组织显示类型为空时才沿用组织类型；选择器根节点为空串，列表上下文保留旧0值。 */
+  public MaintenanceOrganizationOption organization(OrgUnit row, boolean choice) {
+    String parent = Objects.toString(row.getParentId(), choice ? "" : "0");
+    return new MaintenanceOrganizationOption(Long.toString(row.getId()), row.getName(), parent,
+        row.getDisplayType() == null ? row.getOrgType() : row.getDisplayType());
+  }
+
   public Map<String, Object> definition(Map<String, Object> row) {
     var v = decode(row.get("payload"));
     v.put("id", Objects.toString(row.get("id")));
@@ -30,6 +39,14 @@ public class MaintenanceViewAssembler {
     for (String key : List.of("department", "owner", "equipmentCount", "itemCount", "enabledLabel"))
       if (row.containsKey(key)) v.put(key, row.get(key));
     return v;
+  }
+
+  /** 任务人员从关系表读取；历史快照不重复保存人员数组，防止转派后出现两份权威。 */
+  public Map<String, Object> historicalSnapshot(Map<String, Object> snapshot) {
+    var historical = new LinkedHashMap<>(snapshot);
+    historical.remove("owners");
+    historical.remove("reviewers");
+    return historical;
   }
 
   public Map<String, Object> task(Map<String, Object> r) {

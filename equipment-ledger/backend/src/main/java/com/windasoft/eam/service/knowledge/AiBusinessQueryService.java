@@ -5,6 +5,8 @@ import com.windasoft.eam.dto.knowledge.AiBusinessCatalog;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
 import com.windasoft.eam.dto.knowledge.AiQueryLimits;
 import com.windasoft.eam.dto.repair.RepairAssistantRequest;
+import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
+import com.windasoft.eam.dto.maintenance.MaintenanceAssistantResult;
 import com.windasoft.eam.repository.common.AssistantReadSource;
 import com.windasoft.eam.repository.common.SqlPredicate;
 import com.windasoft.eam.repository.knowledge.AiBusinessFilters;
@@ -77,8 +79,6 @@ public class AiBusinessQueryService {
 
   AssistantReadSource source(String domain) {
     return switch (domain) {
-      case "maintenanceTask" -> maintenance.assistantSource("tasks");
-      case "maintenancePlan" -> maintenance.assistantSource("plans");
       case "dailyTask" -> inspection.assistantSource("daily-tasks");
       case "periodicTask" -> inspection.assistantSource("periodic-tasks");
       case "dailyPlan" -> inspection.assistantSource("daily-plans");
@@ -124,6 +124,15 @@ public class AiBusinessQueryService {
                   now,
                   bounds == null ? null : bounds[0],
                   bounds == null ? null : bounds[1]));
+    } else if (MaintenanceAssistantRequest.TASK_DOMAIN.equals(plan.domain()) || MaintenanceAssistantRequest.PLAN_DOMAIN.equals(plan.domain())) {
+      if(equipmentId!=null) equipment.get(equipmentId);
+      bounds=bounds(plan,now.toLocalDate());
+      var answer=maintenance.queryAssistant(new MaintenanceAssistantRequest(plan,equipmentId,page,size,now,bounds==null?null:bounds[0],bounds==null?null:bounds[1]));
+      executed=new LinkedHashMap<>();
+      switch(answer) {
+        case MaintenanceAssistantResult.Count count -> {executed.put("value",count.value());executed.put("total",count.total());}
+        case MaintenanceAssistantResult.Table table -> {executed.put("data",table.data());executed.put("total",table.total());executed.put("records",table.records());executed.put("columns",table.columns());}
+      }
     } else {
       var source = source(plan.domain());
       var filter =

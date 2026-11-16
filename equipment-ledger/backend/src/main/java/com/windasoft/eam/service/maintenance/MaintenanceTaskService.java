@@ -12,6 +12,7 @@ import com.windasoft.eam.domain.maintenance.MaintenanceTaskStatus;
 import com.windasoft.eam.entity.equipment.EquipmentHistory;
 import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.system.SystemUserRepository;
 import com.windasoft.eam.service.system.*;
 import java.math.BigDecimal;
@@ -26,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class MaintenanceTaskService {
   private static final String HISTORY_RECORD_TYPE = "MAINTENANCE";
   private final MaintenanceRepository repository;
+  private final MaintenanceExecutionStorage executions;
   private final EquipmentHistoryRepository histories;
   private final SystemUserRepository users;
   private final ObjectMapper json;
@@ -42,6 +44,7 @@ public class MaintenanceTaskService {
 
   public MaintenanceTaskService(
       MaintenanceRepository repository,
+      MaintenanceExecutionStorage executions,
       EquipmentHistoryRepository histories,
       SystemUserRepository users,
       ObjectMapper json,
@@ -56,6 +59,7 @@ public class MaintenanceTaskService {
       org.springframework.context.ApplicationEventPublisher publisher,
       com.windasoft.eam.service.experience.MaterialCustodyService custody) {
     this.repository = repository;
+    this.executions = executions;
     this.histories = histories;
     this.users = users;
     this.json = json;
@@ -273,7 +277,10 @@ public class MaintenanceTaskService {
       }
     }
     if (operation == MaintenanceTaskAction.PROCESS) custom.save("maintenance_task", id, body, false);
-    repository.updateTask(next, owner, encode(snap), encode(result), tenant, id);
+    // 保留原顺序：人员与结果先保存，再推进主体版本；任一步失败均由本动作事务回滚。
+    executions.participants(tenant, id, encode(snap));
+    executions.save(tenant, id, encode(result));
+    repository.updateTask(next, owner, encode(assembler.historicalSnapshot(snap)), tenant, id);
     String label =
         switch (operation) {
           case START -> "开始保养";

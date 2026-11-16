@@ -105,6 +105,25 @@ public class EquipmentQueryRepository {
     }
   }
 
+  /** 多入口选择器将已解析的查看范围取并集，再与租户相交；空范围不能退化成全租户读取。 */
+  public List<Equipment> scopedFacts(long tenant, long user, List<PermissionScope> scopes) {
+    var allowed = SqlPredicate.of("1=0");
+    for (var scope : scopes) {
+      allowed = allowed.or(SqlScopes.scope(scope, "eam_equipment.company_org_id",
+          "eam_equipment.department_org_id", "eam_equipment.owner_user_id", user));
+    }
+    var query = new LambdaQueryWrapper<Equipment>()
+        .eq(Equipment::getTenantId, tenant).orderByAsc(Equipment::getEquipmentCode, Equipment::getId);
+    apply(query, allowed);
+    return equipment.selectList(query);
+  }
+
+  /** 保养生成与保存只需要设备事实；不装配媒体、BOM或负责人集合，避免无关关联查询。 */
+  public Equipment findFacts(long tenant, long id) {
+    return equipment.selectOne(new LambdaQueryWrapper<Equipment>()
+        .eq(Equipment::getTenantId, tenant).eq(Equipment::getId, id));
+  }
+
   public Equipment find(long tenant, long id) {
     return media.hydrate(
         equipment.selectOne(

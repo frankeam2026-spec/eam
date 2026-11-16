@@ -78,13 +78,6 @@ public class MaintenanceExecutionStorage {
     return current;
   }
 
-  public String historicalSnapshot(String content) {
-    var data = decode(content);
-    data.remove("owners");
-    data.remove("reviewers");
-    return encode(data);
-  }
-
   public void participants(long tenant, long id, String content) {
     var data = decode(content);
     db.update(

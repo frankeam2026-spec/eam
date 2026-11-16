@@ -5,7 +5,12 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.entity.maintenance.MaintenanceType;
+import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import java.time.*;
 import java.util.*;
@@ -15,13 +20,22 @@ class MaintenanceGenerationServiceTest {
   @Test
   void dueDateMinusAdvanceControlsGenerationAndCursorMakesTheNextRunIdempotent() {
     var repo = mock(MaintenanceRepository.class);
+    var types = mock(MaintenanceTypeRepository.class);
     var projects = mock(MaintenanceProjectService.class);
     var views = mock(MaintenanceViewAssembler.class);
     var journal = mock(MaintenanceTaskJournal.class);
     var json = new ObjectMapper();
     var service =
         new MaintenanceGenerationService(
-            repo, json, mock(AuthContext.class), projects, views, journal);
+            repo,
+            types,
+            mock(MaintenanceExecutionStorage.class),
+            mock(TaskSourceRelationsRepository.class),
+            json,
+            mock(AuthContext.class),
+            projects,
+            views,
+            journal);
     LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
     var plan =
         Map.<String, Object>of(
@@ -51,23 +65,20 @@ class MaintenanceGenerationServiceTest {
                 "{\"period\":1,\"unit\":\"周\",\"validDays\":7}"));
     when(repo.lockPlans(10001L, 10L)).thenReturn(List.of(plan));
     when(repo.lockPlanSchedules(10001L, 10L)).thenReturn(List.of(schedule));
-    when(projects.raw(eq("types"), eq(10001L), eq(40L), eq(false)))
-        .thenReturn(Map.of("payload", "{\"enabled\":true}"));
-    when(views.definition(anyMap())).thenReturn(Map.of("id", "40", "name", "周"));
-    when(projects.equipment(10001L, 30L))
-        .thenReturn(
-            Map.of(
-                "id",
-                30L,
-                "equipment_code",
-                "QA-EQ",
-                "name",
-                "工程设备",
-                "company_org_id",
-                71002L,
-                "department_org_id",
-                71003L));
-    when(projects.planProjects(anyMap(), eq(10001L), anyMap(), eq(false)))
+    var type = new MaintenanceType();
+    type.setId(40L);
+    type.setName("周");
+    type.setEnabled(true);
+    when(types.find(10001L, 40L, false)).thenReturn(type);
+    when(views.historicalSnapshot(anyMap())).thenAnswer(call -> call.getArgument(0));
+    var device = new Equipment();
+    device.setId(30L);
+    device.setEquipmentCode("QA-EQ");
+    device.setName("工程设备");
+    device.setCompanyOrgId(71002L);
+    device.setDepartmentOrgId(71003L);
+    when(projects.equipment(10001L, 30L)).thenReturn(device);
+    when(projects.planProjects(anyMap(), eq(10001L), any(Equipment.class), eq(false)))
         .thenReturn(List.of(Map.of("id", "item-1", "name", "检查", "sourceStandardName", "标准")));
     when(repo.currentNumber()).thenReturn(1L);
     when(repo.insertTask(

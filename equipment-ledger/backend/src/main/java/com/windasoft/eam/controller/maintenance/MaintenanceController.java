@@ -1,6 +1,7 @@
 package com.windasoft.eam.controller.maintenance;
 
 import com.windasoft.eam.service.maintenance.MaintenanceService;
+import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
 import java.util.*;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -27,7 +28,7 @@ public class MaintenanceController {
   }
 
   @GetMapping("/list-context")
-  public Object listContext(@RequestParam String kind) {
+  public MaintenanceListContext listContext(@RequestParam String kind) {
     return lists.context(kind);
   }
 
