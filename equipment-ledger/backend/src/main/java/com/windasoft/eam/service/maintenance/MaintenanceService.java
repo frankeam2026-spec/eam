@@ -10,6 +10,7 @@ import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.maintenance.MaintenanceCategoryOption;
 import com.windasoft.eam.dto.maintenance.MaintenanceChoices;
 import com.windasoft.eam.dto.maintenance.MaintenanceEquipmentOption;
+import com.windasoft.eam.dto.maintenance.MaintenanceInboxView;
 import com.windasoft.eam.dto.maintenance.MaintenanceLegacyStockOption;
 import com.windasoft.eam.dto.maintenance.MaintenancePlanDetail;
 import com.windasoft.eam.dto.maintenance.MaintenancePlanRequest;
@@ -285,25 +286,7 @@ public class MaintenanceService {
   }
 
   public Map<String, Object> task(long id) {
-    return taskCommands.task(id);
-  }
-
-  @Transactional
-  public Map<String, Object> action(long id, String action, Map<String, Object> body) {
-    return taskCommands.action(id, action, body);
-  }
-
-  public void batchDelete(List<Map<String, Object>> values) {
-    taskCommands.batchDelete(values);
-  }
-
-  public void batchPostpone(List<Map<String, Object>> values, String endDate, String reason) {
-    taskCommands.batchPostpone(values, endDate, reason);
-  }
-
-  @Transactional
-  public void batchAccept(List<Map<String, Object>> values) {
-    taskCommands.batchAccept(values);
+    return json.convertValue(taskCommands.task(id), new TypeReference<Map<String, Object>>() {});
   }
 
   // Every occurrence has a unique schedule/date key. A locked schedule prevents duplicate
@@ -318,9 +301,14 @@ public class MaintenanceService {
     return generation.generatePlan(id);
   }
 
-  public List<Map<String, Object>> inbox() {
-    return (List<Map<String, Object>>)
-        NotificationMessages.render(repository.listInbox(auth.tenantId(), auth.userId()));
+  public List<MaintenanceInboxView> inbox() {
+    return inbox.list(auth.tenantId(), auth.userId()).stream()
+        .map(
+            row ->
+                row.withTitle(
+                    NotificationMessages.renderTitle(
+                        row.title(), row.messageKey(), row.messageArgs())))
+        .toList();
   }
 
   public void read(long id) {

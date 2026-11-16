@@ -119,6 +119,7 @@ public class MaintenanceValidationService {
       return;
     }
     for (var file : value) {
+      require(file != null, MessageContext.text("server.inspection.message0075"));
       validateAttachment(
           Objects.toString(file.id(), "").trim(),
           Objects.toString(file.url(), "").trim(),

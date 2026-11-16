@@ -10,6 +10,7 @@ import com.windasoft.eam.dto.maintenance.MaintenanceCustomFields;
 import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
 import com.windasoft.eam.dto.maintenance.MaintenanceOrganizationOption;
 import com.windasoft.eam.dto.maintenance.MaintenancePlanRow;
+import com.windasoft.eam.dto.maintenance.MaintenanceTaskView;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.common.SqlPredicate;
 import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
@@ -212,13 +213,46 @@ public class MaintenanceListService {
               .toList();
       return new PageResult<>(rows, result.page());
     }
+    if (kind.equals("tasks")) {
+      var result = queryTasks(query, export);
+      return new PageResult<>(
+          result.data().stream()
+              .map(row -> json.convertValue(row, new TypeReference<Map<String, Object>>() {}))
+              .toList(),
+          result.page());
+    }
     var selected = select(kind, query, export);
-    var rows =
-        repository.page(selected, query).stream()
-            .map(kind.equals("tasks") ? views::task : views::definition)
-            .toList();
+    var rows = repository.page(selected, query).stream().map(views::definition).toList();
     values.attach(objectType(kind), rows);
     return new PageResult<>(rows, query.page(), query.size(), repository.count(selected));
+  }
+
+  /** 任务列表与导出复用原授权选择器，扩展字段按整页批量取得，兼容转换只在旧CSV输出边界。 */
+  @Transactional(readOnly = true)
+  public PageResult<MaintenanceTaskView> queryTasks(ListQuery query, boolean export) {
+    var selected = select("tasks", query, export);
+    var rows = repository.taskRows(selected, query);
+    var extra =
+        rows.isEmpty()
+            ? Map.<Long, BusinessValueService.Values>of()
+            : values.batch("maintenance_task", rows.stream().map(row -> row.id()).toList());
+    var result =
+        rows.stream()
+            .map(
+                row -> {
+                  var view = views.task(row);
+                  var value = extra.get(row.id());
+                  if (value != null) {
+                    view.setCustom(
+                        new MaintenanceCustomFields(
+                            json.valueToTree(value.customFields()),
+                            json.valueToTree(value.customFieldLabels()),
+                            value.customSchemaVersion()));
+                  }
+                  return view;
+                })
+            .toList();
+    return new PageResult<>(result, query.page(), query.size(), repository.count(selected));
   }
 
   /** 计划固定行模型沿用原授权/筛选/排序；一次批量加载扩展字段，不逐行查询。 */

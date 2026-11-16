@@ -2,16 +2,53 @@ package com.windasoft.eam.repository.maintenance;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.windasoft.eam.dto.maintenance.MaintenanceInboxView;
 import com.windasoft.eam.entity.maintenance.MaintenanceInbox;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** 保养消息表的主仓储；不决定通知接收人，也不负责公共渠道入队。 */
 @Repository
 public class MaintenanceInboxRepository {
   private final MaintenanceInboxMapper mapper;
+  private final JdbcTemplate db;
 
-  public MaintenanceInboxRepository(MaintenanceInboxMapper mapper) {
+  public MaintenanceInboxRepository(MaintenanceInboxMapper mapper, JdbcTemplate db) {
     this.mapper = mapper;
+    this.db = db;
+  }
+
+  /** 消息与未删除任务的只读JOIN，沿用原300条上限、租户和收件人范围及稳定时间顺序。 */
+  public List<MaintenanceInboxView> list(long tenant, long user) {
+    return db.query(
+        """
+SELECT CAST(i.id AS CHAR) id,CAST(t.id AS CHAR) orderId,'maintenance' module,t.code orderNo,
+  JSON_UNQUOTE(JSON_EXTRACT(t.snapshot,'$.equipmentName')) equipmentName,t.status,i.kind,
+  i.title,i.message_key messageKey,i.message_args messageArgs,i.is_todo todo,i.done,
+  i.read_at IS NOT NULL isRead,DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time
+FROM eam_maintenance_inbox i
+JOIN v_maintenance_task t ON t.id=i.task_id AND t.tenant_id=i.tenant_id
+WHERE i.tenant_id=? AND i.user_id=? ORDER BY i.created_at DESC,i.id DESC LIMIT 300
+""",
+        (row, index) ->
+            new MaintenanceInboxView(
+                row.getString("id"),
+                row.getString("orderId"),
+                row.getString("module"),
+                row.getString("orderNo"),
+                row.getString("equipmentName"),
+                row.getString("status"),
+                row.getString("kind"),
+                row.getString("title"),
+                row.getString("messageKey"),
+                row.getString("messageArgs"),
+                row.getInt("todo"),
+                row.getInt("done"),
+                row.getInt("isRead"),
+                row.getString("time")),
+        tenant,
+        user);
   }
 
   public void insert(MaintenanceInbox message) {

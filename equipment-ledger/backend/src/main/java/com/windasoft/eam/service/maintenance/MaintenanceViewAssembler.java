@@ -1,9 +1,17 @@
 package com.windasoft.eam.service.maintenance;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.windasoft.eam.entity.system.OrgUnit;
+import com.windasoft.eam.domain.maintenance.MaintenanceTaskStatus;
+import com.windasoft.eam.dto.maintenance.MaintenanceExecutionResult;
 import com.windasoft.eam.dto.maintenance.MaintenanceOrganizationOption;
+import com.windasoft.eam.dto.maintenance.MaintenanceTaskData;
+import com.windasoft.eam.dto.maintenance.MaintenanceTaskResultView;
+import com.windasoft.eam.dto.maintenance.MaintenanceTaskSnapshot;
+import com.windasoft.eam.dto.maintenance.MaintenanceTaskView;
+import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.service.system.AuthContext;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
@@ -23,7 +31,10 @@ public class MaintenanceViewAssembler {
   /** 组织显示类型为空时才沿用组织类型；选择器根节点为空串，列表上下文保留旧0值。 */
   public MaintenanceOrganizationOption organization(OrgUnit row, boolean choice) {
     String parent = Objects.toString(row.getParentId(), choice ? "" : "0");
-    return new MaintenanceOrganizationOption(Long.toString(row.getId()), row.getName(), parent,
+    return new MaintenanceOrganizationOption(
+        Long.toString(row.getId()),
+        row.getName(),
+        parent,
         row.getDisplayType() == null ? row.getOrgType() : row.getDisplayType());
   }
 
@@ -49,49 +60,145 @@ public class MaintenanceViewAssembler {
     return historical;
   }
 
-  public Map<String, Object> task(Map<String, Object> r) {
-    var v = decode(r.get("snapshot"));
-    v.put("typeId", Objects.toString(r.get("type_id"), ""));
-    v.put("companyId", Objects.toString(r.get("company_id"), ""));
-    v.put("departmentId", Objects.toString(r.get("department_id"), ""));
-    v.put("id", Objects.toString(r.get("id")));
-    v.put("code", r.get("code"));
-    v.put("status", r.get("status"));
-    v.put("planId", Objects.toString(r.get("plan_id"), ""));
-    v.put("equipmentId", Objects.toString(r.get("equipment_id"), ""));
-    v.put("dueDate", Objects.toString(r.get("due_date")));
-    v.put("expiresDate", Objects.toString(r.get("expires_date"), ""));
-    v.put("rowVersion", r.get("row_version"));
-    v.put("ownerId", Objects.toString(r.get("owner_id"), ""));
-    v.put("createdAt", Objects.toString(r.get("created_at")).replace('T', ' '));
-    var result = r.get("result") == null ? Map.<String, Object>of() : decode(r.get("result"));
-    v.put("result", result);
-    String actualStart = Objects.toString(result.get("startAt"), "");
-    v.put(
-        "actualStartAt",
-        actualStart.isBlank() ? Objects.toString(result.get("startedAt"), "") : actualStart);
-    v.put("actualEndAt", Objects.toString(result.get("endAt"), ""));
-    v.put(
-        "canExecute",
-        Set.of("待执行", "执行中", "挂起").contains(r.get("status"))
-            && ids(v.get("owners")).contains(auth.userId())
-            && (r.get("owner_id") == null || number(r.get("owner_id")) == auth.userId()));
-    v.put(
-        "canAccept",
-        "待验收".equals(r.get("status"))
-            && ids(v.get("reviewers")).contains(auth.userId())
-            && access.allowed(r, "验收"));
-    v.put(
-        "canDelete",
-        access.allowed(r, "删除") && Set.of("待执行", "已作废", "过期作废").contains(r.get("status")));
-    v.put(
-        "canPostpone",
-        access.allowed(r, "编辑")
-            && r.get("expires_date") != null
-            && Set.of("待执行", "执行中", "挂起").contains(r.get("status")));
-    for (String key : List.of("department", "owner"))
-      if (r.containsKey(key)) v.put(key, r.get(key));
-    return v;
+  private static final DateTimeFormatter RESULT_TIME =
+      DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSS");
+  private static final Set<String> TASK_FIELDS =
+      Set.of(
+          "id",
+          "code",
+          "status",
+          "planId",
+          "equipmentId",
+          "typeId",
+          "companyId",
+          "departmentId",
+          "ownerId",
+          "rowVersion",
+          "dueDate",
+          "expiresDate",
+          "createdAt",
+          "actualStartAt",
+          "actualEndAt",
+          "result",
+          "canExecute",
+          "canAccept",
+          "canDelete",
+          "canPostpone",
+          "customFields",
+          "customFieldLabels",
+          "customSchemaVersion",
+          "events",
+          "statistics");
+
+  /** 固定字段由当前关系事实覆盖，历史文档仅透传生成时内容，不把旧快照重新保存为新格式。 */
+  public MaintenanceTaskView task(MaintenanceTaskData row) {
+    var historical = row.snapshot().deepCopy();
+    TASK_FIELDS.forEach(historical::remove);
+    var snapshot = json.convertValue(row.snapshot(), MaintenanceTaskSnapshot.class);
+    var view = new MaintenanceTaskView();
+    view.setId(Long.toString(row.id()));
+    view.setCode(row.code());
+    view.setStatus(row.status());
+    view.setPlanId(id(row.planId()));
+    view.setEquipmentId(id(row.equipmentId()));
+    view.setTypeId(id(row.typeId()));
+    view.setCompanyId(id(row.companyId()));
+    view.setDepartmentId(id(row.departmentId()));
+    view.setOwnerId(id(row.ownerId()));
+    view.setRowVersion(row.rowVersion());
+    view.setDueDate(Objects.toString(row.dueDate()));
+    view.setExpiresDate(Objects.toString(row.expiresDate(), ""));
+    view.setCreatedAt(Objects.toString(row.createdAt()).replace('T', ' '));
+    view.setResult(result(row.result()));
+    var execution = row.result();
+    view.setActualStartAt(
+        execution == null
+            ? ""
+            : execution.getStartAt() != null
+                ? time(execution.getStartAt())
+                : time(execution.getStartedAt()));
+    view.setActualEndAt(execution == null ? "" : time(execution.getEndAt()));
+    view.setCanExecute(
+        Set.of(
+                    MaintenanceTaskStatus.PENDING.code(),
+                    MaintenanceTaskStatus.IN_PROGRESS.code(),
+                    MaintenanceTaskStatus.SUSPENDED.code())
+                .contains(row.status())
+            && snapshot.getOwners() != null
+            && snapshot.getOwners().contains(auth.userId())
+            && (row.ownerId() == null || row.ownerId() == auth.userId()));
+    view.setCanAccept(
+        MaintenanceTaskStatus.PENDING_ACCEPTANCE.code().equals(row.status())
+            && snapshot.getReviewers() != null
+            && snapshot.getReviewers().contains(auth.userId())
+            && access.allowed(row, "验收"));
+    view.setCanDelete(
+        access.allowed(row, "删除")
+            && Set.of(
+                    MaintenanceTaskStatus.PENDING.code(),
+                    MaintenanceTaskStatus.CANCELLED.code(),
+                    MaintenanceTaskStatus.EXPIRED_CANCELLED.code())
+                .contains(row.status()));
+    view.setCanPostpone(
+        access.allowed(row, "编辑")
+            && row.expiresDate() != null
+            && Set.of(
+                    MaintenanceTaskStatus.PENDING.code(),
+                    MaintenanceTaskStatus.IN_PROGRESS.code(),
+                    MaintenanceTaskStatus.SUSPENDED.code())
+                .contains(row.status()));
+    // 列表标签覆盖历史名称；详情没有选出标签时，保留快照中原有字段及缺省/null语义。
+    if (row.departmentSelected()) {
+      historical.put("department", row.department());
+    }
+    if (row.ownerSelected()) {
+      historical.put("owner", row.owner());
+    }
+    if (historical.path("department").isTextual()) {
+      view.setDepartment(historical.remove("department").asText());
+    }
+    if (historical.path("owner").isTextual()) {
+      view.setOwner(historical.remove("owner").asText());
+    }
+    view.setHistoricalSnapshot(historical);
+    return view;
+  }
+
+  private MaintenanceTaskResultView result(MaintenanceExecutionResult value) {
+    if (value == null) {
+      return new MaintenanceTaskResultView(null, null, null, null, null, null, null, null);
+    }
+    var review = value.getAcceptance();
+    var acceptance =
+        new MaintenanceTaskResultView.Acceptance(
+            review == null ? "" : Objects.toString(review.getDecision(), ""),
+            review == null ? "" : Objects.toString(review.getDescription(), ""),
+            review == null ? null : review.getScore(),
+            review == null ? "" : id(review.getReviewerId()),
+            review == null ? "" : Objects.toString(review.getReviewer(), ""),
+            review == null ? "" : time(review.getReviewedAt()),
+            review == null || review.getAttachments() == null
+                ? List.of()
+                : review.getAttachments());
+    return new MaintenanceTaskResultView(
+        Objects.toString(value.getDescription(), ""),
+        time(value.getStartedAt()),
+        time(value.getStartAt()),
+        time(value.getEndAt()),
+        value.getItems() == null ? List.of() : value.getItems(),
+        value.getAttachments() == null ? List.of() : value.getAttachments(),
+        acceptance,
+        value.getCollaborators() == null
+            ? List.of()
+            : value.getCollaborators().stream().map(Object::toString).toList());
+  }
+
+  private static String time(LocalDateTime value) {
+    return value == null ? "" : value.format(RESULT_TIME);
+  }
+
+  private static String id(Long value) {
+    return Objects.toString(value, "");
   }
 
   Map<String, Object> decode(Object value) {

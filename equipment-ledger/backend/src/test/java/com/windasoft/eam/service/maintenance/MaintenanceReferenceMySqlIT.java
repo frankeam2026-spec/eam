@@ -11,6 +11,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -20,37 +21,45 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.NotificationMessages;
 import com.windasoft.eam.controller.maintenance.MaintenanceController;
 import com.windasoft.eam.controller.maintenance.MaintenancePlanController;
 import com.windasoft.eam.controller.maintenance.MaintenanceStandardController;
+import com.windasoft.eam.controller.maintenance.MaintenanceTaskController;
 import com.windasoft.eam.controller.maintenance.MaintenanceTypeController;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantResult;
+import com.windasoft.eam.dto.maintenance.MaintenanceBatchAcceptance;
+import com.windasoft.eam.dto.maintenance.MaintenanceExecutionResult;
 import com.windasoft.eam.dto.maintenance.MaintenanceLegacyStockOption;
 import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
 import com.windasoft.eam.dto.maintenance.MaintenanceProjectSelection;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardRow;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardView;
+import com.windasoft.eam.dto.maintenance.MaintenanceTaskCommand;
+import com.windasoft.eam.dto.maintenance.MaintenanceTaskTarget;
 import com.windasoft.eam.dto.maintenance.MaintenanceTypeRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceTypeView;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.dto.system.UserNameOption;
 import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.entity.maintenance.MaintenanceTask;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.common.SqlPredicate;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
-import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceItemSpareRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceTaskPersonRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceTaskRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.repository.system.NotificationRepository;
 import com.windasoft.eam.scheduler.experience.RepairPlanScheduler;
@@ -76,9 +85,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -165,6 +176,7 @@ class MaintenanceReferenceMySqlIT {
   @MockitoBean RepairPlanScheduler repairScheduler;
   @MockitoBean KnowledgeScheduler knowledgeScheduler;
   @MockitoSpyBean MaintenanceRepository repository;
+  @MockitoSpyBean MaintenanceTaskRepository taskWrites;
   @MockitoSpyBean MaintenanceTypeRepository typeFacts;
   @MockitoSpyBean MaintenanceListRepository standardViews;
   @MockitoSpyBean MaintenancePlanDeviceRepository scheduleWrites;
@@ -189,7 +201,8 @@ class MaintenanceReferenceMySqlIT {
   @Autowired MaintenanceService definitions;
   @Autowired MaintenanceTaskService tasks;
   @Autowired MaintenanceDefinitionFixture definitionStorage;
-  @Autowired MaintenanceExecutionStorage executions;
+  @Autowired MaintenanceExecutionService executions;
+  @Autowired MaintenanceTaskPersonRepository taskPeople;
   @Autowired JdbcTemplate db;
   @Autowired PlatformTransactionManager transactionManager;
   private boolean ownsFixture;
@@ -213,6 +226,8 @@ class MaintenanceReferenceMySqlIT {
     current.setId(USER);
     current.setDisplayName("验收人");
     when(auth.user()).thenReturn(current);
+    when(extensions.read(eq("maintenance_task"), anyLong()))
+        .thenReturn(new BusinessValueService.Values(Map.of(), Map.of(), 0));
     var all = new PermissionScope(true, null, Set.of(), false);
     when(permissions.maintenance(anyString())).thenReturn(all);
     when(permissions.maintenance(anyString(), anyString())).thenReturn(all);
@@ -335,7 +350,7 @@ class MaintenanceReferenceMySqlIT {
   void acceptanceWritesOneHistoryAndCapturesNotificationWithinTheSameTransaction() {
     pendingAcceptance();
     Timestamp before = db.queryForObject("SELECT NOW()", Timestamp.class);
-    var result = tasks.action(TASK, "accept", accept());
+    var result = taskAction(TASK, "accept", accept());
     Timestamp after = db.queryForObject("SELECT NOW()", Timestamp.class);
     assertEquals("已完成", result.get("status"));
     var history = db.queryForMap("SELECT * FROM eam_equipment_history WHERE tenant_id=?", TENANT);
@@ -366,8 +381,7 @@ class MaintenanceReferenceMySqlIT {
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            tasks.action(
-                TASK, "accept", Map.of("rowVersion", 1, "decision", "accept", "score", 3)));
+            taskAction(TASK, "accept", Map.of("rowVersion", 1, "decision", "accept", "score", 3)));
     assertEquals(1L, count("eam_equipment_history"));
   }
 
@@ -380,9 +394,9 @@ class MaintenanceReferenceMySqlIT {
               call.callRealMethod();
               throw new IllegalStateException("任务保存后失败");
             })
-        .when(repository)
+        .when(taskWrites)
         .updateTask(anyString(), any(), anyString(), eq(TENANT), eq(TASK));
-    assertThrows(IllegalStateException.class, () -> tasks.action(TASK, "accept", accept()));
+    assertThrows(IllegalStateException.class, () -> taskAction(TASK, "accept", accept()));
     assertEquals(
         "待验收",
         db.queryForObject(
@@ -530,7 +544,7 @@ class MaintenanceReferenceMySqlIT {
             Timestamp.class,
             TENANT,
             USER);
-    tasks.batchDelete(List.of(Map.of("id", TASK, "rowVersion", 0)));
+    tasks.batchDelete(List.of(new MaintenanceTaskTarget(TASK, 0)));
     assertEquals(
         1,
         db.queryForObject(
@@ -565,7 +579,7 @@ class MaintenanceReferenceMySqlIT {
             })
         .when(notifications)
         .captureSource(eq("eam_maintenance_inbox"), eq(TENANT), anyLong());
-    assertThrows(IllegalStateException.class, () -> tasks.action(TASK, "accept", accept()));
+    assertThrows(IllegalStateException.class, () -> taskAction(TASK, "accept", accept()));
     assertEquals(0L, count("eam_maintenance_inbox"));
     assertEquals(0L, count("eam_notify_message"));
     assertEquals(
@@ -585,7 +599,7 @@ class MaintenanceReferenceMySqlIT {
     stockView("standards", new PermissionScope(false, ORG, Set.of(ORG), false));
     stockView("plans", new PermissionScope(false, ORG + 1, Set.of(), false));
     var mvc =
-        MockMvcBuilders.standaloneSetup(new MaintenanceController(definitions))
+        MockMvcBuilders.standaloneSetup(maintenanceController)
             .setMessageConverters(new MappingJackson2HttpMessageConverter(json))
             .setControllerAdvice(new ApiExceptionHandler())
             .build();
@@ -670,7 +684,7 @@ class MaintenanceReferenceMySqlIT {
         ORG,
         USER,
         jsonText(Map.of("remark", PDF)));
-    executions.save(TENANT, TASK, jsonText(Map.of("description", PDF)));
+    saveExecution(TENANT, TASK, jsonText(Map.of("description", PDF)));
     assertFalse(lists.hasFile(PDF), "备注和处理说明中的UUID不是附件关联");
     assertEquals(
         403,
@@ -738,12 +752,12 @@ class MaintenanceReferenceMySqlIT {
             Map.of("attachments", fileReference(PDF)),
             Map.of("acceptance", Map.of("attachments", fileReference(PDF))),
             Map.of("items", List.of(Map.of("id", "image", "images", fileReference(PDF)))))) {
-      executions.save(TENANT, TASK, jsonText(result));
+      saveExecution(TENANT, TASK, jsonText(result));
       assertTrue(lists.hasFile(PDF));
     }
-    executions.save(TENANT, TASK, jsonText(Map.of("attachments", fileReference(FOREIGN_FILE))));
+    saveExecution(TENANT, TASK, jsonText(Map.of("attachments", fileReference(FOREIGN_FILE))));
     assertThrows(IllegalArgumentException.class, () -> fileService.download(FOREIGN_FILE));
-    executions.save(TENANT, TASK, jsonText(Map.of("attachments", fileReference(PDF))));
+    saveExecution(TENANT, TASK, jsonText(Map.of("attachments", fileReference(PDF))));
     db.update("DELETE FROM eam_maintenance_task_person WHERE tenant_id=?", TENANT);
     when(permissions.maintenance("tasks", "查看"))
         .thenReturn(new PermissionScope(false, null, Set.of(), false));
@@ -754,7 +768,7 @@ class MaintenanceReferenceMySqlIT {
   void referenceUsesUrlAuthorityRatherThanForgedIdOrName() {
     pendingAcceptance();
     var forged = Map.of("id", PDF, "url", "/api/v1/maintenance/files/" + IMAGE, "name", PDF);
-    executions.save(TENANT, TASK, jsonText(Map.of("attachments", List.of(forged))));
+    saveExecution(TENANT, TASK, jsonText(Map.of("attachments", List.of(forged))));
     assertFalse(lists.hasFile(PDF));
     assertTrue(lists.hasFile(IMAGE));
     db.update(
@@ -764,7 +778,7 @@ class MaintenanceReferenceMySqlIT {
         TASK);
     assertFalse(lists.hasFile(PDF));
     assertTrue(lists.hasFile(IMAGE));
-    executions.save(TENANT, TASK, "{}");
+    saveExecution(TENANT, TASK, "{}");
     db.update(
         "UPDATE eam_maintenance_task SET snapshot=? WHERE tenant_id=? AND id=?",
         jsonText(Map.of("items", List.of(Map.of("references", List.of(Map.of("id", PDF)))))),
@@ -897,8 +911,8 @@ class MaintenanceReferenceMySqlIT {
               assertEquals(3, generation.generate(TENANT, PLAN));
               long queries = selectCount() - before;
               System.out.println("保养补生成3次、每次2项目：实际Com_select=" + queries);
-              // MP游标UPDATE由驱动附加一次只读状态SELECT；业务读取仍与原22次基线一致。
-              assertEquals(23, queries);
+              // 原23次加每任务2次MP写入探测，过期锁由2次读取减至1次；独立探测约束增量，业务事实仍各查一次。
+              assertEquals(28, queries);
             });
     verify(standardViews, times(1)).standard(TENANT, standard);
     verify(equipmentFacts, times(1)).findFacts(TENANT, EQUIPMENT);
@@ -1668,6 +1682,571 @@ class MaintenanceReferenceMySqlIT {
         BaseDataReferenceService.applicable(List.of(), List.of("99"), false, 1L, 11L, categories));
   }
 
+  @Test
+  void executionReplacementPreservesFactsAndRollsBackAsOneTaskTransaction() throws Exception {
+    pendingAcceptance();
+    String content =
+        """
+        {"description":"处理记录","startedAt":"2026-11-01T07:59:01.123456",
+         "startAt":"2026-11-01T08:00:00","endAt":"2026-11-01T09:00:00.654321",
+         "collaborators":["9911126221","9911126221","9911126222"],
+         "items":[{"id":"std:item-A","value":"12.50","abnormal":true,"resolved":true,
+                   "measure":"紧固","remark":"备注","images":[{"id":"图片","name":"现场.jpg",
+                     "size":123,"contentType":"image/jpeg","url":"/files/image"}]},
+                  {"id":"std:item-B","value":"","implicitNormal":true,"skipped":true}],
+         "attachments":[{"id":"附件","url":"/files/pdf"}],
+         "acceptance":{"decision":"accept","description":"通过","score":3,
+                       "reviewerId":"9911126221","reviewer":"验收人",
+                       "reviewedAt":"2026-11-01T10:00:00.111111",
+                       "attachments":[{"id":"验收附件","url":"/files/review"}]}}
+        """;
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              long before = selectCount();
+              saveExecution(TENANT, TASK, content);
+              System.out.println(
+                  "maintenance-execution-replace Com_select=" + (selectCount() - before));
+            });
+    var first =
+        json.readTree(
+            db.queryForObject(
+                "SELECT result FROM v_maintenance_task WHERE tenant_id=? AND id=?",
+                String.class,
+                TENANT,
+                TASK));
+    assertEquals("2026-11-01T07:59:01.123456", first.path("startedAt").asText());
+    assertEquals("2026-11-01T09:00:00.654321", first.path("endAt").asText());
+    assertEquals("std:item-A", first.path("items").get(0).path("id").asText());
+    assertEquals("std:item-B", first.path("items").get(1).path("id").asText());
+    assertTrue(first.path("items").get(0).path("abnormal").asBoolean());
+    assertTrue(first.path("items").get(1).path("skipped").asBoolean());
+    assertEquals(123L, first.path("items").get(0).path("images").get(0).path("size").asLong());
+    assertEquals(2, first.path("collaborators").size());
+    assertEquals("9911126221", first.path("acceptance").path("reviewerId").asText());
+    assertEquals(
+        "2026-11-01T10:00:00.111111", first.path("acceptance").path("reviewedAt").asText());
+    assertEquals("验收附件", first.path("acceptance").path("attachments").get(0).path("id").asText());
+    // 后续主体保存失败时，必须恢复级联删除的项目、图片、两阶段附件和协同人。
+    assertThrows(
+        IllegalStateException.class,
+        () ->
+            new TransactionTemplate(transactionManager)
+                .executeWithoutResult(
+                    status -> {
+                      saveExecution(TENANT, TASK, "{}");
+                      throw new IllegalStateException("模拟后续主体保存失败");
+                    }));
+    assertEquals(
+        first,
+        json.readTree(
+            db.queryForObject(
+                "SELECT result FROM v_maintenance_task WHERE tenant_id=? AND id=?",
+                String.class,
+                TENANT,
+                TASK)));
+    saveExecution(TENANT + 1, TASK, null);
+    assertEquals(
+        first,
+        json.readTree(
+            db.queryForObject(
+                "SELECT result FROM v_maintenance_task WHERE tenant_id=? AND id=?",
+                String.class,
+                TENANT,
+                TASK)));
+    saveExecution(TENANT, TASK, "{}");
+    var empty =
+        json.readTree(
+            db.queryForObject(
+                "SELECT result FROM v_maintenance_task WHERE tenant_id=? AND id=?",
+                String.class,
+                TENANT,
+                TASK));
+    assertEquals(0, empty.path("items").size());
+    assertEquals(0, empty.path("attachments").size());
+    assertEquals(0, empty.path("collaborators").size());
+    assertTrue(empty.path("acceptance").path("score").isNull());
+    assertEquals("", empty.path("startedAt").asText());
+    assertEquals(
+        2L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM eam_maintenance_task_person WHERE tenant_id=? AND task_id=?",
+            Long.class,
+            TENANT,
+            TASK));
+    saveExecution(TENANT, TASK, null);
+    assertEquals(
+        1L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM v_maintenance_task WHERE tenant_id=? AND id=? AND result IS NULL",
+            Long.class,
+            TENANT,
+            TASK));
+  }
+
+  @Test
+  void taskLifecycleRetainsVersionsReviewRoundsAndRelationalResults() {
+    pendingAcceptance();
+    db.update(
+        "DELETE FROM eam_maintenance_execution WHERE tenant_id=? AND task_id=?", TENANT, TASK);
+    db.update(
+        "UPDATE eam_maintenance_task SET status='待执行',owner_id=NULL,snapshot=? WHERE tenant_id=?"
+            + " AND id=?",
+        jsonText(
+            Map.of(
+                "reviewMode",
+                "整机验收",
+                "calculation",
+                "固定间隔",
+                "equipmentName",
+                "保养设备",
+                "items",
+                List.of(
+                    Map.of(
+                        "id",
+                        "standard:A",
+                        "name",
+                        "润滑",
+                        "valueType",
+                        "文本",
+                        "required",
+                        true,
+                        "photoRequired",
+                        true)))),
+        TENANT,
+        TASK);
+    db.update(
+        "UPDATE eam_maintenance_task_person SET user_id=? WHERE tenant_id=? AND task_id=? AND"
+            + " role_code='owner'",
+        USER,
+        TENANT,
+        TASK);
+    var started = taskAction(TASK, "start", Map.of("rowVersion", 0));
+    assertEquals("执行中", started.get("status"));
+    assertFalse(((Map<?, ?>) started.get("result")).get("startedAt").toString().isBlank());
+    assertEquals(
+        409,
+        assertThrows(
+                ResponseStatusException.class,
+                () -> taskAction(TASK, "suspend", Map.of("rowVersion", 0, "description", "等材料")))
+            .getStatusCode()
+            .value());
+    taskAction(TASK, "suspend", Map.of("rowVersion", 1, "description", "等材料"));
+    taskAction(TASK, "resume", Map.of("rowVersion", 2));
+    var body = new LinkedHashMap<String, Object>();
+    body.put("rowVersion", 3);
+    body.put("startAt", "2026-11-01T08:00:00");
+    body.put("endAt", "2026-11-01T09:00:00");
+    body.put("description", "完成润滑");
+    body.put("collaborators", List.of(Long.toString(USER)));
+    body.put("attachments", attachment(PDF));
+    body.put("items", List.of(Map.of("id", "standard:A", "value", "")));
+    assertThrows(IllegalArgumentException.class, () -> taskAction(TASK, "process", body));
+    assertEquals(3, tasks.task(TASK).getRowVersion());
+    body.put(
+        "items",
+        List.of(
+            Map.of("id", "standard:A", "value", "已润滑", "images", Collections.singletonList(null))));
+    assertThrows(IllegalArgumentException.class, () -> taskAction(TASK, "process", body));
+    body.put(
+        "items", List.of(Map.of("id", "standard:A", "value", "已润滑", "images", attachment(IMAGE))));
+    var submitted = taskAction(TASK, "process", body);
+    assertEquals("待验收", submitted.get("status"));
+    assertEquals("", ((Map<?, ?>) submitted.get("result")).get("startedAt"));
+    assertEquals(0L, count("eam_equipment_history"));
+    var rejected =
+        taskAction(
+            TASK,
+            "accept",
+            Map.of("rowVersion", 4, "decision", "reject", "score", 2, "description", "重新检查"));
+    assertEquals("执行中", rejected.get("status"));
+    body.put("rowVersion", 5);
+    var resubmitted = taskAction(TASK, "process", body);
+    assertEquals("待验收", resubmitted.get("status"));
+    assertEquals(
+        "",
+        ((Map<?, ?>) ((Map<?, ?>) resubmitted.get("result")).get("acceptance")).get("decision"));
+    var completed =
+        taskAction(
+            TASK,
+            "accept",
+            Map.of(
+                "rowVersion",
+                6,
+                "decision",
+                "accept",
+                "score",
+                5,
+                "description",
+                "复验通过",
+                "attachments",
+                attachment(PDF)));
+    assertEquals("已完成", completed.get("status"));
+    assertEquals(7, completed.get("rowVersion"));
+    assertEquals(1L, count("eam_equipment_history"));
+    var result = (Map<?, ?>) completed.get("result");
+    var review = (Map<?, ?>) result.get("acceptance");
+    assertEquals(Long.toString(USER), review.get("reviewerId"));
+    assertEquals("验收人", review.get("reviewer"));
+    assertEquals(1, ((List<?>) review.get("attachments")).size());
+    assertEquals(1, ((List<?>) result.get("items")).size());
+    assertEquals(1, ((List<?>) result.get("collaborators")).size());
+    assertEquals(
+        1, ((Number) ((Map<?, ?>) completed.get("statistics")).get("completed")).intValue());
+  }
+
+  @Test
+  void taskPersonClearHasOnlyOneDriverProbeAndExecutionReadsDoNotGrowPerItem() {
+    pendingAcceptance();
+    // 同一DELETE对照：MP默认execute会向MySQL探测只读状态，旧JDBC的executeUpdate不会。
+    selects(
+        0,
+        () ->
+            db.update(
+                "DELETE FROM eam_maintenance_task_person WHERE tenant_id=? AND task_id=? AND"
+                    + " role_code='collaborator'",
+                TENANT,
+                TASK));
+    selects(1, () -> taskPeople.clear(TENANT, TASK, List.of("collaborator")));
+    var duplicate = new MaintenanceTask();
+    duplicate.setId(TASK);
+    duplicate.setTenantId(TENANT);
+    duplicate.setCode("MAINT-REFERENCE");
+    duplicate.setPlanId(PLAN);
+    duplicate.setScheduleId(SCHEDULE);
+    duplicate.setEquipmentId(EQUIPMENT);
+    duplicate.setTypeId(TYPE);
+    duplicate.setDueDate(LocalDate.now());
+    duplicate.setSnapshot("{}");
+    selects(1, () -> assertEquals(0, taskWrites.insertTask(duplicate)));
+    assertEquals(1L, count("eam_maintenance_task"));
+
+    var result = new MaintenanceExecutionResult();
+    var values = new ArrayList<MaintenanceExecutionResult.Item>();
+    for (int i = 0; i < 100; i++) {
+      var item = new MaintenanceExecutionResult.Item();
+      item.setId("composite:" + i);
+      item.setValue("正常");
+      values.add(item);
+    }
+    result.setItems(values);
+    // 框架批次固定一次探测，不能随着项目数增长；真实数据库断言项目全部写入且顺序正确。
+    selects(4, () -> executions.save(TENANT, TASK, result));
+    assertEquals(
+        100L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM eam_maintenance_execution_item WHERE tenant_id=? AND task_id=?",
+            Long.class,
+            TENANT,
+            TASK));
+    assertEquals(
+        "composite:99",
+        db.queryForObject(
+            "SELECT item_key FROM eam_maintenance_execution_item WHERE tenant_id=? AND task_id=?"
+                + " AND sort_no=99",
+            String.class,
+            TENANT,
+            TASK));
+  }
+
+  @Test
+  void typedTaskHttpAndInboxPreserveTheExistingJsonProjection() throws Exception {
+    pendingAcceptance();
+    db.update(
+        "UPDATE eam_maintenance_task SET"
+            + " snapshot=JSON_SET(snapshot,'$.legacySection',JSON_OBJECT('empty',NULL),'$.remark',NULL,'$.canExecute',TRUE,'$.result',JSON_OBJECT('forged',TRUE))"
+            + " WHERE tenant_id=? AND id=?",
+        TENANT,
+        TASK);
+    var raw =
+        db.queryForMap("SELECT * FROM v_maintenance_task WHERE tenant_id=? AND id=?", TENANT, TASK);
+    var expected = (ObjectNode) json.readTree(raw.get("snapshot").toString());
+    for (var pair :
+        Map.ofEntries(
+                Map.entry("id", "id"),
+                Map.entry("typeId", "type_id"),
+                Map.entry("companyId", "company_id"),
+                Map.entry("departmentId", "department_id"),
+                Map.entry("planId", "plan_id"),
+                Map.entry("equipmentId", "equipment_id"),
+                Map.entry("ownerId", "owner_id"))
+            .entrySet()) {
+      expected.put(pair.getKey(), Objects.toString(raw.get(pair.getValue()), ""));
+    }
+    expected.put("code", raw.get("code").toString());
+    expected.put("status", "待验收");
+    expected.put("dueDate", raw.get("due_date").toString());
+    expected.put("expiresDate", "");
+    expected.put("rowVersion", 0);
+    expected.put("createdAt", raw.get("created_at").toString().replace('T', ' '));
+    expected.set("result", json.readTree(raw.get("result").toString()));
+    expected.put("actualStartAt", "2026-11-01T08:00:00.000000");
+    expected.put("actualEndAt", "2026-11-01T09:00:00.000000");
+    expected.put("canExecute", false);
+    expected.put("canAccept", true);
+    expected.put("canDelete", false);
+    expected.put("canPostpone", false);
+    expected.set("customFields", json.createObjectNode());
+    expected.set("customFieldLabels", json.createObjectNode());
+    expected.put("customSchemaVersion", 0);
+    expected.set("events", json.createArrayNode());
+    expected.set(
+        "statistics",
+        json.readTree(
+            """
+            {"total":0,"completed":0,"abnormal":0,"completionRate":null,
+             "completedItemIds":[],"abnormalItemIds":[],"submitted":true,"reliable":true}
+            """));
+    var mvc =
+        MockMvcBuilders.standaloneSetup(
+                new MaintenanceTaskController(tasks, lists), maintenanceController)
+            .setMessageConverters(new MappingJackson2HttpMessageConverter(json))
+            .setControllerAdvice(new ApiExceptionHandler())
+            .build();
+    var response =
+        mvc.perform(get("/api/v1/maintenance/tasks/" + TASK))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    assertEquals(expected, json.readTree(response.getContentAsByteArray()).path("data"));
+    journal.notify(TENANT, TASK, List.of(USER, INACTIVE), "保养待执行", "保养设备", true);
+    var oldInbox =
+        db.queryForList(
+            """
+SELECT CAST(i.id AS CHAR) id,CAST(t.id AS CHAR) orderId,'maintenance' module,t.code orderNo,
+  JSON_UNQUOTE(JSON_EXTRACT(t.snapshot,'$.equipmentName')) equipmentName,t.status,i.kind,
+  i.title,i.message_key messageKey,i.message_args messageArgs,i.is_todo todo,i.done,
+  i.read_at IS NOT NULL isRead,DATE_FORMAT(i.created_at,'%Y-%m-%d %H:%i:%s') time
+FROM eam_maintenance_inbox i JOIN v_maintenance_task t
+  ON t.id=i.task_id AND t.tenant_id=i.tenant_id
+WHERE i.tenant_id=? AND i.user_id=? ORDER BY i.created_at DESC,i.id DESC LIMIT 300
+""",
+            TENANT, USER);
+    var inboxResponse =
+        mvc.perform(get("/api/v1/maintenance/inbox"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    assertEquals(
+        json.readTree(json.writeValueAsBytes(NotificationMessages.render(oldInbox))),
+        json.readTree(inboxResponse.getContentAsByteArray()).path("data"));
+    assertEquals(1, oldInbox.size(), "收件人范围不能包含其他用户");
+    assertEquals(1, expected.path("legacySection").size());
+  }
+
+  @Test
+  void prefillKeepsAnswersButClearsExecutionEvidenceAndDistinguishesAbsentHistory()
+      throws Exception {
+    pendingAcceptance();
+    var today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
+    db.update(
+        "UPDATE eam_maintenance_task SET status='已完成',due_date=? WHERE tenant_id=? AND id=?",
+        today.minusDays(1),
+        TENANT,
+        TASK);
+    db.update(
+        "UPDATE eam_maintenance_plan SET auto_fill='上次结果' WHERE tenant_id=? AND id=?",
+        TENANT,
+        PLAN);
+    long standard = TYPE + 10;
+    String itemKey = standard + ":lubricate";
+    definitionStorage.insert(
+        standard,
+        TENANT,
+        "standards",
+        "PREFILL",
+        "预填标准",
+        ORG,
+        USER,
+        jsonText(
+            Map.of(
+                "items",
+                List.of(Map.of("id", "lubricate", "typeId", Long.toString(TYPE), "name", "润滑")))));
+    saveExecution(
+        TENANT,
+        TASK,
+        jsonText(
+            Map.of(
+                "description",
+                "上次处理",
+                "items",
+                List.of(
+                    Map.of(
+                        "id",
+                        itemKey,
+                        "value",
+                        "12.50",
+                        "abnormal",
+                        true,
+                        "resolved",
+                        true,
+                        "measure",
+                        "旧措施",
+                        "remark",
+                        "保留备注",
+                        "images",
+                        fileReference(IMAGE))))));
+    var original =
+        db.queryForObject(
+            "SELECT result FROM v_maintenance_task WHERE tenant_id=? AND id=?",
+            String.class,
+            TENANT,
+            TASK);
+    for (int day = 0; day < 3; day++) {
+      if (day == 1) {
+        saveExecution(TENANT, TASK, null);
+      } else if (day == 2) {
+        db.update(
+            "UPDATE eam_maintenance_task SET status='已作废' WHERE tenant_id=? AND id=?",
+            TENANT,
+            TASK);
+      }
+      db.update(
+          "UPDATE eam_maintenance_plan SET advance_days=? WHERE tenant_id=? AND id=?",
+          day,
+          TENANT,
+          PLAN);
+      definitionStorage.device(
+          false,
+          TENANT,
+          SCHEDULE,
+          PLAN,
+          EQUIPMENT,
+          TYPE,
+          today.plusDays(day),
+          today.plusDays(day),
+          0,
+          jsonText(
+              Map.of(
+                  "typeId",
+                  Long.toString(TYPE),
+                  "period",
+                  1,
+                  "unit",
+                  "周",
+                  "projectRefs",
+                  List.of(Map.of("standardId", Long.toString(standard), "itemId", "lubricate")))));
+      assertEquals(1, generation.generate(TENANT, PLAN));
+      String result =
+          db.queryForObject(
+              "SELECT result FROM v_maintenance_task WHERE tenant_id=? AND schedule_id=? AND"
+                  + " due_date=?",
+              String.class,
+              TENANT,
+              SCHEDULE,
+              today.plusDays(day));
+      if (day == 0) {
+        var value = json.readTree(result);
+        var answer = value.path("items").get(0);
+        assertEquals(itemKey, answer.path("id").asText());
+        assertEquals("12.50", answer.path("value").asText());
+        assertEquals("保留备注", answer.path("remark").asText());
+        assertTrue(answer.path("abnormal").asBoolean());
+        assertFalse(answer.path("resolved").asBoolean());
+        assertEquals("", answer.path("measure").asText());
+        assertEquals(0, answer.path("images").size());
+        assertEquals("", value.path("startedAt").asText());
+        assertEquals("", value.path("description").asText());
+        assertEquals(
+            original,
+            db.queryForObject(
+                "SELECT result FROM v_maintenance_task WHERE tenant_id=? AND id=?",
+                String.class,
+                TENANT,
+                TASK));
+      } else if (day == 1) {
+        assertNotNull(result, "存在无执行的完成记录仍生成空执行模型");
+        assertEquals(0, json.readTree(result).path("items").size());
+      } else {
+        assertEquals(null, result, "没有完成历史时不创建执行记录");
+      }
+      assertEquals(0, generation.generate(TENANT, PLAN));
+    }
+  }
+
+  @Test
+  void batchAcceptanceSortsLocksAndRollsBackEarlierRowsWhenLaterVersionConflicts() {
+    pendingAcceptance();
+    long second = TASK + 100;
+    db.update(
+        """
+INSERT INTO eam_maintenance_task(id,tenant_id,code,plan_id,schedule_id,equipment_id,type_id,
+  due_date,owner_id,status,snapshot)
+SELECT ?,tenant_id,'MAINT-SECOND',plan_id,schedule_id,equipment_id,type_id,
+  DATE_ADD(due_date,INTERVAL 1 DAY),owner_id,status,snapshot
+FROM eam_maintenance_task WHERE tenant_id=? AND id=?
+""",
+        second,
+        TENANT,
+        TASK);
+    db.update(
+        """
+INSERT INTO eam_maintenance_task_person(tenant_id,task_id,role_code,user_id,sort_no)
+SELECT tenant_id,?,role_code,user_id,sort_no FROM eam_maintenance_task_person WHERE tenant_id=? AND task_id=?
+""",
+        second,
+        TENANT,
+        TASK);
+    var first = new MaintenanceBatchAcceptance(TASK, 0, "accept", 3L, "通过", List.of());
+    var stale = new MaintenanceBatchAcceptance(second, 1, "accept", 3L, "通过", List.of());
+    assertEquals(
+        409,
+        assertThrows(ResponseStatusException.class, () -> tasks.batchAccept(List.of(stale, first)))
+            .getStatusCode()
+            .value());
+    assertEquals(0L, count("eam_equipment_history"));
+    assertEquals(0L, count("eam_maintenance_inbox"));
+    assertEquals(
+        2L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM eam_maintenance_task WHERE tenant_id=? AND status='待验收' AND"
+                + " row_version=0",
+            Long.class,
+            TENANT));
+    clearInvocations(taskWrites);
+    tasks.batchAccept(
+        List.of(new MaintenanceBatchAcceptance(second, 0, "accept", 3L, "通过", List.of()), first));
+    var locks = inOrder(taskWrites);
+    locks.verify(taskWrites).loadTask(TENANT, TASK, true);
+    locks.verify(taskWrites).loadTask(TENANT, second, true);
+    assertEquals(2L, count("eam_equipment_history"));
+    assertEquals(
+        2L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM eam_maintenance_task WHERE tenant_id=? AND status='已完成' AND"
+                + " row_version=1",
+            Long.class,
+            TENANT));
+  }
+
+  private Map<String, Object> taskAction(long task, String action, Map<String, Object> body) {
+    Class<? extends MaintenanceTaskCommand> type =
+        switch (action) {
+          case "start" -> MaintenanceTaskCommand.Start.class;
+          case "process" -> MaintenanceTaskCommand.Process.class;
+          case "accept" -> MaintenanceTaskCommand.Accept.class;
+          case "suspend" -> MaintenanceTaskCommand.Suspend.class;
+          case "resume" -> MaintenanceTaskCommand.Resume.class;
+          case "transfer" -> MaintenanceTaskCommand.Transfer.class;
+          case "void" -> MaintenanceTaskCommand.Void.class;
+          default -> throw new IllegalArgumentException(action);
+        };
+    return json.convertValue(
+        tasks.action(task, json.convertValue(body, type)),
+        new TypeReference<Map<String, Object>>() {});
+  }
+
+  private void saveExecution(long tenant, long task, String content) {
+    try {
+      executions.save(
+          tenant,
+          task,
+          content == null ? null : json.readValue(content, MaintenanceExecutionResult.class));
+    } catch (JsonProcessingException e) {
+      throw new AssertionError(e);
+    }
+  }
+
   private String jsonText(Object value) {
     try {
       return json.writeValueAsString(value);
@@ -1783,7 +2362,7 @@ class MaintenanceReferenceMySqlIT {
         TENANT,
         TASK,
         USER);
-    executions.save(
+    saveExecution(
         TENANT,
         TASK,
         "{\"description\":\"保养处理记录\",\"startAt\":\"2026-11-01T08:00:00\",\"endAt\":\"2026-11-01T09:00:00\"}");

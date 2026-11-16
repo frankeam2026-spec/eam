@@ -57,6 +57,23 @@ class LayerDependencyArchitectureTest {
     return sql.matches("(?is).*\\bFROM\\s+`?eam_spare_stock`?\\b.*");
   }
 
+  static boolean writesMaintenanceExecution(String sql) {
+    return sql.matches(
+        "(?is).*\\b(?:INSERT\\s+(?:IGNORE\\s+)?INTO|UPDATE|DELETE\\s+FROM)\\s+`?eam_maintenance_(?:execution(?:_item|_image|_file)?|task_person)`?\\b.*");
+  }
+
+  @Test
+  void executionWriteDetectionDistinguishesReadsAndOtherTaskTables() {
+    assertTrue(
+        writesMaintenanceExecution("DELETE FROM eam_maintenance_execution WHERE tenant_id=?"));
+    assertTrue(writesMaintenanceExecution("INSERT INTO eam_maintenance_execution_image VALUES(?)"));
+    assertTrue(writesMaintenanceExecution("UPDATE eam_maintenance_task_person SET sort_no=?"));
+    assertFalse(writesMaintenanceExecution("SELECT * FROM eam_maintenance_execution"));
+    assertFalse(writesMaintenanceExecution("DELETE FROM eam_maintenance_task WHERE tenant_id=?"));
+    assertFalse(
+        writesMaintenanceExecution("INSERT INTO eam_maintenance_execution_archive VALUES(?)"));
+  }
+
   @Test
   void maintenanceMayReadHistoryButCannotOwnItsWrites() {
     assertTrue(writesEquipmentHistory("INSERT INTO eam_equipment_history(id) VALUES(?)"));
@@ -126,10 +143,20 @@ class LayerDependencyArchitectureTest {
                       if (layer.equals("repository")
                           && file.startsWith(root.resolve("repository/maintenance"))
                           && value instanceof String text) {
-                        assertFalse(writesEquipmentHistory(text), file + " directly writes equipment history");
+                        // 固定执行事实必须交给所属Entity/Mapper，不得恢复JSON字段路径驱动的跨表写入器。
+                        assertFalse(
+                            writesMaintenanceExecution(text),
+                            file + " writes execution relations outside their typed mappers");
+                        assertFalse(
+                            writesEquipmentHistory(text),
+                            file + " directly writes equipment history");
                         if (file.getFileName().toString().equals("MaintenanceRepository.class")) {
-                          assertFalse(writesMaintenanceJournal(text), file + " owns journal writes that belong to dedicated repositories");
-                          assertFalse(readsLegacyStock(text), file + " reads inventory stock outside its owning repository");
+                          assertFalse(
+                              writesMaintenanceJournal(text),
+                              file + " owns journal writes that belong to dedicated repositories");
+                          assertFalse(
+                              readsLegacyStock(text),
+                              file + " reads inventory stock outside its owning repository");
                         }
                       }
                       if (sqlFree && value instanceof String text)

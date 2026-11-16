@@ -8,24 +8,27 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.maintenance.MaintenancePlan;
+import com.windasoft.eam.entity.maintenance.MaintenanceTask;
 import com.windasoft.eam.entity.maintenance.MaintenanceType;
 import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
-import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceTaskRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.time.*;
 import java.util.*;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.web.server.ResponseStatusException;
 
 class MaintenanceGenerationServiceTest {
   @Test
   void dueDateMinusAdvanceControlsGenerationAndCursorMakesTheNextRunIdempotent() {
     var repo = mock(MaintenanceRepository.class);
+    var tasks = mock(MaintenanceTaskRepository.class);
     var types = mock(MaintenanceTypeRepository.class);
     var schedules = mock(MaintenancePlanDeviceRepository.class);
     var planDefinitions = mock(MaintenancePlanRepository.class);
@@ -36,10 +39,11 @@ class MaintenanceGenerationServiceTest {
     var service =
         new MaintenanceGenerationService(
             repo,
+            tasks,
             schedules,
             planDefinitions,
             types,
-            mock(MaintenanceExecutionStorage.class),
+            mock(MaintenanceExecutionService.class),
             mock(TaskSourceRelationsRepository.class),
             json,
             mock(AuthContext.class),
@@ -92,20 +96,7 @@ class MaintenanceGenerationServiceTest {
     when(projects.planProjects(anyMap(), eq(10001L), any(Equipment.class), eq(false)))
         .thenReturn(List.of(Map.of("id", "item-1", "name", "检查", "sourceStandardName", "标准")));
     when(repo.currentNumber()).thenReturn(1L);
-    when(repo.insertTask(
-            anyLong(),
-            eq(10001L),
-            anyString(),
-            eq(10L),
-            eq(20L),
-            eq(30L),
-            eq(40L),
-            eq(71002L),
-            eq(71003L),
-            eq(due),
-            eq(due.plusDays(7)),
-            anyString()))
-        .thenReturn(1);
+    when(tasks.insertTask(any(MaintenanceTask.class))).thenReturn(1);
     assertEquals(1, service.generate(10001L, 10L));
     var locks = inOrder(planDefinitions, repo, schedules);
     locks.verify(planDefinitions).lockForGeneration(10001L, 10L);
@@ -118,25 +109,23 @@ class MaintenanceGenerationServiceTest {
     schedule.put("next_date", java.sql.Date.valueOf(due.plusWeeks(1)));
     schedule.put("cycle_index", 1);
     assertEquals(0, service.generate(10001L, 10L));
-    verify(repo, times(1))
-        .insertTask(
-            anyLong(),
-            anyLong(),
-            anyString(),
-            any(),
-            any(),
-            any(),
-            any(),
-            any(),
-            any(),
-            any(),
-            any(),
-            anyString());
+    var task = ArgumentCaptor.forClass(MaintenanceTask.class);
+    verify(tasks, times(1)).insertTask(task.capture());
+    assertEquals(10001L, task.getValue().getTenantId());
+    assertEquals(10L, task.getValue().getPlanId());
+    assertEquals(20L, task.getValue().getScheduleId());
+    assertEquals(30L, task.getValue().getEquipmentId());
+    assertEquals(40L, task.getValue().getTypeId());
+    assertEquals(71002L, task.getValue().getCompanyId());
+    assertEquals(71003L, task.getValue().getDepartmentId());
+    assertEquals(due, task.getValue().getDueDate());
+    assertEquals(due.plusDays(7), task.getValue().getExpiresDate());
   }
 
   @Test
   void manualGenerationChecksOriginalPlanEditScopeBeforeLockingOrGenerating() {
     var repo = mock(MaintenanceRepository.class);
+    var tasks = mock(MaintenanceTaskRepository.class);
     var schedules = mock(MaintenancePlanDeviceRepository.class);
     var plans = mock(MaintenancePlanRepository.class);
     var auth = mock(AuthContext.class);
@@ -153,10 +142,11 @@ class MaintenanceGenerationServiceTest {
     var service =
         new MaintenanceGenerationService(
             repo,
+            tasks,
             schedules,
             plans,
             mock(MaintenanceTypeRepository.class),
-            mock(MaintenanceExecutionStorage.class),
+            mock(MaintenanceExecutionService.class),
             mock(TaskSourceRelationsRepository.class),
             new ObjectMapper(),
             auth,
