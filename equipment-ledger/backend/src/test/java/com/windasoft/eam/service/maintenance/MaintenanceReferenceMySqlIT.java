@@ -344,7 +344,7 @@ class MaintenanceReferenceMySqlIT {
               throw new IllegalStateException("任务保存后失败");
             })
         .when(repository)
-        .updateTask(any(), any(), anyString(), anyString(), eq(TENANT), eq(TASK));
+        .updateTask(anyString(), any(), anyString(), eq(TENANT), eq(TASK));
     assertThrows(IllegalStateException.class, () -> tasks.action(TASK, "accept", accept()));
     assertEquals(
         "待验收",

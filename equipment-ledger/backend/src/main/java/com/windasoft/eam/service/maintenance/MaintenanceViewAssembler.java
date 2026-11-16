@@ -41,6 +41,14 @@ public class MaintenanceViewAssembler {
     return v;
   }
 
+  /** 任务人员从关系表读取；历史快照不重复保存人员数组，防止转派后出现两份权威。 */
+  public Map<String, Object> historicalSnapshot(Map<String, Object> snapshot) {
+    var historical = new LinkedHashMap<>(snapshot);
+    historical.remove("owners");
+    historical.remove("reviewers");
+    return historical;
+  }
+
   public Map<String, Object> task(Map<String, Object> r) {
     var v = decode(r.get("snapshot"));
     v.put("typeId", Objects.toString(r.get("type_id"), ""));

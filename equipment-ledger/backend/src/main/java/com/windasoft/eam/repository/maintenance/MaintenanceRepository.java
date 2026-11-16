@@ -9,20 +9,14 @@ import org.springframework.stereotype.Repository;
 public class MaintenanceRepository {
   private final MaintenanceDefinitionStorage definitions;
   private final JdbcTemplate db;
-  private final com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources;
-  private final MaintenanceExecutionStorage executions;
   private final NumberCounterMapper counter;
 
   public MaintenanceRepository(
       JdbcTemplate db,
       NumberCounterMapper counter,
-      MaintenanceDefinitionStorage definitions,
-      MaintenanceExecutionStorage executions,
-      com.windasoft.eam.repository.common.TaskSourceRelationsRepository taskSources) {
+      MaintenanceDefinitionStorage definitions) {
     this.db = db;
-    this.taskSources = taskSources;
     this.counter = counter;
-    this.executions = executions;
     this.definitions = definitions;
   }
 
@@ -242,9 +236,7 @@ public class MaintenanceRepository {
   }
 
   public int updateTask(
-      Object next, Object owner, String payload, String payload4, long tenantId, long id) {
-    executions.participants(tenantId, id, payload);
-    executions.save(tenantId, id, payload4);
+      String next, Long owner, String snapshot, long tenantId, long id) {
     return db.update(
         "UPDATE eam_maintenance_task SET"
             + " submitted_at=IF(?='待验收' AND status<>'待验收',NOW(6),submitted_at),status=?,owner_id=?,snapshot=?,row_version=row_version+1,updated_at=NOW() WHERE"
@@ -252,7 +244,7 @@ public class MaintenanceRepository {
         next,
         next,
         owner,
-        executions.historicalSnapshot(payload),
+        snapshot,
         tenantId,
         id);
   }
@@ -331,11 +323,7 @@ public class MaintenanceRepository {
             departmentOrgId,
             due,
             expires,
-            executions.historicalSnapshot(payload));
-    if (inserted > 0) {
-      executions.participants(tenantId, taskId, payload);
-      taskSources.maintenance(tenantId, taskId, id6, payload);
-    }
+            payload);
     return inserted;
   }
 
@@ -346,11 +334,6 @@ public class MaintenanceRepository {
         tenantId,
         id,
         id3);
-  }
-
-  public int updateTaskResult(String payload, long tenantId, long taskId) {
-    executions.save(tenantId, taskId, payload);
-    return 1;
   }
 
   public int resetScheduleDate47(Object due, Object due2, long tenantId, Object id) {

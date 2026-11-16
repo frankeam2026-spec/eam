@@ -7,6 +7,8 @@ import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
+import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import java.time.*;
 import java.util.*;
@@ -22,7 +24,7 @@ class MaintenanceGenerationServiceTest {
     var json = new ObjectMapper();
     var service =
         new MaintenanceGenerationService(
-            repo, json, mock(AuthContext.class), projects, views, journal);
+            repo, mock(MaintenanceExecutionStorage.class), mock(TaskSourceRelationsRepository.class), json, mock(AuthContext.class), projects, views, journal);
     LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
     var plan =
         Map.<String, Object>of(
@@ -54,6 +56,7 @@ class MaintenanceGenerationServiceTest {
     when(repo.lockPlanSchedules(10001L, 10L)).thenReturn(List.of(schedule));
     when(projects.raw(eq("types"), eq(10001L), eq(40L), eq(false)))
         .thenReturn(Map.of("payload", "{\"enabled\":true}"));
+    when(views.historicalSnapshot(anyMap())).thenAnswer(call -> call.getArgument(0));
     when(views.definition(anyMap())).thenReturn(Map.of("id", "40", "name", "周"));
     var device = new Equipment();
     device.setId(30L);

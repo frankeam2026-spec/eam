@@ -16,6 +16,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
+import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -33,6 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MaintenanceGenerationService {
   private final MaintenanceRepository repository;
+  private final MaintenanceExecutionStorage executions;
+  private final TaskSourceRelationsRepository taskSources;
   private final ObjectMapper json;
   private final AuthContext auth;
   private final MaintenanceProjectService projectSource;
@@ -41,12 +45,16 @@ public class MaintenanceGenerationService {
 
   public MaintenanceGenerationService(
       MaintenanceRepository repository,
+      MaintenanceExecutionStorage executions,
+      TaskSourceRelationsRepository taskSources,
       ObjectMapper json,
       AuthContext auth,
       MaintenanceProjectService projectSource,
       MaintenanceViewAssembler views,
       MaintenanceTaskJournal journal) {
     this.repository = repository;
+    this.executions = executions;
+    this.taskSources = taskSources;
     this.json = json;
     this.auth = auth;
     this.projectSource = projectSource;
@@ -146,8 +154,12 @@ public class MaintenanceGenerationService {
                     equipment.getDepartmentOrgId(),
                     due,
                     expires,
-                    encode(snap));
+                    encode(views.historicalSnapshot(snap)));
             if (added > 0) {
+            // 唯一键重复时不覆盖人员或来源；新任务仍按主体→人员→来源的原顺序写入同一事务。
+            String content = encode(snap);
+            executions.participants(tenant, task, content);
+            taskSources.maintenance(tenant, task, equipment.getId(), content);
               if ("上次结果".equals(text(p, "autoFill"))) {
                 var previous =
                     repository.findLastCompletedResult(
@@ -162,7 +174,7 @@ public class MaintenanceGenerationService {
                     v.put("resolved", false);
                     draft.add(v);
                   }
-                  repository.updateTaskResult(encode(Map.of("items", draft)), tenant, task);
+                  executions.save(tenant, task, encode(Map.of("items", draft)));
                 }
               }
               count++;
