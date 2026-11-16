@@ -5,7 +5,9 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.entity.maintenance.MaintenancePlan;
 import com.windasoft.eam.entity.maintenance.MaintenanceType;
 import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
@@ -14,9 +16,11 @@ import com.windasoft.eam.repository.maintenance.MaintenancePlanRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.PermissionService;
 import java.time.*;
 import java.util.*;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.server.ResponseStatusException;
 
 class MaintenanceGenerationServiceTest {
   @Test
@@ -39,6 +43,7 @@ class MaintenanceGenerationServiceTest {
             mock(TaskSourceRelationsRepository.class),
             json,
             mock(AuthContext.class),
+            mock(PermissionService.class),
             projects,
             views,
             journal);
@@ -127,5 +132,49 @@ class MaintenanceGenerationServiceTest {
             any(),
             any(),
             anyString());
+  }
+
+  @Test
+  void manualGenerationChecksOriginalPlanEditScopeBeforeLockingOrGenerating() {
+    var repo = mock(MaintenanceRepository.class);
+    var schedules = mock(MaintenancePlanDeviceRepository.class);
+    var plans = mock(MaintenancePlanRepository.class);
+    var auth = mock(AuthContext.class);
+    when(auth.tenantId()).thenReturn(10001L);
+    when(auth.userId()).thenReturn(70001L);
+    var permissions = mock(PermissionService.class);
+    var plan = new MaintenancePlan();
+    plan.setId(10L);
+    plan.setDepartmentId(71003L);
+    plan.setCreatorId(70002L);
+    when(plans.find(10001L, 10L, false)).thenReturn(plan);
+    when(permissions.maintenance("plans", "编辑"))
+        .thenReturn(new PermissionScope(false, null, Set.of(71004L), false));
+    var service =
+        new MaintenanceGenerationService(
+            repo,
+            schedules,
+            plans,
+            mock(MaintenanceTypeRepository.class),
+            mock(MaintenanceExecutionStorage.class),
+            mock(TaskSourceRelationsRepository.class),
+            new ObjectMapper(),
+            auth,
+            permissions,
+            mock(MaintenanceProjectService.class),
+            mock(MaintenanceViewAssembler.class),
+            mock(MaintenanceTaskJournal.class));
+    assertEquals(
+        403,
+        assertThrows(ResponseStatusException.class, () -> service.generatePlan(10L))
+            .getStatusCode()
+            .value());
+    verify(plans, never()).lockForGeneration(anyLong(), any());
+    verifyNoInteractions(repo, schedules);
+    when(permissions.maintenance("plans", "编辑"))
+        .thenReturn(new PermissionScope(true, null, Set.of(), false));
+    when(repo.planRowsForGeneration(10001L, 10L)).thenReturn(List.of());
+    assertEquals(0, service.generatePlan(10L));
+    verify(plans).lockForGeneration(10001L, 10L);
   }
 }
