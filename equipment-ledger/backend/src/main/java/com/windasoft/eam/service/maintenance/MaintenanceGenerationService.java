@@ -86,11 +86,11 @@ public class MaintenanceGenerationService {
           for (int n = 0; n < 100 && !due.isAfter(generationDeadline); n++) {
             var snap = new LinkedHashMap<String, Object>();
             snap.put("planName", plan.get("name"));
-            snap.put("equipmentCode", equipment.get("equipment_code"));
-            snap.put("equipmentName", equipment.get("name"));
-            snap.put("model", Objects.toString(equipment.get("model"), ""));
-            snap.put("department", Objects.toString(equipment.get("department"), ""));
-            snap.put("functionLocation", Objects.toString(equipment.get("function_location"), ""));
+            snap.put("equipmentCode", equipment.getEquipmentCode());
+            snap.put("equipmentName", equipment.getName());
+            snap.put("model", Objects.toString(equipment.getModel(), ""));
+            snap.put("department", Objects.toString(equipment.getDepartment(), ""));
+            snap.put("functionLocation", Objects.toString(equipment.getFunctionLocation(), ""));
             snap.put("typeId", type.get("id"));
             snap.put("typeName", type.get("name"));
             snap.put("calculation", p.get("calculation"));
@@ -140,10 +140,10 @@ public class MaintenanceGenerationService {
                     code,
                     plan.get("id"),
                     schedule.get("id"),
-                    equipment.get("id"),
+                    equipment.getId(),
                     schedule.get("type_id"),
-                    equipment.get("company_org_id"),
-                    equipment.get("department_org_id"),
+                    equipment.getCompanyOrgId(),
+                    equipment.getDepartmentOrgId(),
                     due,
                     expires,
                     encode(snap));
@@ -151,7 +151,7 @@ public class MaintenanceGenerationService {
               if ("上次结果".equals(text(p, "autoFill"))) {
                 var previous =
                     repository.findLastCompletedResult(
-                        tenant, equipment.get("id"), schedule.get("id"));
+                        tenant, equipment.getId(), schedule.get("id"));
                 if (!previous.isEmpty()) {
                   var values = rows(decode(previous.getFirst().get("result")).get("items"));
                   var draft = new ArrayList<Map<String, Object>>();

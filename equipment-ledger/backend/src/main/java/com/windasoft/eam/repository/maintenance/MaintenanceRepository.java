@@ -60,18 +60,6 @@ public class MaintenanceRepository {
         id);
   }
 
-  public List<Map<String, Object>> loadEquipment(long tenantId, long id) {
-    return db.queryForList(
-        "SELECT * FROM eam_equipment WHERE tenant_id=? AND id=? AND deleted=0", tenantId, id);
-  }
-
-  public List<Map<String, Object>> listCategoryParents(long tenantId) {
-    return db.queryForList(
-        "SELECT id,parent_id,name FROM eam_base_item WHERE tenant_id=? AND item_type='CATEGORY'"
-            + " AND deleted=0",
-        tenantId);
-  }
-
   public int insertDefinition(
       long definitionId,
       long tenantId,
@@ -195,12 +183,6 @@ public class MaintenanceRepository {
 
   public int deleteDefinition(long tenantId, long id) {
     return definitions.delete(tenantId, id);
-  }
-
-  public List<Map<String, Object>> listEquipment(long tenantId) {
-    return db.queryForList(
-        "SELECT * FROM eam_equipment WHERE tenant_id=? AND deleted=0 ORDER BY" + " equipment_code",
-        tenantId);
   }
 
   public List<Map<String, Object>> listOrganizations(long tenantId) {

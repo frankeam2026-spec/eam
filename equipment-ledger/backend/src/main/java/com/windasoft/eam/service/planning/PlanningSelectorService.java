@@ -4,7 +4,8 @@ import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.repository.common.*;
 import com.windasoft.eam.repository.inspection.InspectionListRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
-import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
+import com.windasoft.eam.service.basedata.BaseDataType;
 import com.windasoft.eam.repository.planning.PlanningSelectorRepository;
 import com.windasoft.eam.service.inspection.InspectionViewAssembler;
 import com.windasoft.eam.service.maintenance.MaintenanceViewAssembler;
@@ -20,7 +21,7 @@ public class PlanningSelectorService {
   private final PlanningSelectorRepository repository;
   private final MaintenanceListRepository maintenance;
   private final InspectionListRepository inspection;
-  private final MaintenanceRepository metadata;
+  private final BaseItemRepository metadata;
   private final MaintenanceViewAssembler maintenanceViews;
   private final InspectionViewAssembler inspectionViews;
   private final PermissionService permissions;
@@ -30,7 +31,7 @@ public class PlanningSelectorService {
       PlanningSelectorRepository repository,
       MaintenanceListRepository maintenance,
       InspectionListRepository inspection,
-      MaintenanceRepository metadata,
+      BaseItemRepository metadata,
       MaintenanceViewAssembler maintenanceViews,
       InspectionViewAssembler inspectionViews,
       PermissionService permissions,
@@ -149,10 +150,10 @@ public class PlanningSelectorService {
       var rows = repository.equipmentContext(auth.tenantId(), equipmentId);
       var ancestors = new LinkedHashSet<Long>();
       var parents = new HashMap<Long, Long>();
-      for (var row : metadata.listCategoryParents(auth.tenantId())) {
+      for (var row : metadata.itemsByType(auth.tenantId(), BaseDataType.CATEGORY.code(), false)) {
         parents.put(
-            ((Number) row.get("id")).longValue(),
-            row.get("parent_id") == null ? null : ((Number) row.get("parent_id")).longValue());
+            row.getId(),
+            row.getParentId());
       }
       Long category =
           rows.getFirst().get("category_id") == null

@@ -12,6 +12,10 @@ import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
+import com.windasoft.eam.service.basedata.BaseDataType;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.service.basedata.BaseDataReferenceService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -31,17 +35,23 @@ import org.springframework.web.server.ResponseStatusException;
 public class MaintenanceProjectService {
   private final MaintenanceRepository repository;
   private final ObjectMapper json;
+  private final EquipmentQueryRepository equipment;
+  private final BaseItemRepository baseItems;
   private final AuthContext auth;
   private final PermissionService permissions;
   private static final Set<String> KINDS = Set.of("types", "standards", "plans");
 
   public MaintenanceProjectService(
       MaintenanceRepository repository,
+      EquipmentQueryRepository equipment,
+      BaseItemRepository baseItems,
       ObjectMapper json,
       AuthContext auth,
       PermissionService permissions) {
     this.repository = repository;
     this.json = json;
+    this.equipment = equipment;
+    this.baseItems = baseItems;
     this.auth = auth;
     this.permissions = permissions;
   }
@@ -69,7 +79,7 @@ public class MaintenanceProjectService {
 
   /** 每次解析按标准 ID 复用读取与项目索引，避免同一标准每个项目重复查询。 缓存只存在于本次调用；项目仍复制为原有历史快照结构，保留选择顺序、去重和旧项目 ID。 */
   List<Map<String, Object>> planProjects(
-      Map<String, Object> detail, long tenant, Map<String, Object> eq, boolean checkAccess) {
+      Map<String, Object> detail, long tenant, Equipment eq, boolean checkAccess) {
     var result = new ArrayList<Map<String, Object>>();
     var seen = new HashSet<String>();
     var references = rows(detail.get("projectRefs"));
@@ -140,15 +150,23 @@ public class MaintenanceProjectService {
     return new StandardProjects(Objects.toString(row.get("name"), ""), items);
   }
 
-  Map<String, Object> equipment(long tenant, long id) {
-    var a = repository.loadEquipment(tenant, id);
-    require(!a.isEmpty(), MessageContext.text("server.common.message0064"));
-    return a.getFirst();
+  Equipment equipment(long tenant, long id) {
+    var row = equipment.findFacts(tenant, id);
+    require(row != null, MessageContext.text("server.common.message0064"));
+    return row;
   }
 
-  boolean applicable(Map<String, Object> standard, Map<String, Object> equipment, long tenant) {
-    return BaseDataReferenceService.applicable(
-        standard, equipment, repository.listCategoryParents(tenant));
+  boolean applicable(Map<String, Object> standard, Equipment equipment, long tenant) {
+    // 基础资料旧兼容入口只接受设备/分类标识；不再用整行设备 Map 承载稳定设备事实。
+    var reference = new LinkedHashMap<String, Object>();
+    reference.put("id", equipment.getId());
+    reference.put("category_id", equipment.getCategoryId());
+    return BaseDataReferenceService.applicable(standard, reference, baseItems.itemsByType(tenant, BaseDataType.CATEGORY.code(), false).stream().<Map<String, Object>>map(item -> {
+      var row = new LinkedHashMap<String, Object>();
+      row.put("id", item.getId());
+      row.put("parent_id", item.getParentId());
+      return row;
+    }).toList());
   }
 
   Map<String, Object> decode(Object value) {

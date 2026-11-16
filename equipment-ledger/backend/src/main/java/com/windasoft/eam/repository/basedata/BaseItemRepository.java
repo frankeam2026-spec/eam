@@ -21,6 +21,13 @@ public class BaseItemRepository {
     this.mapper = mapper;
   }
 
+  /** 历史分类适用性可包含停用项；选择器由调用方显式限定启用，逻辑删除始终排除。 */
+  public List<BaseItem> itemsByType(long tenant, String itemType, boolean activeOnly) {
+    return mapper.selectList(new LambdaQueryWrapper<BaseItem>()
+        .eq(BaseItem::getTenantId, tenant).eq(BaseItem::getItemType, itemType)
+        .eq(activeOnly, BaseItem::getStatus, 1));
+  }
+
   public BaseItem findForShare(Long id) {
     return mapper.selectOne(
         new LambdaQueryWrapper<BaseItem>().eq(BaseItem::getId, id).last("FOR SHARE"));

@@ -6,6 +6,9 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
+import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.dto.maintenance.MaintenanceLegacyStockOption;
 import com.windasoft.eam.repository.inventory.LegacySpareStockRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceInboxRepository;
@@ -45,6 +48,7 @@ public class MaintenanceService {
 
   private final MaintenanceRepository repository;
   private final OrgUnitRepository organizations;
+  private final EquipmentQueryRepository equipmentQueries;
   private final MaintenanceInboxRepository inbox;
   private final LegacySpareStockRepository legacyStocks;
   private final ObjectMapper json;
@@ -55,6 +59,7 @@ public class MaintenanceService {
   public MaintenanceService(
       MaintenanceRepository repository,
       OrgUnitRepository organizations,
+      EquipmentQueryRepository equipmentQueries,
       MaintenanceInboxRepository inbox,
       LegacySpareStockRepository legacyStocks,
       ObjectMapper json,
@@ -79,6 +84,7 @@ public class MaintenanceService {
     this.references = references;
     this.repository = repository;
     this.organizations = organizations;
+    this.equipmentQueries = equipmentQueries;
     this.inbox = inbox;
     this.legacyStocks = legacyStocks;
     this.json = json;
@@ -190,7 +196,7 @@ public class MaintenanceService {
   }
 
   List<Map<String, Object>> planProjects(
-      Map<String, Object> detail, long tenant, Map<String, Object> eq, boolean checkAccess) {
+      Map<String, Object> detail, long tenant, Equipment eq, boolean checkAccess) {
     return projects.planProjects(detail, tenant, eq, checkAccess);
   }
 
@@ -202,20 +208,20 @@ public class MaintenanceService {
     validation.validAttachments(value, imagesOnly);
   }
 
-  Map<String, Object> equipment(long tenant, long id) {
+  Equipment equipment(long tenant, long id) {
     return projects.equipment(tenant, id);
   }
 
-  boolean applicable(Map<String, Object> standard, Map<String, Object> equipment, long tenant) {
+  boolean applicable(Map<String, Object> standard, Equipment equipment, long tenant) {
     return projects.applicable(standard, equipment, tenant);
   }
 
-  void checkEquipment(Map<String, Object> e, String kind, String action) {
+  void checkEquipment(Equipment e, String kind, String action) {
     var scope = permissions.maintenance(kind, action);
     if (!scope.matches(
-        e.get("company_org_id") == null ? null : number(e.get("company_org_id")),
-        e.get("department_org_id") == null ? null : number(e.get("department_org_id")),
-        e.get("owner_user_id") == null ? null : number(e.get("owner_user_id")),
+        e.getCompanyOrgId(),
+        e.getDepartmentOrgId(),
+        e.getOwnerUserId(),
         auth.userId())) deny();
   }
 
@@ -363,15 +369,18 @@ public class MaintenanceService {
       require(
           number(data.get("advanceDays")) >= number(data.get("remindDays")),
           com.windasoft.eam.common.MessageContext.text("server.maintenance.message0035"));
+      // 每次保存内复用设备事实，仍对每条安排独立校验权限和项目，不跨请求缓存。
+      var equipmentFacts = new HashMap<Long, Equipment>();
       for (var d : rows(data.get("details"))) {
-        checkEquipment(equipment(tenant, number(d.get("equipmentId"))), kind, action);
+        var eq = equipmentFacts.computeIfAbsent(number(d.get("equipmentId")), key -> equipment(tenant, key));
+        checkEquipment(eq, kind, action);
         var type = cycleType(tenant, d.get("typeId"));
         d.put("typeId", text(type, "id"));
         d.put("typeName", text(type, "name"));
         if (!d.containsKey("period")) d.put("period", type.get("period"));
         if (!d.containsKey("unit")) d.put("unit", type.get("unit"));
         var selectedProjects =
-            planProjects(d, tenant, equipment(tenant, number(d.get("equipmentId"))), true);
+            planProjects(d, tenant, eq, true);
         require(
             !selectedProjects.isEmpty(),
             com.windasoft.eam.common.MessageContext.text("ui.equipment.text0753"));
@@ -414,12 +423,11 @@ public class MaintenanceService {
             ids(d.get("reviewers")).isEmpty()
                 ? ids(data.get("reviewers"))
                 : ids(d.get("reviewers"));
-        var eq = equipment(tenant, number(d.get("equipmentId")));
         for (var reviewer : reviewers)
           require(
               permissions.canMaintenanceAccept(
                   reviewer,
-                  eq.get("department_org_id") == null ? null : number(eq.get("department_org_id"))),
+                  eq.getDepartmentOrgId()),
               com.windasoft.eam.common.MessageContext.text("server.maintenance.message0037"));
       }
     }
@@ -557,42 +565,32 @@ public class MaintenanceService {
     require(
         permissions.anyMaintenance("查看"),
         com.windasoft.eam.common.MessageContext.text("server.maintenance.message0047"));
-    var eq =
-        paged
-            ? List.of()
-            : repository.listEquipment(auth.tenantId()).stream()
-                .filter(
-                    e -> {
-                      try {
-                        return permissions.maintenanceEquipmentVisible(
-                          e.get("company_org_id") == null
-                            ? null
-                            : number(e.get("company_org_id")),
-                          e.get("department_org_id") == null
-                            ? null
-                            : number(e.get("department_org_id")),
-                          e.get("owner_user_id") == null ? null : number(e.get("owner_user_id")));
-                      } catch (ResponseStatusException ex) {
-                        return false;
-                      }
-                    })
+    var equipmentScopes = new ArrayList<PermissionScope>();
+    if (!paged) {
+      for (String kind : List.of("standards", "plans", "tasks")) {
+        if (permissions.allowed(PermissionService.maintenanceMenu(kind), "查看")) {
+          equipmentScopes.add(permissions.maintenance(kind, "查看"));
+        }
+      }
+    }
+    var eq = paged ? List.of() : equipmentQueries.scopedFacts(auth.tenantId(), auth.userId(), equipmentScopes).stream()
                 .map(
                     e ->
                         Map.of(
                             "id",
-                            Objects.toString(e.get("id")),
+                            Objects.toString(e.getId()),
                             "code",
-                            e.get("equipment_code"),
+                            e.getEquipmentCode(),
                             "name",
-                            e.get("name"),
+                            e.getName(),
                             "model",
-                            Objects.toString(e.get("model"), ""),
+                            Objects.toString(e.getModel(), ""),
                             "category",
-                            Objects.toString(e.get("category"), ""),
+                            Objects.toString(e.getCategory(), ""),
                             "categoryId",
-                            Objects.toString(e.get("category_id"), ""),
+                            Objects.toString(e.getCategoryId(), ""),
                             "department",
-                            Objects.toString(e.get("department"), "")))
+                            Objects.toString(e.getDepartment(), "")))
                 .toList();
     var org = repository.listOrganizations(auth.tenantId());
     org.forEach(

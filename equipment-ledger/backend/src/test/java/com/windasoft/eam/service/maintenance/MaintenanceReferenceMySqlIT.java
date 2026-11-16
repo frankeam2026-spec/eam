@@ -27,6 +27,8 @@ import com.windasoft.eam.controller.maintenance.MaintenanceController;
 import com.windasoft.eam.dto.maintenance.MaintenanceLegacyStockOption;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.system.SystemUser;
+import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceDefinitionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
@@ -132,7 +134,9 @@ class MaintenanceReferenceMySqlIT {
   @MockitoBean RepairPlanScheduler repairScheduler;
   @MockitoBean KnowledgeScheduler knowledgeScheduler;
   @MockitoSpyBean MaintenanceRepository repository;
+  @MockitoSpyBean EquipmentQueryRepository equipmentFacts;
   @MockitoSpyBean NotificationRepository notifications;
+  @Autowired com.windasoft.eam.service.planning.PlanningSelectorService selectors;
   @Autowired MaintenanceListService lists;
   @Autowired MaintenanceFileService fileService;
   @Autowired MaintenanceProjectService projects;
@@ -745,7 +749,7 @@ class MaintenanceReferenceMySqlIT {
     selects(
         1,
         () -> {
-          var resolved = projects.planProjects(cycle, TENANT, Map.of(), true);
+          var resolved = projects.planProjects(cycle, TENANT, new Equipment(), true);
           assertEquals(100, resolved.size());
           assertEquals(standard + ":item-99", resolved.getFirst().get("id"));
           assertEquals(standard + ":item-0", resolved.getLast().get("id"));
@@ -757,19 +761,19 @@ class MaintenanceReferenceMySqlIT {
               projects.planProjects(
                   Map.of("standardId", Long.toString(standard), "typeId", Long.toString(TYPE)),
                   TENANT,
-                  Map.of(),
+                  new Equipment(),
                   true);
           assertEquals("item-0", legacy.getFirst().get("id"));
           assertEquals(100, legacy.size());
         });
     assertThrows(
         ResponseStatusException.class,
-        () -> projects.planProjects(cycle, TENANT + 1, Map.of(), false));
+        () -> projects.planProjects(cycle, TENANT + 1, new Equipment(), false));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             projects.planProjects(
-                Map.of("typeId", "999", "projectRefs", refs), TENANT, Map.of(), false));
+                Map.of("typeId", "999", "projectRefs", refs), TENANT, new Equipment(), false));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -780,14 +784,14 @@ class MaintenanceReferenceMySqlIT {
                     "projectRefs",
                     List.of(Map.of("standardId", Long.toString(standard), "itemId", "missing"))),
                 TENANT,
-                Map.of(),
+                new Equipment(),
                 false));
     refs.add(refs.getFirst());
-    assertEquals(100, projects.planProjects(cycle, TENANT, Map.of(), true).size());
+    assertEquals(100, projects.planProjects(cycle, TENANT, new Equipment(), true).size());
     when(permissions.maintenance("standards", "查看"))
         .thenReturn(new PermissionScope(false, null, Set.of(), false));
     assertThrows(
-        ResponseStatusException.class, () -> projects.planProjects(cycle, TENANT, Map.of(), true));
+        ResponseStatusException.class, () -> projects.planProjects(cycle, TENANT, new Equipment(), true));
   }
 
   @Test
@@ -836,7 +840,7 @@ class MaintenanceReferenceMySqlIT {
                 List.of(
                     Map.of("standardId", Long.toString(standard), "itemId", "second"),
                     Map.of("standardId", Long.toString(standard), "itemId", "first")))));
-    clearInvocations(repository);
+    clearInvocations(repository, equipmentFacts);
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
             status -> {
@@ -847,7 +851,7 @@ class MaintenanceReferenceMySqlIT {
               assertEquals(22, queries);
             });
     verify(repository, times(1)).loadDefinition(TENANT, "standards", standard, false);
-    verify(repository, times(1)).loadEquipment(TENANT, EQUIPMENT);
+    verify(equipmentFacts, times(1)).findFacts(TENANT, EQUIPMENT);
     verify(repository, times(1)).loadDefinition(TENANT, "types", TYPE, false);
     var generated =
         db.queryForList(
@@ -866,6 +870,44 @@ class MaintenanceReferenceMySqlIT {
     }
     assertEquals(0, generation.generate(TENANT, PLAN));
     assertEquals(4L, count("eam_maintenance_task"));
+  }
+
+  @Test
+  void equipmentFactsKeepTenantDeletionNullsAndSingleRead() {
+    pendingAcceptance();
+    selects(1, () -> {
+      var device = projects.equipment(TENANT, EQUIPMENT);
+      assertEquals(EQUIPMENT, device.getId());
+      assertEquals("MAINT-EQ", device.getEquipmentCode());
+      assertEquals(null, device.getCompanyOrgId());
+    });
+    assertEquals(0, equipmentFacts.scopedFacts(TENANT, USER, List.of()).size());
+    db.update("UPDATE eam_equipment SET company_org_id=?,department_org_id=?,owner_user_id=? WHERE tenant_id=? AND id=?",
+        ORG, ORG + 1, USER, TENANT, EQUIPMENT);
+    assertEquals(1, equipmentFacts.scopedFacts(TENANT, USER,
+        List.of(new PermissionScope(false, ORG, Set.of(), false))).size());
+    assertEquals(1, equipmentFacts.scopedFacts(TENANT, USER,
+        List.of(new PermissionScope(false, null, Set.of(ORG + 1), false))).size());
+    assertEquals(1, equipmentFacts.scopedFacts(TENANT, USER,
+        List.of(new PermissionScope(false, null, Set.of(), true))).size());
+    assertEquals(0, equipmentFacts.scopedFacts(TENANT, DELETED,
+        List.of(new PermissionScope(false, ORG + 99, Set.of(), true))).size());
+    assertEquals(0, equipmentFacts.scopedFacts(TENANT + 1, USER,
+        List.of(new PermissionScope(true, null, Set.of(), false))).size());
+    assertThrows(IllegalArgumentException.class, () -> projects.equipment(TENANT + 1, EQUIPMENT));
+    db.update("UPDATE eam_equipment SET deleted=1 WHERE tenant_id=? AND id=?", TENANT, EQUIPMENT);
+    assertThrows(IllegalArgumentException.class, () -> projects.equipment(TENANT, EQUIPMENT));
+  }
+
+  @Test
+  void sharedStandardSelectorKeepsCategoryAncestryAfterRepositoryChange() {
+    pendingAcceptance();
+    // 无类别限制的标准仍适用于可选设备；实际Service授权和类别父链SQL均执行。
+    definitionStorage.insert(TYPE + 10, TENANT, "standards", "SELECT-STANDARD", "选择标准", ORG, USER, "{}");
+    var selected = selectors.standards("maintenance",
+        com.windasoft.eam.dto.common.ListQuery.from(Map.of()), EQUIPMENT, null);
+    assertEquals(1L, selected.page().total());
+    assertEquals(Long.toString(TYPE + 10), selected.data().getFirst().get("id"));
   }
 
   private String jsonText(Object value) {

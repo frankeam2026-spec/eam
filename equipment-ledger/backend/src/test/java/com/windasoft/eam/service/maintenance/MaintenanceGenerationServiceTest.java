@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import java.time.*;
@@ -54,20 +55,14 @@ class MaintenanceGenerationServiceTest {
     when(projects.raw(eq("types"), eq(10001L), eq(40L), eq(false)))
         .thenReturn(Map.of("payload", "{\"enabled\":true}"));
     when(views.definition(anyMap())).thenReturn(Map.of("id", "40", "name", "周"));
-    when(projects.equipment(10001L, 30L))
-        .thenReturn(
-            Map.of(
-                "id",
-                30L,
-                "equipment_code",
-                "QA-EQ",
-                "name",
-                "工程设备",
-                "company_org_id",
-                71002L,
-                "department_org_id",
-                71003L));
-    when(projects.planProjects(anyMap(), eq(10001L), anyMap(), eq(false)))
+    var device = new Equipment();
+    device.setId(30L);
+    device.setEquipmentCode("QA-EQ");
+    device.setName("工程设备");
+    device.setCompanyOrgId(71002L);
+    device.setDepartmentOrgId(71003L);
+    when(projects.equipment(10001L, 30L)).thenReturn(device);
+    when(projects.planProjects(anyMap(), eq(10001L), any(Equipment.class), eq(false)))
         .thenReturn(List.of(Map.of("id", "item-1", "name", "检查", "sourceStandardName", "标准")));
     when(repo.currentNumber()).thenReturn(1L);
     when(repo.insertTask(
