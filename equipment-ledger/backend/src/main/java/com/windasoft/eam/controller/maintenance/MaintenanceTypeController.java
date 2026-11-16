@@ -1,6 +1,7 @@
 package com.windasoft.eam.controller.maintenance;
 
 import com.windasoft.eam.dto.common.DataResponse;
+import com.windasoft.eam.dto.common.SuccessResponse;
 import com.windasoft.eam.dto.maintenance.MaintenanceTypeRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceTypeView;
 import com.windasoft.eam.service.maintenance.MaintenanceTypeService;
@@ -31,7 +32,7 @@ public class MaintenanceTypeController {
     return new DataResponse<>(service.list(conditions, false));
   }
 
-  @GetMapping("/{id}")
+  @GetMapping("/{id:[0-9]+}")
   public DataResponse<MaintenanceTypeView> get(@PathVariable long id) {
     return new DataResponse<>(service.get(id));
   }
@@ -41,17 +42,15 @@ public class MaintenanceTypeController {
     return new DataResponse<>(service.save(null, request));
   }
 
-  @PutMapping("/{id}")
+  @PutMapping("/{id:[0-9]+}")
   public DataResponse<MaintenanceTypeView> update(
       @PathVariable long id, @RequestBody MaintenanceTypeRequest request) {
     return new DataResponse<>(service.save(id, request));
   }
 
-  public record Success(boolean success) {}
-
-  @DeleteMapping("/{id}")
-  public Success delete(@PathVariable long id) {
+  @DeleteMapping("/{id:[0-9]+}")
+  public SuccessResponse delete(@PathVariable long id) {
     service.delete(id);
-    return new Success(true);
+    return new SuccessResponse(true);
   }
 }

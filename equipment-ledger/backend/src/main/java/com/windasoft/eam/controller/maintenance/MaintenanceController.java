@@ -1,7 +1,8 @@
 package com.windasoft.eam.controller.maintenance;
 
-import com.windasoft.eam.service.maintenance.MaintenanceService;
+import com.windasoft.eam.dto.maintenance.MaintenanceChoices;
 import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
+import com.windasoft.eam.service.maintenance.MaintenanceService;
 import java.util.*;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -33,7 +34,7 @@ public class MaintenanceController {
   }
 
   @GetMapping("/choices")
-  public Object choices(@RequestParam(defaultValue = "false") boolean paged) {
+  public MaintenanceChoices choices(@RequestParam(defaultValue = "false") boolean paged) {
     return service.choices(paged);
   }
 

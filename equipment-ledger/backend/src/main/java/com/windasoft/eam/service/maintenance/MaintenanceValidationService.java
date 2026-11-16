@@ -6,30 +6,70 @@ import static com.windasoft.eam.common.maintenance.MaintenanceSupport.require;
 import static com.windasoft.eam.common.maintenance.MaintenanceSupport.rows;
 import static com.windasoft.eam.common.maintenance.MaintenanceSupport.text;
 
+import com.windasoft.eam.common.FieldValidationException;
 import com.windasoft.eam.common.MessageContext;
+import com.windasoft.eam.dto.maintenance.MaintenanceFileReference;
+import com.windasoft.eam.dto.maintenance.MaintenanceStandardRequest;
+import com.windasoft.eam.dto.maintenance.MaintenanceTypeRequest;
 import com.windasoft.eam.repository.maintenance.MaintenanceFileRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
 import com.windasoft.eam.service.system.AuthContext;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 
-/** 保养人员与附件输入的业务校验；用户及附件事实分别从其所属仓储读取。 */
+/** 保养输入约束及人员、附件业务校验；字段约束复用Bean Validation，关联事实从所属仓储读取。 */
 @Service
 public class MaintenanceValidationService {
   private final SystemUserRepository users;
   private final MaintenanceFileRepository files;
   private final AuthContext auth;
   private final MaintenanceListService lists;
+  private final Validator validator;
 
   public MaintenanceValidationService(
       SystemUserRepository users,
       MaintenanceFileRepository files,
       AuthContext auth,
-      MaintenanceListService lists) {
+      MaintenanceListService lists,
+      Validator validator) {
     this.users = users;
     this.files = files;
     this.auth = auth;
     this.lists = lists;
+    this.validator = validator;
+  }
+
+  // 分别验证名称及完整输入，沿用各用例的版本/归属校验顺序，内部调用和HTTP共用DTO字段约束。
+  void validateName(MaintenanceTypeRequest value) {
+    reject(validator.validateProperty(value, "name"));
+  }
+
+  void validateName(MaintenanceStandardRequest value) {
+    reject(validator.validateProperty(value, "name"));
+  }
+
+  void validate(MaintenanceTypeRequest value) {
+    reject(validator.validate(value));
+  }
+
+  void validate(MaintenanceStandardRequest value) {
+    reject(validator.validate(value));
+  }
+
+  private void reject(Set<? extends ConstraintViolation<?>> violations) {
+    violations.stream()
+        .sorted(Comparator.comparing(v -> v.getPropertyPath().toString()))
+        .findFirst()
+        .ifPresent(
+            v -> {
+              throw new FieldValidationException(
+                  v.getPropertyPath().toString(), MessageContext.annotation(v.getMessage()));
+            });
   }
 
   /** 新选人员必须仍可用；历史姓名查询不能替代此处的启用、未删除约束。 */
@@ -48,25 +88,40 @@ public class MaintenanceValidationService {
    * ID，但显式 ID 必须与下载 URL 一致。
    */
   void validAttachments(Object value, boolean imagesOnly) {
-    for (var a : rows(value)) {
-      var url = text(a, "url");
+    for (var file : rows(value)) {
+      validateAttachment(text(file, "id"), text(file, "url"), imagesOnly);
+    }
+  }
+
+  void validFileReferences(List<MaintenanceFileReference> value, boolean imagesOnly) {
+    if (value == null) {
+      return;
+    }
+    for (var file : value) {
+      validateAttachment(
+          Objects.toString(file.id(), "").trim(),
+          Objects.toString(file.url(), "").trim(),
+          imagesOnly);
+    }
+  }
+
+  private void validateAttachment(String suppliedId, String url, boolean imagesOnly) {
+    require(
+        url.matches("/api/v1/maintenance/files/[0-9a-f-]{36}"),
+        MessageContext.text("server.inspection.message0075"));
+    String id = url.substring(url.lastIndexOf('/') + 1);
+    var file = files.find(auth.tenantId(), id);
+    require(file != null, MessageContext.text("server.repair.message0011"));
+    if (imagesOnly) {
       require(
-          url.matches("/api/v1/maintenance/files/[0-9a-f-]{36}"),
-          MessageContext.text("server.inspection.message0075"));
-      String id = url.substring(url.lastIndexOf('/') + 1);
-      var file = files.find(auth.tenantId(), id);
-      require(file != null, MessageContext.text("server.repair.message0011"));
-      if (imagesOnly) {
-        require(
-            files.exists(auth.tenantId(), id, true),
-            MessageContext.text("server.maintenance.message0014"));
-      }
-      require(
-          text(a, "id").isEmpty() || id.equals(text(a, "id")),
-          MessageContext.text("server.inspection.message0075"));
-      if (!Objects.equals(file.getUserId(), auth.userId()) && !lists.hasFile(id)) {
-        deny();
-      }
+          files.exists(auth.tenantId(), id, true),
+          MessageContext.text("server.maintenance.message0014"));
+    }
+    require(
+        suppliedId.isEmpty() || id.equals(suppliedId),
+        MessageContext.text("server.inspection.message0075"));
+    if (!Objects.equals(file.getUserId(), auth.userId()) && !lists.hasFile(id)) {
+      deny();
     }
   }
 }

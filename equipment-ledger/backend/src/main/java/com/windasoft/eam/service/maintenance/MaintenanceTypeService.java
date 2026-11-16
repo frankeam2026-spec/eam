@@ -29,6 +29,7 @@ public class MaintenanceTypeService {
   private final MaintenanceTypeRepository types;
   private final MaintenanceRepository references;
   private final MaintenanceStandardItemRepository items;
+  private final MaintenanceValidationService validation;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final BusinessQueryService filters;
@@ -37,12 +38,14 @@ public class MaintenanceTypeService {
       MaintenanceTypeRepository types,
       MaintenanceRepository references,
       MaintenanceStandardItemRepository items,
+      MaintenanceValidationService validation,
       AuthContext auth,
       PermissionService permissions,
       BusinessQueryService filters) {
     this.types = types;
     this.references = references;
     this.items = items;
+    this.validation = validation;
     this.auth = auth;
     this.permissions = permissions;
     this.filters = filters;
@@ -79,12 +82,10 @@ public class MaintenanceTypeService {
       require(request.rowVersion() != null, MessageContext.text("server.common.message0018"));
       VersionGuard.check(old.getRowVersion(), request.rowVersion());
     }
-    String name = text(request.name());
-    require(
-        !name.isBlank() && name.length() <= 150,
-        MessageContext.text("server.maintenance.message0020"));
-    long period = request.period() == null ? 0 : request.period();
-    require(period > 0 && period <= 10000, MessageContext.text("server.maintenance.message0022"));
+    validation.validateName(request);
+    validation.validate(request);
+    String name = request.name();
+    long period = request.period();
     String unit = text(request.unit());
     require(
         Set.of("日", "周", "月", "年").contains(unit),
@@ -97,7 +98,7 @@ public class MaintenanceTypeService {
           MessageContext.text("server.inspection.message0054"));
     String code = text(request.code());
     if (code.isEmpty()) code = "MT-" + IdWorker.getId();
-    require(code.length() <= 64, MessageContext.text("server.inventory.message0191"));
+
     var row = new MaintenanceType();
     row.setId(id == null ? IdWorker.getId() : id);
     row.setTenantId(auth.tenantId());

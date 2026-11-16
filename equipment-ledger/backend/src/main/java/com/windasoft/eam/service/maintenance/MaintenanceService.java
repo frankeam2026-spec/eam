@@ -8,10 +8,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.dto.maintenance.MaintenanceCategoryOption;
+import com.windasoft.eam.dto.maintenance.MaintenanceChoices;
 import com.windasoft.eam.dto.maintenance.MaintenanceEquipmentOption;
 import com.windasoft.eam.dto.maintenance.MaintenanceLegacyStockOption;
-import com.windasoft.eam.dto.maintenance.MaintenanceTypeView;
+import com.windasoft.eam.dto.maintenance.MaintenanceStandardRequest;
+import com.windasoft.eam.dto.maintenance.MaintenanceStandardView;
 import com.windasoft.eam.dto.maintenance.MaintenanceTypeRequest;
+import com.windasoft.eam.dto.maintenance.MaintenanceTypeView;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.basedata.BaseItemRepository;
@@ -44,8 +47,6 @@ public class MaintenanceService {
 
   private final com.windasoft.eam.service.business.BusinessValueService custom;
 
-  private final com.windasoft.eam.service.basedata.BaseDataReferenceService references;
-
   private final MaintenanceProjectService projects;
 
   private final MaintenanceGenerationService generation;
@@ -59,6 +60,7 @@ public class MaintenanceService {
   private final MaintenanceRepository repository;
   private final MaintenanceTypeRepository typeFacts;
   private final MaintenanceTypeService types;
+  private final MaintenanceStandardService standards;
   private final OrgUnitRepository organizations;
   private final EquipmentQueryRepository equipmentQueries;
   private final SystemUserRepository userQueries;
@@ -74,6 +76,7 @@ public class MaintenanceService {
       MaintenanceRepository repository,
       MaintenanceTypeRepository typeFacts,
       MaintenanceTypeService types,
+      MaintenanceStandardService standards,
       OrgUnitRepository organizations,
       EquipmentQueryRepository equipmentQueries,
       SystemUserRepository userQueries,
@@ -83,7 +86,6 @@ public class MaintenanceService {
       ObjectMapper json,
       AuthContext auth,
       PermissionService permissions,
-      com.windasoft.eam.service.basedata.BaseDataReferenceService references,
       MaintenanceViewAssembler assembler,
       com.windasoft.eam.service.business.BusinessValueService custom,
       MaintenanceProjectService projects,
@@ -99,10 +101,10 @@ public class MaintenanceService {
     this.taskCommands = taskCommands;
     this.listQueries = listQueries;
 
-    this.references = references;
     this.repository = repository;
     this.typeFacts = typeFacts;
     this.types = types;
+    this.standards = standards;
     this.organizations = organizations;
     this.equipmentQueries = equipmentQueries;
     this.userQueries = userQueries;
@@ -196,6 +198,7 @@ public class MaintenanceService {
 
   public Map<String, Object> definition(String kind, long id) {
     if (kind.equals("types")) return legacyType(types.get(id));
+    if (kind.equals("standards")) return legacyStandard(standards.get(id));
     var row = raw(kind, auth.tenantId(), id, false);
     if (!visible(row, "查看")) deny();
     var v = view(row);
@@ -249,7 +252,11 @@ public class MaintenanceService {
 
   @Transactional
   public Map<String, Object> save(String kind, Long id, Map<String, Object> body) {
-    if (kind.equals("types")) return legacyType(types.save(id, json.convertValue(body, MaintenanceTypeRequest.class)));
+    if (kind.equals("types"))
+      return legacyType(types.save(id, json.convertValue(body, MaintenanceTypeRequest.class)));
+    if (kind.equals("standards"))
+      return legacyStandard(
+          standards.save(id, json.convertValue(body, MaintenanceStandardRequest.class)));
     require(
         KINDS.contains(kind),
         com.windasoft.eam.common.MessageContext.text("server.system.message0045"));
@@ -282,73 +289,6 @@ public class MaintenanceService {
           com.windasoft.eam.common.MessageContext.text("server.maintenance.message0021"));
       var scope = permissions.maintenance(kind, action);
       if (!scope.matches(null, department, auth.userId(), auth.userId())) deny();
-    }
-    if (kind.equals("standards")) {
-      references.categories(tenant, data);
-      require(
-          !rows(data.get("items")).isEmpty(),
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0023"));
-      var itemIds = new HashSet<String>();
-      for (var item : rows(data.get("items"))) {
-        require(
-            !text(item, "name").isBlank() && !text(item, "content").isBlank(),
-            com.windasoft.eam.common.MessageContext.text("server.maintenance.message0024"));
-        var itemType = cycleType(tenant, item.get("typeId"));
-        item.put("typeId", itemType.id());
-        item.put("typeName", itemType.name());
-        require(
-            Set.of("选项", "数值", "文本").contains(text(item, "valueType")),
-            com.windasoft.eam.common.MessageContext.text("server.maintenance.message0025"));
-        if (text(item, "id").isEmpty()) item.put("id", Long.toString(IdWorker.getId()));
-        if (text(item, "code").isEmpty()) item.put("code", "MI-" + IdWorker.getId());
-        require(
-            itemIds.add(text(item, "id")),
-            com.windasoft.eam.common.MessageContext.text("server.maintenance.message0026"));
-        if (text(item, "valueType").equals("数值")) {
-          if (!text(item, "lower").isEmpty()) new BigDecimal(text(item, "lower"));
-          if (!text(item, "upper").isEmpty()) new BigDecimal(text(item, "upper"));
-        }
-        if (text(item, "valueType").equals("选项")) {
-          var choices = strings(item.get("options"));
-          require(
-              choices.size() >= 2,
-              com.windasoft.eam.common.MessageContext.text("server.maintenance.message0027"));
-          require(
-              choices.containsAll(strings(item.get("normalOptions")))
-                  && !strings(item.get("normalOptions")).isEmpty(),
-              com.windasoft.eam.common.MessageContext.text("server.maintenance.message0028"));
-        }
-        if (text(item, "valueType").equals("数值")
-            && !text(item, "lower").isEmpty()
-            && !text(item, "upper").isEmpty())
-          require(
-              new BigDecimal(text(item, "lower")).compareTo(new BigDecimal(text(item, "upper")))
-                  <= 0,
-              com.windasoft.eam.common.MessageContext.text("server.inspection.message0049"));
-        validAttachments(item.get("references"), false);
-        var spareSummary = new ArrayList<String>();
-        for (var spare : rows(item.get("spareRequirements"))) {
-          var stock = legacyStocks.find(tenant, number(spare.get("stockId")));
-          require(
-              stock != null,
-              com.windasoft.eam.common.MessageContext.text("server.maintenance.message0029"));
-          var scope = permissions.maintenance(kind, action);
-          if (!scope.all() && !scope.companyIds().contains(stock.getCompanyId())) deny();
-          var quantity = new BigDecimal(text(spare, "quantity"));
-          require(
-              quantity.signum() > 0,
-              com.windasoft.eam.common.MessageContext.text("server.maintenance.message0030"));
-          spareSummary.add(
-              Objects.toString(stock.getName(), "").trim()
-                  + " · "
-                  + Objects.toString(stock.getModel(), "").trim()
-                  + " × "
-                  + quantity.stripTrailingZeros().toPlainString());
-        }
-        item.put("spares", String.join("；", spareSummary));
-      }
-      for (var e : ids(data.get("equipmentIds")))
-        checkEquipment(equipment(tenant, e), kind, action);
     }
     if (kind.equals("plans")) {
       validUsers(data.get("owners"), true);
@@ -438,8 +378,7 @@ public class MaintenanceService {
     long key = id == null ? IdWorker.getId() : id;
     String code = text(data, "code");
     if (code.isEmpty()) {
-      code =
-          definitionNumbers.next(tenant, kind.equals("standards") ? "MS" : "MP");
+      code = definitionNumbers.next(tenant, "MP");
     }
     require(
         code.length() <= 64,
@@ -519,7 +458,14 @@ public class MaintenanceService {
 
   @Transactional
   public void delete(String kind, long id) {
-    if (kind.equals("types")) { types.delete(id); return; }
+    if (kind.equals("types")) {
+      types.delete(id);
+      return;
+    }
+    if (kind.equals("standards")) {
+      standards.delete(id);
+      return;
+    }
     var r = raw(kind, auth.tenantId(), id, true);
     permissions.require(PermissionService.maintenanceMenu(kind), "删除");
     if (!visible(r, "删除")) deny();
@@ -534,15 +480,6 @@ public class MaintenanceService {
           repository.countPlanTasks(auth.tenantId(), id) == 0,
           com.windasoft.eam.common.MessageContext.text("server.inspection.message0069"));
     }
-    if (!kind.equals("plans")) {
-      require(
-          repository.countScheduleReferences(auth.tenantId(), id, "standard_id") == 0,
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0042"));
-    }
-    if (kind.equals("standards"))
-      require(
-          repository.countProjectReferences(auth.tenantId(), Long.toString(id)) == 0,
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0043"));
     repository.deleteDefinition(auth.tenantId(), id);
   }
 
@@ -554,11 +491,16 @@ public class MaintenanceService {
     return json.convertValue(value, new TypeReference<LinkedHashMap<String, Object>>() {});
   }
 
-  public Map<String, Object> choices() {
+  /** 仅为旧内部聚合入口保留格式适配，标准业务规则与写入只由标准Service维护。 */
+  private Map<String, Object> legacyStandard(MaintenanceStandardView value) {
+    return json.convertValue(value, new TypeReference<LinkedHashMap<String, Object>>() {});
+  }
+
+  public MaintenanceChoices choices() {
     return choices(false);
   }
 
-  public Map<String, Object> choices(boolean paged) {
+  public MaintenanceChoices choices(boolean paged) {
     require(
         permissions.anyMaintenance("查看"),
         com.windasoft.eam.common.MessageContext.text("server.maintenance.message0047"));
@@ -570,7 +512,7 @@ public class MaintenanceService {
         }
       }
     }
-    var eq =
+    List<MaintenanceEquipmentOption> eq =
         paged
             ? List.of()
             : equipmentQueries.scopedFacts(auth.tenantId(), auth.userId(), equipmentScopes).stream()
@@ -616,18 +558,12 @@ public class MaintenanceService {
                             stock.getModel(),
                             stock.getQuantity()))
                 .toList();
-    return Map.of(
-        "types",
+    return new MaintenanceChoices(
         typeFacts.list(auth.tenantId()).stream().map(types::view).toList(),
-        "stocks",
         stocks,
-        "equipment",
         eq,
-        "organizations",
         org,
-        "users",
         paged ? List.of() : userQueries.nameOptions(auth.tenantId()),
-        "categories",
         baseItems.itemsByType(auth.tenantId(), BaseDataType.CATEGORY.code(), true).stream()
             .map(
                 item ->

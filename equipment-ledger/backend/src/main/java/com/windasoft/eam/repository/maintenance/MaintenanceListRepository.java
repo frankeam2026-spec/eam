@@ -2,17 +2,21 @@ package com.windasoft.eam.repository.maintenance;
 
 import static com.windasoft.eam.repository.common.SqlListFilters.Kind.*;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.knowledge.AiBusinessCatalog;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantResult;
-import com.windasoft.eam.repository.knowledge.AiBusinessQueryRepository;
-import com.windasoft.eam.repository.knowledge.AiBusinessFilters;
-import java.math.BigDecimal;
-import com.windasoft.eam.dto.common.*;
+import com.windasoft.eam.dto.maintenance.MaintenanceStandardRow;
+import com.windasoft.eam.dto.maintenance.MaintenanceStandardView;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.common.*;
+import com.windasoft.eam.repository.knowledge.AiBusinessFilters;
+import com.windasoft.eam.repository.knowledge.AiBusinessQueryRepository;
+import java.math.BigDecimal;
 import java.util.*;
 import org.springframework.stereotype.Repository;
 
@@ -22,7 +26,8 @@ public class MaintenanceListRepository {
   private final ObjectMapper json;
   private final AiBusinessQueryRepository assistant;
 
-  public MaintenanceListRepository(JdbcListRepository lists, ObjectMapper json, AiBusinessQueryRepository assistant) {
+  public MaintenanceListRepository(
+      JdbcListRepository lists, ObjectMapper json, AiBusinessQueryRepository assistant) {
     this.lists = lists;
     this.json = json;
     this.assistant = assistant;
@@ -30,47 +35,92 @@ public class MaintenanceListRepository {
 
   public record Selection(String kind, String from, SqlPredicate predicate, String order) {}
 
-  private AssistantReadSource assistantSource(Selection selected){
-    String select="CAST(t.id AS CHAR) id,t.code,COALESCE(o.name,'') department,CAST(t.department_id AS CHAR) departmentId,t.created_at createdAt";
-    if(selected.kind().equals("tasks")){
-      for(String key:List.of("equipmentName","equipmentCode","planName","owner","dueDate","expiresDate","actualStartAt","actualEndAt"))select+=","+fields("tasks").get(key).expression()+" `"+key+"`";
-      select+=",t.status,CAST(t.plan_id AS CHAR) planId,CAST(t.equipment_id AS CHAR) equipmentId,CAST(t.owner_id AS CHAR) ownerId,CAST(t.company_id AS CHAR) companyId,(SELECT c.name FROM eam_org_unit c WHERE c.tenant_id=t.tenant_id AND c.id=t.company_id) company";
-    }else select+=",t.name,"+fields(selected.kind()).get("enabledLabel").expression()+" status";
-    return AssistantReadSource.selected(select,selected.from(),selected.predicate());
+  private AssistantReadSource assistantSource(Selection selected) {
+    String select =
+        "CAST(t.id AS CHAR) id,t.code,COALESCE(o.name,'') department,CAST(t.department_id AS CHAR)"
+            + " departmentId,t.created_at createdAt";
+    if (selected.kind().equals("tasks")) {
+      for (String key :
+          List.of(
+              "equipmentName",
+              "equipmentCode",
+              "planName",
+              "owner",
+              "dueDate",
+              "expiresDate",
+              "actualStartAt",
+              "actualEndAt"))
+        select += "," + fields("tasks").get(key).expression() + " `" + key + "`";
+      select +=
+          ",t.status,CAST(t.plan_id AS CHAR) planId,CAST(t.equipment_id AS CHAR)"
+              + " equipmentId,CAST(t.owner_id AS CHAR) ownerId,CAST(t.company_id AS CHAR)"
+              + " companyId,(SELECT c.name FROM eam_org_unit c WHERE c.tenant_id=t.tenant_id AND"
+              + " c.id=t.company_id) company";
+    } else
+      select += ",t.name," + fields(selected.kind()).get("enabledLabel").expression() + " status";
+    return AssistantReadSource.selected(select, selected.from(), selected.predicate());
   }
 
   /** 所有模型过滤与Service取得的授权相交；查询源只在仓储间使用，不流出业务Service。 */
-  public MaintenanceAssistantResult queryAssistant(Selection selection, MaintenanceAssistantRequest request, long tenant, long user) {
-    var plan=request.plan();
-    var domain=AiBusinessCatalog.ALL.get(plan.domain());
-    var source=assistantSource(selection);
-    var filter=AiBusinessFilters.compile(plan.where(),domain,request.evaluatedAt(),user,tenant);
-    if(request.equipmentId()!=null) filter=filter.and(assistant.equipmentFilter(plan,tenant,request.equipmentId()));
-    if(request.start()!=null) filter=filter.and(assistant.timeFilter(plan.timeField(),request.start(),request.end()));
-    checkNames(plan.where(),domain,source,filter);
-    var result=assistant.execute(source,filter,plan,request.page(),request.size());
-    long total=((Number)result.get("total")).longValue();
-    if(plan.operation().equals("COUNT")) {
-      var value=result.get("value");
-      return new MaintenanceAssistantResult.Count(value==null?null:new BigDecimal(value.toString()),total);
+  public MaintenanceAssistantResult queryAssistant(
+      Selection selection, MaintenanceAssistantRequest request, long tenant, long user) {
+    var plan = request.plan();
+    var domain = AiBusinessCatalog.ALL.get(plan.domain());
+    var source = assistantSource(selection);
+    var filter =
+        AiBusinessFilters.compile(plan.where(), domain, request.evaluatedAt(), user, tenant);
+    if (request.equipmentId() != null)
+      filter = filter.and(assistant.equipmentFilter(plan, tenant, request.equipmentId()));
+    if (request.start() != null)
+      filter = filter.and(assistant.timeFilter(plan.timeField(), request.start(), request.end()));
+    checkNames(plan.where(), domain, source, filter);
+    var result = assistant.execute(source, filter, plan, request.page(), request.size());
+    long total = ((Number) result.get("total")).longValue();
+    if (plan.operation().equals("COUNT")) {
+      var value = result.get("value");
+      return new MaintenanceAssistantResult.Count(
+          value == null ? null : new BigDecimal(value.toString()), total);
     }
-    return new MaintenanceAssistantResult.Table(rows(result.get("data")),total,((Number)result.get("records")).longValue(),strings(result.get("columns")));
+    return new MaintenanceAssistantResult.Table(
+        rows(result.get("data")),
+        total,
+        ((Number) result.get("records")).longValue(),
+        strings(result.get("columns")));
   }
 
-  private void checkNames(JsonNode node,AiBusinessCatalog.Domain domain,AssistantReadSource source,SqlPredicate filter) {
-    if(node.isMissingNode()||node.isNull()) return;
-    if(node.has("children")) {for(var child:node.path("children")) checkNames(child,domain,source,filter);return;}
-    var field=domain.fields().get(node.path("field").asText());
-    if(node.path("op").asText().equals("eq")&&field!=null&&!field.identity().isEmpty()
-        &&assistant.ambiguousIdentity(source,filter,node.path("field").asText(),field.identity(),node.path("values").get(0).asText()))
-      throw new IllegalArgumentException("所选"+field.label()+"存在同名对象，请补充公司、部门或编号限定，不能将同名对象合并");
+  private void checkNames(
+      JsonNode node,
+      AiBusinessCatalog.Domain domain,
+      AssistantReadSource source,
+      SqlPredicate filter) {
+    if (node.isMissingNode() || node.isNull()) return;
+    if (node.has("children")) {
+      for (var child : node.path("children")) checkNames(child, domain, source, filter);
+      return;
+    }
+    var field = domain.fields().get(node.path("field").asText());
+    if (node.path("op").asText().equals("eq")
+        && field != null
+        && !field.identity().isEmpty()
+        && assistant.ambiguousIdentity(
+            source,
+            filter,
+            node.path("field").asText(),
+            field.identity(),
+            node.path("values").get(0).asText()))
+      throw new IllegalArgumentException("所选" + field.label() + "存在同名对象，请补充公司、部门或编号限定，不能将同名对象合并");
   }
 
   // 公共动态执行器的框架行映射只在此边界转换；固定总数和列目录不以任意Map跨Service传递。
   @SuppressWarnings("unchecked")
-  private static List<Map<String,Object>> rows(Object value){return (List<Map<String,Object>>) value;}
+  private static List<Map<String, Object>> rows(Object value) {
+    return (List<Map<String, Object>>) value;
+  }
+
   @SuppressWarnings("unchecked")
-  private static List<String> strings(Object value){return (List<String>)value;}
+  private static List<String> strings(Object value) {
+    return (List<String>) value;
+  }
 
   private static SqlListFilters.Field f(String sql, SqlListFilters.Kind kind) {
     return new SqlListFilters.Field(sql, kind);
@@ -137,8 +187,7 @@ public class MaintenanceListRepository {
       SqlPredicate custom,
       String customOrder) {
     if (!Set.of("plans", "standards", "tasks").contains(kind))
-      throw new com.windasoft.eam.common.LocalizedArgumentException(
-          "server.maintenance.message0002");
+      throw new LocalizedArgumentException("server.maintenance.message0002");
     boolean task = kind.equals("tasks");
     String from =
         "FROM "
@@ -188,9 +237,7 @@ public class MaintenanceListRepository {
         predicate = predicate.and(reviewer).and(SqlPredicate.of("t.status='待验收'"));
       else if (Set.of("待执行", "执行中", "挂起", "待验收", "已完成", "已作废", "过期作废").contains(query.queue()))
         predicate = predicate.and(SqlPredicate.of("t.status=?", query.queue()));
-      else
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.maintenance.message0003");
+      else throw new LocalizedArgumentException("server.maintenance.message0003");
     }
     var fields = fields(kind);
     predicate = predicate.and(SqlListFilters.apply(json, query, fields)).and(custom);
@@ -283,6 +330,60 @@ public class MaintenanceListRepository {
 
   public long count(Selection selection) {
     return lists.count(selection.from(), selection.predicate());
+  }
+
+  /** 原关系视图聚合明细，保留一次SQL及原授权/分页；固定字段在仓储边界转换为明确模型。 */
+  public List<MaintenanceStandardRow> standardRows(Selection selection, ListQuery query) {
+    return page(selection, query).stream()
+        .map(
+            row ->
+                new MaintenanceStandardRow(
+                    standardView(row),
+                    Objects.toString(row.get("department"), ""),
+                    row.containsKey("owner") ? Objects.toString(row.get("owner"), "") : null,
+                    ((Number) row.get("equipmentCount")).longValue(),
+                    ((Number) row.get("itemCount")).longValue(),
+                    Objects.toString(row.get("enabledLabel"), "")))
+        .toList();
+  }
+
+  public MaintenanceStandardView standard(long tenant, long id) {
+    var rows =
+        lists.rows(
+            "t.*",
+            "FROM v_maintenance_definition t",
+            SqlPredicate.of("t.tenant_id=? AND t.kind=? AND t.id=?", tenant, "standards", id),
+            "t.id",
+            ListQuery.from(Map.of("size", "1")));
+    return rows.isEmpty() ? null : standardView(rows.getFirst());
+  }
+
+  private MaintenanceStandardView standardView(Map<String, Object> row) {
+    try {
+      // payload是关系表的兼容只读投影，不是新增存储；直接按DTO解析，不把任意Map带到Service。
+      var details =
+          json.readValue(Objects.toString(row.get("payload")), MaintenanceStandardView.class);
+      return new MaintenanceStandardView(
+          Objects.toString(row.get("id")),
+          Objects.toString(row.get("code")),
+          Objects.toString(row.get("name")),
+          Objects.toString(row.get("department_id"), ""),
+          Objects.toString(row.get("creator_id")),
+          ((Number) row.get("row_version")).intValue(),
+          Objects.toString(row.get("created_at")).replace('T', ' '),
+          details.enabled(),
+          details.remark(),
+          details.items(),
+          details.equipmentIds(),
+          details.categoryIds(),
+          details.categoryNames(),
+          details.legacyCategoryNames(),
+          details.owners(),
+          details.reviewers(),
+          details.details());
+    } catch (JsonProcessingException failure) {
+      throw new LocalizedArgumentException("server.maintenance.message0009");
+    }
   }
 
   public List<Map<String, Object>> page(Selection selection, ListQuery query) {
