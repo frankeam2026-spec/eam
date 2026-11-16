@@ -42,7 +42,6 @@ import com.windasoft.eam.dto.system.UserNameOption;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
-import com.windasoft.eam.repository.maintenance.MaintenanceDefinitionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceItemSpareRepository;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
@@ -61,6 +60,7 @@ import com.windasoft.eam.service.planning.PlanningSelectorService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import com.windasoft.eam.support.ContractTypes;
+import com.windasoft.eam.support.MaintenanceDefinitionFixture;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.sql.Date;
@@ -79,6 +79,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -92,6 +93,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 /** 真实读写保养与履历数据，固定身份和权限；不启动渠道发送，不使用外围测试事务掩盖回滚。 */
+@Import(MaintenanceDefinitionFixture.class)
 @SpringBootTest
 @EnabledIfEnvironmentVariable(named = "EAM_IDEA_QUALITY_TEST_URL", matches = ".+")
 class MaintenanceReferenceMySqlIT {
@@ -175,7 +177,7 @@ class MaintenanceReferenceMySqlIT {
   @Autowired MaintenanceValidationService validation;
   @Autowired MaintenanceService definitions;
   @Autowired MaintenanceTaskService tasks;
-  @Autowired MaintenanceDefinitionStorage definitionStorage;
+  @Autowired MaintenanceDefinitionFixture definitionStorage;
   @Autowired MaintenanceExecutionStorage executions;
   @Autowired JdbcTemplate db;
   @Autowired PlatformTransactionManager transactionManager;
@@ -881,7 +883,7 @@ class MaintenanceReferenceMySqlIT {
               // MP游标UPDATE由驱动附加一次只读状态SELECT；业务读取仍与原22次基线一致。
               assertEquals(23, queries);
             });
-    verify(repository, times(1)).loadDefinition(TENANT, "standards", standard, false);
+    verify(repository, times(1)).loadDefinition(TENANT, "standards", standard);
     verify(equipmentFacts, times(1)).findFacts(TENANT, EQUIPMENT);
     verify(typeFacts, times(1)).find(TENANT, TYPE, false);
     var generated =
@@ -1056,7 +1058,7 @@ class MaintenanceReferenceMySqlIT {
         json.valueToTree(
             viewAssembler.definition(
                 repository
-                    .loadDefinition(TENANT, "types", Long.parseLong(created.id()), false)
+                    .loadDefinition(TENANT, "types", Long.parseLong(created.id()))
                     .getFirst())),
         json.valueToTree(created));
     var updated =
@@ -1136,7 +1138,7 @@ class MaintenanceReferenceMySqlIT {
         json.readTree(
             json.writeValueAsString(
                 viewAssembler.definition(
-                    repository.loadDefinition(TENANT, "standards", id, false).getFirst()))),
+                    repository.loadDefinition(TENANT, "standards", id).getFirst()))),
         json.readTree(json.writeValueAsString(saved)));
     var page = standardService.query(ListQuery.from(Map.of("page", "1", "size", "20")), false);
     assertEquals(1L, page.page().total());

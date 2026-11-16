@@ -19,6 +19,7 @@ import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenancePlanRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.service.system.AuthContext;
@@ -40,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class MaintenanceGenerationService {
   private final MaintenanceRepository repository;
   private final MaintenancePlanDeviceRepository schedules;
+  private final MaintenancePlanRepository planDefinitions;
   private final MaintenanceTypeRepository types;
   private final MaintenanceExecutionStorage executions;
   private final TaskSourceRelationsRepository taskSources;
@@ -52,6 +54,7 @@ public class MaintenanceGenerationService {
   public MaintenanceGenerationService(
       MaintenanceRepository repository,
       MaintenancePlanDeviceRepository schedules,
+      MaintenancePlanRepository planDefinitions,
       MaintenanceTypeRepository types,
       MaintenanceExecutionStorage executions,
       TaskSourceRelationsRepository taskSources,
@@ -62,6 +65,7 @@ public class MaintenanceGenerationService {
       MaintenanceTaskJournal journal) {
     this.repository = repository;
     this.schedules = schedules;
+    this.planDefinitions = planDefinitions;
     this.types = types;
     this.executions = executions;
     this.taskSources = taskSources;
@@ -76,14 +80,16 @@ public class MaintenanceGenerationService {
   @Transactional
   public int generate(long tenant, Long planId) {
     int count = 0;
-    var plans = repository.lockPlans(tenant, planId);
+    planDefinitions.lockForGeneration(tenant, planId);
+    var plans = repository.planRowsForGeneration(tenant, planId);
     LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
     for (var plan : plans) {
       var p = decode(plan.get("payload"));
       if (!yes(p.get("enabled"))) continue;
       // 按计划提前天数扩展生成截止日，不改变每次任务的应执行日期。
       LocalDate generationDeadline = today.plusDays(number(p.get("advanceDays")));
-      var arrangements = repository.lockPlanSchedules(tenant, plan.get("id"));
+      schedules.lockForGeneration(tenant, number(plan.get("id")));
+      var arrangements = repository.scheduleRowsForGeneration(tenant, number(plan.get("id")));
       for (var schedule : arrangements) {
         var cycle = decode(schedule.get("payload"));
         var type = types.find(tenant, number(schedule.get("type_id")), false);
@@ -247,7 +253,7 @@ public class MaintenanceGenerationService {
 
   @Transactional
   public int generatePlan(long id) {
-    var p = projectSource.raw("plans", auth.tenantId(), id, false);
+    var p = projectSource.raw("plans", auth.tenantId(), id);
     if (!projectSource.visible(p, "编辑")) deny();
     return generate(auth.tenantId(), id);
   }

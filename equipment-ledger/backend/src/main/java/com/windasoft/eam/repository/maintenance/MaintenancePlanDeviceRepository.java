@@ -97,4 +97,14 @@ public class MaintenancePlanDeviceRepository {
             .set(MaintenancePlanDevice::getAnchorDate, next)
             .set(MaintenancePlanDevice::getCycleIndex, 0));
   }
+
+  /** 原生成事务锁定计划后，按ID锁定其全部安排；停用安排同样参加锁定，不缩小锁集合。 */
+  public void lockForGeneration(long tenant, long plan) {
+    mapper.selectList(
+        new LambdaQueryWrapper<MaintenancePlanDevice>()
+            .eq(MaintenancePlanDevice::getTenantId, tenant)
+            .eq(MaintenancePlanDevice::getPlanId, plan)
+            .orderByAsc(MaintenancePlanDevice::getId)
+            .last("FOR UPDATE"));
+  }
 }

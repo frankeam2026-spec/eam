@@ -1,21 +1,19 @@
-package com.windasoft.eam.repository.maintenance;
+package com.windasoft.eam.support;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.util.*;
+import org.springframework.boot.test.context.TestComponent;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Repository;
 
-/**
- * Concrete relational writes. JSON input is an API compatibility transport, never a stored payload.
- */
-@Repository
-public class MaintenanceDefinitionStorage {
+/** 仅供隔离MySQL测试构造历史关系数据，不参与生产业务、权限校验或事务编排；由测试显式导入。 */
+@TestComponent
+public class MaintenanceDefinitionFixture {
   private final JdbcTemplate db;
   private final ObjectMapper json;
 
-  public MaintenanceDefinitionStorage(JdbcTemplate db, ObjectMapper json) {
+  public MaintenanceDefinitionFixture(JdbcTemplate db, ObjectMapper json) {
     this.db = db;
     this.json = json;
   }
@@ -144,38 +142,6 @@ public class MaintenanceDefinitionStorage {
     }
   }
 
-  public void lock(long tenant, String kind, long id) {
-    db.queryForList(
-        "SELECT id FROM " + target(kind).table() + " WHERE tenant_id=? AND id=? FOR UPDATE",
-        tenant,
-        id);
-  }
-
-  public void lockPlans(long tenant, Long id) {
-    db.queryForList(
-        "SELECT id FROM eam_maintenance_plan WHERE tenant_id=?"
-            + (id == null ? "" : " AND id=?")
-            + " ORDER BY id FOR UPDATE",
-        id == null ? new Object[] {tenant} : new Object[] {tenant, id});
-  }
-
-  public void lockDevices(long tenant, Object plan) {
-    db.queryForList(
-        "SELECT id FROM eam_maintenance_plan_device WHERE tenant_id=? AND plan_id=? ORDER BY id FOR"
-            + " UPDATE",
-        tenant,
-        plan);
-  }
-
-  public void lockDevice(long tenant, long plan, long device) {
-    db.queryForList(
-        "SELECT id FROM eam_maintenance_plan_device WHERE tenant_id=? AND plan_id=? AND id=? FOR"
-            + " UPDATE",
-        tenant,
-        plan,
-        device);
-  }
-
   public int insert(
       long id,
       long tenant,
@@ -197,41 +163,6 @@ public class MaintenanceDefinitionStorage {
     scalarWrite(t.table(), header, t.fields(), data, true);
     children(tenant, id, kind, data);
     return 1;
-  }
-
-  public int update(
-      long tenant, long id, Object code, Object name, Object department, String content) {
-    String kind =
-        db.queryForObject(
-            "SELECT kind FROM v_maintenance_definition WHERE tenant_id=? AND id=?",
-            String.class,
-            tenant,
-            id);
-    var data = decode(content);
-    var header = new LinkedHashMap<String, Object>();
-    header.put("id", id);
-    header.put("tenant_id", tenant);
-    header.put("code", code);
-    header.put("name", name);
-    header.put("department_id", department);
-    var t = target(kind);
-    scalarWrite(t.table(), header, t.fields(), data, false);
-    children(tenant, id, kind, data);
-    return 1;
-  }
-
-  public int delete(long tenant, long id) {
-    String kind =
-        db.queryForObject(
-            "SELECT kind FROM v_maintenance_definition WHERE tenant_id=? AND id=?",
-            String.class,
-            tenant,
-            id);
-    if (kind.equals("plans"))
-      db.update(
-          "DELETE FROM eam_maintenance_plan_device WHERE tenant_id=? AND plan_id=?", tenant, id);
-    return db.update(
-        "DELETE FROM " + target(kind).table() + " WHERE tenant_id=? AND id=?", tenant, id);
   }
 
   private void people(String table, String parent, long tenant, long id, Map<String, Object> data) {
@@ -283,34 +214,6 @@ public class MaintenanceDefinitionStorage {
             name.toString());
     }
     var items = rows(data.get("items"));
-    var keep = items.stream().map(i -> Objects.toString(i.get("id"))).toList();
-    for (var old :
-        db.queryForList(
-            "SELECT item_key FROM eam_maintenance_standard_item WHERE tenant_id=? AND"
-                + " standard_id=?",
-            tenant,
-            id))
-      if (!keep.contains(old.get("item_key").toString())) {
-        long references =
-            db.queryForObject(
-                "SELECT COUNT(*) FROM eam_maintenance_device_project r JOIN"
-                    + " eam_maintenance_plan_device d ON d.tenant_id=r.tenant_id AND"
-                    + " d.id=r.device_id WHERE r.tenant_id=? AND r.standard_id=? AND r.item_key=?"
-                    + " AND d.enabled=1",
-                Long.class,
-                tenant,
-                id,
-                old.get("item_key"));
-        if (references > 0)
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.maintenance.message0006");
-        db.update(
-            "DELETE FROM eam_maintenance_standard_item WHERE tenant_id=? AND standard_id=? AND"
-                + " item_key=?",
-            tenant,
-            id,
-            old.get("item_key"));
-      }
     int order = 0;
     for (var item : items) {
       String key = Objects.toString(item.get("id"));
