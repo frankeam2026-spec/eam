@@ -23,6 +23,7 @@ import com.windasoft.eam.repository.maintenance.MaintenancePlanRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.PermissionService;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -36,6 +37,7 @@ import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class MaintenanceGenerationService {
@@ -47,6 +49,7 @@ public class MaintenanceGenerationService {
   private final TaskSourceRelationsRepository taskSources;
   private final ObjectMapper json;
   private final AuthContext auth;
+  private final PermissionService permissions;
   private final MaintenanceProjectService projectSource;
   private final MaintenanceViewAssembler views;
   private final MaintenanceTaskJournal journal;
@@ -60,6 +63,7 @@ public class MaintenanceGenerationService {
       TaskSourceRelationsRepository taskSources,
       ObjectMapper json,
       AuthContext auth,
+      PermissionService permissions,
       MaintenanceProjectService projectSource,
       MaintenanceViewAssembler views,
       MaintenanceTaskJournal journal) {
@@ -71,6 +75,7 @@ public class MaintenanceGenerationService {
     this.taskSources = taskSources;
     this.json = json;
     this.auth = auth;
+    this.permissions = permissions;
     this.projectSource = projectSource;
     this.views = views;
     this.journal = journal;
@@ -85,7 +90,9 @@ public class MaintenanceGenerationService {
     LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
     for (var plan : plans) {
       var p = decode(plan.get("payload"));
-      if (!yes(p.get("enabled"))) continue;
+      if (!yes(p.get("enabled"))) {
+        continue;
+      }
       // 按计划提前天数扩展生成截止日，不改变每次任务的应执行日期。
       LocalDate generationDeadline = today.plusDays(number(p.get("advanceDays")));
       schedules.lockForGeneration(tenant, number(plan.get("id")));
@@ -93,15 +100,19 @@ public class MaintenanceGenerationService {
       for (var schedule : arrangements) {
         var cycle = decode(schedule.get("payload"));
         var type = types.find(tenant, number(schedule.get("type_id")), false);
-        if (type == null)
+        if (type == null) {
           throw new LocalizedStatusException(HttpStatus.NOT_FOUND, "server.inspection.message0013");
-        if (!Boolean.TRUE.equals(type.getEnabled())) continue;
+        }
+        if (!Boolean.TRUE.equals(type.getEnabled())) {
+          continue;
+        }
         LocalDate due = ((Date) schedule.get("next_date")).toLocalDate();
         LocalDate anchor = ((Date) schedule.get("anchor_date")).toLocalDate();
         long index = number(schedule.get("cycle_index"));
         boolean completion = text(p, "calculation").equals("完成时间");
-        if (completion && repository.countOpenScheduleTasks(tenant, schedule.get("id")) > 0)
+        if (completion && repository.countOpenScheduleTasks(tenant, schedule.get("id")) > 0) {
           continue;
+        }
         if (!due.isAfter(generationDeadline)) {
           // 补生成同一安排时，设备、类型和项目事实不随到期日变化；在本次事务内只解析一次。
           // 未到生成日的安排仍不读取设备/项目，避免无任务可生成时新增校验失败。
@@ -202,7 +213,7 @@ public class MaintenanceGenerationService {
                   null,
                   "系统",
                   Map.of("计划", plan.get("name"), "保养日期", due.toString()));
-              if (!due.isAfter(today.plusDays(number(p.get("remindDays")))))
+              if (!due.isAfter(today.plusDays(number(p.get("remindDays"))))) {
                 journal.notify(
                     tenant,
                     task,
@@ -210,6 +221,7 @@ public class MaintenanceGenerationService {
                     EXECUTION_NOTICE,
                     text(snap, "equipmentName"),
                     true);
+              }
             }
             if (completion) {
               if (added == 0) {
@@ -223,8 +235,9 @@ public class MaintenanceGenerationService {
             due = advance(anchor, number(cycle.get("period")) * index, text(cycle, "unit"));
           }
         }
-        if (!completion)
+        if (!completion) {
           schedules.advance(tenant, number(schedule.get("id")), due, Math.toIntExact(index));
+        }
       }
     }
     // 只有未开始的任务可自动过期作废；执行中的任务及其处理记录仍保留。
@@ -239,7 +252,7 @@ public class MaintenanceGenerationService {
       if (!((Date) r.get("due_date"))
               .toLocalDate()
               .isAfter(today.plusDays(number(snap.get("remindDays"))))
-          && !journal.hasExecutionNotice(tenant, number(r.get("id"))))
+          && !journal.hasExecutionNotice(tenant, number(r.get("id")))) {
         journal.notify(
             tenant,
             number(r.get("id")),
@@ -247,14 +260,29 @@ public class MaintenanceGenerationService {
             EXECUTION_NOTICE,
             text(snap, "equipmentName"),
             true);
+      }
     }
     return count;
   }
 
   @Transactional
   public int generatePlan(long id) {
-    var p = projectSource.raw("plans", auth.tenantId(), id);
-    if (!projectSource.visible(p, "编辑")) deny();
+    var plan = planDefinitions.find(auth.tenantId(), id, false);
+    if (plan == null) {
+      throw new LocalizedStatusException(HttpStatus.NOT_FOUND, "server.inspection.message0013");
+    }
+    boolean allowed;
+    try {
+      allowed =
+          permissions
+              .maintenance("plans", "编辑")
+              .matches(null, plan.getDepartmentId(), plan.getCreatorId(), auth.userId());
+    } catch (ResponseStatusException denied) {
+      allowed = false;
+    }
+    if (!allowed) {
+      deny();
+    }
     return generate(auth.tenantId(), id);
   }
 

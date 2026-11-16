@@ -32,6 +32,7 @@ import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantResult;
 import com.windasoft.eam.dto.maintenance.MaintenanceLegacyStockOption;
 import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
+import com.windasoft.eam.dto.maintenance.MaintenanceProjectSelection;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardRow;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardView;
@@ -39,11 +40,13 @@ import com.windasoft.eam.dto.maintenance.MaintenanceTypeRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceTypeView;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.dto.system.UserNameOption;
+import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceItemSpareRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
@@ -54,6 +57,7 @@ import com.windasoft.eam.scheduler.inventory.InventoryReservationCleanup;
 import com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler;
 import com.windasoft.eam.scheduler.maintenance.MaintenanceScheduler;
 import com.windasoft.eam.scheduler.system.NotificationScheduler;
+import com.windasoft.eam.service.basedata.BaseDataReferenceService;
 import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.knowledge.AiBusinessQueryService;
 import com.windasoft.eam.service.planning.PlanningSelectorService;
@@ -158,6 +162,7 @@ class MaintenanceReferenceMySqlIT {
   @MockitoBean KnowledgeScheduler knowledgeScheduler;
   @MockitoSpyBean MaintenanceRepository repository;
   @MockitoSpyBean MaintenanceTypeRepository typeFacts;
+  @MockitoSpyBean MaintenanceListRepository standardViews;
   @MockitoSpyBean MaintenancePlanDeviceRepository scheduleWrites;
   @MockitoSpyBean MaintenanceItemSpareRepository standardSpares;
   @MockitoSpyBean EquipmentQueryRepository equipmentFacts;
@@ -185,7 +190,9 @@ class MaintenanceReferenceMySqlIT {
 
   @BeforeEach
   void setup() {
-    for (String table : TABLES) assertEquals(0L, count(table), table);
+    for (String table : TABLES) {
+      assertEquals(0L, count(table), table);
+    }
     assertEquals(
         0L,
         db.queryForObject(
@@ -243,7 +250,9 @@ class MaintenanceReferenceMySqlIT {
 
   @AfterEach
   void cleanup() {
-    if (!ownsFixture) return;
+    if (!ownsFixture) {
+      return;
+    }
     // 仅删除本用例证明为空后创建的两个专属租户；渠道子记录必须先于消息删除。
     db.update(
         "DELETE d FROM eam_notify_delivery d JOIN eam_notify_message m ON m.id=d.message_id WHERE"
@@ -256,9 +265,10 @@ class MaintenanceReferenceMySqlIT {
         "maintenance-" + TENANT,
         "maintenance-" + (TENANT + 1));
     for (String table : TABLES) {
-      if (table.equals("eam_org_unit"))
+      if (table.equals("eam_org_unit")) {
         db.update(
             "DELETE FROM eam_org_unit WHERE tenant_id=? AND id IN (?,?)", TENANT, ORG + 1, ORG + 2);
+      }
       db.update("DELETE FROM " + table + " WHERE tenant_id IN (?,?)", TENANT, TENANT + 1);
     }
   }
@@ -759,6 +769,7 @@ class MaintenanceReferenceMySqlIT {
 
   @Test
   void projectResolutionReadsOneStandardOnceAndPreservesOrderAndLegacyKeys() {
+    ContractTypes.assertExplicit(MaintenanceProjectSelection.class);
     definitionStorage.insert(TYPE, TENANT, "types", "PROJECT-TYPE", "类型", ORG, USER, "{}");
     var items = new ArrayList<Map<String, Object>>();
     var refs = new ArrayList<Map<String, Object>>();
@@ -827,7 +838,7 @@ class MaintenanceReferenceMySqlIT {
   }
 
   @Test
-  void catchUpReusesFactsButKeepsDatesSnapshotsAndIdempotency() {
+  void catchUpReusesFactsButKeepsDatesSnapshotsAndIdempotency() throws Exception {
     pendingAcceptance();
     db.update(
         "UPDATE eam_maintenance_task SET due_date=? WHERE tenant_id=? AND id=?",
@@ -872,7 +883,7 @@ class MaintenanceReferenceMySqlIT {
                 List.of(
                     Map.of("standardId", Long.toString(standard), "itemId", "second"),
                     Map.of("standardId", Long.toString(standard), "itemId", "first")))));
-    clearInvocations(repository, equipmentFacts, typeFacts);
+    clearInvocations(repository, equipmentFacts, typeFacts, standardViews);
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
             status -> {
@@ -883,7 +894,7 @@ class MaintenanceReferenceMySqlIT {
               // MP游标UPDATE由驱动附加一次只读状态SELECT；业务读取仍与原22次基线一致。
               assertEquals(23, queries);
             });
-    verify(repository, times(1)).loadDefinition(TENANT, "standards", standard);
+    verify(standardViews, times(1)).standard(TENANT, standard);
     verify(equipmentFacts, times(1)).findFacts(TENANT, EQUIPMENT);
     verify(typeFacts, times(1)).find(TENANT, TYPE, false);
     var generated =
@@ -895,11 +906,11 @@ class MaintenanceReferenceMySqlIT {
     assertEquals(3, generated.size());
     for (int i = 0; i < generated.size(); i++) {
       assertEquals(start.plusDays(i), ((Date) generated.get(i).get("due_date")).toLocalDate());
-      var snapshot = projects.decode(generated.get(i).get("snapshot"));
+      var snapshot = json.readTree(generated.get(i).get("snapshot").toString());
       assertEquals(
           standard + ":second",
           json.valueToTree(snapshot).path("items").get(0).path("id").asText());
-      assertEquals("保养设备", snapshot.get("equipmentName"));
+      assertEquals("保养设备", snapshot.path("equipmentName").asText());
     }
     assertEquals(0, generation.generate(TENANT, PLAN));
     assertEquals(4L, count("eam_maintenance_task"));
@@ -1465,6 +1476,32 @@ class MaintenanceReferenceMySqlIT {
             Integer.class,
             TENANT,
             SCHEDULE));
+  }
+
+  @Test
+  void typedApplicabilityRetainsExplicitEquipmentAncestorsAndLegacyRestriction() {
+    var leaf = new BaseItem();
+    leaf.setId(11L);
+    leaf.setParentId(10L);
+    var rootCategory = new BaseItem();
+    rootCategory.setId(10L);
+    rootCategory.setParentId(11L);
+    var categories = List.of(leaf, rootCategory);
+    assertTrue(
+        BaseDataReferenceService.applicable(List.of(), List.of(), false, 1L, 11L, categories));
+    assertFalse(
+        BaseDataReferenceService.applicable(List.of(), List.of(), true, 1L, 11L, categories));
+    assertTrue(
+        BaseDataReferenceService.applicable(
+            List.of("1"), List.of("99"), false, 1L, 11L, categories));
+    assertTrue(
+        BaseDataReferenceService.applicable(List.of(), List.of("10"), false, 1L, 11L, categories));
+    assertFalse(
+        BaseDataReferenceService.applicable(
+            List.of("2"), List.of("99"), false, 1L, 11L, categories));
+    // 错误的历史分类父链有环时仍有限遍历，不能卡住生成事务。
+    assertFalse(
+        BaseDataReferenceService.applicable(List.of(), List.of("99"), false, 1L, 11L, categories));
   }
 
   private String jsonText(Object value) {

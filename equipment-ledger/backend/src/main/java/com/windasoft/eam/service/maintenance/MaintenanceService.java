@@ -72,6 +72,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class MaintenanceService {
@@ -187,9 +188,13 @@ public class MaintenanceService {
     }
   }
 
-  @SuppressWarnings("unchecked")
   Map<String, Object> raw(String kind, long tenant, long id) {
-    return projects.raw(kind, tenant, id);
+    require(KINDS.contains(kind), MessageContext.text("server.system.message0045"));
+    var a = repository.loadDefinition(tenant, kind, id);
+    if (a.isEmpty()) {
+      throw new LocalizedStatusException(HttpStatus.NOT_FOUND, "server.inspection.message0013");
+    }
+    return a.getFirst();
   }
 
   MaintenanceTypeView cycleType(long tenant, Object id) {
@@ -204,7 +209,16 @@ public class MaintenanceService {
   }
 
   boolean visible(Map<String, Object> row, String action) {
-    return projects.visible(row, action);
+    try {
+      var scope = permissions.maintenance(text(row, "kind"), action);
+      return scope.matches(
+          null,
+          row.get("department_id") == null ? null : number(row.get("department_id")),
+          number(row.get("creator_id")),
+          auth.userId());
+    } catch (ResponseStatusException e) {
+      return false;
+    }
   }
 
   Map<String, Object> view(Map<String, Object> row) {
@@ -284,10 +298,6 @@ public class MaintenanceService {
 
   Equipment equipment(long tenant, long id) {
     return projects.equipment(tenant, id);
-  }
-
-  boolean applicable(Map<String, Object> standard, Equipment equipment, long tenant) {
-    return projects.applicable(standard, equipment, tenant);
   }
 
   void checkEquipment(Equipment e, String kind, String action) {

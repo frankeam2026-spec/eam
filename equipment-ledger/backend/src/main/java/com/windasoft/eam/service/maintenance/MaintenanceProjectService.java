@@ -11,10 +11,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
+import com.windasoft.eam.domain.maintenance.MaintenanceDefinitionLimits;
+import com.windasoft.eam.dto.maintenance.MaintenanceProjectReference;
+import com.windasoft.eam.dto.maintenance.MaintenanceProjectSelection;
+import com.windasoft.eam.dto.maintenance.MaintenanceStandardItemView;
+import com.windasoft.eam.dto.maintenance.MaintenanceStandardView;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
-import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
 import com.windasoft.eam.service.basedata.BaseDataReferenceService;
 import com.windasoft.eam.service.basedata.BaseDataType;
 import com.windasoft.eam.service.system.AuthContext;
@@ -26,29 +31,28 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+/** 负责标准项目来源、适用性及历史快照采集，不承接计划CRUD或生成授权。 */
 @Service
 public class MaintenanceProjectService {
-  private final MaintenanceRepository repository;
+  private final MaintenanceListRepository standardViews;
   private final ObjectMapper json;
   private final EquipmentQueryRepository equipment;
   private final BaseItemRepository baseItems;
   private final AuthContext auth;
   private final PermissionService permissions;
-  private static final Set<String> KINDS = Set.of("types", "standards", "plans");
 
   public MaintenanceProjectService(
-      MaintenanceRepository repository,
+      MaintenanceListRepository standardViews,
       EquipmentQueryRepository equipment,
       BaseItemRepository baseItems,
       ObjectMapper json,
       AuthContext auth,
       PermissionService permissions) {
-    this.repository = repository;
+    this.standardViews = standardViews;
     this.json = json;
     this.equipment = equipment;
     this.baseItems = baseItems;
@@ -56,98 +60,132 @@ public class MaintenanceProjectService {
     this.permissions = permissions;
   }
 
-  Map<String, Object> raw(String kind, long tenant, long id) {
-    require(KINDS.contains(kind), MessageContext.text("server.system.message0045"));
-    var a = repository.loadDefinition(tenant, kind, id);
-    if (a.isEmpty())
-      throw new LocalizedStatusException(HttpStatus.NOT_FOUND, "server.inspection.message0013");
-    return a.getFirst();
-  }
-
-  boolean visible(Map<String, Object> row, String action) {
-    try {
-      var scope = permissions.maintenance(text(row, "kind"), action);
-      return scope.matches(
-          null,
-          row.get("department_id") == null ? null : number(row.get("department_id")),
-          number(row.get("creator_id")),
-          auth.userId());
-    } catch (ResponseStatusException e) {
-      return false;
-    }
-  }
-
-  /** 每次解析按标准 ID 复用读取与项目索引，避免同一标准每个项目重复查询。 缓存只存在于本次调用；项目仍复制为原有历史快照结构，保留选择顺序、去重和旧项目 ID。 */
+  /** 标准及项目事实使用类型化只读投影；每次调用按标准ID缓存，维持原选择顺序和重复键取首项语义。 仅在生成历史快照的明确边界转换项目Map，不能把可编辑标准的动态字段袋当作事实模型。 */
   List<Map<String, Object>> planProjects(
       Map<String, Object> detail, long tenant, Equipment eq, boolean checkAccess) {
+    var refs =
+        rows(detail.get("projectRefs")).stream()
+            .map(
+                ref ->
+                    new MaintenanceProjectReference(
+                        number(ref.get("standardId")), text(ref, "itemId")))
+            .toList();
+    return planProjects(
+        new MaintenanceProjectSelection(
+            number(detail.get("typeId")),
+            number(detail.get("standardId")),
+            detail.containsKey("projectRefs"),
+            refs),
+        tenant,
+        eq,
+        checkAccess);
+  }
+
+  /** 类型化选择入口；现有计划及旧任务cycle只在上方边界适配，事实解析不再依赖动态字段。 */
+  List<Map<String, Object>> planProjects(
+      MaintenanceProjectSelection selection, long tenant, Equipment eq, boolean checkAccess) {
     var result = new ArrayList<Map<String, Object>>();
     var seen = new HashSet<String>();
-    var references = rows(detail.get("projectRefs"));
-    Map<String, Object> legacy = null;
-    Map<String, Object> legacyPayload = null;
-    if (!detail.containsKey("projectRefs")) {
-      legacy = raw("standards", tenant, number(detail.get("standardId")));
-      legacyPayload = decode(legacy.get("payload"));
+    var references = selection.references();
+    MaintenanceStandardView legacy = null;
+    if (!selection.explicit()) {
+      legacy = requiredStandard(tenant, selection.standardId());
       references =
-          rows(legacyPayload.get("items")).stream()
-              .filter(item -> text(item, "typeId").equals(text(detail, "typeId")))
+          legacy.items().stream()
+              .filter(
+                  item ->
+                      Objects.toString(item.typeId(), "")
+                          .trim()
+                          .equals(Long.toString(selection.typeId())))
               .map(
                   item ->
-                      Map.<String, Object>of(
-                          "standardId", text(detail, "standardId"), "itemId", text(item, "id")))
+                      new MaintenanceProjectReference(
+                          selection.standardId(), Objects.toString(item.id(), "").trim()))
               .toList();
     }
-    require(references.size() <= 1000, MessageContext.text("server.maintenance.message0015"));
-    if (references.isEmpty()) return result;
+    require(
+        references.size() <= MaintenanceDefinitionLimits.MAX_PROJECTS_PER_ARRANGEMENT,
+        MessageContext.text("server.maintenance.message0015"));
+    if (references.isEmpty()) {
+      return result;
+    }
     var standards = new HashMap<Long, StandardProjects>();
     if (legacy != null) {
-      var resolved = standardProjects(legacy, legacyPayload, checkAccess);
-      // 旧安排按标准适用设备筛选；显式选项目沿用原规则，不追加设备关联限制。
+      var resolved = standardProjects(legacy, checkAccess);
+      // 旧整标准安排检查设备适用范围；显式选项目沿用原规则，不追加限制。
       require(
-          applicable(legacyPayload, eq, tenant),
-          MessageContext.text("server.maintenance.message0016"));
-      standards.put(number(detail.get("standardId")), resolved);
+          applicable(legacy, eq, tenant), MessageContext.text("server.maintenance.message0016"));
+      standards.put(selection.standardId(), resolved);
     }
     for (var ref : references) {
       var standard =
           standards.computeIfAbsent(
-              number(ref.get("standardId")),
-              id -> {
-                var row = raw("standards", tenant, id);
-                return standardProjects(row, decode(row.get("payload")), checkAccess);
-              });
-      var item = standard.items().get(text(ref, "itemId"));
+              ref.standardId() == null ? 0 : ref.standardId(),
+              id -> standardProjects(requiredStandard(tenant, id), checkAccess));
+      var item = standard.items().get(Objects.toString(ref.itemId(), "").trim());
       if (item == null) {
         throw new LocalizedArgumentException("server.maintenance.message0010");
       }
       require(
-          text(item, "typeId").equals(text(detail, "typeId")),
+          Objects.toString(item.typeId(), "").trim().equals(Long.toString(selection.typeId())),
           MessageContext.text("server.maintenance.message0017"));
-      String key = text(ref, "standardId") + ":" + text(ref, "itemId");
-      if (!seen.add(key)) continue;
-      var selected = new LinkedHashMap<String, Object>(item);
-      // 旧安排沿用原项目 ID，保证上次结果预填；显式跨标准选择使用复合项目键。
-      if (detail.containsKey("projectRefs")) selected.put("id", key);
-      selected.put("sourceStandardId", text(ref, "standardId"));
-      selected.put("sourceItemId", text(item, "id"));
+      String key =
+          Long.toString(ref.standardId() == null ? 0 : ref.standardId())
+              + ":"
+              + Objects.toString(ref.itemId(), "").trim();
+      if (!seen.add(key)) {
+        continue;
+      }
+      var selected = json.convertValue(item, new TypeReference<LinkedHashMap<String, Object>>() {});
+      // 快照保留旧安排项目ID以支持结果预填；跨标准显式选择仍使用复合项目键。
+      if (selection.explicit()) {
+        selected.put("id", key);
+      }
+      selected.put(
+          "sourceStandardId", Long.toString(ref.standardId() == null ? 0 : ref.standardId()));
+      selected.put("sourceItemId", Objects.toString(item.id(), "").trim());
       selected.put("sourceStandardName", standard.name());
       result.add(selected);
     }
     return result;
   }
 
-  // items 保留既有项目快照协议；索引仅用于当前调用查找，不成为另一份持久化权威。
-  private record StandardProjects(String name, Map<String, Map<String, Object>> items) {}
+  private record StandardProjects(String name, Map<String, MaintenanceStandardItemView> items) {}
 
-  private StandardProjects standardProjects(
-      Map<String, Object> row, Map<String, Object> payload, boolean checkAccess) {
-    if (checkAccess && !visible(row, "查看")) deny();
-    var items = new LinkedHashMap<String, Map<String, Object>>();
-    for (var item : rows(payload.get("items"))) {
-      // 与旧 findFirst 保持一致，不让重复历史键改为取最后一项。
-      items.putIfAbsent(text(item, "id"), item);
+  private MaintenanceStandardView requiredStandard(long tenant, long id) {
+    var view = standardViews.standard(tenant, id);
+    if (view == null) {
+      throw new LocalizedStatusException(HttpStatus.NOT_FOUND, "server.inspection.message0013");
     }
-    return new StandardProjects(Objects.toString(row.get("name"), ""), items);
+    return view;
+  }
+
+  private StandardProjects standardProjects(MaintenanceStandardView standard, boolean checkAccess) {
+    if (checkAccess) {
+      boolean allowed;
+      try {
+        allowed =
+            permissions
+                .maintenance("standards", "查看")
+                .matches(
+                    null,
+                    standard.departmentId() == null || standard.departmentId().isBlank()
+                        ? null
+                        : Long.valueOf(standard.departmentId()),
+                    Long.valueOf(standard.creatorId()),
+                    auth.userId());
+      } catch (ResponseStatusException denied) {
+        allowed = false;
+      }
+      if (!allowed) {
+        deny();
+      }
+    }
+    var items = new LinkedHashMap<String, MaintenanceStandardItemView>();
+    for (var item : standard.items()) {
+      items.putIfAbsent(Objects.toString(item.id(), "").trim(), item);
+    }
+    return new StandardProjects(standard.name(), items);
   }
 
   Equipment equipment(long tenant, long id) {
@@ -156,31 +194,13 @@ public class MaintenanceProjectService {
     return row;
   }
 
-  boolean applicable(Map<String, Object> standard, Equipment equipment, long tenant) {
-    // 基础资料旧兼容入口只接受设备/分类标识；不再用整行设备 Map 承载稳定设备事实。
-    var reference = new LinkedHashMap<String, Object>();
-    reference.put("id", equipment.getId());
-    reference.put("category_id", equipment.getCategoryId());
+  boolean applicable(MaintenanceStandardView standard, Equipment equipment, long tenant) {
     return BaseDataReferenceService.applicable(
-        standard,
-        reference,
-        baseItems.itemsByType(tenant, BaseDataType.CATEGORY.code(), false).stream()
-            .<Map<String, Object>>map(
-                item -> {
-                  var row = new LinkedHashMap<String, Object>();
-                  row.put("id", item.getId());
-                  row.put("parent_id", item.getParentId());
-                  return row;
-                })
-            .toList());
-  }
-
-  Map<String, Object> decode(Object value) {
-    try {
-      return json.readValue(
-          Objects.toString(value, "{}"), new TypeReference<LinkedHashMap<String, Object>>() {});
-    } catch (Exception e) {
-      throw new LocalizedArgumentException("server.maintenance.message0009");
-    }
+        standard.equipmentIds(),
+        standard.categoryIds(),
+        !standard.legacyCategoryNames().isEmpty(),
+        equipment.getId(),
+        equipment.getCategoryId(),
+        baseItems.itemsByType(tenant, BaseDataType.CATEGORY.code(), false));
   }
 }
