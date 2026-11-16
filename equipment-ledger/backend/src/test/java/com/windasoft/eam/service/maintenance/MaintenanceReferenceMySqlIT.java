@@ -24,6 +24,7 @@ import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.NotificationMessages;
 import com.windasoft.eam.controller.maintenance.MaintenanceController;
+import com.windasoft.eam.controller.maintenance.MaintenancePlanController;
 import com.windasoft.eam.controller.maintenance.MaintenanceStandardController;
 import com.windasoft.eam.controller.maintenance.MaintenanceTypeController;
 import com.windasoft.eam.dto.common.ListQuery;
@@ -43,6 +44,7 @@ import com.windasoft.eam.dto.system.UserNameOption;
 import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.system.SystemUser;
+import com.windasoft.eam.repository.common.SqlPredicate;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceItemSpareRepository;
@@ -62,6 +64,7 @@ import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.knowledge.AiBusinessQueryService;
 import com.windasoft.eam.service.planning.PlanningSelectorService;
 import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.NotificationPolicyService;
 import com.windasoft.eam.service.system.PermissionService;
 import com.windasoft.eam.support.ContractTypes;
 import com.windasoft.eam.support.MaintenanceDefinitionFixture;
@@ -130,6 +133,7 @@ class MaintenanceReferenceMySqlIT {
           "eam_maintenance_file",
           "eam_equipment",
           "eam_base_item",
+          "eam_business_schema",
           "eam_sys_user",
           "eam_org_unit",
           "inv_tenant_lock");
@@ -172,6 +176,8 @@ class MaintenanceReferenceMySqlIT {
   @Autowired MaintenanceTypeService typeService;
   @Autowired MaintenanceController maintenanceController;
   @Autowired MaintenanceStandardService standardService;
+  @Autowired MaintenancePlanService planService;
+  @Autowired NotificationPolicyService reminderPolicies;
   @Autowired MaintenanceViewAssembler viewAssembler;
   @Autowired AiBusinessQueryService aiQueries;
   @Autowired MaintenanceFileService fileService;
@@ -1325,7 +1331,7 @@ class MaintenanceReferenceMySqlIT {
   }
 
   @Test
-  void planSaveRetainsScheduleAnchorAndRollsBackFailedGeneration() {
+  void planSaveRetainsScheduleAnchorAndRollsBackFailedGeneration() throws Exception {
     pendingAcceptance();
     long standard = TYPE + 10;
     definitionStorage.insert(
@@ -1354,6 +1360,10 @@ class MaintenanceReferenceMySqlIT {
         List.of(Map.of("standardId", Long.toString(standard), "itemId", "plan-item")));
     var body = new LinkedHashMap<String, Object>();
     body.put("code", "PLAN-CREATE");
+    body.put("reminderMode", "OFF");
+    body.put("reminderPolicyId", "");
+    detail.put("id", "");
+    detail.put("standardId", "");
     body.put("name", "保存计划");
     body.put("departmentId", Long.toString(ORG));
     body.put("enabled", true);
@@ -1373,6 +1383,8 @@ class MaintenanceReferenceMySqlIT {
                   return value;
                 });
     long id = Long.parseLong(saved.get("id").toString());
+    assertEquals("OFF", saved.get("reminderMode"));
+    var reminderAt = saved.get("reminderEffectiveAt");
     var stored = (Map<String, Object>) ((List<?>) saved.get("details")).getFirst();
     long schedule = Long.parseLong(stored.get("id").toString());
     assertEquals(7, ((Number) stored.get("validDays")).intValue());
@@ -1389,17 +1401,124 @@ class MaintenanceReferenceMySqlIT {
                 })
             .toList();
     assertEquals(json.valueToTree(projected), json.valueToTree(saved.get("details")));
+    for (long tenant : List.of(TENANT, TENANT + 1)) {
+      db.update(
+          "INSERT INTO eam_business_schema(tenant_id,object_key,draft,published)"
+              + " VALUES(?,'maintenance_plan',CAST(? AS JSON),CAST(? AS JSON))",
+          tenant,
+          jsonText(Map.of("fields", List.of())),
+          jsonText(Map.of("fields", List.of())));
+    }
+    var legacy =
+        viewAssembler.definition(repository.loadDefinition(TENANT, "plans", id).getFirst());
+    reminderPolicies.attachBinding(TENANT, "maintenance", id, legacy);
+    var mvc =
+        MockMvcBuilders.standaloneSetup(
+                new MaintenancePlanController(planService, lists, generation),
+                maintenanceController)
+            .setMessageConverters(new MappingJackson2HttpMessageConverter(json))
+            .setControllerAdvice(new ApiExceptionHandler())
+            .build();
+    var http =
+        mvc.perform(get("/api/v1/maintenance/plans/" + id))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    assertEquals(
+        json.readTree(json.writeValueAsString(legacy)),
+        json.readTree(http.getContentAsByteArray()).path("data"));
+    var csv =
+        mvc.perform(get("/api/v1/maintenance/plans/export").param("columns", "[\"code\",\"name\"]"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString(StandardCharsets.UTF_8);
+    assertTrue(csv.contains("PLAN-CREATE"));
+    mvc.perform(get("/api/v1/maintenance/plans/export.csv"))
+        .andExpect(status().isTemporaryRedirect());
+
+    // 列表走相同授权与筛选，按实际SQL投影独立对照旧协议，而不是对照同一个兼容适配器。
+    var query = ListQuery.from(Map.of("q", "PLAN-CREATE", "page", "1", "size", "20"));
+    var selected =
+        standardViews.select(
+            TENANT,
+            USER,
+            "plans",
+            new PermissionScope(true, null, Set.of(), false),
+            false,
+            null,
+            query,
+            SqlPredicate.of("1=1"),
+            null);
+    var oldRows =
+        standardViews.page(selected, query).stream().map(viewAssembler::definition).toList();
+    doAnswer(
+            call -> {
+              assertTrue(TransactionSynchronizationManager.isActualTransactionActive());
+              assertTrue(TransactionSynchronizationManager.isCurrentTransactionReadOnly());
+              return call.callRealMethod();
+            })
+        .when(standardViews)
+        .planRows(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    var listHttp =
+        mvc.perform(
+                get("/api/v1/maintenance/plans")
+                    .param("q", "PLAN-CREATE")
+                    .param("page", "1")
+                    .param("size", "20"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    assertEquals(
+        json.readTree(json.writeValueAsString(oldRows)),
+        json.readTree(listHttp.getContentAsByteArray()).path("data"));
+    assertEquals(
+        1, json.readTree(listHttp.getContentAsByteArray()).path("page").path("total").asInt());
+    var extension =
+        new BusinessValueService.Values(
+            Map.of("maint-field", "原值"), Map.of("maint-field", "显示值"), 3);
+    when(extensions.read("maintenance_plan", id)).thenReturn(extension);
+    when(extensions.batch(eq("maintenance_plan"), org.mockito.ArgumentMatchers.anyCollection()))
+        .thenReturn(Map.of(id, extension));
+    var extended =
+        mvc.perform(get("/api/v1/maintenance/plans/" + id))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    var extendedData = json.readTree(extended.getContentAsByteArray()).path("data");
+    assertEquals("原值", extendedData.path("customFields").path("maint-field").asText());
+    assertEquals("显示值", extendedData.path("customFieldLabels").path("maint-field").asText());
+    assertEquals(3, extendedData.path("customSchemaVersion").asInt());
+    clearInvocations(extensions);
+    var batch =
+        mvc.perform(get("/api/v1/maintenance/plans").param("q", "PLAN-CREATE"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    assertEquals(
+        "原值",
+        json.readTree(batch.getContentAsByteArray())
+            .path("data")
+            .get(0)
+            .path("customFields")
+            .path("maint-field")
+            .asText());
+    verify(extensions, times(1))
+        .batch(eq("maintenance_plan"), org.mockito.ArgumentMatchers.anyCollection());
 
     var anchor = next.minusMonths(3);
     db.update(
-        "UPDATE eam_maintenance_plan_device SET anchor_date=?,cycle_index=3 WHERE tenant_id=? AND"
-            + " id=?",
+        "UPDATE eam_maintenance_plan_device SET anchor_date=?,cycle_index=3,period_unit=' 月 ' WHERE"
+            + " tenant_id=? AND id=?",
         anchor,
         TENANT,
         schedule);
+    body.remove("reminderMode");
     detail.put("id", Long.toString(schedule));
     body.put("rowVersion", 0);
     definitions.save("plans", id, body);
+    assertEquals("OFF", definitions.definition("plans", id).get("reminderMode"));
+    assertEquals(reminderAt, definitions.definition("plans", id).get("reminderEffectiveAt"));
     assertEquals(
         anchor,
         db.queryForObject(
@@ -1451,6 +1570,51 @@ class MaintenanceReferenceMySqlIT {
             LocalDate.class,
             TENANT,
             schedule));
+    body.put("owners", List.of(Long.toString(USER), "0"));
+    assertThrows(IllegalArgumentException.class, () -> definitions.save("plans", id, body));
+    assertEquals(
+        0L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM eam_maintenance_plan_person WHERE tenant_id=? AND plan_id=? AND"
+                + " user_id=0",
+            Long.class,
+            TENANT,
+            id));
+    body.put("owners", List.of(Long.toString(USER)));
+    body.put("rowVersion", 1);
+    assertEquals(
+        409,
+        assertThrows(ResponseStatusException.class, () -> definitions.save("plans", id, body))
+            .getStatusCode()
+            .value());
+    body.put("rowVersion", 2);
+    var none = new PermissionScope(false, null, Set.of(), false);
+    when(permissions.maintenance("plans", "查看")).thenReturn(none);
+    assertEquals(
+        403,
+        assertThrows(ResponseStatusException.class, () -> planService.get(id))
+            .getStatusCode()
+            .value());
+    assertEquals(0L, lists.queryPlans(query, false).page().total());
+    when(permissions.maintenance("plans", "导出"))
+        .thenReturn(new PermissionScope(true, null, Set.of(), false));
+    assertEquals(0L, lists.queryPlans(query, true).page().total(), "导出范围不能覆盖更窄的查看范围");
+    when(permissions.maintenance("plans", "编辑")).thenReturn(none);
+    assertEquals(
+        403,
+        assertThrows(ResponseStatusException.class, () -> definitions.save("plans", id, body))
+            .getStatusCode()
+            .value());
+    when(permissions.maintenance("plans", "查看"))
+        .thenReturn(new PermissionScope(true, null, Set.of(), false));
+    when(auth.tenantId()).thenReturn(TENANT + 1);
+    assertEquals(
+        404,
+        assertThrows(ResponseStatusException.class, () -> planService.get(id))
+            .getStatusCode()
+            .value());
+    assertEquals(0L, lists.queryPlans(query, false).page().total());
+    when(auth.tenantId()).thenReturn(TENANT);
   }
 
   @Test

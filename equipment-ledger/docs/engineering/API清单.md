@@ -380,6 +380,12 @@ Controller/Service使用明确查询及响应类型，设备关联Repository复�
 - types现有列表/详情/新增/修改/删除路径由MaintenanceTypeController/Service及明确请求/响应承接，保留21个响应字段及空数组，版本仍只接受JSON整数，周期引用与系统类型保护保持。旧统一聚合的内部调用仅在Service边界适配类型视图。
 - list-context返回MaintenanceListContext；组织/设备/用户/分类选项使用明确模型，字段与原parentId空值约定保持。设备选项权限在数据库按各保养查看范围并集过滤。
 - AI调用保养Service提交MaintenanceAssistantRequest，返回明确汇总/动态表格模型；AssistantReadSource不再经保养Service传递，原小卓响应由AI侧适配。其余业务域沿原路径，不在本次推广。
-- 任务生成/办理由Service协调人员、来源及执行写入，原HTTP契约、事务及加锁顺序保持。标准/计划/任务接口的后续类型化尚未完成，见[执行记录](../plans/保养剩余治理-20261116.md)。
+- 任务生成/办理由Service协调人员、来源及执行写入，原HTTP契约、事务及加锁顺序保持。任务接口的后续类型化尚未完成，见[执行记录](../plans/保养剩余治理-20261116.md)。
 
 - 保养标准原路径由MaintenanceStandardController负责，StandardRequest/View/Row及可选分页StandardList保持原data/page协议；旧export及export.csv路由仍由MaintenanceController提供，已用实际MVC验证200/307兼容。
+
+## 保养计划完整契约（2026-11-16）
+
+- GET /api/v1/maintenance/plans 返回PageResult<MaintenancePlanRow>；GET /plans/{id}、POST /plans、PUT /plans/{id}沿用data包装，内容为MaintenancePlanDetail；删除返回success。POST /plans/{id}/generate保持count数量响应，使用MaintenanceGenerationResult。
+- 原HTTP路径和字段兼容，安排日期仍为yyyy-MM-dd，ID仍为十进制字符串。可选ID空串与未传选择模式按现有编辑器保留，版本只接受JSON整数；新增/修改仍检查原及目标归属、关联对象、版本、周期与验收人。
+- 计划保存和即时生成共享原事务与锁顺序；缺失模式不重设提醒绑定，扩展字段复用原Schema/字段权限服务。列表与导出共用授权、筛选和稳定排序；旧export.csv仍307。类型/标准/计划代码与本地契约验证见[执行记录](../plans/保养剩余治理-20261116.md)，任务接口治理继续。

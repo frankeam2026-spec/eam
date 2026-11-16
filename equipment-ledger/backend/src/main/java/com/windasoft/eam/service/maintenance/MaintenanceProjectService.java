@@ -81,10 +81,39 @@ public class MaintenanceProjectService {
         checkAccess);
   }
 
-  /** 类型化选择入口；现有计划及旧任务cycle只在上方边界适配，事实解析不再依赖动态字段。 */
+  /** 历史任务生成在此转换项目快照，正式计划验证不构建或传递任意Map。 */
   List<Map<String, Object>> planProjects(
       MaintenanceProjectSelection selection, long tenant, Equipment eq, boolean checkAccess) {
-    var result = new ArrayList<Map<String, Object>>();
+    return resolveProjects(selection, tenant, eq, checkAccess).stream()
+        .map(this::snapshot)
+        .toList();
+  }
+
+  /** 完整检查全部项目及其标准权限；返回数量供计划用例判断，不能短路为只检查首项。 */
+  int validateSelection(MaintenanceProjectSelection selection, long tenant, Equipment eq) {
+    return resolveProjects(selection, tenant, eq, true).size();
+  }
+
+  private record SelectedProject(
+      long standardId,
+      String itemId,
+      String standardName,
+      String snapshotKey,
+      MaintenanceStandardItemView item) {}
+
+  private Map<String, Object> snapshot(SelectedProject project) {
+    var result =
+        json.convertValue(project.item(), new TypeReference<LinkedHashMap<String, Object>>() {});
+    result.put("id", project.snapshotKey());
+    result.put("sourceStandardId", Long.toString(project.standardId()));
+    result.put("sourceItemId", project.itemId());
+    result.put("sourceStandardName", project.standardName());
+    return result;
+  }
+
+  private List<SelectedProject> resolveProjects(
+      MaintenanceProjectSelection selection, long tenant, Equipment eq, boolean checkAccess) {
+    var result = new ArrayList<SelectedProject>();
     var seen = new HashSet<String>();
     var references = selection.references();
     MaintenanceStandardView legacy = null;
@@ -136,16 +165,13 @@ public class MaintenanceProjectService {
       if (!seen.add(key)) {
         continue;
       }
-      var selected = json.convertValue(item, new TypeReference<LinkedHashMap<String, Object>>() {});
-      // 快照保留旧安排项目ID以支持结果预填；跨标准显式选择仍使用复合项目键。
-      if (selection.explicit()) {
-        selected.put("id", key);
-      }
-      selected.put(
-          "sourceStandardId", Long.toString(ref.standardId() == null ? 0 : ref.standardId()));
-      selected.put("sourceItemId", Objects.toString(item.id(), "").trim());
-      selected.put("sourceStandardName", standard.name());
-      result.add(selected);
+      result.add(
+          new SelectedProject(
+              ref.standardId(),
+              Objects.toString(item.id(), "").trim(),
+              standard.name(),
+              selection.explicit() ? key : item.id(),
+              item));
     }
     return result;
   }

@@ -9,6 +9,7 @@ import static com.windasoft.eam.common.maintenance.MaintenanceSupport.text;
 import com.windasoft.eam.common.FieldValidationException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.dto.maintenance.MaintenanceFileReference;
+import com.windasoft.eam.dto.maintenance.MaintenancePlanRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceTypeRequest;
 import com.windasoft.eam.repository.maintenance.MaintenanceFileRepository;
@@ -61,6 +62,14 @@ public class MaintenanceValidationService {
     reject(validator.validate(value));
   }
 
+  void validateName(MaintenancePlanRequest value) {
+    reject(validator.validateProperty(value, "name"));
+  }
+
+  void validate(MaintenancePlanRequest value) {
+    reject(validator.validate(value));
+  }
+
   private void reject(Set<? extends ConstraintViolation<?>> violations) {
     violations.stream()
         .sorted(Comparator.comparing(v -> v.getPropertyPath().toString()))
@@ -74,9 +83,21 @@ public class MaintenanceValidationService {
 
   /** 新选人员必须仍可用；历史姓名查询不能替代此处的启用、未删除约束。 */
   void validUsers(Object value, boolean required) {
-    var ids = ids(value);
-    require(!required || !ids.isEmpty(), MessageContext.text("ui.equipment.text0336"));
-    for (var id : ids) {
+    validateUserIds(ids(value), required);
+  }
+
+  /** 类型化人员逐项校验；不能过滤坏ID后，又把原始坏关系写入人员表。旧输入格式仅由上方兼容入口转换。 */
+  void validUsers(List<Long> value, boolean required) {
+    var selected = value == null ? List.<Long>of() : value;
+    require(
+        selected.stream().allMatch(id -> id != null && id > 0),
+        MessageContext.text("server.maintenance.message0013"));
+    validateUserIds(selected.stream().distinct().toList(), required);
+  }
+
+  private void validateUserIds(List<Long> selected, boolean required) {
+    require(!required || !selected.isEmpty(), MessageContext.text("ui.equipment.text0336"));
+    for (long id : selected) {
       require(
           users.activeUser(auth.tenantId(), id) != null,
           MessageContext.text("server.maintenance.message0013"));
