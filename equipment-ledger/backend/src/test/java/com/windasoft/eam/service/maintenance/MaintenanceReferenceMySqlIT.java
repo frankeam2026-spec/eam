@@ -25,6 +25,11 @@ import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.NotificationMessages;
 import com.windasoft.eam.controller.maintenance.MaintenanceController;
 import com.windasoft.eam.dto.maintenance.MaintenanceLegacyStockOption;
+import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
+import com.windasoft.eam.dto.maintenance.MaintenanceAssistantResult;
+import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
+import com.windasoft.eam.service.knowledge.AiBusinessQueryService;
+import java.time.LocalDateTime;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.equipment.Equipment;
@@ -142,6 +147,7 @@ class MaintenanceReferenceMySqlIT {
   @MockitoSpyBean NotificationRepository notifications;
   @Autowired PlanningSelectorService selectors;
   @Autowired MaintenanceListService lists;
+  @Autowired AiBusinessQueryService aiQueries;
   @Autowired MaintenanceFileService fileService;
   @Autowired MaintenanceProjectService projects;
   @Autowired MaintenanceGenerationService generation;
@@ -934,6 +940,40 @@ class MaintenanceReferenceMySqlIT {
     assertEquals(Long.toString(ORG + 1), context.organizations().getFirst().id());
     ContractTypes.assertExplicit(MaintenanceListContext.class);
     ContractTypes.assertExplicit(UserNameOption.class);
+  }
+
+  @Test
+  void assistantUsesTheSameVisibilityAndKeepsLegacyResponse() {
+    pendingAcceptance();
+    for (String domain : List.of(MaintenanceAssistantRequest.TASK_DOMAIN, MaintenanceAssistantRequest.PLAN_DOMAIN)) {
+      var input = json.valueToTree(Map.of("domain", domain, "operation", "COUNT", "period", "all"));
+      var request = new MaintenanceAssistantRequest(AiBusinessPlan.parse(input), null, 1, 20, LocalDateTime.now(), null, null);
+      var answer = (MaintenanceAssistantResult.Count) lists.queryAssistant(request);
+      assertEquals(0, BigDecimal.ONE.compareTo(answer.value()));
+      assertEquals(1L, answer.total());
+      var response = aiQueries.query(input, null, 1, 20);
+      assertEquals(0, BigDecimal.ONE.compareTo((BigDecimal) response.get("value")));
+      assertEquals(domain, ((AiBusinessPlan) response.get("plan")).domain());
+      assertTrue(response.containsKey("conditions"));
+      when(auth.tenantId()).thenReturn(TENANT + 1);
+      assertEquals(0L, ((MaintenanceAssistantResult.Count) lists.queryAssistant(request)).total());
+      when(auth.tenantId()).thenReturn(TENANT);
+    }
+    var input = json.valueToTree(Map.of("domain", "maintenanceTask", "operation", "LIST", "period", "all"));
+    var request = new MaintenanceAssistantRequest(AiBusinessPlan.parse(input), null, 1, 20, LocalDateTime.now(), null, null);
+    var table = (MaintenanceAssistantResult.Table) lists.queryAssistant(request);
+    assertEquals(1L, table.total());
+    assertEquals(Long.toString(TASK), table.data().getFirst().get("id"));
+    assertTrue(table.columns().contains("equipmentName"));
+    var none = new PermissionScope(false, null, Set.of(), false);
+    when(permissions.maintenance("tasks", "查看")).thenReturn(none);
+    // 原列表允许参与人查看，即使菜单范围为空；不能把AI查询简单收紧为只看公司权限。
+    assertEquals(1L, ((MaintenanceAssistantResult.Table) lists.queryAssistant(request)).total());
+    db.update("DELETE FROM eam_maintenance_task_person WHERE tenant_id=?", TENANT);
+    assertEquals(0L, ((MaintenanceAssistantResult.Table) lists.queryAssistant(request)).total());
+    assertThrows(IllegalArgumentException.class, () -> new MaintenanceAssistantRequest(
+        AiBusinessPlan.parse(json.valueToTree(Map.of("domain", "repair", "operation", "COUNT", "period", "all"))),
+        null, 1, 20, LocalDateTime.now(), null, null));
   }
 
   private String jsonText(Object value) {

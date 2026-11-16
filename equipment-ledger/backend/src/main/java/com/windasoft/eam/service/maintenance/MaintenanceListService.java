@@ -3,6 +3,10 @@ package com.windasoft.eam.service.maintenance;
 import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
+import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
+import com.windasoft.eam.dto.maintenance.MaintenanceAssistantResult;
 import com.windasoft.eam.dto.maintenance.MaintenanceOrganizationOption;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.common.SqlPredicate;
@@ -25,6 +29,7 @@ public class MaintenanceListService {
   private final AuthContext auth;
   private final BusinessQueryService customQuery;
   private final BusinessValueService values;
+  private final ObjectMapper json;
 
   public MaintenanceListService(
       OrgUnitRepository metadata,
@@ -34,7 +39,7 @@ public class MaintenanceListService {
       OrganizationScopeService organizationScopes,
       AuthContext auth,
       BusinessQueryService customQuery,
-      BusinessValueService values) {
+      BusinessValueService values, ObjectMapper json) {
     this.metadata = metadata;
     this.repository = repository;
     this.views = views;
@@ -43,6 +48,7 @@ public class MaintenanceListService {
     this.auth = auth;
     this.customQuery = customQuery;
     this.values = values;
+    this.json = json;
   }
 
   private PermissionScope scope(String kind, String action) {
@@ -129,10 +135,15 @@ public class MaintenanceListService {
     return query(kind, query, false);
   }
 
-  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(String kind){
-    if(!Set.of("tasks","plans").contains(kind))throw new IllegalArgumentException("保养查询对象无效");
-    permissions.require(kind.equals("tasks")?"maintenanceTask":"maintenancePlan","查看");
-    return repository.assistantSource(repository.select(auth.tenantId(),auth.userId(),kind,scope(kind,"查看"),false,null,ListQuery.from(Map.of()),SqlPredicate.of("1=1"),null));
+  /** 与保养列表共用查看范围；内部计划也重新校验白名单，不能通过直接构造请求绕过。 */
+  @Transactional(readOnly=true)
+  public MaintenanceAssistantResult queryAssistant(MaintenanceAssistantRequest request) {
+    var plan=AiBusinessPlan.parse(json.valueToTree(request.plan()));
+    var verified=new MaintenanceAssistantRequest(plan,request.equipmentId(),request.page(),request.size(),request.evaluatedAt(),request.start(),request.end());
+    String kind=verified.kind();
+    permissions.require(PermissionService.maintenanceMenu(kind),"查看");
+    var selected=repository.select(auth.tenantId(),auth.userId(),kind,scope(kind,"查看"),false,null,ListQuery.from(Map.of()),SqlPredicate.of("1=1"),null);
+    return repository.queryAssistant(selected,verified,auth.tenantId(),auth.userId());
   }
 
   public PageResult<Map<String, Object>> query(String kind, ListQuery query, boolean export) {
