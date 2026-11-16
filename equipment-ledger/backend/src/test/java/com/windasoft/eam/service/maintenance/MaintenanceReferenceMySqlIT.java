@@ -45,6 +45,7 @@ import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceDefinitionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceItemSpareRepository;
+import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.repository.system.NotificationRepository;
@@ -155,6 +156,7 @@ class MaintenanceReferenceMySqlIT {
   @MockitoBean KnowledgeScheduler knowledgeScheduler;
   @MockitoSpyBean MaintenanceRepository repository;
   @MockitoSpyBean MaintenanceTypeRepository typeFacts;
+  @MockitoSpyBean MaintenancePlanDeviceRepository scheduleWrites;
   @MockitoSpyBean MaintenanceItemSpareRepository standardSpares;
   @MockitoSpyBean EquipmentQueryRepository equipmentFacts;
   @MockitoSpyBean NotificationRepository notifications;
@@ -876,7 +878,8 @@ class MaintenanceReferenceMySqlIT {
               assertEquals(3, generation.generate(TENANT, PLAN));
               long queries = selectCount() - before;
               System.out.println("保养补生成3次、每次2项目：实际Com_select=" + queries);
-              assertEquals(22, queries);
+              // MP游标UPDATE由驱动附加一次只读状态SELECT；业务读取仍与原22次基线一致。
+              assertEquals(23, queries);
             });
     verify(repository, times(1)).loadDefinition(TENANT, "standards", standard, false);
     verify(equipmentFacts, times(1)).findFacts(TENANT, EQUIPMENT);
@@ -1306,6 +1309,160 @@ class MaintenanceReferenceMySqlIT {
         () ->
             standardService.save(null, json.convertValue(body, MaintenanceStandardRequest.class)));
     verify(typeFacts, times(1)).find(TENANT, TYPE, true);
+  }
+
+  @Test
+  void planSaveRetainsScheduleAnchorAndRollsBackFailedGeneration() {
+    pendingAcceptance();
+    long standard = TYPE + 10;
+    definitionStorage.insert(
+        standard,
+        TENANT,
+        "standards",
+        "PLAN-STANDARD",
+        "标准",
+        ORG,
+        USER,
+        jsonText(
+            Map.of(
+                "items",
+                List.of(Map.of("id", "plan-item", "name", "项目", "typeId", Long.toString(TYPE))))));
+    var next = LocalDate.now(ZoneId.of("Asia/Shanghai")).plusDays(30);
+    var detail = new LinkedHashMap<String, Object>();
+    detail.put("equipmentId", Long.toString(EQUIPMENT));
+    detail.put("typeId", Long.toString(TYPE));
+    detail.put("nextDate", next.toString());
+    detail.put("period", 1);
+    detail.put("unit", "月");
+    detail.put("validDuration", 1);
+    detail.put("validUnit", "周");
+    detail.put(
+        "projectRefs",
+        List.of(Map.of("standardId", Long.toString(standard), "itemId", "plan-item")));
+    var body = new LinkedHashMap<String, Object>();
+    body.put("code", "PLAN-CREATE");
+    body.put("name", "保存计划");
+    body.put("departmentId", Long.toString(ORG));
+    body.put("enabled", true);
+    body.put("calculation", "固定间隔");
+    body.put("advanceDays", 0);
+    body.put("remindDays", 0);
+    body.put("reviewMode", "无需验收");
+    body.put("owners", List.of(Long.toString(USER)));
+    body.put("details", List.of(detail));
+    var saved =
+        new TransactionTemplate(transactionManager)
+            .execute(
+                status -> {
+                  long before = selectCount();
+                  var value = definitions.save("plans", null, body);
+                  System.out.println("保养计划创建含单设备单项目：实际Com_select=" + (selectCount() - before));
+                  return value;
+                });
+    long id = Long.parseLong(saved.get("id").toString());
+    var stored = (Map<String, Object>) ((List<?>) saved.get("details")).getFirst();
+    long schedule = Long.parseLong(stored.get("id").toString());
+    assertEquals(7, ((Number) stored.get("validDays")).intValue());
+    assertEquals("周", stored.get("validUnit"));
+    var projected =
+        repository.listPlanSchedules(TENANT, id).stream()
+            .map(
+                row -> {
+                  try {
+                    return json.readTree(row.get("payload").toString());
+                  } catch (JsonProcessingException failure) {
+                    throw new AssertionError(failure);
+                  }
+                })
+            .toList();
+    assertEquals(json.valueToTree(projected), json.valueToTree(saved.get("details")));
+
+    var anchor = next.minusMonths(3);
+    db.update(
+        "UPDATE eam_maintenance_plan_device SET anchor_date=?,cycle_index=3 WHERE tenant_id=? AND"
+            + " id=?",
+        anchor,
+        TENANT,
+        schedule);
+    detail.put("id", Long.toString(schedule));
+    body.put("rowVersion", 0);
+    definitions.save("plans", id, body);
+    assertEquals(
+        anchor,
+        db.queryForObject(
+            "SELECT anchor_date FROM eam_maintenance_plan_device WHERE tenant_id=? AND id=?",
+            LocalDate.class,
+            TENANT,
+            schedule));
+    assertEquals(
+        3,
+        db.queryForObject(
+            "SELECT cycle_index FROM eam_maintenance_plan_device WHERE tenant_id=? AND id=?",
+            Integer.class,
+            TENANT,
+            schedule));
+    body.put("rowVersion", 1);
+    detail.put("period", 2);
+    definitions.save("plans", id, body);
+    assertEquals(
+        next,
+        db.queryForObject(
+            "SELECT anchor_date FROM eam_maintenance_plan_device WHERE tenant_id=? AND id=?",
+            LocalDate.class,
+            TENANT,
+            schedule));
+    assertEquals(
+        0,
+        db.queryForObject(
+            "SELECT cycle_index FROM eam_maintenance_plan_device WHERE tenant_id=? AND id=?",
+            Integer.class,
+            TENANT,
+            schedule));
+    body.put("rowVersion", 2);
+    body.put("name", "不能部分保存");
+    detail.put("nextDate", LocalDate.now(ZoneId.of("Asia/Shanghai")).toString());
+    doAnswer(
+            call -> {
+              call.callRealMethod();
+              throw new IllegalStateException("生成通知故障");
+            })
+        .when(notifications)
+        .captureSource(eq("eam_maintenance_inbox"), eq(TENANT), anyLong());
+    assertThrows(IllegalStateException.class, () -> definitions.save("plans", id, body));
+    assertEquals("保存计划", definitions.definition("plans", id).get("name"));
+    assertEquals(2, definitions.definition("plans", id).get("rowVersion"));
+    assertEquals(
+        next,
+        db.queryForObject(
+            "SELECT next_date FROM eam_maintenance_plan_device WHERE tenant_id=? AND id=?",
+            LocalDate.class,
+            TENANT,
+            schedule));
+  }
+
+  @Test
+  void typedCursorUpdateOnlyAddsDriverReadOnlyProbe() {
+    pendingAcceptance();
+    var next = LocalDate.of(2027, 1, 1);
+    // 相同UPDATE：旧JDBC不附加SELECT，MP经驱动execute额外探测一次只读状态。
+    // 单独计数防止把业务N+1误解释为驱动开销；两个路径都受同一事务约束。
+    selects(
+        0,
+        () ->
+            db.update(
+                "UPDATE eam_maintenance_plan_device SET next_date=?,cycle_index=1 WHERE tenant_id=?"
+                    + " AND id=?",
+                next,
+                TENANT,
+                SCHEDULE));
+    selects(1, () -> scheduleWrites.advance(TENANT, SCHEDULE, next, 2));
+    assertEquals(
+        2,
+        db.queryForObject(
+            "SELECT cycle_index FROM eam_maintenance_plan_device WHERE tenant_id=? AND id=?",
+            Integer.class,
+            TENANT,
+            SCHEDULE));
   }
 
   private String jsonText(Object value) {

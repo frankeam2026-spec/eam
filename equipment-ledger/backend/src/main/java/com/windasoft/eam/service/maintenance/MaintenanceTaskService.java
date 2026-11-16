@@ -1,23 +1,49 @@
 package com.windasoft.eam.service.maintenance;
 
-import static com.windasoft.eam.common.maintenance.MaintenanceSupport.*;
+import static com.windasoft.eam.common.maintenance.MaintenanceSupport.advance;
+import static com.windasoft.eam.common.maintenance.MaintenanceSupport.deny;
+import static com.windasoft.eam.common.maintenance.MaintenanceSupport.ids;
+import static com.windasoft.eam.common.maintenance.MaintenanceSupport.number;
+import static com.windasoft.eam.common.maintenance.MaintenanceSupport.require;
+import static com.windasoft.eam.common.maintenance.MaintenanceSupport.rows;
+import static com.windasoft.eam.common.maintenance.MaintenanceSupport.strings;
+import static com.windasoft.eam.common.maintenance.MaintenanceSupport.text;
+import static com.windasoft.eam.common.maintenance.MaintenanceSupport.yes;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.AcceptanceDecision;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.common.LocalizedStatusException;
+import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.domain.maintenance.MaintenanceTaskAction;
 import com.windasoft.eam.domain.maintenance.MaintenanceTaskStatus;
 import com.windasoft.eam.entity.equipment.EquipmentHistory;
+import com.windasoft.eam.event.experience.ExperienceEvents.TaskResult;
 import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
-import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
+import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
-import com.windasoft.eam.service.system.*;
+import com.windasoft.eam.service.business.BusinessValueService;
+import com.windasoft.eam.service.experience.MaterialCustodyService;
+import com.windasoft.eam.service.inventory.InventoryMutex;
+import com.windasoft.eam.service.system.AuthContext;
 import java.math.BigDecimal;
-import java.time.*;
-import java.util.*;
+import java.sql.Date;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +53,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class MaintenanceTaskService {
   private static final String HISTORY_RECORD_TYPE = "MAINTENANCE";
   private final MaintenanceRepository repository;
+  private final MaintenancePlanDeviceRepository schedules;
   private final MaintenanceExecutionStorage executions;
   private final EquipmentHistoryRepository histories;
   private final SystemUserRepository users;
@@ -37,13 +64,14 @@ public class MaintenanceTaskService {
   private final MaintenanceValidationService validation;
   private final MaintenanceTaskJournal journal;
   private final MaintenanceTaskStatisticsService statistics;
-  private final com.windasoft.eam.service.business.BusinessValueService custom;
-  private final com.windasoft.eam.service.inventory.InventoryMutex experienceInventoryMutex;
-  private final org.springframework.context.ApplicationEventPublisher experiencePublisher;
-  private final com.windasoft.eam.service.experience.MaterialCustodyService materialCustody;
+  private final BusinessValueService custom;
+  private final InventoryMutex experienceInventoryMutex;
+  private final ApplicationEventPublisher experiencePublisher;
+  private final MaterialCustodyService materialCustody;
 
   public MaintenanceTaskService(
       MaintenanceRepository repository,
+      MaintenancePlanDeviceRepository schedules,
       MaintenanceExecutionStorage executions,
       EquipmentHistoryRepository histories,
       SystemUserRepository users,
@@ -54,11 +82,12 @@ public class MaintenanceTaskService {
       MaintenanceValidationService validation,
       MaintenanceTaskJournal journal,
       MaintenanceTaskStatisticsService statistics,
-      com.windasoft.eam.service.business.BusinessValueService custom,
-      com.windasoft.eam.service.inventory.InventoryMutex mutex,
-      org.springframework.context.ApplicationEventPublisher publisher,
-      com.windasoft.eam.service.experience.MaterialCustodyService custody) {
+      BusinessValueService custom,
+      InventoryMutex mutex,
+      ApplicationEventPublisher publisher,
+      MaterialCustodyService custody) {
     this.repository = repository;
+    this.schedules = schedules;
     this.executions = executions;
     this.histories = histories;
     this.users = users;
@@ -75,10 +104,7 @@ public class MaintenanceTaskService {
     this.materialCustody = custody;
   }
 
-  /**
-   * 按原库存互斥、任务行锁顺序办理状态动作。首次转为已完成时产生设备履历，
-   * 履历、执行记录、待办和通知事件必须随任务一起回滚，不能单独开启事务提交履历。
-   */
+  /** 按原库存互斥、任务行锁顺序办理状态动作。首次转为已完成时产生设备履历， 履历、执行记录、待办和通知事件必须随任务一起回滚，不能单独开启事务提交履历。 */
   @Transactional
   public Map<String, Object> action(long id, String action, Map<String, Object> body) {
     experienceInventoryMutex.enter();
@@ -96,23 +122,27 @@ public class MaintenanceTaskService {
     Long owner = r.get("owner_id") == null ? null : number(r.get("owner_id"));
     // 动作参数先解析为受控编码，权限和状态校验仍保留在当前完整事务内。
     var operation = MaintenanceTaskAction.parse(action);
-    if (Set.of(MaintenanceTaskAction.START, MaintenanceTaskAction.PROCESS,
-            MaintenanceTaskAction.SUSPEND, MaintenanceTaskAction.RESUME).contains(operation)) {
+    if (Set.of(
+            MaintenanceTaskAction.START,
+            MaintenanceTaskAction.PROCESS,
+            MaintenanceTaskAction.SUSPEND,
+            MaintenanceTaskAction.RESUME)
+        .contains(operation)) {
       if (!owners.contains(user) || (owner != null && owner != user)) deny();
     }
     if (operation == MaintenanceTaskAction.START) {
       require(
           state.equals(MaintenanceTaskStatus.PENDING.code()),
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0048"));
+          MessageContext.text("server.maintenance.message0048"));
       require(
-          !((java.sql.Date) r.get("due_date"))
+          !((Date) r.get("due_date"))
               .toLocalDate()
               .isAfter(LocalDate.now(ZoneId.of("Asia/Shanghai"))),
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0049"));
+          MessageContext.text("server.maintenance.message0049"));
       if (yes(snap.get("scanStart")))
         require(
             text(snap, "equipmentCode").equals(text(body, "equipmentCode")),
-            com.windasoft.eam.common.MessageContext.text("server.maintenance.message0050"));
+            MessageContext.text("server.maintenance.message0050"));
       owner = user;
       next = MaintenanceTaskStatus.IN_PROGRESS.code();
       result.put("startedAt", LocalDateTime.now(ZoneId.of("Asia/Shanghai")).toString());
@@ -121,7 +151,7 @@ public class MaintenanceTaskService {
     } else if (operation == MaintenanceTaskAction.PROCESS) {
       require(
           state.equals(MaintenanceTaskStatus.IN_PROGRESS.code()) && Objects.equals(owner, user),
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0051"));
+          MessageContext.text("server.maintenance.message0051"));
       validation.validUsers(body.get("collaborators"), false);
       validation.validAttachments(body.get("attachments"), false);
       var submitted = rows(body.get("items"));
@@ -135,19 +165,17 @@ public class MaintenanceTaskService {
         String answer = text(value, "value");
         require(
             !yes(item.get("required")) || !answer.isBlank(),
-            com.windasoft.eam.common.MessageContext.text(
-                "server.maintenance.message0052", text(item, "name")));
+            MessageContext.text("server.maintenance.message0052", text(item, "name")));
         validation.validAttachments(value.get("images"), true);
         require(
             !yes(item.get("photoRequired")) || !rows(value.get("images")).isEmpty(),
-            com.windasoft.eam.common.MessageContext.text(
-                "server.maintenance.message0053", text(item, "name")));
+            MessageContext.text("server.maintenance.message0053", text(item, "name")));
         boolean abnormal = false;
         if (!answer.isBlank()) {
           if (text(item, "valueType").equals("选项")) {
             require(
                 strings(item.get("options")).contains(answer),
-                com.windasoft.eam.common.MessageContext.text("server.maintenance.message0054"));
+                MessageContext.text("server.maintenance.message0054"));
             abnormal = !strings(item.get("normalOptions")).contains(answer);
           }
           if (text(item, "valueType").equals("数值")) {
@@ -164,22 +192,25 @@ public class MaintenanceTaskService {
         v.put("abnormal", abnormal);
         require(
             !abnormal || !yes(value.get("resolved")) || !text(value, "measure").isBlank(),
-            com.windasoft.eam.common.MessageContext.text("server.maintenance.message0055"));
+            MessageContext.text("server.maintenance.message0055"));
         checked.add(v);
       }
       String start = text(body, "startAt"), end = text(body, "endAt");
       require(
           !start.isEmpty() && !end.isEmpty(),
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0056"));
+          MessageContext.text("server.maintenance.message0056"));
       require(
           !LocalDateTime.parse(start).isAfter(LocalDateTime.parse(end)),
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0057"));
+          MessageContext.text("server.maintenance.message0057"));
       result = new LinkedHashMap<>(body);
       result.remove("rowVersion");
       result.put("items", checked);
       materialCustody.finishTask("保养", id, body);
       boolean needsAcceptance = !text(snap, "reviewMode").equals("无需验收");
-      next = needsAcceptance ? MaintenanceTaskStatus.PENDING_ACCEPTANCE.code() : MaintenanceTaskStatus.COMPLETED.code();
+      next =
+          needsAcceptance
+              ? MaintenanceTaskStatus.PENDING_ACCEPTANCE.code()
+              : MaintenanceTaskStatus.COMPLETED.code();
       journal.closeTodos(tenant, id);
       journal.notify(
           tenant,
@@ -191,14 +222,17 @@ public class MaintenanceTaskService {
     } else if (operation == MaintenanceTaskAction.ACCEPT) {
       require(
           state.equals(MaintenanceTaskStatus.PENDING_ACCEPTANCE.code()),
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0058"));
+          MessageContext.text("server.maintenance.message0058"));
       if (!reviewers.contains(user) || !taskAccess(r, "验收")) deny();
       var decision = AcceptanceDecision.parse(body.get("decision"));
       require(
           number(body.get("score")) >= 1 && number(body.get("score")) <= 5,
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0059"));
+          MessageContext.text("server.maintenance.message0059"));
       validation.validAttachments(body.get("attachments"), false);
-      next = decision == AcceptanceDecision.ACCEPT ? MaintenanceTaskStatus.COMPLETED.code() : MaintenanceTaskStatus.IN_PROGRESS.code();
+      next =
+          decision == AcceptanceDecision.ACCEPT
+              ? MaintenanceTaskStatus.COMPLETED.code()
+              : MaintenanceTaskStatus.IN_PROGRESS.code();
       var acceptance = new LinkedHashMap<String, Object>(body);
       acceptance.put("decision", decision.code());
       acceptance.put("reviewerId", Long.toString(user));
@@ -216,23 +250,27 @@ public class MaintenanceTaskService {
     } else if (operation == MaintenanceTaskAction.SUSPEND) {
       require(
           state.equals(MaintenanceTaskStatus.IN_PROGRESS.code()),
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0060"));
+          MessageContext.text("server.maintenance.message0060"));
       require(
           !text(body, "description").isEmpty(),
-          com.windasoft.eam.common.MessageContext.text("server.inspection.message0036"));
+          MessageContext.text("server.inspection.message0036"));
       next = MaintenanceTaskStatus.SUSPENDED.code();
       journal.closeTodos(tenant, id);
     } else if (operation == MaintenanceTaskAction.RESUME) {
       require(
           state.equals(MaintenanceTaskStatus.SUSPENDED.code()),
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0061"));
+          MessageContext.text("server.maintenance.message0061"));
       next = MaintenanceTaskStatus.IN_PROGRESS.code();
       journal.notify(tenant, id, List.of(user), "保养待处理", text(snap, "equipmentName"), true);
     } else if (operation == MaintenanceTaskAction.TRANSFER) {
       if (!taskAccess(r, "编辑")) deny();
       require(
-          Set.of(MaintenanceTaskStatus.PENDING.code(), MaintenanceTaskStatus.IN_PROGRESS.code(), MaintenanceTaskStatus.SUSPENDED.code()).contains(state),
-          com.windasoft.eam.common.MessageContext.text("server.inspection.message0038"));
+          Set.of(
+                  MaintenanceTaskStatus.PENDING.code(),
+                  MaintenanceTaskStatus.IN_PROGRESS.code(),
+                  MaintenanceTaskStatus.SUSPENDED.code())
+              .contains(state),
+          MessageContext.text("server.inspection.message0038"));
       validation.validUsers(body.get("owners"), true);
       snap.put("owners", ids(body.get("owners")).stream().map(Object::toString).toList());
       owner = null;
@@ -243,17 +281,17 @@ public class MaintenanceTaskService {
     } else if (operation == MaintenanceTaskAction.VOID) {
       if (!taskAccess(r, "删除")) deny();
       require(
-          !Set.of(MaintenanceTaskStatus.COMPLETED.code(), MaintenanceTaskStatus.CANCELLED.code()).contains(state),
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0062"));
+          !Set.of(MaintenanceTaskStatus.COMPLETED.code(), MaintenanceTaskStatus.CANCELLED.code())
+              .contains(state),
+          MessageContext.text("server.maintenance.message0062"));
       require(
           !text(body, "description").isEmpty(),
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0063"));
+          MessageContext.text("server.maintenance.message0063"));
       next = MaintenanceTaskStatus.CANCELLED.code();
       journal.closeTodos(tenant, id);
-    } else
-      throw new com.windasoft.eam.common.LocalizedArgumentException(
-          "server.inspection.message0011");
-    if (next.equals(MaintenanceTaskStatus.COMPLETED.code()) && !state.equals(MaintenanceTaskStatus.COMPLETED.code())) {
+    } else throw new LocalizedArgumentException("server.inspection.message0011");
+    if (next.equals(MaintenanceTaskStatus.COMPLETED.code())
+        && !state.equals(MaintenanceTaskStatus.COMPLETED.code())) {
       // 保留履历产生时机和原字段口径；复用设备仓储的数据库时间写入，后续保存失败时一并回滚。
       var history = new EquipmentHistory();
       history.setId(IdWorker.getId());
@@ -273,10 +311,11 @@ public class MaintenanceTaskService {
                 LocalDateTime.parse(text(result, "endAt")).toLocalDate(),
                 number(cycle.get("period")),
                 text(cycle, "unit"));
-        repository.resetScheduleDate(date, date, tenant, r.get("schedule_id"));
+        schedules.reset(tenant, number(r.get("schedule_id")), date);
       }
     }
-    if (operation == MaintenanceTaskAction.PROCESS) custom.save("maintenance_task", id, body, false);
+    if (operation == MaintenanceTaskAction.PROCESS)
+      custom.save("maintenance_task", id, body, false);
     // 保留原顺序：人员与结果先保存，再推进主体版本；任一步失败均由本动作事务回滚。
     executions.participants(tenant, id, encode(snap));
     executions.save(tenant, id, encode(result));
@@ -296,21 +335,20 @@ public class MaintenanceTaskService {
         };
     journal.event(tenant, id, label, user, auth.user().getDisplayName(), body);
     if (operation == MaintenanceTaskAction.PROCESS)
-      experiencePublisher.publishEvent(
-          new com.windasoft.eam.event.experience.ExperienceEvents.TaskResult("保养", id));
+      experiencePublisher.publishEvent(new TaskResult("保养", id));
     return task(id);
   }
 
   private List<Map<String, Object>> sortedBatch(List<Map<String, Object>> values) {
     require(
         values != null && !values.isEmpty() && values.size() <= 100,
-        com.windasoft.eam.common.MessageContext.text("server.inspection.message0040"));
+        MessageContext.text("server.inspection.message0040"));
     require(
         values.stream().allMatch(v -> v != null && number(v.get("id")) > 0),
-        com.windasoft.eam.common.MessageContext.text("server.maintenance.message0064"));
+        MessageContext.text("server.maintenance.message0064"));
     require(
         values.stream().map(v -> number(v.get("id"))).distinct().count() == values.size(),
-        com.windasoft.eam.common.MessageContext.text("server.maintenance.message0065"));
+        MessageContext.text("server.maintenance.message0065"));
     var sorted = new ArrayList<>(values);
     sorted.sort(Comparator.comparingLong(v -> number(v.get("id"))));
     return sorted;
@@ -328,12 +366,10 @@ public class MaintenanceTaskService {
       VersionGuard.checkPayload((Number) task.get("row_version"), value);
       require(
           Set.of("待执行", "已作废", "过期作废").contains(text(task, "status")),
-          com.windasoft.eam.common.MessageContext.text(
-              "server.maintenance.message0066", text(task, "code")));
+          MessageContext.text("server.maintenance.message0066", text(task, "code")));
       require(
           !repository.hasTaskExecutionOrMaterials(tenant, id),
-          com.windasoft.eam.common.MessageContext.text(
-              "server.maintenance.message0067", text(task, "code")));
+          MessageContext.text("server.maintenance.message0067", text(task, "code")));
       // 保留原先待办、全部消息、任务主体的更新顺序，迁移职责时不改变加锁路径。
       journal.closeTodos(tenant, id);
       journal.completeForDeletion(tenant, id);
@@ -353,17 +389,16 @@ public class MaintenanceTaskService {
     var sorted = sortedBatch(values);
     require(
         reason != null && !reason.isBlank() && reason.length() <= 1000,
-        com.windasoft.eam.common.MessageContext.text("server.maintenance.message0068"));
+        MessageContext.text("server.maintenance.message0068"));
     LocalDate date;
     try {
       date = LocalDate.parse(endDate);
     } catch (Exception e) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException(
-          "server.maintenance.message0011");
+      throw new LocalizedArgumentException("server.maintenance.message0011");
     }
     require(
         !date.isBefore(LocalDate.now(ZoneId.of("Asia/Shanghai"))),
-        com.windasoft.eam.common.MessageContext.text("server.maintenance.message0069"));
+        MessageContext.text("server.maintenance.message0069"));
     experienceInventoryMutex.enter();
     long tenant = auth.tenantId();
     for (var value : sorted) {
@@ -373,20 +408,17 @@ public class MaintenanceTaskService {
       VersionGuard.checkPayload((Number) task.get("row_version"), value);
       require(
           Set.of("待执行", "执行中", "挂起").contains(text(task, "status")),
-          com.windasoft.eam.common.MessageContext.text(
-              "server.maintenance.message0070", text(task, "code")));
+          MessageContext.text("server.maintenance.message0070", text(task, "code")));
       require(
           task.get("expires_date") != null,
-          com.windasoft.eam.common.MessageContext.text(
-              "server.maintenance.message0071", text(task, "code")));
+          MessageContext.text("server.maintenance.message0071", text(task, "code")));
       LocalDate old = ((java.sql.Date) task.get("expires_date")).toLocalDate();
       require(
           date.isAfter(old),
-          com.windasoft.eam.common.MessageContext.text(
-              "server.maintenance.message0072", text(task, "code")));
+          MessageContext.text("server.maintenance.message0072", text(task, "code")));
       require(
           !date.isBefore(((java.sql.Date) task.get("due_date")).toLocalDate()),
-          com.windasoft.eam.common.MessageContext.text("server.maintenance.message0073"));
+          MessageContext.text("server.maintenance.message0073"));
       repository.postponeTask(tenant, id, date);
       journal.event(
           tenant,
@@ -406,8 +438,7 @@ public class MaintenanceTaskService {
   Map<String, Object> taskRaw(long tenant, long id, boolean lock) {
     var r = repository.loadTask(tenant, id, lock);
     if (r.isEmpty())
-      throw new com.windasoft.eam.common.LocalizedStatusException(
-          HttpStatus.NOT_FOUND, "server.maintenance.message0012");
+      throw new LocalizedStatusException(HttpStatus.NOT_FOUND, "server.maintenance.message0012");
     return r.getFirst();
   }
 
@@ -444,8 +475,7 @@ public class MaintenanceTaskService {
       return json.readValue(
           Objects.toString(value, "{}"), new TypeReference<LinkedHashMap<String, Object>>() {});
     } catch (Exception e) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException(
-          "server.maintenance.message0009");
+      throw new LocalizedArgumentException("server.maintenance.message0009");
     }
   }
 
@@ -453,8 +483,7 @@ public class MaintenanceTaskService {
     try {
       return json.writeValueAsString(value);
     } catch (Exception e) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException(
-          "server.inspection.message0012");
+      throw new LocalizedArgumentException("server.inspection.message0012");
     }
   }
 }
