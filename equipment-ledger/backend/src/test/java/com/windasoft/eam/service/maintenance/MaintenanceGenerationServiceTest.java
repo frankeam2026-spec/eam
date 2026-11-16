@@ -9,6 +9,7 @@ import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.maintenance.MaintenanceType;
 import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
+import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.service.system.AuthContext;
@@ -21,6 +22,7 @@ class MaintenanceGenerationServiceTest {
   void dueDateMinusAdvanceControlsGenerationAndCursorMakesTheNextRunIdempotent() {
     var repo = mock(MaintenanceRepository.class);
     var types = mock(MaintenanceTypeRepository.class);
+    var schedules = mock(MaintenancePlanDeviceRepository.class);
     var projects = mock(MaintenanceProjectService.class);
     var views = mock(MaintenanceViewAssembler.class);
     var journal = mock(MaintenanceTaskJournal.class);
@@ -28,6 +30,7 @@ class MaintenanceGenerationServiceTest {
     var service =
         new MaintenanceGenerationService(
             repo,
+            schedules,
             types,
             mock(MaintenanceExecutionStorage.class),
             mock(TaskSourceRelationsRepository.class),
@@ -96,7 +99,7 @@ class MaintenanceGenerationServiceTest {
             anyString()))
         .thenReturn(1);
     assertEquals(1, service.generate(10001L, 10L));
-    verify(repo).advanceSchedule(due.plusWeeks(1), 1L, 10001L, 20L);
+    verify(schedules).advance(10001L, 20L, due.plusWeeks(1), 1);
     verify(journal)
         .notify(eq(10001L), anyLong(), eq(List.of(73001L)), eq("保养待执行"), eq("工程设备"), eq(true));
     schedule.put("next_date", java.sql.Date.valueOf(due.plusWeeks(1)));

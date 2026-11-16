@@ -18,6 +18,7 @@ import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
+import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.service.system.AuthContext;
@@ -38,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MaintenanceGenerationService {
   private final MaintenanceRepository repository;
+  private final MaintenancePlanDeviceRepository schedules;
   private final MaintenanceTypeRepository types;
   private final MaintenanceExecutionStorage executions;
   private final TaskSourceRelationsRepository taskSources;
@@ -49,6 +51,7 @@ public class MaintenanceGenerationService {
 
   public MaintenanceGenerationService(
       MaintenanceRepository repository,
+      MaintenancePlanDeviceRepository schedules,
       MaintenanceTypeRepository types,
       MaintenanceExecutionStorage executions,
       TaskSourceRelationsRepository taskSources,
@@ -58,6 +61,7 @@ public class MaintenanceGenerationService {
       MaintenanceViewAssembler views,
       MaintenanceTaskJournal journal) {
     this.repository = repository;
+    this.schedules = schedules;
     this.types = types;
     this.executions = executions;
     this.taskSources = taskSources;
@@ -79,8 +83,8 @@ public class MaintenanceGenerationService {
       if (!yes(p.get("enabled"))) continue;
       // 按计划提前天数扩展生成截止日，不改变每次任务的应执行日期。
       LocalDate generationDeadline = today.plusDays(number(p.get("advanceDays")));
-      var schedules = repository.lockPlanSchedules(tenant, plan.get("id"));
-      for (var schedule : schedules) {
+      var arrangements = repository.lockPlanSchedules(tenant, plan.get("id"));
+      for (var schedule : arrangements) {
         var cycle = decode(schedule.get("payload"));
         var type = types.find(tenant, number(schedule.get("type_id")), false);
         if (type == null)
@@ -204,7 +208,7 @@ public class MaintenanceGenerationService {
             if (completion) {
               if (added == 0) {
                 due = advance(due, number(cycle.get("period")), text(cycle, "unit"));
-                repository.resetScheduleDate47(due, due, tenant, schedule.get("id"));
+                schedules.reset(tenant, number(schedule.get("id")), due);
                 continue;
               }
               break;
@@ -213,7 +217,8 @@ public class MaintenanceGenerationService {
             due = advance(anchor, number(cycle.get("period")) * index, text(cycle, "unit"));
           }
         }
-        if (!completion) repository.advanceSchedule(due, index, tenant, schedule.get("id"));
+        if (!completion)
+          schedules.advance(tenant, number(schedule.get("id")), due, Math.toIntExact(index));
       }
     }
     // 只有未开始的任务可自动过期作废；执行中的任务及其处理记录仍保留。
