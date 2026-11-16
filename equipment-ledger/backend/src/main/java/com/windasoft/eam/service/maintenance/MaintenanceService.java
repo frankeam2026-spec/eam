@@ -8,8 +8,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
+import com.windasoft.eam.service.basedata.BaseDataType;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.dto.maintenance.MaintenanceLegacyStockOption;
+import com.windasoft.eam.dto.maintenance.MaintenanceEquipmentOption;
+import com.windasoft.eam.dto.maintenance.MaintenanceCategoryOption;
 import com.windasoft.eam.repository.inventory.LegacySpareStockRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceInboxRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
@@ -49,6 +54,8 @@ public class MaintenanceService {
   private final MaintenanceRepository repository;
   private final OrgUnitRepository organizations;
   private final EquipmentQueryRepository equipmentQueries;
+  private final SystemUserRepository userQueries;
+  private final BaseItemRepository baseItems;
   private final MaintenanceInboxRepository inbox;
   private final LegacySpareStockRepository legacyStocks;
   private final ObjectMapper json;
@@ -60,6 +67,8 @@ public class MaintenanceService {
       MaintenanceRepository repository,
       OrgUnitRepository organizations,
       EquipmentQueryRepository equipmentQueries,
+      SystemUserRepository userQueries,
+      BaseItemRepository baseItems,
       MaintenanceInboxRepository inbox,
       LegacySpareStockRepository legacyStocks,
       ObjectMapper json,
@@ -85,6 +94,8 @@ public class MaintenanceService {
     this.repository = repository;
     this.organizations = organizations;
     this.equipmentQueries = equipmentQueries;
+    this.userQueries = userQueries;
+    this.baseItems = baseItems;
     this.inbox = inbox;
     this.legacyStocks = legacyStocks;
     this.json = json;
@@ -574,29 +585,12 @@ public class MaintenanceService {
       }
     }
     var eq = paged ? List.of() : equipmentQueries.scopedFacts(auth.tenantId(), auth.userId(), equipmentScopes).stream()
-                .map(
-                    e ->
-                        Map.of(
-                            "id",
-                            Objects.toString(e.getId()),
-                            "code",
-                            e.getEquipmentCode(),
-                            "name",
-                            e.getName(),
-                            "model",
-                            Objects.toString(e.getModel(), ""),
-                            "category",
-                            Objects.toString(e.getCategory(), ""),
-                            "categoryId",
-                            Objects.toString(e.getCategoryId(), ""),
-                            "department",
-                            Objects.toString(e.getDepartment(), "")))
-                .toList();
-    var org = repository.listOrganizations(auth.tenantId());
-    org.forEach(
-        o -> {
-          if ("0".equals(o.get("parentId"))) o.put("parentId", "");
-        });
+        .map(e -> new MaintenanceEquipmentOption(Long.toString(e.getId()), e.getEquipmentCode(),
+            e.getName(), Objects.toString(e.getModel(), ""), Objects.toString(e.getCategory(), ""),
+            Objects.toString(e.getCategoryId(), ""), Objects.toString(e.getDepartment(), "")))
+        .toList();
+    var org = organizations.organizations(auth.tenantId(), true).stream()
+        .map(row -> assembler.organization(row, true)).toList();
     // 查看范围取各保养菜单的公司并集；不能用这份并集代替保存标准时的写权限。
     boolean allStocks = false;
     var stockCompanies = new HashSet<Long>();
@@ -628,9 +622,11 @@ public class MaintenanceService {
         "organizations",
         org,
         "users",
-        paged ? List.of() : repository.listUsers(auth.tenantId()),
+        paged ? List.of() : userQueries.nameOptions(auth.tenantId()),
         "categories",
-        repository.listCategories(auth.tenantId()));
+        baseItems.itemsByType(auth.tenantId(), BaseDataType.CATEGORY.code(), true).stream()
+            .map(item -> new MaintenanceCategoryOption(Long.toString(item.getId()), item.getName(),
+                Objects.toString(item.getParentId(), "0"))).toList());
   }
 
   /** Compatibility for aggregate consumers; every batch is authorized and filtered in SQL. */

@@ -185,31 +185,6 @@ public class MaintenanceRepository {
     return definitions.delete(tenantId, id);
   }
 
-  public List<Map<String, Object>> listOrganizations(long tenantId) {
-    return db.queryForList(
-        "SELECT CAST(id AS CHAR) id,name,CAST(COALESCE(parent_id,0) AS CHAR)"
-            + " parentId,COALESCE(display_type,org_type) type FROM eam_org_unit WHERE"
-            + " tenant_id=? AND deleted=0 AND status=1",
-        tenantId);
-  }
-
-  public List<Map<String, Object>> listUsers(long tenantId) {
-    return db.queryForList(
-        "SELECT CAST(u.id AS CHAR) id,u.display_name name,u.account,COALESCE(o.name,'')"
-            + " department FROM eam_sys_user u LEFT JOIN eam_org_unit o ON o.id=u.org_id AND"
-            + " o.tenant_id=u.tenant_id WHERE u.tenant_id=? AND u.deleted=0 AND u.status=1"
-            + " ORDER BY u.display_name",
-        tenantId);
-  }
-
-  public List<Map<String, Object>> listCategories(long tenantId) {
-    return db.queryForList(
-        "SELECT CAST(id AS CHAR) id,name,CAST(COALESCE(parent_id,0) AS CHAR) parentId FROM"
-            + " eam_base_item WHERE tenant_id=? AND item_type='CATEGORY' AND deleted=0 AND"
-            + " status=1",
-        tenantId);
-  }
-
   public List<Map<String, Object>> loadTask(long tenantId, long id, boolean lock) {
     if (lock)
       db.queryForList(

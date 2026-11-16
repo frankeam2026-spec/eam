@@ -1,6 +1,8 @@
 package com.windasoft.eam.service.maintenance;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.entity.system.OrgUnit;
+import com.windasoft.eam.dto.maintenance.MaintenanceOrganizationOption;
 import com.windasoft.eam.service.system.AuthContext;
 import java.util.*;
 import org.springframework.stereotype.Service;
@@ -16,6 +18,13 @@ public class MaintenanceViewAssembler {
     this.json = json;
     this.auth = auth;
     this.access = access;
+  }
+
+  /** 组织显示类型为空时才沿用组织类型；选择器根节点为空串，列表上下文保留旧0值。 */
+  public MaintenanceOrganizationOption organization(OrgUnit row, boolean choice) {
+    String parent = Objects.toString(row.getParentId(), choice ? "" : "0");
+    return new MaintenanceOrganizationOption(Long.toString(row.getId()), row.getName(), parent,
+        row.getDisplayType() == null ? row.getOrgType() : row.getDisplayType());
   }
 
   public Map<String, Object> definition(Map<String, Object> row) {

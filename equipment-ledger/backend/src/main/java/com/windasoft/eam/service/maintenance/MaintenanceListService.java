@@ -2,6 +2,9 @@ package com.windasoft.eam.service.maintenance;
 
 import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.system.PermissionScope;
+import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
+import com.windasoft.eam.dto.maintenance.MaintenanceOrganizationOption;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.common.SqlPredicate;
 import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
 import com.windasoft.eam.service.business.*;
@@ -15,7 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class MaintenanceListService {
   private final MaintenanceListRepository repository;
-  private final com.windasoft.eam.repository.maintenance.MaintenanceRepository metadata;
+  private final OrgUnitRepository metadata;
   private final MaintenanceViewAssembler views;
   private final PermissionService permissions;
   private final OrganizationScopeService organizationScopes;
@@ -24,7 +27,7 @@ public class MaintenanceListService {
   private final BusinessValueService values;
 
   public MaintenanceListService(
-      com.windasoft.eam.repository.maintenance.MaintenanceRepository metadata,
+      OrgUnitRepository metadata,
       MaintenanceListRepository repository,
       MaintenanceViewAssembler views,
       PermissionService permissions,
@@ -55,13 +58,13 @@ public class MaintenanceListService {
   }
 
   @Transactional(readOnly = true)
-  public Map<String, Object> context(String kind) {
+  public MaintenanceListContext context(String kind) {
     var scope = scope(kind, "查看");
-    var organizations = metadata.listOrganizations(auth.tenantId());
+    var organizations = metadata.organizations(auth.tenantId(), true).stream().map(row -> views.organization(row, false)).toList();
     var keep = new HashSet<Long>();
-    var byId = new HashMap<Long, Map<String, Object>>();
+    var byId = new HashMap<Long, MaintenanceOrganizationOption>();
     for (var org : organizations) {
-      long id = Long.parseLong(org.get("id").toString());
+      long id = Long.parseLong(org.id());
       byId.put(id, org);
       if (scope.matches(permissions.companyOfOrganization(id), id, null, auth.userId()))
         keep.add(id);
@@ -85,16 +88,15 @@ public class MaintenanceListService {
     for (long id : new ArrayList<>(keep)) {
       var seen = new HashSet<Long>();
       var node = byId.get(id);
-      while (node != null && seen.add(Long.parseLong(node.get("id").toString()))) {
-        keep.add(Long.parseLong(node.get("id").toString()));
-        var parent = node.get("parentId");
+      while (node != null && seen.add(Long.parseLong(node.id()))) {
+        keep.add(Long.parseLong(node.id()));
+        var parent = node.parentId();
         node = parent == null ? null : byId.get(Long.parseLong(parent.toString()));
       }
     }
-    return Map.of(
-        "organizations",
+    return new MaintenanceListContext(
         organizations.stream()
-            .filter(row -> keep.contains(Long.parseLong(row.get("id").toString())))
+            .filter(row -> keep.contains(Long.parseLong(row.id())))
             .toList());
   }
 

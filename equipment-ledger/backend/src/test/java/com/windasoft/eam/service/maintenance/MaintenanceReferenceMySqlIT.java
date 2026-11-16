@@ -43,6 +43,10 @@ import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import com.windasoft.eam.support.ContractTypes;
+import com.windasoft.eam.service.planning.PlanningSelectorService;
+import com.windasoft.eam.dto.common.ListQuery;
+import com.windasoft.eam.dto.system.UserNameOption;
+import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
@@ -136,7 +140,7 @@ class MaintenanceReferenceMySqlIT {
   @MockitoSpyBean MaintenanceRepository repository;
   @MockitoSpyBean EquipmentQueryRepository equipmentFacts;
   @MockitoSpyBean NotificationRepository notifications;
-  @Autowired com.windasoft.eam.service.planning.PlanningSelectorService selectors;
+  @Autowired PlanningSelectorService selectors;
   @Autowired MaintenanceListService lists;
   @Autowired MaintenanceFileService fileService;
   @Autowired MaintenanceProjectService projects;
@@ -905,9 +909,31 @@ class MaintenanceReferenceMySqlIT {
     // 无类别限制的标准仍适用于可选设备；实际Service授权和类别父链SQL均执行。
     definitionStorage.insert(TYPE + 10, TENANT, "standards", "SELECT-STANDARD", "选择标准", ORG, USER, "{}");
     var selected = selectors.standards("maintenance",
-        com.windasoft.eam.dto.common.ListQuery.from(Map.of()), EQUIPMENT, null);
+        ListQuery.from(Map.of()), EQUIPMENT, null);
     assertEquals(1L, selected.page().total());
     assertEquals(Long.toString(TYPE + 10), selected.data().getFirst().get("id"));
+  }
+
+  @Test
+  void organizationContextAndChoiceUsersKeepExistingFieldsAndActiveRules() {
+    when(permissions.anyMaintenance("查看")).thenReturn(true);
+    var choices = json.valueToTree(definitions.choices(false));
+    var orgs = choices.path("organizations");
+    assertEquals(1, orgs.size());
+    assertEquals(Long.toString(ORG + 1), orgs.get(0).path("id").asText());
+    assertEquals(Long.toString(ORG), orgs.get(0).path("parentId").asText());
+    assertEquals(4, orgs.get(0).size());
+    assertEquals("公司", orgs.get(0).path("type").asText());
+    var people = choices.path("users");
+    assertEquals(1, people.size());
+    assertEquals(Long.toString(USER), people.get(0).path("id").asText());
+    assertEquals("归属组织", people.get(0).path("department").asText());
+    assertEquals(4, people.get(0).size());
+    var context = lists.context("standards");
+    assertEquals(1, context.organizations().size());
+    assertEquals(Long.toString(ORG + 1), context.organizations().getFirst().id());
+    ContractTypes.assertExplicit(MaintenanceListContext.class);
+    ContractTypes.assertExplicit(UserNameOption.class);
   }
 
   private String jsonText(Object value) {

@@ -3,6 +3,7 @@ package com.windasoft.eam.repository.system;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.windasoft.eam.dto.common.ListQuery;
+import com.windasoft.eam.dto.system.UserNameOption;
 import com.windasoft.eam.entity.system.SystemUser;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +43,10 @@ public class SystemUserRepository {
     }
     where.orderByAsc(SystemUser::getDisplayName).orderByAsc(SystemUser::getId);
     return mapper.selectPage(new Page<>(query.page(), query.size()), where);
+  }
+
+  public List<UserNameOption> nameOptions(long tenant) {
+    return mapper.nameOptions(tenant);
   }
 
   public List<SystemUser> employees(long tenant) {
