@@ -7,15 +7,12 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class MaintenanceRepository {
-  private final MaintenanceDefinitionStorage definitions;
   private final JdbcTemplate db;
   private final NumberCounterMapper counter;
 
-  public MaintenanceRepository(
-      JdbcTemplate db, NumberCounterMapper counter, MaintenanceDefinitionStorage definitions) {
+  public MaintenanceRepository(JdbcTemplate db, NumberCounterMapper counter) {
     this.db = db;
     this.counter = counter;
-    this.definitions = definitions;
   }
 
   public void nextMonthlyNumber(String rule, String month) {
@@ -26,9 +23,7 @@ public class MaintenanceRepository {
     return counter.currentValue();
   }
 
-  public List<Map<String, Object>> loadDefinition(
-      long tenantId, Object kind, long id, boolean lock) {
-    if (lock) definitions.lock(tenantId, kind.toString(), id);
+  public List<Map<String, Object>> loadDefinition(long tenantId, String kind, long id) {
     return db.queryForList(
         "SELECT * FROM v_maintenance_definition WHERE tenant_id=? AND kind=? AND id=?",
         tenantId,
@@ -156,8 +151,8 @@ public class MaintenanceRepository {
         id);
   }
 
-  public List<Map<String, Object>> lockPlans(long tenant, Long planId) {
-    definitions.lockPlans(tenant, planId);
+  /** 仅取已锁定计划的关系投影；加锁由生成Service调用计划主仓储，不再依赖通用写入器。 */
+  public List<Map<String, Object>> planRowsForGeneration(long tenant, Long planId) {
     return db.queryForList(
         "SELECT * FROM v_maintenance_definition WHERE tenant_id=? AND kind='plans'"
             + (planId == null ? "" : " AND id=?")
@@ -165,8 +160,8 @@ public class MaintenanceRepository {
         planId == null ? new Object[] {tenant} : new Object[] {tenant, planId});
   }
 
-  public List<Map<String, Object>> lockPlanSchedules(long tenantId, Object id) {
-    definitions.lockDevices(tenantId, id);
+  /** 生成Service先锁定完整安排集合，此处只投影启用安排并保留原ID顺序。 */
+  public List<Map<String, Object>> scheduleRowsForGeneration(long tenantId, long id) {
     return db.queryForList(
         "SELECT * FROM v_maintenance_schedule WHERE tenant_id=? AND plan_id=? AND enabled=1"
             + " ORDER BY id",

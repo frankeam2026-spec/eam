@@ -54,4 +54,14 @@ public class MaintenancePlanRepository {
             .eq(MaintenancePlan::getTenantId, tenant)
             .eq(MaintenancePlan::getId, id));
   }
+
+  /** 生成前锁住租户全部目标计划，包含停用计划；排序保持原多计划生成的锁顺序。 */
+  public void lockForGeneration(long tenant, Long plan) {
+    mapper.selectList(
+        new LambdaQueryWrapper<MaintenancePlan>()
+            .eq(MaintenancePlan::getTenantId, tenant)
+            .eq(plan != null, MaintenancePlan::getId, plan)
+            .orderByAsc(MaintenancePlan::getId)
+            .last("FOR UPDATE"));
+  }
 }

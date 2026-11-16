@@ -11,12 +11,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
-import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.basedata.BaseItemRepository;
-import com.windasoft.eam.service.basedata.BaseDataType;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.service.basedata.BaseDataReferenceService;
+import com.windasoft.eam.service.basedata.BaseDataType;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.util.ArrayList;
@@ -56,9 +56,9 @@ public class MaintenanceProjectService {
     this.permissions = permissions;
   }
 
-  Map<String, Object> raw(String kind, long tenant, long id, boolean lock) {
+  Map<String, Object> raw(String kind, long tenant, long id) {
     require(KINDS.contains(kind), MessageContext.text("server.system.message0045"));
-    var a = repository.loadDefinition(tenant, kind, id, lock);
+    var a = repository.loadDefinition(tenant, kind, id);
     if (a.isEmpty())
       throw new LocalizedStatusException(HttpStatus.NOT_FOUND, "server.inspection.message0013");
     return a.getFirst();
@@ -86,7 +86,7 @@ public class MaintenanceProjectService {
     Map<String, Object> legacy = null;
     Map<String, Object> legacyPayload = null;
     if (!detail.containsKey("projectRefs")) {
-      legacy = raw("standards", tenant, number(detail.get("standardId")), false);
+      legacy = raw("standards", tenant, number(detail.get("standardId")));
       legacyPayload = decode(legacy.get("payload"));
       references =
           rows(legacyPayload.get("items")).stream()
@@ -113,7 +113,7 @@ public class MaintenanceProjectService {
           standards.computeIfAbsent(
               number(ref.get("standardId")),
               id -> {
-                var row = raw("standards", tenant, id, false);
+                var row = raw("standards", tenant, id);
                 return standardProjects(row, decode(row.get("payload")), checkAccess);
               });
       var item = standard.items().get(text(ref, "itemId"));
@@ -161,12 +161,18 @@ public class MaintenanceProjectService {
     var reference = new LinkedHashMap<String, Object>();
     reference.put("id", equipment.getId());
     reference.put("category_id", equipment.getCategoryId());
-    return BaseDataReferenceService.applicable(standard, reference, baseItems.itemsByType(tenant, BaseDataType.CATEGORY.code(), false).stream().<Map<String, Object>>map(item -> {
-      var row = new LinkedHashMap<String, Object>();
-      row.put("id", item.getId());
-      row.put("parent_id", item.getParentId());
-      return row;
-    }).toList());
+    return BaseDataReferenceService.applicable(
+        standard,
+        reference,
+        baseItems.itemsByType(tenant, BaseDataType.CATEGORY.code(), false).stream()
+            .<Map<String, Object>>map(
+                item -> {
+                  var row = new LinkedHashMap<String, Object>();
+                  row.put("id", item.getId());
+                  row.put("parent_id", item.getParentId());
+                  return row;
+                })
+            .toList());
   }
 
   Map<String, Object> decode(Object value) {

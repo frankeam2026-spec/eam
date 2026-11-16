@@ -10,6 +10,7 @@ import com.windasoft.eam.entity.maintenance.MaintenanceType;
 import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenancePlanRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.service.system.AuthContext;
@@ -23,6 +24,7 @@ class MaintenanceGenerationServiceTest {
     var repo = mock(MaintenanceRepository.class);
     var types = mock(MaintenanceTypeRepository.class);
     var schedules = mock(MaintenancePlanDeviceRepository.class);
+    var planDefinitions = mock(MaintenancePlanRepository.class);
     var projects = mock(MaintenanceProjectService.class);
     var views = mock(MaintenanceViewAssembler.class);
     var journal = mock(MaintenanceTaskJournal.class);
@@ -31,6 +33,7 @@ class MaintenanceGenerationServiceTest {
         new MaintenanceGenerationService(
             repo,
             schedules,
+            planDefinitions,
             types,
             mock(MaintenanceExecutionStorage.class),
             mock(TaskSourceRelationsRepository.class),
@@ -66,8 +69,8 @@ class MaintenanceGenerationServiceTest {
                 0,
                 "payload",
                 "{\"period\":1,\"unit\":\"周\",\"validDays\":7}"));
-    when(repo.lockPlans(10001L, 10L)).thenReturn(List.of(plan));
-    when(repo.lockPlanSchedules(10001L, 10L)).thenReturn(List.of(schedule));
+    when(repo.planRowsForGeneration(10001L, 10L)).thenReturn(List.of(plan));
+    when(repo.scheduleRowsForGeneration(10001L, 10L)).thenReturn(List.of(schedule));
     var type = new MaintenanceType();
     type.setId(40L);
     type.setName("周");
@@ -99,6 +102,11 @@ class MaintenanceGenerationServiceTest {
             anyString()))
         .thenReturn(1);
     assertEquals(1, service.generate(10001L, 10L));
+    var locks = inOrder(planDefinitions, repo, schedules);
+    locks.verify(planDefinitions).lockForGeneration(10001L, 10L);
+    locks.verify(repo).planRowsForGeneration(10001L, 10L);
+    locks.verify(schedules).lockForGeneration(10001L, 10L);
+    locks.verify(repo).scheduleRowsForGeneration(10001L, 10L);
     verify(schedules).advance(10001L, 20L, due.plusWeeks(1), 1);
     verify(journal)
         .notify(eq(10001L), anyLong(), eq(List.of(73001L)), eq("保养待执行"), eq("工程设备"), eq(true));

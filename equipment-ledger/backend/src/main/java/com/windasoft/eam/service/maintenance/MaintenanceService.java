@@ -188,8 +188,8 @@ public class MaintenanceService {
   }
 
   @SuppressWarnings("unchecked")
-  Map<String, Object> raw(String kind, long tenant, long id, boolean lock) {
-    return projects.raw(kind, tenant, id, lock);
+  Map<String, Object> raw(String kind, long tenant, long id) {
+    return projects.raw(kind, tenant, id);
   }
 
   MaintenanceTypeView cycleType(long tenant, Object id) {
@@ -254,7 +254,7 @@ public class MaintenanceService {
     if (kind.equals("standards")) {
       return legacyStandard(standards.get(id));
     }
-    var row = raw(kind, auth.tenantId(), id, false);
+    var row = raw(kind, auth.tenantId(), id);
     if (!visible(row, "查看")) {
       deny();
     }

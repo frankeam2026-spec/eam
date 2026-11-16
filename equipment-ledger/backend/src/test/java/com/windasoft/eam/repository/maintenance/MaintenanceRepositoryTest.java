@@ -33,11 +33,7 @@ class MaintenanceRepositoryTest {
   @Test
   void dynamicReferenceColumnHasWhitelist() {
     var db = mock(JdbcTemplate.class);
-    var repository =
-        new MaintenanceRepository(
-            db,
-            mock(NumberCounterMapper.class),
-            mock(MaintenanceDefinitionStorage.class));
+    var repository = new MaintenanceRepository(db, mock(NumberCounterMapper.class));
     assertThrows(
         IllegalArgumentException.class,
         () -> repository.countScheduleReferences(10001L, 1L, "id OR 1=1"));
