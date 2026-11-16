@@ -1,6 +1,7 @@
 package com.windasoft.eam.repository.maintenance;
 
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
+import java.time.LocalDate;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -47,12 +48,15 @@ public class MaintenanceRepository {
         id);
   }
 
-  public List<Map<String, Object>> findLatestDueDate(long tenantId, long scheduleId) {
-    return db.queryForList(
-        "SELECT due_date FROM v_maintenance_task WHERE tenant_id=? AND schedule_id=?"
-            + " ORDER BY due_date DESC LIMIT 1",
-        tenantId,
-        scheduleId);
+  public LocalDate latestDueDate(long tenant, long schedule) {
+    var dates =
+        db.query(
+            "SELECT due_date FROM v_maintenance_task WHERE tenant_id=? AND schedule_id=? ORDER BY"
+                + " due_date DESC LIMIT 1",
+            (row, index) -> row.getDate("due_date").toLocalDate(),
+            tenant,
+            schedule);
+    return dates.isEmpty() ? null : dates.getFirst();
   }
 
   public int countPlanTasks(long tenantId, long id) {
@@ -64,9 +68,10 @@ public class MaintenanceRepository {
   }
 
   public int countScheduleReferences(long tenantId, long id, String column) {
-    if (!Set.of("type_id", "standard_id").contains(column))
+    if (!Set.of("type_id", "standard_id").contains(column)) {
       throw new com.windasoft.eam.common.LocalizedArgumentException(
           "server.maintenance.message0001");
+    }
     return db.queryForObject(
         "SELECT COUNT(*) FROM v_maintenance_schedule WHERE tenant_id=? AND "
             + column
@@ -93,11 +98,12 @@ public class MaintenanceRepository {
   }
 
   public List<Map<String, Object>> loadTask(long tenantId, long id, boolean lock) {
-    if (lock)
+    if (lock) {
       db.queryForList(
           "SELECT id FROM eam_maintenance_task WHERE tenant_id=? AND id=? FOR UPDATE",
           tenantId,
           id);
+    }
     return db.queryForList(
         "SELECT * FROM v_maintenance_task WHERE tenant_id=? AND id=?", tenantId, id);
   }

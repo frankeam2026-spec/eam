@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.dto.system.NotificationContracts.*;
 import com.windasoft.eam.repository.system.NotificationRepository;
+import com.windasoft.eam.dto.system.PlanReminderBinding;
+import java.time.LocalDateTime;
 import java.util.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -95,12 +97,40 @@ public class NotificationPolicyService {
     if(id==null)return;var p=repo.policy(tenant,id,false);
     require(p!=null && kind.equals(p.get("business_kind")) && yes(p.get("enabled")),"请选择本业务已启用的提醒策略");
   }
-  public void saveBinding(long tenant,String kind,long id,Map<String,Object> body) {
-    if(!body.containsKey("reminderMode"))return;
-    String mode=Objects.toString(body.get("reminderMode"),"DEFAULT");require(Set.of("DEFAULT","POLICY","OFF").contains(mode),"提醒策略模式无效");
-    Long selected=mode.equals("POLICY") && body.get("reminderPolicyId")!=null && !body.get("reminderPolicyId").toString().isBlank()?Long.valueOf(body.get("reminderPolicyId").toString()):null;
-    require(!mode.equals("POLICY") || selected!=null,"请选择提醒策略");validatePolicy(tenant,kind,selected);repo.binding(tenant,kind,id,mode,selected);
+  public void saveBinding(long tenant, String kind, long id, Map<String, Object> body) {
+    if (!body.containsKey("reminderMode")) {
+      return;
+    }
+    String mode = Objects.toString(body.get("reminderMode"), "DEFAULT");
+    Long selected =
+        mode.equals("POLICY")
+                && body.get("reminderPolicyId") != null
+                && !body.get("reminderPolicyId").toString().isBlank()
+            ? Long.valueOf(body.get("reminderPolicyId").toString())
+            : null;
+    saveBinding(tenant, kind, id, mode, selected);
   }
+
+  /** 类型化计划调用同一绑定规则，不复制策略校验或改变生效时间更新条件。 */
+  public void saveBinding(long tenant, String kind, long id, String requestedMode, Long selected) {
+    String mode = Objects.toString(requestedMode, "DEFAULT");
+    require(Set.of("DEFAULT", "POLICY", "OFF").contains(mode), "提醒策略模式无效");
+    Long policy = mode.equals("POLICY") ? selected : null;
+    require(!mode.equals("POLICY") || policy != null, "请选择提醒策略");
+    validatePolicy(tenant, kind, policy);
+    repo.binding(tenant, kind, id, mode, policy);
+  }
+
+  /** 旧JDBC字段映射在所属通知能力内转换，计划Service不接收固定结构Map。 */
+  public PlanReminderBinding planBinding(long tenant, String kind, long id) {
+    var row = repo.binding(tenant, kind, id);
+    return new PlanReminderBinding(
+        Objects.toString(row.get("reminderMode"), null),
+        Objects.toString(row.get("reminderPolicyId"), null),
+        (LocalDateTime) row.get("reminderEffectiveAt"),
+        Objects.toString(row.get("reminderPolicyName"), null));
+  }
+
   public void attachBinding(long tenant,String kind,long id,Map<String,Object> view) {view.putAll(repo.binding(tenant,kind,id));}
   public Map<String,Object> users(String q,int page,int size) {permissions.require("notificationPolicy","查看");return Map.of("data",repo.users(auth.tenantId(),q,page,size),"total",repo.userCount(auth.tenantId(),q));}
 }

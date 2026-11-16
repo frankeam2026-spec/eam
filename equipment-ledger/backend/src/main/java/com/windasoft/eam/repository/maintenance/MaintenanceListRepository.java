@@ -10,6 +10,8 @@ import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.knowledge.AiBusinessCatalog;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantResult;
+import com.windasoft.eam.dto.maintenance.MaintenancePlanRow;
+import com.windasoft.eam.dto.maintenance.MaintenancePlanView;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardRow;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardView;
 import com.windasoft.eam.dto.system.PermissionScope;
@@ -49,15 +51,17 @@ public class MaintenanceListRepository {
               "dueDate",
               "expiresDate",
               "actualStartAt",
-              "actualEndAt"))
+              "actualEndAt")) {
         select += "," + fields("tasks").get(key).expression() + " `" + key + "`";
+      }
       select +=
           ",t.status,CAST(t.plan_id AS CHAR) planId,CAST(t.equipment_id AS CHAR)"
               + " equipmentId,CAST(t.owner_id AS CHAR) ownerId,CAST(t.company_id AS CHAR)"
               + " companyId,(SELECT c.name FROM eam_org_unit c WHERE c.tenant_id=t.tenant_id AND"
               + " c.id=t.company_id) company";
-    } else
+    } else {
       select += ",t.name," + fields(selected.kind()).get("enabledLabel").expression() + " status";
+    }
     return AssistantReadSource.selected(select, selected.from(), selected.predicate());
   }
 
@@ -69,10 +73,12 @@ public class MaintenanceListRepository {
     var source = assistantSource(selection);
     var filter =
         AiBusinessFilters.compile(plan.where(), domain, request.evaluatedAt(), user, tenant);
-    if (request.equipmentId() != null)
+    if (request.equipmentId() != null) {
       filter = filter.and(assistant.equipmentFilter(plan, tenant, request.equipmentId()));
-    if (request.start() != null)
+    }
+    if (request.start() != null) {
       filter = filter.and(assistant.timeFilter(plan.timeField(), request.start(), request.end()));
+    }
     checkNames(plan.where(), domain, source, filter);
     var result = assistant.execute(source, filter, plan, request.page(), request.size());
     long total = ((Number) result.get("total")).longValue();
@@ -93,9 +99,13 @@ public class MaintenanceListRepository {
       AiBusinessCatalog.Domain domain,
       AssistantReadSource source,
       SqlPredicate filter) {
-    if (node.isMissingNode() || node.isNull()) return;
+    if (node.isMissingNode() || node.isNull()) {
+      return;
+    }
     if (node.has("children")) {
-      for (var child : node.path("children")) checkNames(child, domain, source, filter);
+      for (var child : node.path("children")) {
+        checkNames(child, domain, source, filter);
+      }
       return;
     }
     var field = domain.fields().get(node.path("field").asText());
@@ -107,8 +117,9 @@ public class MaintenanceListRepository {
             filter,
             node.path("field").asText(),
             field.identity(),
-            node.path("values").get(0).asText()))
+            node.path("values").get(0).asText())) {
       throw new IllegalArgumentException("所选" + field.label() + "存在同名对象，请补充公司、部门或编号限定，不能将同名对象合并");
+    }
   }
 
   // 公共动态执行器的框架行映射只在此边界转换；固定总数和列目录不以任意Map跨Service传递。
@@ -132,8 +143,9 @@ public class MaintenanceListRepository {
     fields.put("createdAt", f("t.created_at", DATETIME));
     fields.put("department", f("COALESCE(o.name,'')", TEXT));
     if (kind.equals("tasks")) {
-      for (String key : List.of("equipmentName", "equipmentCode", "typeName", "planName"))
+      for (String key : List.of("equipmentName", "equipmentCode", "typeName", "planName")) {
         fields.put(key, f("JSON_UNQUOTE(JSON_EXTRACT(t.snapshot,'$." + key + "'))", TEXT));
+      }
       fields.put("status", f("t.status", CHOICE));
       fields.put("dueDate", f("t.due_date", DATE));
       fields.put("expiresDate", f("t.expires_date", DATE));
@@ -186,8 +198,9 @@ public class MaintenanceListRepository {
       ListQuery query,
       SqlPredicate custom,
       String customOrder) {
-    if (!Set.of("plans", "standards", "tasks").contains(kind))
+    if (!Set.of("plans", "standards", "tasks").contains(kind)) {
       throw new LocalizedArgumentException("server.maintenance.message0002");
+    }
     boolean task = kind.equals("tasks");
     String from =
         "FROM "
@@ -197,7 +210,9 @@ public class MaintenanceListRepository {
                 ? " LEFT JOIN eam_sys_user u ON u.id=t.owner_id AND u.tenant_id=t.tenant_id"
                 : "");
     var predicate = SqlPredicate.of("t.tenant_id=?", tenant);
-    if (!task) predicate = predicate.and(SqlPredicate.of("t.kind=?", kind));
+    if (!task) {
+      predicate = predicate.and(SqlPredicate.of("t.kind=?", kind));
+    }
     var access =
         SqlScopes.scope(
             scope,
@@ -220,12 +235,15 @@ public class MaintenanceListRepository {
                 user)
             : SqlPredicate.of("1=0");
     // Participant visibility is the existing exception; export always also needs its scope.
-    if (task && !export) access = access.or(owner).or(reviewer);
+    if (task && !export) {
+      access = access.or(owner).or(reviewer);
+    }
     predicate = predicate.and(access);
-    if (organizationIds != null)
+    if (organizationIds != null) {
       predicate = predicate.and(SqlScopes.in("t.department_id", organizationIds));
+    }
     if (task && !Set.of("全部", "all", "").contains(query.queue())) {
-      if (query.queue().equals("待我执行"))
+      if (query.queue().equals("待我执行")) {
         predicate =
             predicate
                 .and(owner)
@@ -233,18 +251,21 @@ public class MaintenanceListRepository {
                     SqlPredicate.of(
                         "(t.owner_id IS NULL OR t.owner_id=?) AND t.status IN ('待执行','执行中','挂起')",
                         user));
-      else if (query.queue().equals("待我验收"))
+      } else if (query.queue().equals("待我验收")) {
         predicate = predicate.and(reviewer).and(SqlPredicate.of("t.status='待验收'"));
-      else if (Set.of("待执行", "执行中", "挂起", "待验收", "已完成", "已作废", "过期作废").contains(query.queue()))
+      } else if (Set.of("待执行", "执行中", "挂起", "待验收", "已完成", "已作废", "过期作废").contains(query.queue())) {
         predicate = predicate.and(SqlPredicate.of("t.status=?", query.queue()));
-      else throw new LocalizedArgumentException("server.maintenance.message0003");
+      } else {
+        throw new LocalizedArgumentException("server.maintenance.message0003");
+      }
     }
     var fields = fields(kind);
     predicate = predicate.and(SqlListFilters.apply(json, query, fields)).and(custom);
     if (!query.keyword().isBlank()) {
       var search = SqlPredicate.of("1=0");
-      for (var field : fields.values())
+      for (var field : fields.values()) {
         search = search.or(SqlListFilters.contains(field.expression(), query.keyword()));
+      }
       predicate = predicate.and(search);
     }
     String order =
@@ -267,15 +288,22 @@ public class MaintenanceListRepository {
                 + " p.task_id=t.id AND p.role_code='reviewer' AND p.user_id=?)",
             user);
     var permission = SqlScopes.scope(scope, "t.company_id", "t.department_id", "t.owner_id", user);
-    if (scope.owner()) permission = permission.or(reviewer);
+    if (scope.owner()) {
+      permission = permission.or(reviewer);
+    }
     return reviewer.and(permission);
   }
 
   public Set<Long> taskOrganizationIds(Selection selection) {
     var result = new HashSet<Long>();
     for (var row :
-        lists.distinct("t.company_id,t.department_id", selection.from(), selection.predicate()))
-      for (Object value : row.values()) if (value instanceof Number n) result.add(n.longValue());
+        lists.distinct("t.company_id,t.department_id", selection.from(), selection.predicate())) {
+      for (Object value : row.values()) {
+        if (value instanceof Number n) {
+          result.add(n.longValue());
+        }
+      }
+    }
     return result;
   }
 
@@ -381,6 +409,49 @@ public class MaintenanceListRepository {
           details.owners(),
           details.reviewers(),
           details.details());
+    } catch (JsonProcessingException failure) {
+      throw new LocalizedArgumentException("server.maintenance.message0009");
+    }
+  }
+
+  /** 复用原关系投影，JSON仅为视图输出；固定计划字段在仓储边界完成类型映射。 */
+  public MaintenancePlanView planView(long tenant, long id) {
+    var rows =
+        lists.rows(
+            "t.*",
+            "FROM v_maintenance_definition t",
+            SqlPredicate.of("t.tenant_id=? AND t.kind=? AND t.id=?", tenant, "plans", id),
+            "t.id",
+            ListQuery.from(Map.of("size", "1")));
+    return rows.isEmpty() ? null : planView(rows.getFirst());
+  }
+
+  public List<MaintenancePlanRow> planRows(Selection selected, ListQuery query) {
+    return page(selected, query).stream()
+        .map(
+            row ->
+                new MaintenancePlanRow(
+                    planView(row),
+                    Objects.toString(row.get("department"), ""),
+                    row.containsKey("owner") ? Objects.toString(row.get("owner"), "") : null,
+                    ((Number) row.get("equipmentCount")).longValue(),
+                    ((Number) row.get("itemCount")).longValue(),
+                    Objects.toString(row.get("enabledLabel"), ""),
+                    null))
+        .toList();
+  }
+
+  private MaintenancePlanView planView(Map<String, Object> row) {
+    try {
+      var result = json.readValue(Objects.toString(row.get("payload")), MaintenancePlanView.class);
+      result.setId(Objects.toString(row.get("id")));
+      result.setCode(Objects.toString(row.get("code")));
+      result.setName(Objects.toString(row.get("name")));
+      result.setDepartmentId(Objects.toString(row.get("department_id"), ""));
+      result.setCreatorId(Objects.toString(row.get("creator_id")));
+      result.setRowVersion(((Number) row.get("row_version")).intValue());
+      result.setCreatedAt(Objects.toString(row.get("created_at")).replace('T', ' '));
+      return result;
     } catch (JsonProcessingException failure) {
       throw new LocalizedArgumentException("server.maintenance.message0009");
     }

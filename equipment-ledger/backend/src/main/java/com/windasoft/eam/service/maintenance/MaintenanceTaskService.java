@@ -18,6 +18,8 @@ import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.domain.maintenance.MaintenanceCalculationMode;
+import com.windasoft.eam.domain.maintenance.MaintenanceReviewMode;
 import com.windasoft.eam.domain.maintenance.MaintenanceTaskAction;
 import com.windasoft.eam.domain.maintenance.MaintenanceTaskStatus;
 import com.windasoft.eam.entity.equipment.EquipmentHistory;
@@ -110,7 +112,9 @@ public class MaintenanceTaskService {
     experienceInventoryMutex.enter();
     long tenant = auth.tenantId();
     var r = taskRaw(tenant, id, true);
-    if (!taskAccess(r, "查看")) deny();
+    if (!taskAccess(r, "查看")) {
+      deny();
+    }
     VersionGuard.checkPayload((Number) r.get("row_version"), body);
     String state = Objects.toString(r.get("status")), next = state;
     var snap = decode(r.get("snapshot"));
@@ -128,7 +132,9 @@ public class MaintenanceTaskService {
             MaintenanceTaskAction.SUSPEND,
             MaintenanceTaskAction.RESUME)
         .contains(operation)) {
-      if (!owners.contains(user) || (owner != null && owner != user)) deny();
+      if (!owners.contains(user) || (owner != null && owner != user)) {
+        deny();
+      }
     }
     if (operation == MaintenanceTaskAction.START) {
       require(
@@ -139,10 +145,11 @@ public class MaintenanceTaskService {
               .toLocalDate()
               .isAfter(LocalDate.now(ZoneId.of("Asia/Shanghai"))),
           MessageContext.text("server.maintenance.message0049"));
-      if (yes(snap.get("scanStart")))
+      if (yes(snap.get("scanStart"))) {
         require(
             text(snap, "equipmentCode").equals(text(body, "equipmentCode")),
             MessageContext.text("server.maintenance.message0050"));
+      }
       owner = user;
       next = MaintenanceTaskStatus.IN_PROGRESS.code();
       result.put("startedAt", LocalDateTime.now(ZoneId.of("Asia/Shanghai")).toString());
@@ -206,7 +213,7 @@ public class MaintenanceTaskService {
       result.remove("rowVersion");
       result.put("items", checked);
       materialCustody.finishTask("保养", id, body);
-      boolean needsAcceptance = !text(snap, "reviewMode").equals("无需验收");
+      boolean needsAcceptance = !text(snap, "reviewMode").equals(MaintenanceReviewMode.NONE.code());
       next =
           needsAcceptance
               ? MaintenanceTaskStatus.PENDING_ACCEPTANCE.code()
@@ -223,7 +230,9 @@ public class MaintenanceTaskService {
       require(
           state.equals(MaintenanceTaskStatus.PENDING_ACCEPTANCE.code()),
           MessageContext.text("server.maintenance.message0058"));
-      if (!reviewers.contains(user) || !taskAccess(r, "验收")) deny();
+      if (!reviewers.contains(user) || !taskAccess(r, "验收")) {
+        deny();
+      }
       var decision = AcceptanceDecision.parse(body.get("decision"));
       require(
           number(body.get("score")) >= 1 && number(body.get("score")) <= 5,
@@ -263,7 +272,9 @@ public class MaintenanceTaskService {
       next = MaintenanceTaskStatus.IN_PROGRESS.code();
       journal.notify(tenant, id, List.of(user), "保养待处理", text(snap, "equipmentName"), true);
     } else if (operation == MaintenanceTaskAction.TRANSFER) {
-      if (!taskAccess(r, "编辑")) deny();
+      if (!taskAccess(r, "编辑")) {
+        deny();
+      }
       require(
           Set.of(
                   MaintenanceTaskStatus.PENDING.code(),
@@ -279,7 +290,9 @@ public class MaintenanceTaskService {
       journal.notify(
           tenant, id, ids(body.get("owners")), "保养待执行", text(snap, "equipmentName"), true);
     } else if (operation == MaintenanceTaskAction.VOID) {
-      if (!taskAccess(r, "删除")) deny();
+      if (!taskAccess(r, "删除")) {
+        deny();
+      }
       require(
           !Set.of(MaintenanceTaskStatus.COMPLETED.code(), MaintenanceTaskStatus.CANCELLED.code())
               .contains(state),
@@ -289,7 +302,9 @@ public class MaintenanceTaskService {
           MessageContext.text("server.maintenance.message0063"));
       next = MaintenanceTaskStatus.CANCELLED.code();
       journal.closeTodos(tenant, id);
-    } else throw new LocalizedArgumentException("server.inspection.message0011");
+    } else {
+      throw new LocalizedArgumentException("server.inspection.message0011");
+    }
     if (next.equals(MaintenanceTaskStatus.COMPLETED.code())
         && !state.equals(MaintenanceTaskStatus.COMPLETED.code())) {
       // 保留履历产生时机和原字段口径；复用设备仓储的数据库时间写入，后续保存失败时一并回滚。
@@ -304,7 +319,7 @@ public class MaintenanceTaskService {
       history.setStatus(MaintenanceTaskStatus.COMPLETED.code());
       history.setResult(text(body, "description"));
       histories.insert(history);
-      if ("完成时间".equals(text(snap, "calculation"))) {
+      if (MaintenanceCalculationMode.COMPLETION.code().equals(text(snap, "calculation"))) {
         var cycle = decode(snap.get("cycle"));
         LocalDate date =
             advance(
@@ -314,8 +329,9 @@ public class MaintenanceTaskService {
         schedules.reset(tenant, number(r.get("schedule_id")), date);
       }
     }
-    if (operation == MaintenanceTaskAction.PROCESS)
+    if (operation == MaintenanceTaskAction.PROCESS) {
       custom.save("maintenance_task", id, body, false);
+    }
     // 保留原顺序：人员与结果先保存，再推进主体版本；任一步失败均由本动作事务回滚。
     executions.participants(tenant, id, encode(snap));
     executions.save(tenant, id, encode(result));
@@ -334,8 +350,9 @@ public class MaintenanceTaskService {
           default -> "作废";
         };
     journal.event(tenant, id, label, user, auth.user().getDisplayName(), body);
-    if (operation == MaintenanceTaskAction.PROCESS)
+    if (operation == MaintenanceTaskAction.PROCESS) {
       experiencePublisher.publishEvent(new TaskResult("保养", id));
+    }
     return task(id);
   }
 
@@ -362,7 +379,9 @@ public class MaintenanceTaskService {
     for (var value : sorted) {
       long id = number(value.get("id"));
       var task = taskRaw(tenant, id, true);
-      if (!taskAccess(task, "删除")) deny();
+      if (!taskAccess(task, "删除")) {
+        deny();
+      }
       VersionGuard.checkPayload((Number) task.get("row_version"), value);
       require(
           Set.of("待执行", "已作废", "过期作废").contains(text(task, "status")),
@@ -404,7 +423,9 @@ public class MaintenanceTaskService {
     for (var value : sorted) {
       long id = number(value.get("id"));
       var task = taskRaw(tenant, id, true);
-      if (!taskAccess(task, "编辑")) deny();
+      if (!taskAccess(task, "编辑")) {
+        deny();
+      }
       VersionGuard.checkPayload((Number) task.get("row_version"), value);
       require(
           Set.of("待执行", "执行中", "挂起").contains(text(task, "status")),
@@ -432,13 +453,16 @@ public class MaintenanceTaskService {
 
   @Transactional
   public void batchAccept(List<Map<String, Object>> values) {
-    for (var v : sortedBatch(values)) action(number(v.get("id")), "accept", v);
+    for (var v : sortedBatch(values)) {
+      action(number(v.get("id")), "accept", v);
+    }
   }
 
   Map<String, Object> taskRaw(long tenant, long id, boolean lock) {
     var r = repository.loadTask(tenant, id, lock);
-    if (r.isEmpty())
+    if (r.isEmpty()) {
       throw new LocalizedStatusException(HttpStatus.NOT_FOUND, "server.maintenance.message0012");
+    }
     return r.getFirst();
   }
 
@@ -453,7 +477,9 @@ public class MaintenanceTaskService {
   @Transactional(readOnly = true)
   public Map<String, Object> task(long id) {
     var r = taskRaw(auth.tenantId(), id, false);
-    if (!taskAccess(r, "查看")) deny();
+    if (!taskAccess(r, "查看")) {
+      deny();
+    }
     var v = taskView(r);
     custom.attach("maintenance_task", v);
     var events = journal.events(auth.tenantId(), id);

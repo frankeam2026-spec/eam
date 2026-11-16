@@ -16,6 +16,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
+import com.windasoft.eam.domain.maintenance.MaintenanceCalculationMode;
+import com.windasoft.eam.domain.maintenance.MaintenanceReviewMode;
 import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
@@ -109,7 +111,8 @@ public class MaintenanceGenerationService {
         LocalDate due = ((Date) schedule.get("next_date")).toLocalDate();
         LocalDate anchor = ((Date) schedule.get("anchor_date")).toLocalDate();
         long index = number(schedule.get("cycle_index"));
-        boolean completion = text(p, "calculation").equals("完成时间");
+        boolean completion =
+            text(p, "calculation").equals(MaintenanceCalculationMode.COMPLETION.code());
         if (completion && repository.countOpenScheduleTasks(tenant, schedule.get("id")) > 0) {
           continue;
         }
@@ -130,8 +133,13 @@ public class MaintenanceGenerationService {
             snap.put("typeId", Long.toString(type.getId()));
             snap.put("typeName", type.getName());
             snap.put("calculation", p.get("calculation"));
-            boolean needsAcceptance = !text(p, "reviewMode").equals("无需验收");
-            snap.put("reviewMode", needsAcceptance ? "整机验收" : "无需验收");
+            boolean needsAcceptance =
+                !text(p, "reviewMode").equals(MaintenanceReviewMode.NONE.code());
+            snap.put(
+                "reviewMode",
+                needsAcceptance
+                    ? MaintenanceReviewMode.EQUIPMENT.code()
+                    : MaintenanceReviewMode.NONE.code());
             snap.put("cycle", cycle);
             snap.put(
                 "owners",

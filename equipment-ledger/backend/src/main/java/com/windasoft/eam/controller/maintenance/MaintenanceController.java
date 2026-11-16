@@ -87,11 +87,6 @@ public class MaintenanceController {
     return Map.of("success", true);
   }
 
-  @PostMapping("/plans/{id}/generate")
-  public Object generate(@PathVariable long id) {
-    return Map.of("count", service.generatePlan(id));
-  }
-
   @GetMapping("/{kind}")
   public Object list(
       @PathVariable String kind,

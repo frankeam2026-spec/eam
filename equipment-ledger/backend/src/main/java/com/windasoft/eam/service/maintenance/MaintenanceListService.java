@@ -1,12 +1,15 @@
 package com.windasoft.eam.service.maintenance;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantResult;
+import com.windasoft.eam.dto.maintenance.MaintenanceCustomFields;
 import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
 import com.windasoft.eam.dto.maintenance.MaintenanceOrganizationOption;
+import com.windasoft.eam.dto.maintenance.MaintenancePlanRow;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.common.SqlPredicate;
 import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
@@ -58,8 +61,9 @@ public class MaintenanceListService {
     } catch (ResponseStatusException error) {
       if (kind.equals("tasks")
           && action.equals("查看")
-          && error.getStatusCode() == HttpStatus.FORBIDDEN)
+          && error.getStatusCode() == HttpStatus.FORBIDDEN) {
         return new PermissionScope(false, null, Set.of(), false);
+      }
       throw error;
     }
   }
@@ -76,10 +80,13 @@ public class MaintenanceListService {
     for (var org : organizations) {
       long id = Long.parseLong(org.id());
       byId.put(id, org);
-      if (scope.matches(permissions.companyOfOrganization(id), id, null, auth.userId()))
+      if (scope.matches(permissions.companyOfOrganization(id), id, null, auth.userId())) {
         keep.add(id);
+      }
     }
-    if (scope.owner() && auth.user().getOrgId() != null) keep.add(auth.user().getOrgId());
+    if (scope.owner() && auth.user().getOrgId() != null) {
+      keep.add(auth.user().getOrgId());
+    }
     if (kind.equals("tasks")) {
       var q = ListQuery.from(Map.of());
       var selected =
@@ -124,9 +131,13 @@ public class MaintenanceListService {
                 ListQuery.from(Map.of()),
                 SqlPredicate.of("1=1"),
                 null);
-        if (repository.referencesFile(selected, id)) return true;
+        if (repository.referencesFile(selected, id)) {
+          return true;
+        }
       } catch (ResponseStatusException denied) {
-        if (denied.getStatusCode().value() != 403) throw denied;
+        if (denied.getStatusCode().value() != 403) {
+          throw denied;
+        }
       }
     }
     return false;
@@ -169,7 +180,9 @@ public class MaintenanceListService {
   /** 权限与组织筛选的事实；不传SQL，供逐步类型化的列表链复用同一授权口径。 */
   public record Access(PermissionScope operation, PermissionScope read, Set<Long> organizations) {
     public Access {
-      if (organizations != null) organizations = Set.copyOf(organizations);
+      if (organizations != null) {
+        organizations = Set.copyOf(organizations);
+      }
     }
   }
 
@@ -190,13 +203,63 @@ public class MaintenanceListService {
   }
 
   public PageResult<Map<String, Object>> query(String kind, ListQuery query, boolean export) {
+    if (kind.equals("plans")) {
+      var result = queryPlans(query, export);
+      // 旧聚合/CSV仍接受Map，仅在兼容输出边界转换，查询及扩展字段批量读取使用明确类型。
+      var rows =
+          result.data().stream()
+              .map(row -> json.convertValue(row, new TypeReference<Map<String, Object>>() {}))
+              .toList();
+      return new PageResult<>(rows, result.page());
+    }
+    var selected = select(kind, query, export);
+    var rows =
+        repository.page(selected, query).stream()
+            .map(kind.equals("tasks") ? views::task : views::definition)
+            .toList();
+    values.attach(objectType(kind), rows);
+    return new PageResult<>(rows, query.page(), query.size(), repository.count(selected));
+  }
+
+  /** 计划固定行模型沿用原授权/筛选/排序；一次批量加载扩展字段，不逐行查询。 */
+  @Transactional(readOnly = true)
+  public PageResult<MaintenancePlanRow> queryPlans(ListQuery query, boolean export) {
+    var selected = select("plans", query, export);
+    var rows = repository.planRows(selected, query);
+    var extra =
+        rows.isEmpty()
+            ? Map.<Long, BusinessValueService.Values>of()
+            : values.batch(
+                "maintenance_plan",
+                rows.stream().map(row -> Long.parseLong(row.definition().getId())).toList());
+    var result =
+        rows.stream()
+            .map(
+                row -> {
+                  var value = extra.get(Long.parseLong(row.definition().getId()));
+                  return row.withCustom(
+                      value == null
+                          ? null
+                          : new MaintenanceCustomFields(
+                              json.valueToTree(value.customFields()),
+                              json.valueToTree(value.customFieldLabels()),
+                              value.customSchemaVersion()));
+                })
+            .toList();
+    return new PageResult<>(result, query.page(), query.size(), repository.count(selected));
+  }
+
+  private static String objectType(String kind) {
+    return kind.equals("tasks")
+        ? "maintenance_task"
+        : kind.equals("plans") ? "maintenance_plan" : null;
+  }
+
+  private MaintenanceListRepository.Selection select(String kind, ListQuery query, boolean export) {
     var access = access(kind, query, export);
     var scope = access.operation();
     var organizations = access.organizations();
-    String object =
-        kind.equals("tasks")
-            ? "maintenance_task"
-            : kind.equals("plans") ? "maintenance_plan" : null;
+    String object = objectType(kind);
     var selected =
         repository.select(
             auth.tenantId(),
@@ -227,16 +290,13 @@ public class MaintenanceListService {
       try {
         acceptance = permissions.maintenance("验收");
       } catch (ResponseStatusException denied) {
-        if (denied.getStatusCode().value() != 403) throw denied;
+        if (denied.getStatusCode().value() != 403) {
+          throw denied;
+        }
         acceptance = new PermissionScope(false, null, Set.of(), false);
       }
       selected = repository.restrict(selected, repository.acceptance(acceptance, auth.userId()));
     }
-    var rows =
-        repository.page(selected, query).stream()
-            .map(kind.equals("tasks") ? views::task : views::definition)
-            .toList();
-    values.attach(object, rows);
-    return new PageResult<>(rows, query.page(), query.size(), repository.count(selected));
+    return selected;
   }
 }
