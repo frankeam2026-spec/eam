@@ -36,6 +36,35 @@ class OrganizationScopeServiceTest {
     assertEquals(Set.of(3L, 4L), scopes.companyDepartments(2L));
   }
 
+  @Test
+  void batchResolutionSharesNearestCompanyBrokenParentAndCycleRules() {
+    var repo = mock(AuthorizationRepository.class);
+    var auth = mock(AuthContext.class);
+    when(auth.tenantId()).thenReturn(10001L);
+    var rows =
+        List.of(
+            org(1L, null, "集团"),
+            org(2L, 1L, "公司"),
+            org(3L, 2L, "部门"),
+            org(4L, 3L, "部门"),
+            org(5L, 2L, "公司"),
+            org(6L, 5L, "部门"),
+            org(7L, 99L, "部门"),
+            org(8L, 9L, "部门"),
+            org(9L, 8L, "部门"));
+    for (var row : rows) {
+      when(repo.organization(10001L, row.getId())).thenReturn(row);
+    }
+    var service = new OrganizationScopeService(auth, repo);
+    var batch = service.companiesForOrganizations(rows);
+    for (var row : rows) {
+      assertEquals(service.companyOfOrganization(row.getId()), batch.get(row.getId()));
+    }
+    assertEquals(5L, batch.get(6L));
+    assertNull(batch.get(7L));
+    assertNull(batch.get(8L));
+  }
+
   private static OrgUnit org(long id, Long parent, String type) {
     var row = new OrgUnit();
     row.setId(id);

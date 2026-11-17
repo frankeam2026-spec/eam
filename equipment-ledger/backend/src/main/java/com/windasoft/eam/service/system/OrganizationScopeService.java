@@ -2,7 +2,13 @@ package com.windasoft.eam.service.system;
 
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.repository.system.AuthorizationRepository;
-import java.util.*;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
 import org.springframework.stereotype.Service;
 
 /** 组织权限范围计算：按照有效组织层级计算可访问集合，不单独授予操作权限。 */
@@ -21,11 +27,33 @@ public class OrganizationScopeService {
   }
 
   public Long companyOfOrganization(long tenant, Long orgId) {
+    return companyOfOrganization(orgId, id -> repository.organization(tenant, id));
+  }
+
+  /** 只使用调用方从同租户仓储取得的组织快照；不追加状态过滤，不跨越最近的公司边界。 */
+  public Map<Long, Long> companiesForOrganizations(List<OrgUnit> organizations) {
+    Map<Long, OrgUnit> byId = new HashMap<>();
+    for (var row : organizations) {
+      byId.put(row.getId(), row);
+    }
+    Map<Long, Long> result = new HashMap<>();
+    for (var row : organizations) {
+      result.put(row.getId(), companyOfOrganization(row.getId(), byId::get));
+    }
+    return result;
+  }
+
+  /** 单条与批量解析共用最近公司、断链和环检测语义，不能各自实现不同授权规则。 */
+  private Long companyOfOrganization(Long orgId, Function<Long, OrgUnit> lookup) {
     var visited = new HashSet<Long>();
     while (orgId != null && visited.add(orgId)) {
-      var org = repository.organization(tenant, orgId);
-      if (org == null) return null;
-      if (Set.of("公司", "集团").contains(org.getOrgType())) return org.getId();
+      var org = lookup.apply(orgId);
+      if (org == null) {
+        return null;
+      }
+      if (Set.of("公司", "集团").contains(org.getOrgType())) {
+        return org.getId();
+      }
       orgId = org.getParentId();
     }
     return null;

@@ -1,9 +1,19 @@
 package com.windasoft.eam.service.system;
 
-import com.windasoft.eam.dto.common.*;
-import com.windasoft.eam.dto.system.*;
-import com.windasoft.eam.repository.system.*;
-import java.util.*;
+import com.windasoft.eam.dto.common.ListQuery;
+import com.windasoft.eam.dto.common.PageResult;
+import com.windasoft.eam.dto.system.PermissionScope;
+import com.windasoft.eam.dto.system.UserListView;
+import com.windasoft.eam.dto.system.UserQueryRow;
+import com.windasoft.eam.dto.system.UserSummary;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.repository.system.RoleManagementRepository;
+import com.windasoft.eam.repository.system.UserListRepository;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -12,6 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class UserListService {
   private final UserListRepository repository;
+  private final RoleManagementRepository roles;
   private final OrgUnitRepository orgUnits;
   private final PermissionService permissions;
   private final OrganizationScopeService organizationScopes;
@@ -19,24 +30,32 @@ public class UserListService {
 
   public UserListService(
       UserListRepository repository,
+      RoleManagementRepository roles,
       OrgUnitRepository orgUnits,
       PermissionService permissions,
       OrganizationScopeService organizationScopes,
       AuthContext auth) {
     this.repository = repository;
+    this.roles = roles;
     this.orgUnits = orgUnits;
     this.permissions = permissions;
     this.organizationScopes = organizationScopes;
     this.auth = auth;
   }
 
+  /** 公司范围沿最近所属公司展开；选中组织和导出范围只与查看权限取交集，不能扩大结果。 */
   private UserListRepository.Selection select(ListQuery query, boolean export) {
     var scope = permissions.scope("user", "查看");
     var visible = new HashSet<>(scope.departmentIds());
-    for (var org : orgUnits.organizations(auth.tenantId()))
-      if (permissions.companyOfOrganization(org.getId()) != null
-          && scope.companyIds().contains(permissions.companyOfOrganization(org.getId())))
+    // 同次查看/导出复用一个可信组织快照，避免逐组织及逐祖先访问数据库。
+    var organizations = orgUnits.organizations(auth.tenantId());
+    var companies = organizationScopes.companiesForOrganizations(organizations);
+    for (var org : organizations) {
+      Long company = companies.get(org.getId());
+      if (company != null && scope.companyIds().contains(company)) {
         visible.add(org.getId());
+      }
+    }
     Set<Long> selected = null;
     if (!query.organization().isBlank()) {
       try {
@@ -52,10 +71,12 @@ public class UserListService {
       var exportScope = permissions.scope("user", "导出");
       if (!exportScope.all()) {
         var exportOrgs = new HashSet<>(exportScope.departmentIds());
-        for (var org : orgUnits.organizations(auth.tenantId()))
-          if (permissions.companyOfOrganization(org.getId()) != null
-              && exportScope.companyIds().contains(permissions.companyOfOrganization(org.getId())))
+        for (var org : organizations) {
+          Long company = companies.get(org.getId());
+          if (company != null && exportScope.companyIds().contains(company)) {
             exportOrgs.add(org.getId());
+          }
+        }
         if (scope.all()) visible = exportOrgs;
         else visible.retainAll(exportOrgs);
         scope = new PermissionScope(false, null, visible, false);
@@ -73,39 +94,38 @@ public class UserListService {
 
   private PageResult<UserListView> page(UserListRepository.Selection selection, ListQuery query) {
     var raw = repository.page(selection, query);
-    var ids = raw.stream().map(row -> ((Number) row.get("id")).longValue()).toList();
-    var roles = new HashMap<Long, List<String>>();
-    if (!ids.isEmpty())
-      for (var link : repository.roleLinks(auth.tenantId(), ids))
-        roles
-            .computeIfAbsent(((Number) link.get("user_id")).longValue(), key -> new ArrayList<>())
-            .add(link.get("role_id").toString());
+    var ids = raw.stream().map(UserQueryRow::id).toList();
+    var links = roles.userRolesForUsers(auth.tenantId(), ids);
     var rows =
         raw.stream()
             .map(
                 row ->
                     new UserListView(
-                        text(row, "id"),
-                        text(row, "account"),
-                        text(row, "display_name"),
-                        text(row, "employee_no"),
-                        text(row, "phone"),
-                        text(row, "org_id"),
-                        roles.getOrDefault(((Number) row.get("id")).longValue(), List.of()),
-                        Integer.parseInt(text(row, "status")) == 1 ? "启用" : "停用",
-                        text(row, "department"),
-                        text(row, "roles"), text(row, "email"), ((Number)row.get("email_version")).intValue()))
+                        Long.toString(row.id()),
+                        row.account(),
+                        row.name(),
+                        row.employeeNo(),
+                        row.phone(),
+                        row.orgId() == null ? "" : row.orgId().toString(),
+                        links.getOrDefault(row.id(), List.of()).stream()
+                            .map(link -> link.getRoleId().toString())
+                            .toList(),
+                        row.status() == 1 ? "启用" : "停用",
+                        row.department(),
+                        row.roles(),
+                        row.email(),
+                        row.emailVersion()))
             .toList();
     return new PageResult<>(rows, query.page(), query.size(), repository.count(selection));
   }
 
   @Transactional(readOnly = true)
-  public Map<String, Object> summary() {
+  public UserSummary summary() {
     try {
-      return Map.of("roleCounts", repository.roleCounts(select(ListQuery.from(Map.of()), false)));
+      return new UserSummary(repository.roleCounts(select(ListQuery.from(Map.of()), false)));
     } catch (ResponseStatusException denied) {
       if (denied.getStatusCode().value() != 403) throw denied;
-      return Map.of("roleCounts", Map.of());
+      return new UserSummary(Map.of());
     }
   }
 
@@ -118,9 +138,5 @@ public class UserListService {
       result.addAll(batch.data());
       if ((long) number * 200 >= batch.page().total()) return result;
     }
-  }
-
-  private static String text(Map<String, Object> row, String key) {
-    return Objects.toString(row.get(key), "");
   }
 }
