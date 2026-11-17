@@ -5,7 +5,6 @@ import static com.windasoft.eam.common.maintenance.MaintenanceSupport.deny;
 import static com.windasoft.eam.common.maintenance.MaintenanceSupport.ids;
 import static com.windasoft.eam.common.maintenance.MaintenanceSupport.number;
 import static com.windasoft.eam.common.maintenance.MaintenanceSupport.require;
-import static com.windasoft.eam.common.maintenance.MaintenanceSupport.rows;
 import static com.windasoft.eam.common.maintenance.MaintenanceSupport.text;
 import static com.windasoft.eam.common.maintenance.MaintenanceSupport.yes;
 import static com.windasoft.eam.service.maintenance.MaintenanceTaskJournal.EXECUTION_NOTICE;
@@ -18,11 +17,13 @@ import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.domain.maintenance.MaintenanceCalculationMode;
 import com.windasoft.eam.domain.maintenance.MaintenanceReviewMode;
+import com.windasoft.eam.dto.maintenance.MaintenanceExecutionResult;
+import com.windasoft.eam.entity.maintenance.MaintenanceTask;
 import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
-import com.windasoft.eam.repository.maintenance.MaintenanceExecutionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceTaskRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -44,10 +45,11 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class MaintenanceGenerationService {
   private final MaintenanceRepository repository;
+  private final MaintenanceTaskRepository tasks;
   private final MaintenancePlanDeviceRepository schedules;
   private final MaintenancePlanRepository planDefinitions;
   private final MaintenanceTypeRepository types;
-  private final MaintenanceExecutionStorage executions;
+  private final MaintenanceExecutionService executions;
   private final TaskSourceRelationsRepository taskSources;
   private final ObjectMapper json;
   private final AuthContext auth;
@@ -58,10 +60,11 @@ public class MaintenanceGenerationService {
 
   public MaintenanceGenerationService(
       MaintenanceRepository repository,
+      MaintenanceTaskRepository tasks,
       MaintenancePlanDeviceRepository schedules,
       MaintenancePlanRepository planDefinitions,
       MaintenanceTypeRepository types,
-      MaintenanceExecutionStorage executions,
+      MaintenanceExecutionService executions,
       TaskSourceRelationsRepository taskSources,
       ObjectMapper json,
       AuthContext auth,
@@ -70,6 +73,7 @@ public class MaintenanceGenerationService {
       MaintenanceViewAssembler views,
       MaintenanceTaskJournal journal) {
     this.repository = repository;
+    this.tasks = tasks;
     this.schedules = schedules;
     this.planDefinitions = planDefinitions;
     this.types = types;
@@ -113,7 +117,7 @@ public class MaintenanceGenerationService {
         long index = number(schedule.get("cycle_index"));
         boolean completion =
             text(p, "calculation").equals(MaintenanceCalculationMode.COMPLETION.code());
-        if (completion && repository.countOpenScheduleTasks(tenant, schedule.get("id")) > 0) {
+        if (completion && tasks.countOpenScheduleTasks(tenant, number(schedule.get("id"))) > 0) {
           continue;
         }
         if (!due.isAfter(generationDeadline)) {
@@ -177,40 +181,51 @@ public class MaintenanceGenerationService {
                         : cycle.get("validDays"));
             String durationUnit = cycle.containsKey("validUnit") ? text(cycle, "validUnit") : "日";
             var expires = duration == 0 ? null : advance(due, duration, durationUnit);
-            int added =
-                repository.insertTask(
-                    task,
-                    tenant,
-                    code,
-                    plan.get("id"),
-                    schedule.get("id"),
-                    equipment.getId(),
-                    schedule.get("type_id"),
-                    equipment.getCompanyOrgId(),
-                    equipment.getDepartmentOrgId(),
-                    due,
-                    expires,
-                    encode(views.historicalSnapshot(snap)));
+            var entity = new MaintenanceTask();
+            entity.setId(task);
+            entity.setTenantId(tenant);
+            entity.setCode(code);
+            entity.setPlanId(number(plan.get("id")));
+            entity.setScheduleId(number(schedule.get("id")));
+            entity.setEquipmentId(equipment.getId());
+            entity.setTypeId(number(schedule.get("type_id")));
+            entity.setCompanyId(equipment.getCompanyOrgId());
+            entity.setDepartmentId(equipment.getDepartmentOrgId());
+            entity.setDueDate(due);
+            entity.setExpiresDate(expires);
+            entity.setSnapshot(encode(views.historicalSnapshot(snap)));
+            int added = tasks.insertTask(entity);
             if (added > 0) {
               // 唯一键重复时不覆盖人员或来源；新任务仍按主体→人员→来源的原顺序写入同一事务。
               String content = encode(snap);
-              executions.participants(tenant, task, content);
+              executions.participants(
+                  tenant, task, ids(snap.get("owners")), ids(snap.get("reviewers")));
               taskSources.maintenance(tenant, task, equipment.getId(), content);
               if ("上次结果".equals(text(p, "autoFill"))) {
                 var previous =
-                    repository.findLastCompletedResult(
-                        tenant, equipment.getId(), schedule.get("id"));
-                if (!previous.isEmpty()) {
-                  var values = rows(decode(previous.getFirst().get("result")).get("items"));
-                  var draft = new ArrayList<Map<String, Object>>();
-                  for (var value : values) {
-                    var v = new LinkedHashMap<>(value);
-                    v.put("images", List.of());
-                    v.put("measure", "");
-                    v.put("resolved", false);
-                    draft.add(v);
+                    tasks.findLastCompletedResult(
+                        tenant, equipment.getId(), number(schedule.get("id")));
+                if (previous.isPresent()) {
+                  var draft = new ArrayList<MaintenanceExecutionResult.Item>();
+                  for (var value :
+                      previous.get().getItems() == null
+                          ? List.<MaintenanceExecutionResult.Item>of()
+                          : previous.get().getItems()) {
+                    draft.add(
+                        new MaintenanceExecutionResult.Item(
+                            value.getId(),
+                            value.getValue(),
+                            value.isAbnormal(),
+                            false,
+                            "",
+                            value.getRemark(),
+                            value.isImplicitNormal(),
+                            value.isSkipped(),
+                            List.of()));
                   }
-                  executions.save(tenant, task, encode(Map.of("items", draft)));
+                  var prefilled = new MaintenanceExecutionResult();
+                  prefilled.setItems(draft);
+                  executions.save(tenant, task, prefilled);
                 }
               }
               count++;
@@ -249,21 +264,18 @@ public class MaintenanceGenerationService {
       }
     }
     // 只有未开始的任务可自动过期作废；执行中的任务及其处理记录仍保留。
-    for (var task : repository.lockExpiredTasks(tenant, today)) {
-      long id = number(task.get("id"));
-      repository.expireTask(tenant, id);
+    for (long id : tasks.lockExpiredTasks(tenant, today)) {
+      tasks.expireTask(tenant, id);
       journal.closeTodos(tenant, id);
       journal.event(tenant, id, "过期作废", null, "系统", Map.of());
     }
-    for (var r : repository.listPendingTasks(tenant)) {
-      var snap = decode(r.get("snapshot"));
-      if (!((Date) r.get("due_date"))
-              .toLocalDate()
-              .isAfter(today.plusDays(number(snap.get("remindDays"))))
-          && !journal.hasExecutionNotice(tenant, number(r.get("id")))) {
+    for (var r : tasks.listPendingTasks(tenant)) {
+      var snap = decode(r.snapshot().toString());
+      if (!r.dueDate().isAfter(today.plusDays(number(snap.get("remindDays"))))
+          && !journal.hasExecutionNotice(tenant, r.id())) {
         journal.notify(
             tenant,
-            number(r.get("id")),
+            r.id(),
             ids(snap.get("owners")),
             EXECUTION_NOTICE,
             text(snap, "equipmentName"),

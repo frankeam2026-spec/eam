@@ -9,6 +9,7 @@ import com.windasoft.eam.dto.business.BusinessFilterTerm;
 import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.equipment.EquipmentForm;
 import com.windasoft.eam.dto.equipment.EquipmentQueryParameters;
+import com.windasoft.eam.dto.maintenance.MaintenanceTaskCommand;
 import com.windasoft.eam.dto.repair.RepairForm;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.system.SystemUser;
@@ -25,8 +26,8 @@ import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
 import com.windasoft.eam.repository.system.UserListRepository;
 import com.windasoft.eam.service.equipment.EquipmentCommandService;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
-import com.windasoft.eam.service.inspection.InspectionService;
 import com.windasoft.eam.service.inspection.InspectionGenerationService;
+import com.windasoft.eam.service.inspection.InspectionService;
 import com.windasoft.eam.service.inspection.InspectionTaskService;
 import com.windasoft.eam.service.inventory.InventoryFlowService;
 import com.windasoft.eam.service.inventory.InventoryListService;
@@ -569,6 +570,21 @@ class EngineeringQueryMySqlIT {
     assertEquals(2, repository.page(selection, q).size());
   }
 
+  private MaintenanceTaskCommand.Process maintenanceProcess(int version, LocalDateTime end) {
+    return new MaintenanceTaskCommand.Process(
+        version,
+        LocalDateTime.parse("2026-10-17T08:00:00"),
+        end,
+        null,
+        List.of(),
+        List.of(),
+        List.of(),
+        json.createObjectNode(),
+        0,
+        null,
+        null);
+  }
+
   @Test
   void maintenanceExecuteSubmitReturnAndAcceptPreserveVersionsAndStock() {
     maintenanceWorkflowFixtures();
@@ -586,59 +602,31 @@ class EngineeringQueryMySqlIT {
     SystemExecution.run(
         user,
         () -> {
-          var started = maintenanceTasks.action(960000001, "start", Map.of("rowVersion", 0));
-          assertEquals("执行中", started.get("status"));
+          var started =
+              maintenanceTasks.action(960000001, new MaintenanceTaskCommand.Start(0, null));
+          assertEquals("执行中", started.getStatus());
           var submitted =
               maintenanceTasks.action(
-                  960000001,
-                  "process",
-                  Map.of(
-                      "rowVersion",
-                      1,
-                      "items",
-                      List.of(),
-                      "startAt",
-                      "2026-10-17T08:00:00",
-                      "endAt",
-                      "2026-10-17T09:00:00",
-                      "customSchemaVersion",
-                      0,
-                      "customFields",
-                      Map.of()));
-          assertEquals("待验收", submitted.get("status"));
+                  960000001, maintenanceProcess(1, LocalDateTime.parse("2026-10-17T09:00:00")));
+          assertEquals("待验收", submitted.getStatus());
           var returned =
               maintenanceTasks.action(
-                  960000001, "accept", Map.of("rowVersion", 2, "decision", "打回", "score", 3));
-          assertEquals("执行中", returned.get("status"));
+                  960000001, new MaintenanceTaskCommand.Accept(2, "打回", 3L, null, List.of()));
+          assertEquals("执行中", returned.getStatus());
           maintenanceTasks.action(
-              960000001,
-              "process",
-              Map.of(
-                  "rowVersion",
-                  3,
-                  "items",
-                  List.of(),
-                  "startAt",
-                  "2026-10-17T08:00:00",
-                  "endAt",
-                  "2026-10-17T10:00:00",
-                  "customSchemaVersion",
-                  0,
-                  "customFields",
-                  Map.of()));
+              960000001, maintenanceProcess(3, LocalDateTime.parse("2026-10-17T10:00:00")));
           var accepted =
               maintenanceTasks.action(
-                  960000001, "accept", Map.of("rowVersion", 4, "decision", "通过", "score", 5));
-          assertEquals("已完成", accepted.get("status"));
-          assertEquals(5, ((Number) accepted.get("rowVersion")).intValue());
+                  960000001, new MaintenanceTaskCommand.Accept(4, "通过", 5L, null, List.of()));
+          assertEquals("已完成", accepted.getStatus());
+          assertEquals(5, accepted.getRowVersion());
           var error =
               assertThrows(
                   ResponseStatusException.class,
                   () ->
                       maintenanceTasks.action(
                           960000001,
-                          "accept",
-                          Map.of("rowVersion", 4, "decision", "通过", "score", 5)));
+                          new MaintenanceTaskCommand.Accept(4, "通过", 5L, null, List.of())));
           assertEquals(409, error.getStatusCode().value());
           return null;
         });

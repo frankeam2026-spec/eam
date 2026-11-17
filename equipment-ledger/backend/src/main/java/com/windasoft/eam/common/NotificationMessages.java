@@ -1,5 +1,6 @@
 package com.windasoft.eam.common;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.*;
@@ -37,26 +38,44 @@ public final class NotificationMessages {
   }
 
   public static Object render(Object value) {
-    if (value instanceof List<?> list)
+    if (value instanceof List<?> list) {
       return list.stream().map(NotificationMessages::render).toList();
+    }
     if (value instanceof Map<?, ?> map) {
       var result = new LinkedHashMap<String, Object>();
       map.forEach((k, v) -> result.put(String.valueOf(k), render(v)));
       Object key = result.get("messageKey");
-      if (key != null && !String.valueOf(key).isBlank())
+      if (key != null && !String.valueOf(key).isBlank()) {
         try {
-          Object args = result.get("messageArgs");
-          Map<String, Object> params =
-              args instanceof Map<?, ?> m
-                  ? JSON.convertValue(m, new TypeReference<>() {})
-                  : JSON.readValue(String.valueOf(args), new TypeReference<>() {});
-          result.put("title", MessageContext.render(new MessageRef(String.valueOf(key), params)));
+          result.put("title", translatedTitle(String.valueOf(key), result.get("messageArgs")));
         } catch (Exception ignored) {
-          /* Keep the original historical text if metadata is unavailable. */
+          // 历史元数据缺失时保留原标题，不能清空标题或让整页消息查询失败。
         }
+      }
       return result;
     }
     return value;
+  }
+
+  /** 类型化消息只翻译标题；无法解析的历史元数据继续保留原文，与旧递归渲染使用同一规则。 */
+  public static String renderTitle(String historical, String key, Object arguments) {
+    if (key == null || key.isBlank()) {
+      return historical;
+    }
+    try {
+      return translatedTitle(key, arguments);
+    } catch (Exception ignored) {
+      return historical;
+    }
+  }
+
+  private static String translatedTitle(String key, Object arguments)
+      throws JsonProcessingException {
+    Map<String, Object> params =
+        arguments instanceof Map<?, ?> map
+            ? JSON.convertValue(map, new TypeReference<>() {})
+            : JSON.readValue(String.valueOf(arguments), new TypeReference<>() {});
+    return MessageContext.render(new MessageRef(key, params));
   }
 
   private NotificationMessages() {}

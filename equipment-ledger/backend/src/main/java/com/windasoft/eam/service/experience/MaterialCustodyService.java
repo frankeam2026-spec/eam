@@ -6,9 +6,11 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.experience.ExperienceSupport;
 import com.windasoft.eam.repository.experience.MaterialCustodyRepository;
+import com.windasoft.eam.service.inventory.InventoryMutex;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.util.*;
+import java.util.HashMap;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,14 +20,14 @@ public class MaterialCustodyService {
   final AuthContext auth;
   final PermissionService permissions;
   final ObjectMapper json;
-  final com.windasoft.eam.service.inventory.InventoryMutex mutex;
+  final InventoryMutex mutex;
 
   public MaterialCustodyService(
       MaterialCustodyRepository repository,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json,
-      com.windasoft.eam.service.inventory.InventoryMutex mutex) {
+      InventoryMutex mutex) {
     this.repository = repository;
     this.auth = auth;
     this.permissions = permissions;
@@ -127,6 +129,14 @@ public class MaterialCustodyService {
         auth.user().getDisplayName(),
         encode(json, Map.of("remark", remark, "remaining", r.get("remaining").toString())));
     return Map.of("success", true);
+  }
+
+  /** 任务办理只提交余料说明与补登记保管人；任务版本不等于余料登记版本，不能互相比较。 本入口在既有任务事务/库存互斥内锁定分配记录后登记；单独编辑余料仍保留原rowVersion校验。 */
+  public void finishTask(String kind, long task, String remark, Long holder) {
+    var body = new HashMap<String, Object>();
+    body.put("surplusRemark", remark);
+    body.put("holderId", holder);
+    finishTask(kind, task, body);
   }
 
   public void finishTask(String kind, long task, Map<String, Object> body) {

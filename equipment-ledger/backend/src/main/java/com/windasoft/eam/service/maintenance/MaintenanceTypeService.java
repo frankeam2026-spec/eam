@@ -11,6 +11,7 @@ import com.windasoft.eam.dto.maintenance.MaintenanceTypeView;
 import com.windasoft.eam.entity.maintenance.MaintenanceType;
 import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceStandardItemRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceTaskRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.service.business.BusinessQueryService;
 import com.windasoft.eam.service.system.AuthContext;
@@ -28,6 +29,7 @@ public class MaintenanceTypeService {
   private static final String KIND = "types";
   private final MaintenanceTypeRepository types;
   private final MaintenanceRepository references;
+  private final MaintenanceTaskRepository tasks;
   private final MaintenanceStandardItemRepository items;
   private final MaintenanceValidationService validation;
   private final AuthContext auth;
@@ -37,6 +39,7 @@ public class MaintenanceTypeService {
   public MaintenanceTypeService(
       MaintenanceTypeRepository types,
       MaintenanceRepository references,
+      MaintenanceTaskRepository tasks,
       MaintenanceStandardItemRepository items,
       MaintenanceValidationService validation,
       AuthContext auth,
@@ -44,6 +47,7 @@ public class MaintenanceTypeService {
       BusinessQueryService filters) {
     this.types = types;
     this.references = references;
+    this.tasks = tasks;
     this.items = items;
     this.validation = validation;
     this.auth = auth;
@@ -137,7 +141,7 @@ public class MaintenanceTypeService {
         references.cyclePlanTypeReferences(auth.tenantId(), id) == 0,
         MessageContext.text("server.maintenance.message0044"));
     require(
-        references.taskTypeReferences(auth.tenantId(), id) == 0,
+        tasks.taskTypeReferences(auth.tenantId(), id) == 0,
         MessageContext.text("server.maintenance.message0045"));
     require(
         items.countByType(auth.tenantId(), id) == 0,

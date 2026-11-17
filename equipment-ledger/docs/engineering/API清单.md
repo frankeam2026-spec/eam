@@ -380,7 +380,7 @@ Controller/Service使用明确查询及响应类型，设备关联Repository复�
 - types现有列表/详情/新增/修改/删除路径由MaintenanceTypeController/Service及明确请求/响应承接，保留21个响应字段及空数组，版本仍只接受JSON整数，周期引用与系统类型保护保持。旧统一聚合的内部调用仅在Service边界适配类型视图。
 - list-context返回MaintenanceListContext；组织/设备/用户/分类选项使用明确模型，字段与原parentId空值约定保持。设备选项权限在数据库按各保养查看范围并集过滤。
 - AI调用保养Service提交MaintenanceAssistantRequest，返回明确汇总/动态表格模型；AssistantReadSource不再经保养Service传递，原小卓响应由AI侧适配。其余业务域沿原路径，不在本次推广。
-- 任务生成/办理由Service协调人员、来源及执行写入，原HTTP契约、事务及加锁顺序保持。任务接口的后续类型化尚未完成，见[执行记录](../plans/保养剩余治理-20261116.md)。
+- 任务生成/办理由Service协调人员、来源及执行写入，原HTTP契约、事务及加锁顺序保持。任务接口与执行关系链本批已类型化，验证进度见[执行记录](../plans/保养剩余治理-20261116.md)。
 
 - 保养标准原路径由MaintenanceStandardController负责，StandardRequest/View/Row及可选分页StandardList保持原data/page协议；旧export及export.csv路由仍由MaintenanceController提供，已用实际MVC验证200/307兼容。
 
@@ -388,4 +388,11 @@ Controller/Service使用明确查询及响应类型，设备关联Repository复�
 
 - GET /api/v1/maintenance/plans 返回PageResult<MaintenancePlanRow>；GET /plans/{id}、POST /plans、PUT /plans/{id}沿用data包装，内容为MaintenancePlanDetail；删除返回success。POST /plans/{id}/generate保持count数量响应，使用MaintenanceGenerationResult。
 - 原HTTP路径和字段兼容，安排日期仍为yyyy-MM-dd，ID仍为十进制字符串。可选ID空串与未传选择模式按现有编辑器保留，版本只接受JSON整数；新增/修改仍检查原及目标归属、关联对象、版本、周期与验收人。
-- 计划保存和即时生成共享原事务与锁顺序；缺失模式不重设提醒绑定，扩展字段复用原Schema/字段权限服务。列表与导出共用授权、筛选和稳定排序；旧export.csv仍307。类型/标准/计划代码与本地契约验证见[执行记录](../plans/保养剩余治理-20261116.md)，任务接口治理继续。
+- 计划保存和即时生成共享原事务与锁顺序；缺失模式不重设提醒绑定，扩展字段复用原Schema/字段权限服务。列表与导出共用授权、筛选和稳定排序；旧export.csv仍307。类型/标准/计划代码与本地契约验证见[执行记录](../plans/保养剩余治理-20261116.md)，任务接口状态见同一执行记录。
+
+## 保养任务完整契约（2026-11-16）
+
+- GET /api/v1/maintenance/tasks保持PageResult，GET /tasks/{id}及七种动作start/process/accept/suspend/resume/transfer/void保持data包装，固定响应为MaintenanceTaskView；动作分别绑定MaintenanceTaskCommand的具体请求类型，不接受客户端状态、执行人或验收人作为权威。
+- POST /batch-delete、/batch-postpone、/batch-accept使用明确任务目标及验收/延期请求，沿用success返回、100条上限、升序锁定、逐项版本/权限与全批事务；计划日期是LocalDate，执行时间是LocalDateTime，版本及ID禁止小数截断。
+- GET /inbox返回DataResponse<List<MaintenanceInboxView>>，todo/done/isRead保留数字，messageArgs保留JSON文本；已读仍限制当前租户收件人。旧CSV及工作台/用料的只读适配保持，核心任务写入不通过任意Map。
+- 真实历史快照和审计详情保留受控JSON边界，不替代固定任务或结果模型；无执行结果仍为{}，已有结果沿用空串和微秒精度。原看板、统计、权限与库存联动验证边界见[执行记录](../plans/保养剩余治理-20261116.md)。

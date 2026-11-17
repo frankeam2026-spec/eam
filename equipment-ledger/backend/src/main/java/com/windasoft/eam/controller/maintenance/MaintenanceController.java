@@ -1,31 +1,51 @@
 package com.windasoft.eam.controller.maintenance;
 
+import com.windasoft.eam.dto.common.DataResponse;
+import com.windasoft.eam.dto.common.ListQuery;
+import com.windasoft.eam.dto.common.SuccessResponse;
 import com.windasoft.eam.dto.maintenance.MaintenanceChoices;
+import com.windasoft.eam.dto.maintenance.MaintenanceInboxView;
 import com.windasoft.eam.dto.maintenance.MaintenanceListContext;
+import com.windasoft.eam.service.business.BusinessQueryService;
+import com.windasoft.eam.service.maintenance.MaintenanceCsvService;
+import com.windasoft.eam.service.maintenance.MaintenanceListService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
-import java.util.*;
-import org.springframework.http.*;
-import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
+/** 公共选项、待办与兼容CSV入口；类型、标准、计划、任务CRUD由各自的明确协议入口提供。 */
 @RestController
 @RequestMapping("/api/v1/maintenance")
 public class MaintenanceController {
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.business.BusinessQueryService customQuery;
-
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.business.BusinessConfigService customConfigs;
-
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.maintenance.MaintenanceListService lists;
-
-  @org.springframework.beans.factory.annotation.Autowired
-  private com.windasoft.eam.service.maintenance.MaintenanceCsvService csv;
-
+  private final BusinessQueryService customQuery;
+  private final MaintenanceListService lists;
+  private final MaintenanceCsvService csv;
   private final MaintenanceService service;
 
-  public MaintenanceController(MaintenanceService service) {
+  public MaintenanceController(
+      MaintenanceService service,
+      MaintenanceListService lists,
+      MaintenanceCsvService csv,
+      BusinessQueryService customQuery) {
     this.service = service;
+    this.lists = lists;
+    this.csv = csv;
+    this.customQuery = customQuery;
   }
 
   @GetMapping("/list-context")
@@ -38,170 +58,85 @@ public class MaintenanceController {
     return service.choices(paged);
   }
 
-  @GetMapping("/tasks")
-  public Object tasks(
-      @RequestParam(defaultValue = "[]") String conditions,
-      @RequestParam Map<String, String> parameters) {
-    return lists.query("tasks", com.windasoft.eam.dto.common.ListQuery.from(parameters));
-  }
-
-  @GetMapping("/tasks/{id}")
-  public Object task(@PathVariable long id) {
-    return Map.of("data", service.task(id));
-  }
-
-  @PostMapping("/tasks/{id}/{action}")
-  public Object action(
-      @PathVariable long id, @PathVariable String action, @RequestBody Map<String, Object> body) {
-    return Map.of("data", service.action(id, action, body));
-  }
-
-  @PostMapping("/batch-delete")
-  public Object batchDelete(@RequestBody List<Map<String, Object>> body) {
-    service.batchDelete(body);
-    return Map.of("success", true);
-  }
-
-  public record PostponeRequest(List<Map<String, Object>> tasks, String endDate, String reason) {}
-
-  @PostMapping("/batch-postpone")
-  public Object batchPostpone(@RequestBody PostponeRequest body) {
-    service.batchPostpone(body.tasks(), body.endDate(), body.reason());
-    return Map.of("success", true);
-  }
-
-  @PostMapping("/batch-accept")
-  public Object batch(@RequestBody List<Map<String, Object>> body) {
-    service.batchAccept(body);
-    return Map.of("success", true);
-  }
-
   @GetMapping("/inbox")
-  public Object inbox() {
-    return Map.of("data", service.inbox());
+  public DataResponse<List<MaintenanceInboxView>> inbox() {
+    return new DataResponse<>(service.inbox());
   }
 
   @PatchMapping("/inbox/{id}/read")
-  public Object read(@PathVariable long id) {
+  public SuccessResponse read(@PathVariable long id) {
     service.read(id);
-    return Map.of("success", true);
-  }
-
-  @GetMapping("/{kind}")
-  public Object list(
-      @PathVariable String kind,
-      @RequestParam(defaultValue = "[]") String conditions,
-      @RequestParam Map<String, String> parameters) {
-    if (!kind.equals("types") && (!kind.equals("standards") || parameters.containsKey("page")))
-      return lists.query(kind, com.windasoft.eam.dto.common.ListQuery.from(parameters));
-    return Map.of(
-        "data",
-        customQuery.filter(
-            kind.equals("plans") ? "maintenance_plan" : null,
-            service.definitions(kind),
-            conditions));
-  }
-
-  @GetMapping("/{kind}/{id}")
-  public Object get(@PathVariable String kind, @PathVariable long id) {
-    return Map.of("data", service.definition(kind, id));
-  }
-
-  @PostMapping("/{kind}")
-  public Object create(@PathVariable String kind, @RequestBody Map<String, Object> body) {
-    return Map.of("data", service.save(kind, null, body));
-  }
-
-  @PutMapping("/{kind}/{id}")
-  public Object update(
-      @PathVariable String kind, @PathVariable long id, @RequestBody Map<String, Object> body) {
-    return Map.of("data", service.save(kind, id, body));
-  }
-
-  @DeleteMapping("/{kind}/{id}")
-  public Object delete(@PathVariable String kind, @PathVariable long id) {
-    service.delete(kind, id);
-    return Map.of("success", true);
+    return new SuccessResponse(true);
   }
 
   @GetMapping("/{kind}/export")
   public void exportQuery(
       @PathVariable String kind,
       @RequestParam Map<String, String> parameters,
-      jakarta.servlet.http.HttpServletResponse response)
-      throws java.io.IOException {
+      HttpServletResponse response)
+      throws IOException {
     csv.write(
         kind,
-        com.windasoft.eam.dto.common.ListQuery.from(parameters),
+        ListQuery.from(parameters),
         parameters.get("columns"),
         () -> {
           response.setContentType("text/csv;charset=UTF-8");
           response.setHeader("Content-Disposition", "attachment; filename=maintenance.csv");
           try {
             return response.getWriter();
-          } catch (java.io.IOException e) {
-            throw new java.io.UncheckedIOException(e);
+          } catch (IOException e) {
+            throw new UncheckedIOException(e);
           }
         });
   }
 
+  /** 旧.csv地址保留307；只有类型沿用旧四列CSV，不恢复已经替代的动态JSON写入入口。 */
   @GetMapping("/{kind}/export.csv")
   public ResponseEntity<String> export(
       @PathVariable String kind,
       @RequestParam(defaultValue = "") String keyword,
       @RequestParam(defaultValue = "[]") String conditions) {
-    if (!kind.equals("types"))
+    if (!kind.equals("types")) {
       return ResponseEntity.status(307)
           .location(
-              java.net.URI.create(
+              URI.create(
                   "/api/v1/maintenance/"
                       + kind
                       + "/export?keyword="
-                      + java.net.URLEncoder.encode(keyword, java.nio.charset.StandardCharsets.UTF_8)
+                      + URLEncoder.encode(keyword, StandardCharsets.UTF_8)
                       + "&conditions="
-                      + java.net.URLEncoder.encode(
-                          conditions, java.nio.charset.StandardCharsets.UTF_8)))
+                      + URLEncoder.encode(conditions, StandardCharsets.UTF_8)))
           .build();
-    String object =
-        kind.equals("tasks")
-            ? "maintenance_task"
-            : kind.equals("plans") ? "maintenance_plan" : null;
-    var data = customQuery.filter(object, service.exportRows(kind), conditions);
-    var fields =
-        object == null
-            ? java.util.List.<com.fasterxml.jackson.databind.JsonNode>of()
-            : customConfigs
-                .fields(customConfigs.decode(customConfigs.current(object, false).get("published")))
-                .values()
-                .stream()
-                .filter(f -> f.path("exportable").asBoolean())
-                .toList();
-    StringBuilder csv = new StringBuilder("\uFEFF编码,名称,状态,保养日期");
-    for (var field : fields) csv.append(',').append(cell(field.path("name").asText()));
-    csv.append("\r\n");
+    }
+    var data = customQuery.filter(null, service.exportRows(kind), conditions);
+    StringBuilder output = new StringBuilder("﻿编码,名称,状态,保养日期");
+    output.append("\r\n");
     for (var row : data) {
       String name = Objects.toString(row.getOrDefault("name", row.get("equipmentName")), "");
-      if (!keyword.isBlank() && !row.toString().contains(keyword)) continue;
-      csv.append(cell(row.get("code")))
+      if (!keyword.isBlank() && !row.toString().contains(keyword)) {
+        continue;
+      }
+      output
+          .append(cell(row.get("code")))
           .append(',')
           .append(cell(name))
           .append(',')
           .append(cell(row.get("status")))
           .append(',')
-          .append(cell(row.get("dueDate")));
-      var labels = row.get("customFieldLabels") instanceof Map<?, ?> values ? values : Map.of();
-      for (var field : fields) csv.append(',').append(cell(labels.get(field.path("id").asText())));
-      csv.append("\r\n");
+          .append(cell(row.get("dueDate")))
+          .append("\r\n");
     }
     return ResponseEntity.ok()
         .header("Content-Disposition", "attachment; filename=maintenance.csv")
         .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
-        .body(csv.toString());
+        .body(output.toString());
   }
 
   private String cell(Object value) {
-    String v = Objects.toString(value, "");
-    if (v.matches("^[=+@-].*")) v = "'" + v;
-    return "\"" + v.replace("\"", "\"\"") + "\"";
+    String text = Objects.toString(value, "");
+    if (text.matches("^[=+@-].*")) {
+      text = "'" + text;
+    }
+    return "\"" + text.replace("\"", "\"\"") + "\"";
   }
 }

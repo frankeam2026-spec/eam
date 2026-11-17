@@ -1,8 +1,9 @@
 package com.windasoft.eam.service.maintenance;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.NotificationMessages;
 import com.windasoft.eam.dto.maintenance.MaintenanceTaskEventView;
@@ -12,9 +13,7 @@ import com.windasoft.eam.repository.maintenance.MaintenanceEventRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceInboxRepository;
 import com.windasoft.eam.repository.system.NotificationRepository;
 import java.time.format.DateTimeFormatter;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
 
@@ -89,13 +88,10 @@ public class MaintenanceTaskJournal {
   }
 
   private MaintenanceTaskEventView view(MaintenanceEvent event) {
-    Map<String, Object> details;
+    ObjectNode details;
     try {
-      details =
-          json.readValue(
-              Objects.toString(event.getDetails(), "{}"),
-              new TypeReference<LinkedHashMap<String, Object>>() {});
-    } catch (Exception failure) {
+      details = (ObjectNode) json.readTree(Objects.toString(event.getDetails(), "{}"));
+    } catch (JsonProcessingException failure) {
       throw new LocalizedArgumentException("server.maintenance.message0009");
     }
     return new MaintenanceTaskEventView(

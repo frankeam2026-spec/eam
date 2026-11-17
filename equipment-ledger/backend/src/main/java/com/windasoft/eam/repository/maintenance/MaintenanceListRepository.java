@@ -14,6 +14,7 @@ import com.windasoft.eam.dto.maintenance.MaintenancePlanRow;
 import com.windasoft.eam.dto.maintenance.MaintenancePlanView;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardRow;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardView;
+import com.windasoft.eam.dto.maintenance.MaintenanceTaskData;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.common.*;
 import com.windasoft.eam.repository.knowledge.AiBusinessFilters;
@@ -36,6 +37,13 @@ public class MaintenanceListRepository {
   }
 
   public record Selection(String kind, String from, SqlPredicate predicate, String order) {}
+
+  /** 保留原授权查询及分页，只在框架返回行的边界转为任务固定投影。 */
+  public List<MaintenanceTaskData> taskRows(Selection selected, ListQuery query) {
+    return page(selected, query).stream()
+        .map(row -> MaintenanceTaskRepository.taskData(row, json))
+        .toList();
+  }
 
   private AssistantReadSource assistantSource(Selection selected) {
     String select =

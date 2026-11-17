@@ -1,46 +1,62 @@
 package com.windasoft.eam.service.maintenance;
 
-import static com.windasoft.eam.common.maintenance.MaintenanceSupport.*;
-
+import com.windasoft.eam.domain.maintenance.MaintenanceTaskStatus;
+import com.windasoft.eam.dto.maintenance.MaintenanceExecutionResult;
 import com.windasoft.eam.dto.maintenance.MaintenanceTaskEventView;
-
+import com.windasoft.eam.dto.maintenance.MaintenanceTaskSnapshot;
+import com.windasoft.eam.dto.maintenance.MaintenanceTaskStatistics;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 
-/** Read-only item statistics. Prefilled answers do not establish execution. */
+/** 只读计算保养项目统计；预填结果不等于已经提交，无法证明的历史记录不伪造完成数。 */
 @Service
 public class MaintenanceTaskStatisticsService {
-  public record Statistics(
-      int total,
-      Integer completed,
-      Integer abnormal,
-      BigDecimal completionRate,
-      List<String> completedItemIds,
-      List<String> abnormalItemIds,
-      boolean submitted,
-      boolean reliable) {}
-
-  public Statistics summarize(Map<String, Object> task, List<MaintenanceTaskEventView> events) {
-    var items = rows(task.get("items"));
-    var result = object(task.get("result"));
+  public MaintenanceTaskStatistics summarize(
+      MaintenanceTaskSnapshot snapshot,
+      MaintenanceExecutionResult result,
+      String status,
+      List<MaintenanceTaskEventView> events) {
+    var items = list(snapshot.getItems());
     boolean submitted =
         events.stream().anyMatch(e -> "提交保养".equals(e.action()))
-            || (!text(result, "startAt").isBlank() && !text(result, "endAt").isBlank());
-    boolean reliable = submitted || !Set.of("已完成", "待验收").contains(text(task, "status"));
-    if (!reliable)
-      return new Statistics(items.size(), null, null, null, List.of(), List.of(), false, false);
+            || (result != null && result.getStartAt() != null && result.getEndAt() != null);
+    boolean reliable =
+        submitted
+            || !Set.of(
+                    MaintenanceTaskStatus.COMPLETED.code(),
+                    MaintenanceTaskStatus.PENDING_ACCEPTANCE.code())
+                .contains(status);
+    if (!reliable) {
+      return new MaintenanceTaskStatistics(
+          items.size(), null, null, null, List.of(), List.of(), false, false);
+    }
     var completed = new ArrayList<String>();
     var abnormal = new ArrayList<String>();
     if (submitted) {
-      var answers = new HashMap<String, Map<String, Object>>();
-      for (var answer : rows(result.get("items"))) answers.put(text(answer, "id"), answer);
+      var answers = new HashMap<String, MaintenanceExecutionResult.Item>();
+      if (result != null) {
+        // 沿用历史统计的末次答案覆盖语义；办理入口仍按第一次提交的同ID答案校验。
+        for (var answer : list(result.getItems())) {
+          answers.put(text(answer.getId()), answer);
+        }
+      }
       for (var item : items) {
-        var answer = answers.getOrDefault(text(item, "id"), Map.of());
-        boolean exception = abnormal(item, answer);
-        if (exception) abnormal.add(text(item, "id"));
-        if (complete(item, answer, exception)) completed.add(text(item, "id"));
+        var answer =
+            answers.getOrDefault(text(item.getId()), new MaintenanceExecutionResult.Item());
+        boolean exception =
+            answer.isAbnormal() && !text(answer.getValue()).isBlank() && !answer.isSkipped();
+        if (exception) {
+          abnormal.add(text(item.getId()));
+        }
+        if (complete(item, answer, exception)) {
+          completed.add(text(item.getId()));
+        }
       }
     }
     BigDecimal rate =
@@ -49,7 +65,7 @@ public class MaintenanceTaskStatisticsService {
             : BigDecimal.valueOf(completed.size())
                 .multiply(BigDecimal.valueOf(100))
                 .divide(BigDecimal.valueOf(items.size()), 2, RoundingMode.HALF_UP);
-    return new Statistics(
+    return new MaintenanceTaskStatistics(
         items.size(),
         completed.size(),
         abnormal.size(),
@@ -60,44 +76,33 @@ public class MaintenanceTaskStatisticsService {
         true);
   }
 
-  private boolean complete(Map<String, Object> item, Map<String, Object> answer, boolean abnormal) {
-    String value = text(answer, "value");
-    if (value.isBlank() || yes(answer.get("skipped"))) return false;
-    if (text(item, "valueType").equals("选项") && !strings(item.get("options")).contains(value))
+  private boolean complete(
+      MaintenanceTaskSnapshot.Item item, MaintenanceExecutionResult.Item answer, boolean abnormal) {
+    String value = text(answer.getValue());
+    if (value.isBlank() || answer.isSkipped()) {
       return false;
-    if (text(item, "valueType").equals("数值")) {
+    }
+    if ("选项".equals(text(item.getValueType())) && !list(item.getOptions()).contains(value)) {
+      return false;
+    }
+    if ("数值".equals(text(item.getValueType()))) {
       try {
         new BigDecimal(value);
       } catch (NumberFormatException e) {
         return false;
       }
     }
-    if (yes(item.get("photoRequired")) && rows(answer.get("images")).isEmpty()) return false;
-    return !abnormal || !yes(answer.get("resolved")) || !text(answer, "measure").isBlank();
-  }
-
-  private boolean abnormal(Map<String, Object> item, Map<String, Object> answer) {
-    String value = text(answer, "value");
-    if (value.isBlank() || yes(answer.get("skipped"))) return false;
-    if (answer.get("abnormal") instanceof Boolean flag) return flag;
-    if (text(item, "valueType").equals("选项"))
-      return !strings(item.get("normalOptions")).contains(value);
-    if (text(item, "valueType").equals("数值")) {
-      try {
-        var number = new BigDecimal(value);
-        return (!text(item, "lower").isBlank()
-                && number.compareTo(new BigDecimal(text(item, "lower"))) < 0)
-            || (!text(item, "upper").isBlank()
-                && number.compareTo(new BigDecimal(text(item, "upper"))) > 0);
-      } catch (NumberFormatException e) {
-        return false;
-      }
+    if (item.isPhotoRequired() && list(answer.getImages()).isEmpty()) {
+      return false;
     }
-    return false;
+    return !abnormal || !answer.isResolved() || !text(answer.getMeasure()).isBlank();
   }
 
-  @SuppressWarnings("unchecked")
-  private Map<String, Object> object(Object value) {
-    return value instanceof Map<?, ?> ? (Map<String, Object>) value : Map.of();
+  private static <T> List<T> list(List<T> values) {
+    return values == null ? List.of() : values;
+  }
+
+  private static String text(String value) {
+    return Objects.toString(value, "").trim();
   }
 }

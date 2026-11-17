@@ -32,8 +32,8 @@ import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanDeviceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanPersonRepository;
 import com.windasoft.eam.repository.maintenance.MaintenancePlanRepository;
-import com.windasoft.eam.repository.maintenance.MaintenanceRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceStandardItemRepository;
+import com.windasoft.eam.repository.maintenance.MaintenanceTaskRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.business.BusinessValueService;
@@ -67,7 +67,7 @@ public class MaintenancePlanService {
   private final MaintenanceStandardItemRepository standardItems;
   private final MaintenanceTypeRepository types;
   private final MaintenanceListRepository views;
-  private final MaintenanceRepository taskReferences;
+  private final MaintenanceTaskRepository taskReferences;
   private final OrgUnitRepository organizations;
   private final EquipmentQueryRepository equipment;
   private final MaintenanceValidationService validation;
