@@ -4,16 +4,19 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.dto.workflow.WorkflowDefinition;
 import com.windasoft.eam.dto.workflow.WorkflowDefinition.*;
 import com.windasoft.eam.entity.system.SystemUser;
+import com.windasoft.eam.repository.workflow.WorkflowRepository;
 import com.windasoft.eam.service.inventory.RequisitionService;
 import com.windasoft.eam.service.system.*;
 import com.windasoft.eam.service.workflow.*;
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,7 +35,8 @@ class WorkflowMySqlIT {
     if (url == null
         || !(url.matches("jdbc:mysql://127\\.0\\.0\\.1:3307/eam_staffing_test_20261023(\\?.*)?")
             || url.matches(
-                "jdbc:mysql://127\\.0\\.0\\.1:3308/eam_repair_approval_test_20261030(\\?.*)?")))
+                "jdbc:mysql://127\\.0\\.0\\.1:3308/eam_repair_approval_test_20261030(\\?.*)?")
+            || url.matches("jdbc:mysql://127\\.0\\.0\\.1:3308/eam_workflow_test_20261117(\\?.*)?")))
       throw new IllegalStateException("Only isolated workflow test database allowed");
     p.add("spring.datasource.url", () -> url);
     p.add("spring.datasource.username", () -> "root");
@@ -49,6 +53,9 @@ class WorkflowMySqlIT {
   @MockitoBean com.windasoft.eam.scheduler.experience.RepairPlanScheduler repairScheduler;
   @MockitoBean com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler knowledgeScheduler;
   @Autowired WorkflowTemplateService templates;
+  @Autowired WorkflowRepository workflowDefinitions;
+  @Autowired SqlSessionTemplate sqlSessions;
+  @Autowired ObjectMapper json;
   @Autowired WorkflowRuntimeService runtime;
   @Autowired RequisitionService requests;
   @Autowired JdbcTemplate db;
@@ -72,6 +79,14 @@ class WorkflowMySqlIT {
     when(permissions.scope(eq("workflow"), anyString()))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     when(permissions.companyAllowed(eq("workflow"), anyString(), anyLong())).thenReturn(true);
+    when(permissions.companyDepartments(anyLong()))
+        .thenAnswer(
+            i -> {
+              long company = i.getArgument(0);
+              return company == 71002L
+                  ? Set.of(71003L, 71004L, 71005L)
+                  : company == 71006L ? Set.of(71007L) : Set.of();
+            });
     when(permissions.companyOfOrganization(any()))
         .thenAnswer(
             i -> {
@@ -169,6 +184,142 @@ class WorkflowMySqlIT {
   }
 
   @Test
+  void historyReadQueryCountIsIndependentOfRoundCount() {
+    var definition = templates.save(linearDefinition(3));
+    long small = historyFixture(Long.parseLong(definition.versionId()), 3);
+    long large = historyFixture(Long.parseLong(definition.versionId()), 20);
+    var history = runtime.history("requisition", large);
+    assertEquals(20, history.size());
+    var oldDates =
+        json.valueToTree(
+            db.queryForMap(
+                "SELECT started_at AS startedAt,ended_at AS endedAt FROM wf_instance WHERE"
+                    + " tenant_id=10001 AND id=?",
+                history.getFirst().id()));
+    var newDates = json.valueToTree(history.getFirst());
+    assertEquals(oldDates.path("startedAt"), newDates.path("startedAt"), "保留原JDBC时间的HTTP序列化");
+    assertEquals(oldDates.path("endedAt"), newDates.path("endedAt"));
+    assertEquals(20, history.getFirst().roundNo());
+    assertTrue(history.stream().allMatch(r -> r.nodes().size() == 3));
+    assertTrue(
+        history.stream()
+            .flatMap(r -> r.nodes().stream())
+            .allMatch(n -> n.users().isEmpty() && n.roles().isEmpty() && n.script() == null));
+    db.update(
+        "UPDATE wf_instance SET row_version=5000000000 WHERE tenant_id=10001 AND business_id=?",
+        large);
+    assertEquals(5000000000L, runtime.history("requisition", large).getFirst().rowVersion());
+    long smallQueries = historyQueries(small);
+    long largeQueries = historyQueries(large);
+    System.out.println(
+        "workflow-history Com_select rounds=3:" + smallQueries + ", rounds=20:" + largeQueries);
+    assertEquals(smallQueries, largeQueries, "历史读取不应逐轮重载审批、事件及完整定义");
+  }
+
+  private long historyFixture(long version, int rounds) {
+    long business = IdWorker.getId();
+    for (int round = 1; round <= rounds; round++) {
+      db.update(
+          "INSERT INTO"
+              + " wf_instance(id,tenant_id,version_id,business_type,business_id,company_id,applicant_id,round_no,state)"
+              + " VALUES(?,10001,?,'requisition',?,71002,73001,?,'WITHDRAWN')",
+          IdWorker.getId(),
+          version,
+          business,
+          round);
+    }
+    return business;
+  }
+
+  private long historyQueries(long business) {
+    sqlSessions.clearCache();
+    long before =
+        db.queryForObject(
+            "SHOW SESSION STATUS LIKE 'Com_select'",
+            (row, index) -> Long.parseLong(row.getString(2)));
+    runtime.history("requisition", business);
+    long after =
+        db.queryForObject(
+            "SHOW SESSION STATUS LIKE 'Com_select'",
+            (row, index) -> Long.parseLong(row.getString(2)));
+    return after - before;
+  }
+
+  @Test
+  void definitionReadQueryCountIsIndependentOfNodeCount() {
+    var small = templates.save(linearDefinition(3));
+    var large = templates.save(linearDefinition(40));
+    long smallQueries = definitionQueries(Long.parseLong(small.id()));
+    long largeQueries = definitionQueries(Long.parseLong(large.id()));
+    System.out.println(
+        "workflow-definition Com_select nodes=3:" + smallQueries + ", nodes=40:" + largeQueries);
+    assertEquals(smallQueries, largeQueries, "节点关联须批量读取，不能逐节点增加SQL");
+  }
+
+  private long definitionQueries(long template) {
+    // 每次模拟新的冷读取，不能用本事务内MyBatis一级缓存隐藏重复查询。
+    sqlSessions.clearCache();
+    long before =
+        db.queryForObject(
+            "SHOW SESSION STATUS LIKE 'Com_select'",
+            (row, index) -> Long.parseLong(row.getString(2)));
+    var definition = workflowDefinitions.definition(10001L, template, null);
+    assertNotNull(definition);
+    return db.queryForObject(
+            "SHOW SESSION STATUS LIKE 'Com_select'",
+            (row, index) -> Long.parseLong(row.getString(2)))
+        - before;
+  }
+
+  private WorkflowDefinition linearDefinition(int count) {
+    var nodes = new ArrayList<Node>();
+    nodes.add(new Node("start", "START", "开始", "n0", "ANY", List.of(), List.of(), List.of()));
+    for (int i = 0; i < count - 2; i++) {
+      nodes.add(
+          new Node(
+              "n" + i,
+              "APPROVAL",
+              "审批" + i,
+              i == count - 3 ? "end" : "n" + (i + 1),
+              "ANY",
+              List.of("73001"),
+              List.of(),
+              List.of()));
+    }
+    nodes.add(new Node("end", "END", "结束", null, "ANY", List.of(), List.of(), List.of()));
+    return new WorkflowDefinition(
+        null, 0, "查询基线" + count, "requisition", "71002", "", null, null, nodes);
+  }
+
+  @Test
+  void completingApprovalDoesNotCloseUnrelatedWarehouseTodo() {
+    publish("ANY");
+    long id = request();
+    requests.submit(id, Map.of("rowVersion", 0));
+    long unrelated = IdWorker.getId();
+    db.update(
+        "INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)"
+            + " VALUES(?,10001,73001,?,'requisitions','待出库','独立仓库待办',1)",
+        unrelated,
+        id);
+    var current = instance(id);
+    runtime.act(
+        n(current, "id"), pending(n(current, "id"), actor), n(current, "row_version"), true, "同意");
+    assertEquals(
+        0,
+        db.queryForObject(
+            "SELECT done FROM inv_inbox WHERE tenant_id=10001 AND id=?", Integer.class, unrelated));
+    assertEquals(
+        0,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM wf_todo t JOIN inv_inbox i ON i.tenant_id=t.tenant_id AND"
+                + " i.id=t.inbox_id JOIN wf_approval a ON a.tenant_id=t.tenant_id AND"
+                + " a.id=t.approval_id WHERE a.tenant_id=10001 AND a.instance_id=? AND i.done=0",
+            Integer.class,
+            n(current, "id")));
+  }
+
+  @Test
   void allApprovalStopsInventoryUntilEveryUserApproves() {
     publish("ALL");
     long id = request();
@@ -250,14 +401,11 @@ class WorkflowMySqlIT {
   @Test
   void userChoicesIncludeCompanyDepartmentsButNotOtherCompanies() {
     when(permissions.companyDepartments(71002L)).thenReturn(Set.of(71003L, 71004L, 71005L));
-    @SuppressWarnings("unchecked")
-    var result = (Map<String, Object>) templates.choices(71002L, "users", "", 1, 20);
-    @SuppressWarnings("unchecked")
-    var rows = (List<Map<String, Object>>) result.get("data");
-    assertTrue(rows.stream().anyMatch(r -> r.get("id").toString().equals("73001")));
-    assertTrue(rows.stream().anyMatch(r -> r.get("id").toString().equals("73003")));
-    var departmentRows = (Map<?, ?>) templates.choices(71002L, "departments", "", 1, 20);
-    assertEquals(3L, ((Number) ((Map<?, ?>) departmentRows.get("page")).get("total")).longValue());
+    var result = templates.choices(71002L, "users", "", 1, 20);
+    assertTrue(result.data().stream().anyMatch(r -> r.id().equals("73001")));
+    assertTrue(result.data().stream().anyMatch(r -> r.id().equals("73003")));
+    var departmentRows = templates.choices(71002L, "departments", "", 1, 20);
+    assertEquals(3L, departmentRows.page().total());
   }
 
   @Test
@@ -444,23 +592,21 @@ class WorkflowMySqlIT {
     long before = db.queryForObject("SELECT COUNT(*) FROM wf_instance", Long.class);
     long deployments = db.queryForObject("SELECT COUNT(*) FROM ACT_RE_DEPLOYMENT", Long.class);
     var base = definition("ANY");
-    @SuppressWarnings("unchecked")
     var trace =
-        (List<Map<String, Object>>)
-            templates.simulate(
-                new WorkflowDefinition(
-                    null,
-                    0,
-                    "parallel trial",
-                    "requisition",
-                    "71002",
-                    "",
-                    null,
-                    "DRAFT",
-                    parallelDefinition()),
-                Map.of("lines", List.of()));
-    assertTrue(trace.stream().anyMatch(row -> "approveA".equals(row.get("node"))));
-    assertTrue(trace.stream().anyMatch(row -> "approveB".equals(row.get("node"))));
+        templates.simulate(
+            new WorkflowDefinition(
+                null,
+                0,
+                "parallel trial",
+                "requisition",
+                "71002",
+                "",
+                null,
+                "DRAFT",
+                parallelDefinition()),
+            Map.of("lines", List.of()));
+    assertTrue(trace.stream().anyMatch(row -> "approveA".equals(row.node())));
+    assertTrue(trace.stream().anyMatch(row -> "approveB".equals(row.node())));
     assertEquals(before, db.queryForObject("SELECT COUNT(*) FROM wf_instance", Long.class));
     assertEquals(
         deployments, db.queryForObject("SELECT COUNT(*) FROM ACT_RE_DEPLOYMENT", Long.class));

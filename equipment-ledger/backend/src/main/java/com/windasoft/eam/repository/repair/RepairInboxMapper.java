@@ -4,11 +4,20 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.windasoft.eam.dto.repair.RepairInboxView;
 import com.windasoft.eam.entity.repair.RepairInbox;
 import java.util.List;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;
 
 @Mapper
 public interface RepairInboxMapper extends BaseMapper<RepairInbox> {
+  /** 本表无创建时间默认值；保持工作流原NOW(3)精度，不能改为应用取时或秒级NOW()。 */
+  @Insert(
+      """
+      INSERT INTO eam_repair_inbox(id,tenant_id,user_id,order_id,kind,title,is_todo,created_at)
+      VALUES(#{id},#{tenantId},#{userId},#{orderId},#{kind},#{title},#{isTodo},NOW(3))
+      """)
+  int insertWorkflowTodoAtDatabaseTime(RepairInbox row);
+
   /** 原操作由数据库生成时间，不能用应用服务器时钟替代；其余CRUD使用BaseMapper。 */
   @org.apache.ibatis.annotations.Insert(
       "INSERT INTO"

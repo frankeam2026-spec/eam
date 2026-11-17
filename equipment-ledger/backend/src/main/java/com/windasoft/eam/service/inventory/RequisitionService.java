@@ -322,9 +322,7 @@ public class RequisitionService {
       }
     }
     List<WorkflowHistoryRound> rounds =
-        json.convertValue(
-            workflow.history("requisition", requestId),
-            new TypeReference<List<WorkflowHistoryRound>>() {});
+        workflow.history("requisition", requestId);
     return new RequisitionDetail(
         RequisitionDetail.Header.from(header),
         warehouse.name(),

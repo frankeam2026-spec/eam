@@ -14,8 +14,11 @@ public class RoleManagementRepository {
   private final UserRoleLinkMapper links;
   private final RoleMenuPermissionMapper grants;
 
-  public RoleManagementRepository(RoleRelationsRepository relations, SystemRoleMapper roles,
-      UserRoleLinkMapper links, RoleMenuPermissionMapper grants) {
+  public RoleManagementRepository(
+      RoleRelationsRepository relations,
+      SystemRoleMapper roles,
+      UserRoleLinkMapper links,
+      RoleMenuPermissionMapper grants) {
     this.relations = relations;
     this.roles = roles;
     this.links = links;
@@ -63,6 +66,23 @@ public class RoleManagementRepository {
     return roles.selectCount(q);
   }
 
+  /** 节点角色校验只读取有效角色标识，不连带装配无关权限配置。 */
+  public Set<Long> activeRoleIds(long tenant, Set<Long> ids) {
+    if (ids.isEmpty()) {
+      return Set.of();
+    }
+    return roles
+        .selectList(
+            new LambdaQueryWrapper<SystemRole>()
+                .select(SystemRole::getId)
+                .eq(SystemRole::getTenantId, tenant)
+                .eq(SystemRole::getStatus, 1)
+                .in(SystemRole::getId, ids))
+        .stream()
+        .map(SystemRole::getId)
+        .collect(java.util.stream.Collectors.toSet());
+  }
+
   public long roleCount(long tenant, List<Long> ids) {
     return roles.selectCount(
         new LambdaQueryWrapper<SystemRole>()
@@ -75,15 +95,13 @@ public class RoleManagementRepository {
         new QueryWrapper<UserRoleLink>().eq("tenant_id", tenant).eq("role_id", id));
   }
 
-  public Map<Long, List<UserRoleLink>> userRolesForUsers(
-      long tenant, Collection<Long> userIds) {
+  public Map<Long, List<UserRoleLink>> userRolesForUsers(long tenant, Collection<Long> userIds) {
     if (userIds.isEmpty()) return Map.of();
-    var linksForUsers = links.selectList(
-        new QueryWrapper<UserRoleLink>()
-            .eq("tenant_id", tenant)
-            .in("user_id", userIds));
-    return linksForUsers.stream().collect(
-        java.util.stream.Collectors.groupingBy(UserRoleLink::getUserId));
+    var linksForUsers =
+        links.selectList(
+            new QueryWrapper<UserRoleLink>().eq("tenant_id", tenant).in("user_id", userIds));
+    return linksForUsers.stream()
+        .collect(java.util.stream.Collectors.groupingBy(UserRoleLink::getUserId));
   }
 
   public List<UserRoleLink> userRoles(long tenant, Long id) {
@@ -102,14 +120,15 @@ public class RoleManagementRepository {
   public Map<Long, List<RoleMenuPermission>> menuPermissionsForRoles(
       long tenant, Collection<Long> roleIds) {
     if (roleIds.isEmpty()) return Map.of();
-    var rows = relations.grants(
-        grants.selectList(
-            new LambdaQueryWrapper<RoleMenuPermission>()
-                .eq(RoleMenuPermission::getTenantId, tenant)
-                .in(RoleMenuPermission::getRoleId, roleIds)
-                .orderByAsc(RoleMenuPermission::getId)));
-    return rows.stream().collect(java.util.stream.Collectors.groupingBy(
-        RoleMenuPermission::getRoleId));
+    var rows =
+        relations.grants(
+            grants.selectList(
+                new LambdaQueryWrapper<RoleMenuPermission>()
+                    .eq(RoleMenuPermission::getTenantId, tenant)
+                    .in(RoleMenuPermission::getRoleId, roleIds)
+                    .orderByAsc(RoleMenuPermission::getId)));
+    return rows.stream()
+        .collect(java.util.stream.Collectors.groupingBy(RoleMenuPermission::getRoleId));
   }
 
   public List<RoleMenuPermission> menuPermissions(long tenant, Long id) {

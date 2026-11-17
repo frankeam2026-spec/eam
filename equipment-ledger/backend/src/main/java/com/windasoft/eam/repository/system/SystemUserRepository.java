@@ -130,6 +130,28 @@ public class SystemUserRepository {
         expectedVersion);
   }
 
+  /** 固定人员配置批量核对，仅取得身份与所属组织，不读取密码和邮箱。 */
+  public List<SystemUser> activeIdentities(long tenant, List<Long> ids) {
+    if (ids.isEmpty()) {
+      return List.of();
+    }
+    return mapper.selectList(
+        new LambdaQueryWrapper<SystemUser>()
+            .select(SystemUser::getId, SystemUser::getOrgId)
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getStatus, 1)
+            .in(SystemUser::getId, ids));
+  }
+
+  /** 角色候选在数据库侧限定适用公司组织，避免逐角色逐用户查询。 */
+  public List<SystemUser> activeRoleMembers(
+      long tenant, List<Long> roles, List<Long> organizations) {
+    if (roles.isEmpty() || organizations.isEmpty()) {
+      return List.of();
+    }
+    return mapper.activeRoleMembers(tenant, roles, organizations);
+  }
+
   public SystemUser activeUser(long tenant, long id) {
     return mapper.selectOne(
         new LambdaQueryWrapper<SystemUser>()

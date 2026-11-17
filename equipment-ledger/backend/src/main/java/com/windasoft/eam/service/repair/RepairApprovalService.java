@@ -1,8 +1,6 @@
 package com.windasoft.eam.service.repair;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.domain.repair.RepairApprovalGate;
 import com.windasoft.eam.domain.repair.RepairEventLabel;
@@ -37,7 +35,6 @@ public class RepairApprovalService {
   private final RepairOrderRepository orders;
   private final RepairInboxRepository inboxes;
   private final WorkflowRuntimeService runtime;
-  private final ObjectMapper json;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final InventoryMutex mutex;
@@ -52,9 +49,7 @@ public class RepairApprovalService {
       ObjectProvider<RepairWorkflowService> workflow,
       RepairOrderRepository orders,
       RepairInboxRepository inboxes,
-      NotificationRepository notifications,
-      ObjectMapper json) {
-    this.json = json;
+      NotificationRepository notifications) {
     this.notifications = notifications;
     this.orders = orders;
     this.inboxes = inboxes;
@@ -156,9 +151,8 @@ public class RepairApprovalService {
   }
 
   public List<WorkflowHistoryRound> history(long id) {
-    // 现有工作流提供者的类型化边界与领料详情一致，不将Object带入维修响应。
-    return json.convertValue(
-        runtime.history("repair_report", id), new TypeReference<List<WorkflowHistoryRound>>() {});
+    // 工作流直接返回相同的固定契约，无需再经过JSON往返转换。
+    return runtime.history("repair_report", id);
   }
 
   public RepairApprovalValues values(long id) {

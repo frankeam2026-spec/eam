@@ -21,5 +21,6 @@ class WorkflowStatusCodesTest {
     assertEquals("PENDING", WorkflowApprovalStatus.PENDING.code());
     assertEquals("APPROVED", WorkflowApprovalStatus.APPROVED.code());
     assertEquals("REJECTED", WorkflowApprovalStatus.REJECTED.code());
+    assertEquals("CANCELLED", WorkflowApprovalStatus.CANCELLED.code());
   }
 }

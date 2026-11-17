@@ -1,17 +1,21 @@
 package com.windasoft.eam.service.workflow;
 
 import com.windasoft.eam.dto.workflow.WorkflowDefinition;
-import java.util.*;
+import com.windasoft.eam.dto.workflow.WorkflowTrialStep;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Synchronous trial context. It is never persisted as a business instance or inherited by threads.
  */
 final class WorkflowSimulation implements AutoCloseable {
-  final long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+  final long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
   private static final ThreadLocal<WorkflowSimulation> CURRENT = new ThreadLocal<>();
   final WorkflowDefinition definition;
   final Map<String, Object> values;
-  final List<Map<String, Object>> trace = new ArrayList<>();
+  final List<WorkflowTrialStep> trace = new ArrayList<>();
 
   WorkflowSimulation(WorkflowDefinition definition, Map<String, Object> values) {
     if (CURRENT.get() != null) throw new IllegalStateException("不支持嵌套试算");
