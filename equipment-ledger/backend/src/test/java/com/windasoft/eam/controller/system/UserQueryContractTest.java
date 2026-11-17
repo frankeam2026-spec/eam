@@ -6,11 +6,15 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.ApiExceptionHandler;
+import com.windasoft.eam.dto.common.DataResponse;
+import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.common.PageResult;
 import com.windasoft.eam.dto.system.UserListView;
 import com.windasoft.eam.dto.system.UserSummary;
+import com.windasoft.eam.repository.system.UserListRepository;
 import com.windasoft.eam.service.system.OrganizationService;
 import com.windasoft.eam.service.system.RoleManagementService;
 import com.windasoft.eam.service.system.UserListService;
@@ -31,6 +35,30 @@ class UserQueryContractTest {
               .getDeclaredMethod(method, Map.class)
               .getGenericReturnType());
     }
+  }
+
+  @Test
+  void summaryAllowsOnlyItsRealRoleCountDictionaryAndRepositoryRowsStayTyped() throws Exception {
+    assertEquals(
+        UserSummary.class,
+        SystemManagementController.class.getDeclaredMethod("userSummary").getReturnType());
+    for (var component : UserSummary.class.getRecordComponents()) {
+      if (component.getName().equals("roleCounts")) {
+        assertEquals(
+            new TypeReference<Map<String, Long>>() {}.getType(), component.getGenericType());
+      } else {
+        ContractTypes.assertExplicit(component.getGenericType());
+      }
+    }
+    ContractTypes.assertExplicit(
+        UserListRepository.class
+            .getDeclaredMethod("page", UserListRepository.Selection.class, ListQuery.class)
+            .getGenericReturnType());
+    assertThrows(
+        AssertionError.class,
+        () ->
+            ContractTypes.assertExplicit(
+                new TypeReference<DataResponse<List<Object>>>() {}.getType()));
   }
 
   @Test
