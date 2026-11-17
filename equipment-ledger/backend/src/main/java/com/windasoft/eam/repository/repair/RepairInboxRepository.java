@@ -37,6 +37,32 @@ public class RepairInboxRepository {
     mapper.insertAtDatabaseTime(row);
   }
 
+  /** 工作流沿用旧消息字段与数据库毫秒取时，不追加原来没有的翻译元数据。 */
+  public void workflowTodo(long id, long tenant, long user, long order, String title) {
+    var row = new RepairInbox();
+    row.setId(id);
+    row.setTenantId(tenant);
+    row.setUserId(user);
+    row.setOrderId(order);
+    row.setKind(RepairNoticeKind.REPORT_APPROVAL.code());
+    row.setTitle(title);
+    row.setIsTodo(1);
+    mapper.insertWorkflowTodoAtDatabaseTime(row);
+  }
+
+  /** 按审批任务关联的消息ID关闭，不能误关同单据的仓库待办。 */
+  public void complete(long tenant, List<Long> ids) {
+    if (ids.isEmpty()) {
+      return;
+    }
+    mapper.update(
+        null,
+        new LambdaUpdateWrapper<RepairInbox>()
+            .eq(RepairInbox::getTenantId, tenant)
+            .in(RepairInbox::getId, ids)
+            .set(RepairInbox::getDone, 1));
+  }
+
   private LambdaUpdateWrapper<RepairInbox> pending(long tenant, long order) {
     return new LambdaUpdateWrapper<RepairInbox>()
         .eq(RepairInbox::getTenantId, tenant)

@@ -19,7 +19,8 @@ class LayerDependencyArchitectureTest {
           "system",
           "printing",
           "equipment",
-          "repair");
+          "repair",
+          "workflow");
 
   static boolean forbidden(String layer, String target) {
     return switch (layer) {
@@ -60,6 +61,20 @@ class LayerDependencyArchitectureTest {
   static boolean writesMaintenanceExecution(String sql) {
     return sql.matches(
         "(?is).*\\b(?:INSERT\\s+(?:IGNORE\\s+)?INTO|UPDATE|DELETE\\s+FROM)\\s+`?eam_maintenance_(?:execution(?:_item|_image|_file)?|task_person)`?\\b.*");
+  }
+
+  static boolean writesWorkflowInbox(String sql) {
+    return sql.matches(
+        "(?is).*\\b(?:INSERT\\s+(?:IGNORE\\s+)?INTO|UPDATE|DELETE\\s+FROM)\\s+`?(?:inv_inbox|eam_repair_inbox)`?\\b.*");
+  }
+
+  @Test
+  void workflowInboxDetectionAllowsReadsButRejectsForeignWrites() {
+    assertTrue(writesWorkflowInbox("INSERT INTO inv_inbox(id) VALUES(?)"));
+    assertTrue(writesWorkflowInbox("UPDATE eam_repair_inbox SET done=1"));
+    assertFalse(
+        writesWorkflowInbox("SELECT t.id FROM wf_todo t JOIN inv_inbox i ON i.id=t.inbox_id"));
+    assertFalse(writesWorkflowInbox("UPDATE wf_approval SET state=?"));
   }
 
   @Test
@@ -139,6 +154,11 @@ class LayerDependencyArchitectureTest {
                     }
 
                     void queryLiteral(Object value) {
+                      if (layer.equals("repository")
+                          && file.getParent().getFileName().toString().equals("workflow")
+                          && value instanceof String text) {
+                        assertFalse(writesWorkflowInbox(text), file + "直接写入非工作流收件箱");
+                      }
                       // 保养只决定履历产生时机，不能把设备履历写入重新放回保养仓储。
                       if (layer.equals("repository")
                           && file.startsWith(root.resolve("repository/maintenance"))

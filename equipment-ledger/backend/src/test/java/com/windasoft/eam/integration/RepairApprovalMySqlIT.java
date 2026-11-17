@@ -71,7 +71,7 @@ class RepairApprovalMySqlIT {
     String url = System.getenv("EAM_REPAIR_APPROVAL_TEST_URL");
     if (url == null
         || !url.matches(
-            "jdbc:mysql://127\\.0\\.0\\.1:3308/eam_repair_approval_test_20261030(\\?.*)?"))
+            "jdbc:mysql://127\\.0\\.0\\.1:3308/(?:eam_repair_approval_test_20261030|eam_workflow_test_20261117)(\\?.*)?"))
       throw new IllegalStateException("Requires isolated repair approval database");
     p.add("spring.datasource.url", () -> url);
     p.add("spring.datasource.username", () -> "root");
@@ -147,7 +147,8 @@ class RepairApprovalMySqlIT {
     // a real tenant-owned dictionary reference, so create one as part of this rolled-back fixture.
     faultCause = com.baomidou.mybatisplus.core.toolkit.IdWorker.getId();
     db.update(
-        "INSERT INTO eam_base_item(id,tenant_id,item_type,code,name,parent_id,decimal_precision,sort_no,status,deleted)"
+        "INSERT INTO"
+            + " eam_base_item(id,tenant_id,item_type,code,name,parent_id,decimal_precision,sort_no,status,deleted)"
             + " VALUES(?,10001,'FAULT_CAUSE',?,'测试故障原因',NULL,0,999,1,0)",
         faultCause,
         "QA_CAUSE_" + faultCause);
@@ -182,8 +183,8 @@ class RepairApprovalMySqlIT {
   }
 
   void enable() {
-    var v = (Map<?, ?>) templates.approvalSetting(71002);
-    templates.approvalSetting(71002, true, ((Number) v.get("rowVersion")).longValue());
+    var v = templates.approvalSetting(71002);
+    templates.approvalSetting(71002, true, v.rowVersion());
   }
 
   RepairForm form() {
@@ -378,8 +379,8 @@ class RepairApprovalMySqlIT {
     publish("repair_report", "ANY", "71002");
     enable();
     long id = create();
-    var s = (Map<?, ?>) templates.approvalSetting(71002);
-    templates.approvalSetting(71002, false, ((Number) s.get("rowVersion")).longValue());
+    var s = templates.approvalSetting(71002);
+    templates.approvalSetting(71002, false, s.rowVersion());
     assertThrows(
         IllegalArgumentException.class, () -> approvals.requireReleased(repairs.find(10001, id)));
     assertEquals("审批中", repairs.find(10001, id).getStatus());
@@ -419,8 +420,8 @@ class RepairApprovalMySqlIT {
         "INSERT INTO eam_sys_user(id,tenant_id,account,display_name,org_id)"
             + " VALUES(990410002,10001,'QA-APPROVAL-B','B公司审批人',71007)");
     var b = publish("repair_report", "ANY", "71006");
-    var setting = (Map<?, ?>) templates.approvalSetting(71006);
-    templates.approvalSetting(71006, true, ((Number) setting.get("rowVersion")).longValue());
+    var setting = templates.approvalSetting(71006);
+    templates.approvalSetting(71006, true, setting.rowVersion());
     db.update(
         "UPDATE eam_equipment SET company_org_id=71006,department_org_id=71007 WHERE id=990410001");
     long second = create();

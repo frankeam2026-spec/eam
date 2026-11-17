@@ -2,7 +2,7 @@ package com.windasoft.eam.dto.workflow;
 
 import java.util.List;
 
-/** API contract; ID fields use strings to preserve snowflake precision in browsers. */
+/** 流程定义契约；ID使用字符串保持浏览器雪花ID精度，版本保持完整BIGINT。 */
 public record WorkflowDefinition(
     String id,
     long rowVersion,

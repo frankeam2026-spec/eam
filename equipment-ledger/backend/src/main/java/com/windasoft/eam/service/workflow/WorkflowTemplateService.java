@@ -1,37 +1,77 @@
 package com.windasoft.eam.service.workflow;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.workflow.WorkflowExpression;
+import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.workflow.WorkflowDefinition;
+import com.windasoft.eam.dto.workflow.WorkflowTemplateViews;
+import com.windasoft.eam.dto.workflow.WorkflowTemplateViews.ChoicePage;
+import com.windasoft.eam.dto.workflow.WorkflowTemplateViews.Company;
+import com.windasoft.eam.dto.workflow.WorkflowTemplateViews.ScriptResult;
+import com.windasoft.eam.dto.workflow.WorkflowTemplateViews.Setting;
+import com.windasoft.eam.dto.workflow.WorkflowTemplateViews.TemplatePage;
+import com.windasoft.eam.dto.workflow.WorkflowTrialStep;
+import com.windasoft.eam.repository.workflow.WorkflowBindingRepository;
 import com.windasoft.eam.repository.workflow.WorkflowRepository;
-import com.windasoft.eam.service.system.*;
-import java.util.*;
+import com.windasoft.eam.repository.workflow.WorkflowTemplateRepository;
+import com.windasoft.eam.repository.workflow.WorkflowVersionRepository;
+import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.PermissionService;
+import java.math.BigDecimal;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import org.flowable.engine.ProcessEngine;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class WorkflowTemplateService {
+  private static final Set<Integer> PAGE_SIZES = Set.of(20, 50, 100);
   private final WorkflowRepository repository;
+  private final WorkflowDraftService drafts;
+  private final WorkflowActorService actors;
+  private final WorkflowBindingRepository bindings;
+  private final WorkflowTemplateRepository templates;
+  private final WorkflowVersionRepository versions;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final WorkflowVariables variables;
   private final WorkflowDefinitionValidator validator;
   private final ProcessEngine engine;
   private final WorkflowScriptRunner scriptRunner;
-  private final org.springframework.transaction.PlatformTransactionManager transactions;
+  private final PlatformTransactionManager transactions;
 
   public WorkflowTemplateService(
       WorkflowRepository repository,
+      WorkflowDraftService drafts,
+      WorkflowActorService actors,
+      WorkflowBindingRepository bindings,
+      WorkflowTemplateRepository templates,
+      WorkflowVersionRepository versions,
       AuthContext auth,
       PermissionService permissions,
       WorkflowVariables variables,
       WorkflowDefinitionValidator validator,
       ProcessEngine engine,
       WorkflowScriptRunner scriptRunner,
-      org.springframework.transaction.PlatformTransactionManager transactions) {
+      PlatformTransactionManager transactions) {
     this.repository = repository;
+    this.drafts = drafts;
+    this.actors = actors;
+    this.bindings = bindings;
+    this.templates = templates;
+    this.versions = versions;
     this.auth = auth;
     this.permissions = permissions;
     this.variables = variables;
@@ -41,73 +81,82 @@ public class WorkflowTemplateService {
     this.transactions = transactions;
   }
 
-  public Object list(String q, Long company, int page, int size) {
+  public TemplatePage list(String q, Long company, int page, int size) {
+    validatePage(q, page, size);
     return repository.list(
-        auth.tenantId(),
-        permissions.scope("workflow", "查看"),
-        q,
-        company,
-        Math.max(1, page),
-        Set.of(20, 50, 100).contains(size) ? size : 20);
+        auth.tenantId(), permissions.scope("workflow", "查看"), q, company, page, size);
   }
 
-  public Object companies(String action) {
+  /** 复用现有分页/查询长度校验，保留工作流20/50/100边界；不能静默改变非法请求。 */
+  private void validatePage(String keyword, int page, int size) {
+    ListQuery.from(
+        Map.of(
+            "page",
+            Integer.toString(page),
+            "size",
+            Integer.toString(size),
+            "q",
+            keyword == null ? "" : keyword));
+    if (!PAGE_SIZES.contains(size)) {
+      throw new LocalizedArgumentException("server.common.message0003");
+    }
+  }
+
+  public List<Company> companies(String action) {
     if (!Set.of("查看", "编辑", "发布", "停用").contains(action))
       throw new IllegalArgumentException("操作无效");
     return repository.companies(auth.tenantId(), permissions.scope("workflow", action));
   }
 
-  public Object variables(String business) {
+  public Collection<WorkflowExpression.Variable> variables(String business) {
     permissions.require("workflow", "查看");
     return variables.catalog(business).values();
   }
 
-  public Object approvalSetting(long company) {
+  public Setting approvalSetting(long company) {
     check(company, "查看");
-    return repository.approvalSetting(auth.tenantId(), company);
+    return bindings.approvalSetting(auth.tenantId(), company);
   }
 
   @Transactional
-  public Object approvalSetting(long company, boolean required, long version) {
+  public Setting approvalSetting(long company, boolean required, long version) {
     check(company, "发布");
-    repository.approvalSetting(auth.tenantId(), company, required, version);
-    return repository.approvalSetting(auth.tenantId(), company);
+    bindings.approvalSetting(auth.tenantId(), company, required, version);
+    return bindings.approvalSetting(auth.tenantId(), company);
   }
 
-  public Object parse(String expression) {
+  public WorkflowExpression.Expr parse(String expression) {
     permissions.require("workflow", "查看");
     return WorkflowExpression.parse(expression, variables.catalog("requisition"));
   }
 
-  public Object parse(String expression, WorkflowDefinition definition) {
+  public WorkflowExpression.Expr parse(String expression, WorkflowDefinition definition) {
     if (definition == null) return parse(expression);
     check(Long.parseLong(definition.companyId()), "查看");
     return WorkflowExpression.parse(expression, variables.catalog(definition));
   }
 
-  public Object scriptTrial(
+  public ScriptResult scriptTrial(
       long company, WorkflowDefinition.Script script, Map<String, Object> values) {
     check(company, "脚本试算");
     Object value = scriptRunner.execute(script, values);
-    return Map.of(
-        "value", value instanceof java.math.BigDecimal number ? number.toPlainString() : value);
+    return new ScriptResult(
+        value instanceof Boolean b
+            ? JsonNodeFactory.instance.booleanNode(b)
+            : JsonNodeFactory.instance.textNode(
+                value instanceof BigDecimal n ? n.toPlainString() : value.toString()));
   }
 
-  public Object choices(long company, String kind, String q, int page, int size) {
+  public ChoicePage choices(long company, String kind, String q, int page, int size) {
+    validatePage(q, page, size);
     check(company, "查看");
     Set<Long> orgs = new HashSet<>(permissions.companyDepartments(company));
     orgs.add(company);
     orgs.removeIf(id -> !Objects.equals(permissions.companyOfOrganization(id), company));
-    return repository.choices(
-        auth.tenantId(),
-        kind,
-        orgs,
-        q,
-        Math.max(1, page),
-        Set.of(20, 50, 100).contains(size) ? size : 20);
+    return repository.choices(auth.tenantId(), kind, orgs, q, page, size);
   }
 
-  public Object resolve(long company, String kind, List<Long> ids) {
+  public ChoicePage resolve(long company, String kind, List<Long> ids) {
     check(company, "查看");
     if (ids == null || ids.isEmpty() || ids.size() > 100)
       throw new IllegalArgumentException("一次可解析1至100个关联对象");
@@ -118,14 +167,23 @@ public class WorkflowTemplateService {
   }
 
   public WorkflowDefinition detail(long id, Long version) {
-    var t = repository.template(auth.tenantId(), id, false);
-    check(((Number) t.get("company_id")).longValue(), "查看");
+    var t = templates.find(auth.tenantId(), id, false);
+    check(t.getCompanyId(), "查看");
     return repository.definition(auth.tenantId(), id, version);
   }
 
-  public Object versions(long id) {
+  public List<WorkflowTemplateViews.Version> versions(long id) {
     detail(id, null);
-    return repository.versions(auth.tenantId(), id);
+    return versions.list(auth.tenantId(), id).stream()
+        .map(
+            v ->
+                new WorkflowTemplateViews.Version(
+                    v.getId().toString(),
+                    v.getVersionNo(),
+                    v.getState(),
+                    v.getPublishedBy(),
+                    v.getPublishedAt()))
+        .toList();
   }
 
   public void check(long company, String action) {
@@ -140,9 +198,9 @@ public class WorkflowTemplateService {
     check(company, "编辑");
     WorkflowDefinition previous = null;
     if (d.id() != null) {
-      var t = repository.template(auth.tenantId(), Long.parseLong(d.id()), true);
-      if (!Objects.equals(t.get("company_id").toString(), d.companyId())
-          || !Objects.equals(t.get("business_type"), d.businessType()))
+      var t = templates.find(auth.tenantId(), Long.parseLong(d.id()), true);
+      if (!Objects.equals(t.getCompanyId().toString(), d.companyId())
+          || !Objects.equals(t.getBusinessType(), d.businessType()))
         throw new IllegalArgumentException("已有模板的适用公司和业务类型不可变更，请新建模板");
       previous = repository.definition(auth.tenantId(), Long.parseLong(d.id()), null);
     }
@@ -159,27 +217,10 @@ public class WorkflowTemplateService {
           .forEach(n -> newScripts.put(n.key(), n.script()));
     if (!oldScripts.equals(newScripts)) check(company, "脚本配置");
     var expressions = validator.validate(d, false);
-    validateActors(d);
+    actors.validate(auth.tenantId(), d);
     expressions.values().forEach(e -> validateReferences(company, e));
-    long id = repository.save(auth.tenantId(), auth.userId(), d, expressions);
+    long id = drafts.save(auth.tenantId(), auth.userId(), d, expressions);
     return repository.definition(auth.tenantId(), id, null);
-  }
-
-  private void validateActors(WorkflowDefinition d) {
-    var roles =
-        repository.roles(auth.tenantId()).stream()
-            .map(r -> r.get("id").toString())
-            .collect(java.util.stream.Collectors.toSet());
-    for (var node : d.nodes()) {
-      if (node.users() != null)
-        for (String user : node.users()) {
-          Long org = repository.userOrg(auth.tenantId(), Long.parseLong(user));
-          if (!Objects.equals(permissions.companyOfOrganization(org), Long.valueOf(d.companyId())))
-            throw new IllegalArgumentException("固定审批人必须属于模板适用公司");
-        }
-      if (node.roles() != null && !roles.containsAll(node.roles()))
-        throw new IllegalArgumentException("审批角色不存在或已停用");
-    }
   }
 
   private void validateReferences(long company, WorkflowExpression.Expr expression) {
@@ -210,22 +251,20 @@ public class WorkflowTemplateService {
 
   @Transactional
   public WorkflowDefinition publish(long id, long rowVersion) {
-    var t = repository.template(auth.tenantId(), id, true);
-    check(((Number) t.get("company_id")).longValue(), "发布");
-    if (((Number) t.get("row_version")).longValue() != rowVersion)
-      throw new IllegalArgumentException("模板已变更，请刷新");
+    var t = templates.find(auth.tenantId(), id, true);
+    check(t.getCompanyId(), "发布");
+    if (t.getRowVersion() != rowVersion) throw new IllegalArgumentException("模板已变更，请刷新");
     var d = repository.definition(auth.tenantId(), id, null);
     validator
         .validate(d)
         .values()
         .forEach(e -> validateReferences(Long.parseLong(d.companyId()), e));
-    validateActors(d);
+    actors.validate(auth.tenantId(), d);
     if (d.nodes().stream().anyMatch(n -> n.type().equals("SCRIPT"))) {
       check(Long.parseLong(d.companyId()), "脚本发布");
       for (var n : d.nodes()) if (n.script() != null) scriptRunner.validate(n.script());
     }
-    // Resolve every configured node on publication; roles are resolved again when nodes are
-    // entered.
+    // 发布时检查各审批节点有候选人；进入节点时再次解析并保存人员快照，避免沿用过期角色成员。
     for (var n : d.nodes())
       if (n.type().equals("APPROVAL") && candidates(d, n).isEmpty())
         throw new IllegalArgumentException("节点没有可用审批人：" + n.name());
@@ -244,53 +283,38 @@ public class WorkflowTemplateService {
             .createProcessDefinitionQuery()
             .deploymentId(deployment.getId())
             .singleResult();
-    repository.publish(
-        auth.tenantId(),
-        Long.parseLong(d.companyId()),
-        d.businessType(),
-        Long.parseLong(d.versionId()),
-        auth.userId(),
-        xml,
-        definition.getId());
+    // 先锁公司业务绑定，再原子发布草稿及切换绑定；与引擎部署处于同一事务。
+    long company = Long.parseLong(d.companyId());
+    long version = Long.parseLong(d.versionId());
+    bindings.ensure(auth.tenantId(), company, d.businessType());
+    bindings.find(auth.tenantId(), company, d.businessType(), true);
+    if (!versions.publish(auth.tenantId(), version, auth.userId(), xml, definition.getId())) {
+      throw new IllegalArgumentException("流程版本已发布或已变化，请刷新后重试");
+    }
+    bindings.activate(auth.tenantId(), company, d.businessType(), version);
     return repository.definition(auth.tenantId(), id, null);
   }
 
-  public Set<Long> candidates(WorkflowDefinition d, WorkflowDefinition.Node n) {
-    Set<Long> users = new TreeSet<>();
-    if (n.users() != null)
-      for (String id : n.users()) {
-        long user = Long.parseLong(id);
-        if (Objects.equals(
-            permissions.companyOfOrganization(repository.userOrg(auth.tenantId(), user)),
-            Long.valueOf(d.companyId()))) users.add(user);
-        else throw new IllegalArgumentException("固定审批人已不属于适用公司，请调整流程");
-      }
-    if (n.roles() != null)
-      for (String role : n.roles())
-        for (long user : repository.roleUsers(auth.tenantId(), Long.parseLong(role)))
-          if (Objects.equals(
-              permissions.companyOfOrganization(repository.userOrg(auth.tenantId(), user)),
-              Long.valueOf(d.companyId()))) users.add(user);
-    return users;
+  public Set<Long> candidates(WorkflowDefinition definition, WorkflowDefinition.Node node) {
+    return actors.candidates(auth.tenantId(), definition, node);
   }
 
   @Transactional
   public void disable(long id, long rowVersion) {
-    var t = repository.template(auth.tenantId(), id, true);
-    check(((Number) t.get("company_id")).longValue(), "停用");
-    if (((Number) t.get("row_version")).longValue() != rowVersion)
-      throw new IllegalArgumentException("模板已变更，请刷新");
-    repository.disable(auth.tenantId(), id);
+    var t = templates.find(auth.tenantId(), id, true);
+    check(t.getCompanyId(), "停用");
+    if (t.getRowVersion() != rowVersion) throw new IllegalArgumentException("模板已变更，请刷新");
+    bindings.disableTemplate(auth.tenantId(), id);
   }
 
-  public Object simulate(WorkflowDefinition definition, Map<String, Object> values) {
+  public List<WorkflowTrialStep> simulate(
+      WorkflowDefinition definition, Map<String, Object> values) {
     check(Long.parseLong(definition.companyId()), "编辑");
     validator.validate(definition);
     if (definition.nodes().stream().anyMatch(n -> n.script() != null))
       check(Long.parseLong(definition.companyId()), "脚本试算");
-    var transaction = new org.springframework.transaction.support.TransactionTemplate(transactions);
-    transaction.setPropagationBehavior(
-        org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    var transaction = new TransactionTemplate(transactions);
+    transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     return transaction.execute(
         status -> {
           status.setRollbackOnly();

@@ -1,21 +1,31 @@
 package com.windasoft.eam.service.workflow;
 
 import com.windasoft.eam.common.workflow.WorkflowExpression;
-import com.windasoft.eam.repository.workflow.*;
-import java.util.*;
-import org.flowable.engine.delegate.*;
+import com.windasoft.eam.dto.workflow.WorkflowTrialStep;
+import com.windasoft.eam.repository.workflow.WorkflowEventRepository;
+import com.windasoft.eam.repository.workflow.WorkflowRepository;
+import java.util.ArrayList;
+import java.util.Set;
+import org.flowable.bpmn.model.ExclusiveGateway;
+import org.flowable.bpmn.model.InclusiveGateway;
+import org.flowable.engine.delegate.DelegateExecution;
+import org.flowable.engine.delegate.ExecutionListener;
 import org.springframework.stereotype.Component;
 
-/** Called only by generated BPMN at the actual gateway, after preceding script results exist. */
+/** 仅由生成的BPMN在到达网关时调用；分支使用此前脚本计算后已落库的本轮变量。 */
 @Component("eamWorkflowRouting")
 public class WorkflowRoutingListener implements ExecutionListener {
   private final WorkflowRepository templates;
-  private final WorkflowInstanceRepository instances;
+  private final WorkflowValueService valueStore;
+  private final WorkflowEventRepository events;
 
   public WorkflowRoutingListener(
-      WorkflowRepository templates, WorkflowInstanceRepository instances) {
+      WorkflowRepository templates,
+      WorkflowValueService valueStore,
+      WorkflowEventRepository events) {
     this.templates = templates;
-    this.instances = instances;
+    this.valueStore = valueStore;
+    this.events = events;
   }
 
   @Override
@@ -27,7 +37,7 @@ public class WorkflowRoutingListener implements ExecutionListener {
               .filter(n -> n.key().equals(execution.getCurrentActivityId()))
               .findFirst()
               .orElseThrow();
-      trial.trace.add(Map.of("node", node.key(), "name", node.name(), "type", node.type()));
+      trial.trace.add(WorkflowTrialStep.node(node.key(), node.name(), node.type()));
       if (!Set.of("BRANCH", "INCLUSIVE").contains(node.type())) return;
       var expressions =
           new WorkflowDefinitionValidator(new WorkflowVariables()).validate(trial.definition);
@@ -40,7 +50,7 @@ public class WorkflowRoutingListener implements ExecutionListener {
                     && WorkflowExpression.test(
                             expressions.get(node.key() + ":" + branch.key()), trial.values)
                         .matched();
-        trial.trace.add(Map.of("branch", branch.key(), "name", branch.name(), "matched", result));
+        trial.trace.add(WorkflowTrialStep.branch(branch.key(), branch.name(), result));
         if (result) {
           matched.add(branch.key());
           if (node.type().equals("BRANCH")) break;
@@ -52,8 +62,7 @@ public class WorkflowRoutingListener implements ExecutionListener {
       return;
     }
     var type = execution.getCurrentFlowElement();
-    if (!(type instanceof org.flowable.bpmn.model.ExclusiveGateway)
-        && !(type instanceof org.flowable.bpmn.model.InclusiveGateway)) return;
+    if (!(type instanceof ExclusiveGateway) && !(type instanceof InclusiveGateway)) return;
     long tenant = Long.parseLong(execution.getVariable("eamTenant").toString()),
         instance = Long.parseLong(execution.getVariable("eamInstance").toString()),
         version = Long.parseLong(execution.getVariable("eamVersion").toString());
@@ -65,7 +74,7 @@ public class WorkflowRoutingListener implements ExecutionListener {
             .findFirst()
             .orElseThrow();
     var expressions = templates.expressions(tenant, version);
-    var values = instances.values(tenant, instance);
+    var values = valueStore.values(tenant, instance);
     var matched = new ArrayList<String>();
     for (var branch : node.branches()) {
       if (node.branches().size() == 1
@@ -74,7 +83,7 @@ public class WorkflowRoutingListener implements ExecutionListener {
               && WorkflowExpression.test(expressions.get(node.key() + ":" + branch.key()), values)
                   .matched()) {
         matched.add(branch.key());
-        instances.event(
+        events.event(
             tenant,
             instance,
             node.key(),
