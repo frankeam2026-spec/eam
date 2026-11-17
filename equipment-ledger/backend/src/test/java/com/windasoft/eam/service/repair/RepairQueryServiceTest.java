@@ -10,6 +10,11 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.business.BusinessConfigRepository;
+import com.windasoft.eam.repository.business.BusinessSchemaRepository;
+import com.windasoft.eam.repository.business.BusinessSchemaVersionRepository;
+import com.windasoft.eam.repository.business.BusinessFieldRepository;
+import com.windasoft.eam.repository.business.BusinessConfigEventRepository;
+import com.windasoft.eam.entity.business.BusinessSchema;
 import com.windasoft.eam.repository.business.BusinessQueryRepository;
 import com.windasoft.eam.repository.repair.RepairAssistantRepository;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
@@ -50,9 +55,15 @@ class RepairQueryServiceTest {
             new ObjectMapper(),
             mock(RepairAssistantRepository.class));
     var repo = mock(BusinessConfigRepository.class);
-    when(repo.schema(anyLong(), anyString(), anyBoolean()))
-        .thenReturn(Map.of("published", "{\"fields\":[]}"));
-    var config = new BusinessConfigService(repo, new ObjectMapper(), auth, permissions);
+    var schemas = mock(BusinessSchemaRepository.class);
+    var schema = new BusinessSchema();
+    schema.setPublished("{\"fields\":[]}");
+    schema.setPublishedVersion(0);
+    when(schemas.find(anyLong(), anyString(), anyBoolean())).thenReturn(schema);
+    var config = new BusinessConfigService(
+        repo, schemas, mock(BusinessSchemaVersionRepository.class),
+        mock(BusinessFieldRepository.class), mock(BusinessConfigEventRepository.class),
+        new ObjectMapper(), auth, permissions);
     var query =
         new BusinessQueryService(
             config,

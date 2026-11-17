@@ -158,8 +158,8 @@ public class EquipmentImportValidation {
               .add(e.getKey());
       }
     var schema = configs.current("equipment", false);
-    c.version = ((Number) schema.get("published_version")).intValue();
-    c.configuration = configs.decode(schema.get("published"));
+    c.version = schema.getPublishedVersion();
+    c.configuration = configs.decode(schema.getPublished());
     c.fields = configs.fields(c.configuration);
     var columns = new ArrayList<>(EquipmentImportFields.core());
     c.choices.put(

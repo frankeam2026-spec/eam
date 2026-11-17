@@ -1,6 +1,14 @@
 package com.windasoft.eam.repository.business;
 
-import java.util.*;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -24,93 +32,6 @@ public class BusinessConfigRepository {
         record);
   }
 
-  public Map<String, Object> schema(long tenant, String object, boolean lock) {
-    var rows =
-        db.queryForList(
-            "SELECT * FROM eam_business_schema WHERE tenant_id=? AND object_key=?"
-                + (lock ? " FOR UPDATE" : ""),
-            tenant,
-            object);
-    if (rows.isEmpty())
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.business.message0001");
-    return rows.getFirst();
-  }
-
-  public void draft(long tenant, String object, String value, int version, long actor) {
-    if (db.update(
-            "UPDATE eam_business_schema SET draft=CAST(? AS"
-                + " JSON),row_version=row_version+1,updated_by=?,updated_at=NOW() WHERE tenant_id=?"
-                + " AND object_key=? AND row_version=?",
-            value,
-            actor,
-            tenant,
-            object,
-            version)
-        != 1)
-      throw new org.springframework.web.server.ResponseStatusException(
-          org.springframework.http.HttpStatus.CONFLICT, "配置已更新，请刷新后重试");
-  }
-
-  public void publish(long tenant, String object, String value, int version, long actor) {
-    db.update(
-        "INSERT INTO"
-            + " eam_business_schema_version(tenant_id,object_key,version,configuration,actor_id)"
-            + " VALUES(?,?,?,CAST(? AS JSON),?)",
-        tenant,
-        object,
-        version,
-        value,
-        actor);
-    db.update(
-        "UPDATE eam_business_schema SET published=CAST(? AS"
-            + " JSON),published_version=?,row_version=row_version+1,updated_by=?,updated_at=NOW()"
-            + " WHERE tenant_id=? AND object_key=?",
-        value,
-        version,
-        actor,
-        tenant,
-        object);
-    db.update(
-        "UPDATE eam_business_field SET ever_published=1 WHERE tenant_id=? AND object_key=?",
-        tenant,
-        object);
-  }
-
-  public List<Map<String, Object>> versions(long tenant, String object) {
-    return db.queryForList(
-        "SELECT version,actor_id,created_at FROM eam_business_schema_version WHERE tenant_id=? AND"
-            + " object_key=? ORDER BY version DESC",
-        tenant,
-        object);
-  }
-
-  public String version(long tenant, String object, int version) {
-    return db.queryForObject(
-        "SELECT configuration FROM eam_business_schema_version WHERE tenant_id=? AND object_key=?"
-            + " AND version=?",
-        String.class,
-        tenant,
-        object,
-        version);
-  }
-
-  public Map<String, Object> identity(String id) {
-    var rows = db.queryForList("SELECT * FROM eam_business_field WHERE id=? FOR UPDATE", id);
-    return rows.isEmpty() ? null : rows.getFirst();
-  }
-
-  public void identity(String id, long tenant, String object, String type, String source) {
-    db.update(
-        "INSERT INTO eam_business_field(id,tenant_id,object_key,data_type,source_key)"
-            + " VALUES(?,?,?,?,?) ON DUPLICATE KEY UPDATE"
-            + " data_type=VALUES(data_type),source_key=VALUES(source_key)",
-        id,
-        tenant,
-        object,
-        type,
-        source);
-  }
-
   public List<Map<String, Object>> dictionary(long tenant, String id, boolean lock) {
     return db.queryForList(
         "SELECT id,name,enabled,row_version rowVersion FROM eam_business_dictionary WHERE"
@@ -126,39 +47,6 @@ public class BusinessConfigRepository {
             + " WHERE tenant_id=? AND dictionary_id=? ORDER BY sort_no,id",
         tenant,
         id);
-  }
-
-  public void event(
-      long id,
-      long tenant,
-      String object,
-      Long record,
-      long actor,
-      String name,
-      String action,
-      String details) {
-    db.update(
-        "INSERT INTO"
-            + " eam_business_config_event(id,tenant_id,object_key,record_id,actor_id,actor_name,action,details)"
-            + " VALUES(?,?,?,?,?,?,?,CAST(? AS JSON))",
-        id,
-        tenant,
-        object,
-        record,
-        actor,
-        name,
-        action,
-        details);
-  }
-
-  public List<Map<String, Object>> events(long tenant, String object, Long record) {
-    return db.queryForList(
-        "SELECT actor_name actor,action,details,created_at time FROM eam_business_config_event"
-            + " WHERE tenant_id=? AND object_key=? AND record_id <=> ? ORDER BY created_at DESC,id"
-            + " DESC LIMIT 100",
-        tenant,
-        object,
-        record);
   }
 
   public List<Map<String, Object>> values(long tenant, String object, Collection<Long> ids) {
@@ -247,8 +135,7 @@ public class BusinessConfigRepository {
           "SELECT id,name,id orgId,status enabled FROM eam_org_unit WHERE tenant_id=? AND id=? AND"
               + " org_type='部门' AND deleted=0 FOR SHARE";
       args = new Object[] {tenant, id};
-    } else
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.business.message0002");
+    } else throw new LocalizedArgumentException("server.business.message0002");
     var rows = db.queryForList(sql, args);
     return rows.isEmpty() ? null : rows.getFirst();
   }

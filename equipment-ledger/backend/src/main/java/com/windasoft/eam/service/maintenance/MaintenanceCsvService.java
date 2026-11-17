@@ -93,7 +93,7 @@ public class MaintenanceCsvService {
             : kind.equals("plans") ? "maintenance_plan" : null;
     if (object != null)
       for (var field :
-          configs.fields(configs.decode(configs.current(object, false).get("published"))).values())
+          configs.fields(configs.decode(configs.current(object, false).getPublished())).values())
         if (field.path("exportable").asBoolean())
           labels.put("custom:" + field.path("id").asText(), field.path("name").asText());
     List<String> keys;

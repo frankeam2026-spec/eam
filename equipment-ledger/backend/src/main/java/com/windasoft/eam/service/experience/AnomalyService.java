@@ -515,8 +515,7 @@ public class AnomalyService {
                             .flatMap(a -> rows(viewAnomaly(a).get("attachments")).stream())
                             .toList()),
                 json.createObjectNode(),
-                ((Number) businessConfig.current("repair_report", false).get("published_version"))
-                    .intValue()));
+                businessConfig.current("repair_report", false).getPublishedVersion()));
     return Long.parseLong(result.id());
   }
 

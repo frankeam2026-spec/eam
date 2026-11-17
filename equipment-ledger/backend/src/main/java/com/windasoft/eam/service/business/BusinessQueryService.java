@@ -58,7 +58,7 @@ public class BusinessQueryService {
 
   public Map<String, JsonNode> fields(String object) {
     BusinessObjects.get(object);
-    return config.fields(config.decode(config.current(object, false).get("published")));
+    return config.fields(config.decode(config.current(object, false).getPublished()));
   }
 
   private List<BusinessFilterTerm> terms(String object, String raw) {

@@ -1,9 +1,27 @@
 package com.windasoft.eam.controller.business;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.windasoft.eam.service.business.*;
-import java.util.*;
-import org.springframework.web.bind.annotation.*;
+import com.windasoft.eam.dto.business.BusinessConfigurationContracts.EventView;
+import com.windasoft.eam.dto.business.BusinessConfigurationContracts.ObjectOption;
+import com.windasoft.eam.dto.business.BusinessConfigurationContracts.RestoreRequest;
+import com.windasoft.eam.dto.business.BusinessConfigurationContracts.RuntimeView;
+import com.windasoft.eam.dto.business.BusinessConfigurationContracts.SaveDraftRequest;
+import com.windasoft.eam.dto.business.BusinessConfigurationContracts.SchemaView;
+import com.windasoft.eam.dto.business.BusinessConfigurationContracts.VersionRequest;
+import com.windasoft.eam.dto.business.BusinessConfigurationContracts.VersionView;
+import com.windasoft.eam.dto.common.DataResponse;
+import com.windasoft.eam.service.business.BusinessConfigService;
+import com.windasoft.eam.service.business.BusinessPublicationService;
+import com.windasoft.eam.service.business.BusinessReferenceService;
+import jakarta.validation.Valid;
+import java.util.List;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/business-config")
@@ -22,42 +40,42 @@ public class BusinessConfigController {
   }
 
   @GetMapping("/objects")
-  public Object objects() {
-    return Map.of("data", service.objects());
+  public DataResponse<List<ObjectOption>> objects() {
+    return new DataResponse<>(service.objects());
   }
 
   @GetMapping("/objects/{object}")
-  public Object configuration(@PathVariable String object) {
+  public SchemaView configuration(@PathVariable String object) {
     return service.configuration(object);
   }
 
   @PutMapping("/objects/{object}/draft")
-  public Object save(@PathVariable String object, @RequestBody JsonNode body) {
+  public SchemaView save(@PathVariable String object, @Valid @RequestBody SaveDraftRequest body) {
     return service.save(object, body);
   }
 
   @PostMapping("/objects/{object}/publish")
-  public Object publish(@PathVariable String object, @RequestBody JsonNode body) {
-    return publication.publish(object, body.path("version").asInt(-1));
+  public SchemaView publish(@PathVariable String object, @Valid @RequestBody VersionRequest body) {
+    return publication.publish(object, body.version());
   }
 
   @GetMapping("/objects/{object}/versions")
-  public Object versions(@PathVariable String object) {
-    return Map.of("data", service.versions(object));
+  public DataResponse<List<VersionView>> versions(@PathVariable String object) {
+    return new DataResponse<>(service.versions(object));
   }
 
   @PostMapping("/objects/{object}/restore")
-  public Object restore(@PathVariable String object, @RequestBody JsonNode body) {
-    return service.restore(object, body.path("target").asInt(), body.path("version").asInt(-1));
+  public SchemaView restore(@PathVariable String object, @Valid @RequestBody RestoreRequest body) {
+    return service.restore(object, body.target(), body.version());
   }
 
   @GetMapping("/objects/{object}/events")
-  public Object events(@PathVariable String object) {
-    return Map.of("data", service.events(object));
+  public DataResponse<List<EventView>> events(@PathVariable String object) {
+    return new DataResponse<>(service.events(object));
   }
 
   @GetMapping("/runtime/{object}")
-  public Object runtime(@PathVariable String object) {
+  public RuntimeView runtime(@PathVariable String object) {
     refs.access(object);
     return service.runtime(object);
   }
@@ -72,6 +90,7 @@ public class BusinessConfigController {
       @RequestParam(defaultValue = "false") boolean inactive) {
     return refs.choices(object, source, q, page, size, inactive);
   }
+
   @RequestMapping({"/dictionaries", "/dictionaries/{*path}"})
   public void retiredDictionaries() {
     throw new org.springframework.web.server.ResponseStatusException(

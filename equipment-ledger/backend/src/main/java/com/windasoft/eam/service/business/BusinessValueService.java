@@ -39,8 +39,8 @@ public class BusinessValueService {
 
   public Map<Long, Values> batch(String object, Collection<Long> ids) {
     var schema = configs.current(object, false);
-    int version = ((Number) schema.get("published_version")).intValue();
-    var fs = configs.fields(configs.decode(schema.get("published")));
+    int version = schema.getPublishedVersion();
+    var fs = configs.fields(configs.decode(schema.getPublished()));
     var grouped = new HashMap<Long, Map<String, List<Map<String, Object>>>>();
     for (var row : repo.values(auth.tenantId(), object, ids))
       grouped
@@ -166,8 +166,8 @@ public class BusinessValueService {
       boolean isNew,
       boolean complete) {
     var schema = configs.current(object, true);
-    int current = ((Number) schema.get("published_version")).intValue();
-    var fs = configs.fields(configs.decode(schema.get("published")));
+    int current = schema.getPublishedVersion();
+    var fs = configs.fields(configs.decode(schema.getPublished()));
     if (current != 0 && (version == null || version != current))
       throw new com.windasoft.eam.common.LocalizedStatusException(
           HttpStatus.CONFLICT, "server.business.message0047");

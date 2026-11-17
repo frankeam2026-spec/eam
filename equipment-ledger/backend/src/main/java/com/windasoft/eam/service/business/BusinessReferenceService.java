@@ -63,7 +63,7 @@ public class BusinessReferenceService {
     access(object);
     var rows = new ArrayList<Map<String, Object>>();
     if (source.startsWith("field:")) {
-      var fields = configs.fields(configs.decode(configs.current(object, false).get("published")));
+      var fields = configs.fields(configs.decode(configs.current(object, false).getPublished()));
       var field = fields.get(source.substring(6));
       if (field == null || !BusinessRules.inlineOptions(field))
         throw new com.windasoft.eam.common.LocalizedArgumentException(
