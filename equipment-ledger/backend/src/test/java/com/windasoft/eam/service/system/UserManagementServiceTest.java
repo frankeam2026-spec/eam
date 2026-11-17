@@ -4,14 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.dto.system.UserStatusForm;
+import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.system.AuthenticationRepository;
-import com.windasoft.eam.repository.system.RoleManagementRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.repository.system.RoleManagementRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,7 +25,14 @@ class UserManagementServiceTest {
     var users = mock(SystemUserRepository.class);
     var auth = mock(AuthContext.class);
     var permissions = mock(PermissionService.class);
-    var service = new UserManagementService(sessions, mock(RoleManagementRepository.class), users, mock(OrgUnitRepository.class), auth, permissions, new ObjectMapper());
+    var service =
+        new UserManagementService(
+            sessions,
+            mock(RoleManagementRepository.class),
+            users,
+            mock(OrgUnitRepository.class),
+            auth,
+            permissions);
     var user = new SystemUser();
     user.setId(21L);
     user.setTenantId(7L);
@@ -36,7 +41,8 @@ class UserManagementServiceTest {
     when(auth.userId()).thenReturn(99L);
     when(users.user(7L, 21L)).thenReturn(user);
     doThrow(new IllegalStateException("session delete failed"))
-        .when(sessions).revokeSessions(7L, 21L);
+        .when(sessions)
+        .revokeSessions(7L, 21L);
 
     assertThrows(IllegalStateException.class, () -> service.userStatus(21L, new UserStatusForm(0)));
     var order = inOrder(sessions);

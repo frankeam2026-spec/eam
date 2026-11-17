@@ -3,8 +3,8 @@ package com.windasoft.eam.repository.system;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.windasoft.eam.entity.system.OrgUnit;
 import java.util.List;
-import org.springframework.stereotype.Repository;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
 
 /** 组织表的数据访问，业务事务和多组织加锁顺序由调用Service编排。 */
 /** 组织单元仓储：保存组织层级和状态，层级合法性由组织业务服务决定。 */
@@ -28,7 +28,7 @@ public class OrgUnitRepository {
                 .last("FOR UPDATE"))
         != null;
   }
- 
+
   public OrgUnit activeDepartment(long tenant, String id) {
     return mapper.selectOne(
         new LambdaQueryWrapper<OrgUnit>()
@@ -43,27 +43,16 @@ public class OrgUnitRepository {
   }
 
   public java.util.List<OrgUnit> organizations(long tenant, boolean activeOnly) {
-    return mapper.selectList(new LambdaQueryWrapper<OrgUnit>()
-        .eq(OrgUnit::getTenantId, tenant)
-        .eq(activeOnly, OrgUnit::getStatus, 1));
+    return mapper.selectList(
+        new LambdaQueryWrapper<OrgUnit>()
+            .eq(OrgUnit::getTenantId, tenant)
+            .eq(activeOnly, OrgUnit::getStatus, 1));
   }
+
   public void lockOrganizations(long tenant) {
     db.queryForList(
         "SELECT id FROM eam_org_unit WHERE tenant_id=? AND deleted=0 ORDER BY id FOR UPDATE",
         tenant);
-  }
-
-  public void orgEvent(
-      long tenant, Long id, long actor, String action, String before, String after) {
-    db.update(
-        "INSERT INTO eam_org_event(tenant_id,org_id,actor_id,action,before_json,after_json)"
-            + " VALUES(?,?,?,?,?,?)",
-        tenant,
-        id,
-        actor,
-        action,
-        before,
-        after);
   }
 
   public List<OrgUnit> organizations(long tenant) {
@@ -76,10 +65,6 @@ public class OrgUnitRepository {
   public OrgUnit organization(long tenant, Long id) {
     return mapper.selectOne(
         new LambdaQueryWrapper<OrgUnit>().eq(OrgUnit::getTenantId, tenant).eq(OrgUnit::getId, id));
-  }
-
-  public OrgUnit organizationById(Long id) {
-    return mapper.selectById(id);
   }
 
   public int insertOrganization(OrgUnit x) {

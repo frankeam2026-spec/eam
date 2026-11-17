@@ -1,6 +1,7 @@
 package com.windasoft.eam.repository.system;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.windasoft.eam.dto.system.UserEmailProfile;
 import com.windasoft.eam.dto.system.UserNameOption;
 import com.windasoft.eam.entity.system.SystemUser;
 import java.util.List;
@@ -37,6 +38,18 @@ AND u.org_id IN
       @Param("tenant") long tenant,
       @Param("roles") List<Long> roles,
       @Param("organizations") List<Long> organizations);
+
+  /** 沿用原邮箱读取包含已逻辑删除记录的语义，不能用BaseMapper隐式追加deleted=0。 */
+  @Select(
+      """
+      <script>
+      SELECT id,email,email_version AS version FROM eam_sys_user
+      WHERE tenant_id=#{tenant} AND id IN
+      <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+      </script>
+      """)
+  List<UserEmailProfile> emailProfilesIncludingDeleted(
+      @Param("tenant") long tenant, @Param("ids") List<Long> ids);
 
   /** 历史业务显示姓名包含已删除用户，不能使用会自动追加逻辑删除条件的 BaseMapper 查询。 */
   @Select("SELECT display_name FROM eam_sys_user WHERE tenant_id=#{tenant} AND id=#{id}")

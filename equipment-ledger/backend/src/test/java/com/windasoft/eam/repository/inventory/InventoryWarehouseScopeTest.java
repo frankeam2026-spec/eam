@@ -7,10 +7,11 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+import com.windasoft.eam.dto.inventory.WarehouseChoice;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 
 class InventoryWarehouseScopeTest {
   @Test
@@ -34,13 +35,14 @@ class InventoryWarehouseScopeTest {
   void warehouseChoicesRetainsTenantBoundJoinAndNameShape() {
     var db = mock(JdbcTemplate.class);
     var repository = new InventoryQueryRepository(db);
-    when(db.queryForList(anyString(), eq(7L))).thenReturn(
-        List.of(Map.of("id", "101", "name", "一厂 / 原料库")));
-    assertEquals(
-        List.of(Map.of("id", "101", "name", "一厂 / 原料库")),
-        repository.warehouseChoices(7L));
+    when(db.query(
+            anyString(), org.mockito.ArgumentMatchers.<RowMapper<WarehouseChoice>>any(), eq(7L)))
+        .thenReturn(List.of(new WarehouseChoice("101", "一厂 / 原料库")));
+    assertEquals(List.of(new WarehouseChoice("101", "一厂 / 原料库")), repository.warehouseChoices(7L));
     var sql = org.mockito.ArgumentCaptor.forClass(String.class);
-    verify(db).queryForList(sql.capture(), eq(7L));
+    verify(db)
+        .query(
+            sql.capture(), org.mockito.ArgumentMatchers.<RowMapper<WarehouseChoice>>any(), eq(7L));
     assertTrue(sql.getValue().contains("o.tenant_id=w.tenant_id"));
     assertTrue(sql.getValue().contains("w.tenant_id=?"));
     assertTrue(sql.getValue().contains("ORDER BY o.name,w.name"));

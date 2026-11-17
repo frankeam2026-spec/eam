@@ -1,7 +1,13 @@
 package com.windasoft.eam.dto.system;
 
-import jakarta.validation.constraints.*;
-import java.util.*;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.windasoft.eam.common.ExactLongDeserializer;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import java.util.List;
 
 public record UserBatchForm(
-    @NotNull List<Long> ids, @NotBlank String operation, Long orgId, String password) {}
+    @NotNull @JsonDeserialize(contentUsing = ExactLongDeserializer.class) List<Long> ids,
+    @NotBlank String operation,
+    @JsonDeserialize(using = ExactLongDeserializer.class) Long orgId,
+    String password) {}

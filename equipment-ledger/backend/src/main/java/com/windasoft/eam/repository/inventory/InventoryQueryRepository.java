@@ -1,7 +1,14 @@
 package com.windasoft.eam.repository.inventory;
 
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.dto.inventory.WarehouseChoice;
 import java.time.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -49,21 +56,34 @@ public class InventoryQueryRepository {
             + String.join(",", Collections.nCopies(ids.size(), "?"))
             + ")",
         Long.class,
-        java.util.stream.Stream.concat(java.util.stream.Stream.of(tenant), ids.stream()).toArray());
+        Stream.concat(Stream.of(tenant), ids.stream()).toArray());
   }
 
   /** 角色权限配置的仓库候选项：保留现有 id/name JSON 字段和排序。 */
-  public List<Map<String, Object>> warehouseChoices(long tenant) {
-    return db.queryForList(
+  public List<WarehouseChoice> warehouseChoices(long tenant) {
+    return db.query(
         "SELECT CAST(w.id AS CHAR) id,CONCAT(o.name,' / ',w.name) name FROM inv_warehouse w JOIN"
             + " eam_org_unit o ON o.tenant_id=w.tenant_id AND o.id=w.company_id WHERE w.tenant_id=?"
             + " ORDER BY o.name,w.name",
+        (row, index) -> new WarehouseChoice(row.getString("id"), row.getString("name")),
         tenant);
   }
 
-  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(Query query,long tenant){
-    var args=new ArrayList<Object>();args.add(tenant);args.addAll(query.args());
-    return new com.windasoft.eam.repository.common.AssistantReadSource("SELECT CAST(id AS CHAR) id,material_code code,material_name name,model,unit,company_name company,CAST((SELECT company_id FROM inv_warehouse w WHERE w.tenant_id=? AND w.id=stock.warehouse_id) AS CHAR) companyId,warehouse_name warehouse,CAST(warehouse_id AS CHAR) warehouseId,bin_name bin,batch_code batch,stock_status status,quantity,reserved_quantity reserved,available_quantity available,expiry_date expiryDate FROM ("+query.sql()+") stock",args);
+  public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(
+      Query query, long tenant) {
+    var args = new ArrayList<Object>();
+    args.add(tenant);
+    args.addAll(query.args());
+    return new com.windasoft.eam.repository.common.AssistantReadSource(
+        "SELECT CAST(id AS CHAR) id,material_code code,material_name name,model,unit,company_name"
+            + " company,CAST((SELECT company_id FROM inv_warehouse w WHERE w.tenant_id=? AND"
+            + " w.id=stock.warehouse_id) AS CHAR) companyId,warehouse_name"
+            + " warehouse,CAST(warehouse_id AS CHAR) warehouseId,bin_name bin,batch_code"
+            + " batch,stock_status status,quantity,reserved_quantity reserved,available_quantity"
+            + " available,expiry_date expiryDate FROM ("
+            + query.sql()
+            + ") stock",
+        args);
   }
 
   public Query query(
@@ -127,9 +147,7 @@ public class InventoryQueryRepository {
                 + " quantity,-a.amount amount,tw.name target_warehouse_name,d.confirmed_at"
                 + " created_at";
       }
-      default ->
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.inventory.message0004");
+      default -> throw new LocalizedArgumentException("server.inventory.message0004");
     }
     var args = new ArrayList<Object>();
     if (kind.equals("balances")) {
@@ -185,7 +203,7 @@ public class InventoryQueryRepository {
       for (int i = 0; i < 4; i++) args.add(like(q));
     }
     if (filters == null || !fields.keySet().containsAll(filters.keySet()))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0005");
+      throw new LocalizedArgumentException("server.inventory.message0005");
     for (var filter : filters.entrySet())
       if (filter.getValue() != null && !filter.getValue().isBlank()) {
         sql += " AND " + fields.get(filter.getKey()) + " LIKE ? ESCAPE '!'";

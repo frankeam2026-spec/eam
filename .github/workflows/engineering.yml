@@ -103,7 +103,7 @@ jobs:
             test: WorkflowMySqlIT
           - suite: system-user
             database: eam_system_quality_test_20261117_v2
-            test: SystemUserQueryMySqlIT
+            test: SystemUserQueryMySqlIT,SystemAdministrationMySqlIT
     services:
       mysql:
         image: mysql:8.4
@@ -136,9 +136,10 @@ jobs:
         run: |
           python3 - <<'PY'
           import xml.etree.ElementTree as ET
-          report = ET.parse('equipment-ledger/backend/target/surefire-reports/TEST-com.windasoft.eam.integration.${{ matrix.test }}.xml').getroot()
-          assert int(report.attrib['tests']) > 0, 'Isolated tests did not execute'
-          assert int(report.attrib.get('skipped', 0)) == 0, 'Isolated tests must not be skipped'
+          for name in '${{ matrix.test }}'.split(','):
+              report = ET.parse(f'equipment-ledger/backend/target/surefire-reports/TEST-com.windasoft.eam.integration.{name}.xml').getroot()
+              assert int(report.attrib['tests']) > 0, f'{name}: isolated tests did not execute'
+              assert int(report.attrib.get('skipped', 0)) == 0, f'{name}: isolated tests must not be skipped'
           PY
       - uses: actions/upload-artifact@v4
         if: always()

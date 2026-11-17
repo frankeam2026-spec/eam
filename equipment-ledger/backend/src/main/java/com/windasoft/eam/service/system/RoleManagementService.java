@@ -2,17 +2,27 @@ package com.windasoft.eam.service.system;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.windasoft.eam.dto.system.MenuGrantForm;
-import com.windasoft.eam.dto.system.RoleForm;
-import com.windasoft.eam.dto.system.RoleView;
+import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.domain.system.PermissionMenu;
+import com.windasoft.eam.dto.inventory.WarehouseChoice;
+import com.windasoft.eam.dto.system.MenuGrantForm;
+import com.windasoft.eam.dto.system.MenuGrantView;
+import com.windasoft.eam.dto.system.RoleForm;
+import com.windasoft.eam.dto.system.RoleView;
 import com.windasoft.eam.entity.system.RoleMenuPermission;
 import com.windasoft.eam.entity.system.SystemRole;
-import com.windasoft.eam.repository.system.RoleManagementRepository;
-import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
-import java.util.*;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.repository.system.RoleManagementRepository;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,23 +51,24 @@ public class RoleManagementService {
     this.json = json;
   }
 
-  public Object roleWarehouses() {
+  public List<WarehouseChoice> roleWarehouses() {
     permissions.require(PermissionMenu.ROLE, PermissionAction.AUTHORIZE);
-    return Map.of("data", inventoryQueries.warehouseChoices(auth.tenantId()));
+    return inventoryQueries.warehouseChoices(auth.tenantId());
   }
 
-  public Map<String, Object> roles() {
+  public List<RoleView> roles() {
     permissions.require(PermissionMenu.ROLE, PermissionAction.VIEW);
     var rows = repository.roles(auth.tenantId());
-    var grantsByRole = repository.menuPermissionsForRoles(
-        auth.tenantId(), rows.stream().map(SystemRole::getId).toList());
-    return Map.of("data", rows.stream()
+    var grantsByRole =
+        repository.menuPermissionsForRoles(
+            auth.tenantId(), rows.stream().map(SystemRole::getId).toList());
+    return rows.stream()
         .map(role -> roleView(role, grantsByRole.getOrDefault(role.getId(), List.of())))
-        .toList());
+        .toList();
   }
 
   @Transactional
-  public Map<String, Object> createRole(RoleForm f) {
+  public RoleView createRole(RoleForm f) {
     permissions.require(PermissionMenu.ROLE, PermissionAction.CREATE);
     permissions.require(PermissionMenu.ROLE, PermissionAction.AUTHORIZE);
     checkRoleCode(f.code(), null);
@@ -67,11 +78,11 @@ public class RoleManagementService {
     applyRole(x, f);
     repository.insertRole(x);
     saveMenuPermissions(x.getId(), f.menuPermissions());
-    return Map.of("data", roleView(x));
+    return roleView(x);
   }
 
   @Transactional
-  public Map<String, Object> updateRole(Long id, RoleForm f) {
+  public RoleView updateRole(Long id, RoleForm f) {
     permissions.require(PermissionMenu.ROLE, PermissionAction.EDIT);
     permissions.require(PermissionMenu.ROLE, PermissionAction.AUTHORIZE);
     var x = requireRole(id);
@@ -80,18 +91,17 @@ public class RoleManagementService {
     applyRole(x, f);
     repository.updateRole(x);
     saveMenuPermissions(id, f.menuPermissions());
-    return Map.of("data", roleView(x));
+    return roleView(x);
   }
 
   @Transactional
-  public Map<String, Object> deleteRole(Long id) {
+  public void deleteRole(Long id) {
     permissions.require(PermissionMenu.ROLE, PermissionAction.DELETE);
     requireRole(id);
     if (repository.roleUserCount(auth.tenantId(), id) > 0)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0052");
+      throw new LocalizedArgumentException("server.system.message0052");
     repository.deleteMenuPermissions(auth.tenantId(), id);
     repository.deleteRole(id);
-    return Map.of("data", Map.of("deleted", true));
   }
 
   private void applyRole(SystemRole x, RoleForm f) {
@@ -106,68 +116,56 @@ public class RoleManagementService {
 
   private void validateRoleForm(RoleForm f) {
     if (f.menuPermissions().isEmpty())
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0053");
+      throw new LocalizedArgumentException("server.system.message0053");
     boolean granted = false;
     for (var entry : f.menuPermissions().entrySet()) {
       var menu = entry.getKey();
       var grant = entry.getValue();
       var allowedActions = allowedActions(menu);
       if (allowedActions.isEmpty() || grant == null)
-        throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0054");
+        throw new LocalizedArgumentException("server.system.message0054");
       var actions = grant.actions() == null ? List.<String>of() : grant.actions();
       if (actions.isEmpty()) continue;
       granted = true;
       if (!allowedActions.containsAll(actions) || actions.size() != new HashSet<>(actions).size())
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.system.message0055", menu);
+        throw new LocalizedArgumentException("server.system.message0055", menu);
       if (!actions.contains("查看"))
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.system.message0056", menu);
+        throw new LocalizedArgumentException("server.system.message0056", menu);
       var scopes = grant.dataScopes() == null ? List.<String>of() : grant.dataScopes();
       if (scopes.isEmpty()
           || !allowedScopes(menu).containsAll(scopes)
           || scopes.size() != new HashSet<>(scopes).size()
           || (scopes.contains("all") && scopes.size() > 1))
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.system.message0057", menu);
+        throw new LocalizedArgumentException("server.system.message0057", menu);
       var ids = grant.orgIds() == null ? List.<Long>of() : grant.orgIds();
-      if (java.util.stream.Stream.of("warehouse", "companies", "selected")
-              .filter(scopes::contains)
-              .count()
-          > 1)
-        throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0058");
+      if (Stream.of("warehouse", "companies", "selected").filter(scopes::contains).count() > 1)
+        throw new LocalizedArgumentException("server.system.message0058");
       if (scopes.contains("warehouse")) {
         if (ids.isEmpty() || ids.size() != new HashSet<>(ids).size())
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.system.message0059");
+          throw new LocalizedArgumentException("server.system.message0059");
         long warehouses = inventoryQueries.warehouseCount(auth.tenantId(), ids);
         if (warehouses != ids.size())
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.system.message0060");
+          throw new LocalizedArgumentException("server.system.message0060");
       } else if (scopes.contains("selected") || scopes.contains("companies")) {
         if (ids.isEmpty() || ids.size() != new HashSet<>(ids).size())
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.system.message0061", menu);
+          throw new LocalizedArgumentException("server.system.message0061", menu);
         long count =
             orgUnits.organizationCount(
                 auth.tenantId(), scopes.contains("companies") ? "公司" : "部门", ids);
         if (count != ids.size())
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.system.message0062", menu);
+          throw new LocalizedArgumentException("server.system.message0062", menu);
       } else if (!ids.isEmpty())
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.system.message0063", menu);
+        throw new LocalizedArgumentException("server.system.message0063", menu);
     }
-    if (!granted)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0053");
+    if (!granted) throw new LocalizedArgumentException("server.system.message0053");
   }
 
   private Set<String> allowedActions(String menu) {
     return switch (menu) {
-      case "aiSetting" -> Set.of("查看","编辑");
+      case "aiSetting" -> Set.of("查看", "编辑");
       case "knowledge" -> Set.of("查看", "编辑", "发布", "停用");
       case "businessConfig" -> Set.of("查看", "编辑", "发布");
-      case "workflow" -> Set.of("查看", "编辑", "发布", "停用","脚本配置","脚本发布","脚本试算");
+      case "workflow" -> Set.of("查看", "编辑", "发布", "停用", "脚本配置", "脚本发布", "脚本试算");
       case "personalization", "language" -> Set.of("查看");
       case "workspace" -> Set.of("查看", "团队工作查看");
       case "notificationPolicy", "notificationChannel" -> Set.of("查看", "编辑");
@@ -182,18 +180,16 @@ public class RoleManagementService {
       case "category", "org" -> Set.of("查看", "新增", "编辑", "删除");
       case "repair" -> Set.of("查看", "报修", "编辑", "派工", "处理", "验收", "撤回", "删除", "导出");
       case "maintenanceType",
-          "maintenanceStandard",
-          "maintenancePlan",
-          "inspectionType",
-          "inspectionStandard",
-          "inspectionDailyPlan",
-          "inspectionPeriodicPlan" ->
+              "maintenanceStandard",
+              "maintenancePlan",
+              "inspectionType",
+              "inspectionStandard",
+              "inspectionDailyPlan",
+              "inspectionPeriodicPlan" ->
           Set.of("查看", "新增", "编辑", "删除", "导出");
       case "maintenanceTask" -> Set.of("查看", "编辑", "执行", "验收", "删除", "导出");
-      case "inspectionDailyTask" ->
-          Set.of("查看", "执行", "修改结果", "审核", "转派", "免检", "删除", "导出");
-      case "inspectionPeriodicTask" ->
-          Set.of("查看", "执行", "审核", "转派", "删除", "导出");
+      case "inspectionDailyTask" -> Set.of("查看", "执行", "修改结果", "审核", "转派", "免检", "删除", "导出");
+      case "inspectionPeriodicTask" -> Set.of("查看", "执行", "审核", "转派", "删除", "导出");
       case "inventoryMaterial" -> Set.of("查看", "新增", "编辑", "删除", "导入", "导出", "查看金额", "编辑参考价");
       case "inventoryWarehouse" -> Set.of("查看", "新增", "编辑", "删除", "导出");
       case "inventoryReceipt" -> Set.of("查看", "新增", "编辑", "删除", "入库", "导出", "查看金额");
@@ -218,7 +214,7 @@ public class RoleManagementService {
   }
 
   private Set<String> allowedScopes(String menu) {
-    if(menu.equals("aiSetting"))return Set.of("all");
+    if (menu.equals("aiSetting")) return Set.of("all");
     if (menu.equals("knowledge")) return Set.of("all", "company", "companyTree", "companies");
     if (menu.equals("workflow")) return Set.of("all", "company", "companyTree", "companies");
     if (menu.startsWith("notification")) return Set.of("all");
@@ -288,13 +284,12 @@ public class RoleManagementService {
 
   private void checkRoleCode(String code, Long id) {
     if (repository.roleCodeCount(auth.tenantId(), code, id) > 0)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0064");
+      throw new LocalizedArgumentException("server.system.message0064");
   }
 
   private SystemRole requireRole(Long id) {
     var x = repository.role(auth.tenantId(), id);
-    if (x == null)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0065");
+    if (x == null) throw new LocalizedArgumentException("server.system.message0065");
     return x;
   }
 
@@ -303,17 +298,14 @@ public class RoleManagementService {
   }
 
   private RoleView roleView(SystemRole x, List<RoleMenuPermission> rows) {
-    Map<String, Object> grants = new LinkedHashMap<>();
+    Map<String, MenuGrantView> grants = new LinkedHashMap<>();
     for (var row : rows)
       grants.put(
           row.getMenuKey(),
-          Map.of(
-              "actions",
+          new MenuGrantView(
               read(row.getActionsJson()),
-              "dataScopes",
               read(row.getDataScopesJson()),
-              "orgIds",
-              read(row.getOrgIdsJson()).stream().map(String::valueOf).toList()));
+              read(row.getOrgIdsJson())));
     if (rows.isEmpty() && !"PER_MENU".equals(x.getDataScope())) {
       Map<String, List<String>> actions = new LinkedHashMap<>();
       for (var raw : read(x.getPermissionsJson())) {
@@ -344,21 +336,19 @@ public class RoleManagementService {
         if (!menuActions.contains("查看")) menuActions.add(0, "查看");
         grants.put(
             menu,
-            Map.of(
-                "actions",
+            new MenuGrantView(
                 menuActions,
-                "dataScopes",
                 List.of(menuScope),
-                "orgIds",
-                "selected".equals(menuScope)
-                    ? read(x.getOrgIdsJson()).stream().map(String::valueOf).toList()
-                    : List.of()));
+                "selected".equals(menuScope) ? read(x.getOrgIdsJson()) : List.of()));
       }
     }
     return new RoleView(
-        String.valueOf(x.getId()), x.getCode(), x.getName(),
+        String.valueOf(x.getId()),
+        x.getCode(),
+        x.getName(),
         x.getDescription() == null ? "" : x.getDescription(),
-        x.getStatus() == 1 ? "启用" : "停用", grants);
+        x.getStatus() == 1 ? "启用" : "停用",
+        grants);
   }
 
   private String legacyAction(String action) {
@@ -384,9 +374,9 @@ public class RoleManagementService {
     }
   }
 
-  private List<?> read(String s) {
+  private List<String> read(String s) {
     try {
-      return s == null ? List.of() : json.readValue(s, new TypeReference<List<Object>>() {});
+      return s == null ? List.of() : json.readValue(s, new TypeReference<List<String>>() {});
     } catch (Exception e) {
       return List.of();
     }

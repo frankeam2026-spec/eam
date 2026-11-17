@@ -15,8 +15,14 @@ public class SystemUser {
   private String displayName;
   private String employeeNo;
   private String phone;
+
   @TableField(updateStrategy = FieldStrategy.NEVER)
   private String email;
+
+  /** 邮箱版本只能由专用条件更新推进，普通账号编辑不得覆盖。 */
+  @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
+  private Integer emailVersion;
+
   private String passwordHash;
   private Long orgId;
   private Integer status;

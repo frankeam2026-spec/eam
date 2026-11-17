@@ -1,15 +1,20 @@
 package com.windasoft.eam.controller.system;
 
 import com.windasoft.eam.dto.common.DataResponse;
+import com.windasoft.eam.dto.common.DeletionResult;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.common.PageResult;
+import com.windasoft.eam.dto.inventory.WarehouseChoice;
 import com.windasoft.eam.dto.system.OrgForm;
+import com.windasoft.eam.dto.system.OrganizationView;
 import com.windasoft.eam.dto.system.RoleForm;
+import com.windasoft.eam.dto.system.RoleView;
 import com.windasoft.eam.dto.system.UserBatchForm;
 import com.windasoft.eam.dto.system.UserForm;
 import com.windasoft.eam.dto.system.UserListView;
 import com.windasoft.eam.dto.system.UserStatusForm;
 import com.windasoft.eam.dto.system.UserSummary;
+import com.windasoft.eam.dto.system.UserView;
 import com.windasoft.eam.service.system.OrganizationService;
 import com.windasoft.eam.service.system.RoleManagementService;
 import com.windasoft.eam.service.system.UserListService;
@@ -51,28 +56,30 @@ public class SystemManagementController {
   }
 
   @GetMapping("/roles/warehouse-choices")
-  public Object roleWarehouses() {
-    return roles.roleWarehouses();
+  public DataResponse<List<WarehouseChoice>> roleWarehouses() {
+    return new DataResponse<>(roles.roleWarehouses());
   }
 
   @GetMapping("/organizations")
-  public Map<String, Object> organizations() {
-    return organizations.organizations();
+  public DataResponse<List<OrganizationView>> organizations() {
+    return new DataResponse<>(organizations.organizations());
   }
 
   @PostMapping("/organizations")
-  public Map<String, Object> createOrg(@Valid @RequestBody OrgForm f) {
-    return organizations.createOrg(f);
+  public DataResponse<OrganizationView> createOrg(@Valid @RequestBody OrgForm f) {
+    return new DataResponse<>(organizations.createOrg(f));
   }
 
   @PutMapping("/organizations/{id}")
-  public Map<String, Object> updateOrg(@PathVariable Long id, @Valid @RequestBody OrgForm f) {
-    return organizations.updateOrg(id, f);
+  public DataResponse<OrganizationView> updateOrg(
+      @PathVariable Long id, @Valid @RequestBody OrgForm f) {
+    return new DataResponse<>(organizations.updateOrg(id, f));
   }
 
   @DeleteMapping("/organizations/{id}")
-  public Map<String, Object> deleteOrg(@PathVariable Long id) {
-    return organizations.deleteOrg(id);
+  public DataResponse<DeletionResult> deleteOrg(@PathVariable Long id) {
+    organizations.deleteOrg(id);
+    return new DataResponse<>(new DeletionResult(true));
   }
 
   @GetMapping("/users")
@@ -91,48 +98,50 @@ public class SystemManagementController {
   }
 
   @PostMapping("/users")
-  public Map<String, Object> createUser(@Valid @RequestBody UserForm f) {
-    return users.createUser(f);
+  public DataResponse<UserView> createUser(@Valid @RequestBody UserForm f) {
+    return new DataResponse<>(users.createUser(f));
   }
 
   @PutMapping("/users/{id}")
-  public Map<String, Object> updateUser(@PathVariable Long id, @Valid @RequestBody UserForm f) {
-    return users.updateUser(id, f);
+  public DataResponse<UserView> updateUser(@PathVariable Long id, @Valid @RequestBody UserForm f) {
+    return new DataResponse<>(users.updateUser(id, f));
   }
 
   @PatchMapping("/users/{id}/status")
-  public Map<String, Object> userStatus(
+  public DataResponse<UserView> userStatus(
       @PathVariable Long id, @Valid @RequestBody UserStatusForm body) {
-    return users.userStatus(id, body);
+    return new DataResponse<>(users.userStatus(id, body));
   }
 
   @PostMapping("/users/batch")
-  public Map<String, Object> batchUsers(@Valid @RequestBody UserBatchForm f) {
-    return users.batchUsers(f);
+  public DataResponse<List<UserView>> batchUsers(@Valid @RequestBody UserBatchForm f) {
+    return new DataResponse<>(users.batchUsers(f));
   }
 
   @DeleteMapping("/users/{id}")
-  public Map<String, Object> deleteUser(@PathVariable Long id) {
-    return users.deleteUser(id);
+  public DataResponse<DeletionResult> deleteUser(@PathVariable Long id) {
+    users.deleteUser(id);
+    return new DataResponse<>(new DeletionResult(true));
   }
 
   @GetMapping("/roles")
-  public Map<String, Object> roles() {
-    return roles.roles();
+  public DataResponse<List<RoleView>> roles() {
+    return new DataResponse<>(roles.roles());
   }
 
   @PostMapping("/roles")
-  public Map<String, Object> createRole(@Valid @RequestBody RoleForm f) {
-    return roles.createRole(f);
+  public DataResponse<RoleView> createRole(@Valid @RequestBody RoleForm f) {
+    return new DataResponse<>(roles.createRole(f));
   }
 
   @PutMapping("/roles/{id}")
-  public Map<String, Object> updateRole(@PathVariable Long id, @Valid @RequestBody RoleForm f) {
-    return roles.updateRole(id, f);
+  public DataResponse<RoleView> updateRole(@PathVariable Long id, @Valid @RequestBody RoleForm f) {
+    return new DataResponse<>(roles.updateRole(id, f));
   }
 
   @DeleteMapping("/roles/{id}")
-  public Map<String, Object> deleteRole(@PathVariable Long id) {
-    return roles.deleteRole(id);
+  public DataResponse<DeletionResult> deleteRole(@PathVariable Long id) {
+    roles.deleteRole(id);
+    return new DataResponse<>(new DeletionResult(true));
   }
 }

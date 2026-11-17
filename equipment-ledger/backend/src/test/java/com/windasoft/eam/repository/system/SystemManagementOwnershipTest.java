@@ -8,14 +8,21 @@ import org.junit.jupiter.api.Test;
 
 class SystemManagementOwnershipTest {
   @Test
-  void organizationLockAndEventsBelongToOrganizationRepository() {
-    var orgMethods = Arrays.stream(OrgUnitRepository.class.getDeclaredMethods())
-        .map(java.lang.reflect.Method::getName).toList();
-    var roleMethods = Arrays.stream(RoleManagementRepository.class.getDeclaredMethods())
-        .map(java.lang.reflect.Method::getName).toList();
+  void organizationAndAuditHaveSeparateOwnersWithoutChangingOtherOwnership() {
+    var orgMethods =
+        Arrays.stream(OrgUnitRepository.class.getDeclaredMethods())
+            .map(java.lang.reflect.Method::getName)
+            .toList();
+    var roleMethods =
+        Arrays.stream(RoleManagementRepository.class.getDeclaredMethods())
+            .map(java.lang.reflect.Method::getName)
+            .toList();
 
     assertTrue(orgMethods.contains("lockOrganizations"));
-    assertTrue(orgMethods.contains("orgEvent"));
+    assertFalse(orgMethods.contains("orgEvent"));
+    assertTrue(
+        Arrays.stream(OrganizationEventRepository.class.getDeclaredMethods())
+            .anyMatch(m -> m.getName().equals("insert")));
     assertTrue(orgMethods.contains("insertOrganization"));
     assertTrue(orgMethods.contains("updateOrganization"));
     assertTrue(orgMethods.contains("deleteOrganization"));
@@ -24,15 +31,18 @@ class SystemManagementOwnershipTest {
     assertTrue(roleMethods.contains("updateRole"));
     assertTrue(roleMethods.contains("deleteRole"));
     assertTrue(roleMethods.contains("menuPermissions"));
-    var userMethods = Arrays.stream(SystemUserRepository.class.getDeclaredMethods())
-        .map(java.lang.reflect.Method::getName).toList();
+    var userMethods =
+        Arrays.stream(SystemUserRepository.class.getDeclaredMethods())
+            .map(java.lang.reflect.Method::getName)
+            .toList();
     assertTrue(userMethods.contains("insertUser"));
     assertTrue(userMethods.contains("updateUser"));
     assertTrue(userMethods.contains("deleteUser"));
     assertTrue(userMethods.contains("accountCount"));
     assertTrue(userMethods.contains("emailProfile"));
     assertTrue(userMethods.contains("updateEmail"));
-    assertTrue(Arrays.stream(OrganizationReferenceRepository.class.getDeclaredMethods())
-        .anyMatch(m -> m.getName().equals("businessReferences")));
+    assertTrue(
+        Arrays.stream(OrganizationReferenceRepository.class.getDeclaredMethods())
+            .anyMatch(m -> m.getName().equals("businessReferences")));
   }
 }

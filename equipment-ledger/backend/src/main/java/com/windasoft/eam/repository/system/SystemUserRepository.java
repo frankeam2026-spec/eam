@@ -1,25 +1,26 @@
 package com.windasoft.eam.repository.system;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.windasoft.eam.dto.common.ListQuery;
+import com.windasoft.eam.dto.system.UserEmailProfile;
 import com.windasoft.eam.dto.system.UserNameOption;
 import com.windasoft.eam.entity.system.SystemUser;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.stereotype.Repository;
 
-/** 系统用户自身数据的租户限定读取。 */
 /** 系统用户仓储：按租户访问用户主体和邮箱版本，身份及角色权限在服务层校验。 */
 @Repository
 public class SystemUserRepository {
   private final SystemUserMapper mapper;
-  private final JdbcTemplate db;
 
-  public SystemUserRepository(SystemUserMapper mapper, JdbcTemplate db) {
+  public SystemUserRepository(SystemUserMapper mapper) {
     this.mapper = mapper;
-    this.db = db;
   }
 
   public SystemUser find(long tenant, Long id) {
@@ -98,36 +99,35 @@ public class SystemUserRepository {
     return mapper.selectCount(q);
   }
 
-  public Map<Long, Map<String, Object>> emailProfiles(long tenant, java.util.Collection<Long> ids) {
-    if (ids.isEmpty()) return Map.of();
-    var args = new java.util.ArrayList<Object>();
-    args.add(tenant);
-    args.addAll(ids);
-    var result = new java.util.HashMap<Long, Map<String, Object>>();
-    for (var row :
-        db.queryForList(
-            "SELECT id,email,email_version FROM eam_sys_user WHERE tenant_id=? AND id IN ("
-                + String.join(",", java.util.Collections.nCopies(ids.size(), "?"))
-                + ")",
-            args.toArray())) {
-      result.put(((Number) row.get("id")).longValue(), row);
+  public Map<Long, UserEmailProfile> emailProfiles(long tenant, Collection<Long> ids) {
+    if (ids.isEmpty()) {
+      return Map.of();
+    }
+    Map<Long, UserEmailProfile> result = new LinkedHashMap<>();
+    for (var row : mapper.emailProfilesIncludingDeleted(tenant, List.copyOf(ids))) {
+      result.put(row.id(), row);
     }
     return result;
   }
 
-  public Map<String, Object> emailProfile(long tenant, long user) {
-    return db.queryForMap(
-        "SELECT email,email_version FROM eam_sys_user WHERE tenant_id=? AND id=?", tenant, user);
+  public UserEmailProfile emailProfile(long tenant, long user) {
+    var row = emailProfiles(tenant, List.of(user)).get(user);
+    if (row == null) {
+      throw new EmptyResultDataAccessException(1);
+    }
+    return row;
   }
 
+  /** 邮箱使用独立版本原子更新；通用账号更新的FieldStrategy.NEVER不限制此显式更新。 */
   public int updateEmail(long tenant, long user, String email, int expectedVersion) {
-    return db.update(
-        "UPDATE eam_sys_user SET email=?,email_version=email_version+1"
-            + " WHERE tenant_id=? AND id=? AND email_version=? AND deleted=0",
-        email,
-        tenant,
-        user,
-        expectedVersion);
+    return mapper.update(
+        null,
+        new LambdaUpdateWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getId, user)
+            .eq(SystemUser::getEmailVersion, expectedVersion)
+            .set(SystemUser::getEmail, email)
+            .setSql("email_version=email_version+1"));
   }
 
   /** 固定人员配置批量核对，仅取得身份与所属组织，不读取密码和邮箱。 */
