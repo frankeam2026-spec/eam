@@ -80,7 +80,7 @@ jobs:
             equipment-ledger/backend/target/selector-query-plans.jsonl
 
   equipment-isolated:
-    name: ${{ matrix.suite == 'workflow' && 'workflow' || format('equipment-{0}', matrix.suite) }}
+    name: ${{ (matrix.suite == 'workflow' || matrix.suite == 'system-user') && matrix.suite || format('equipment-{0}', matrix.suite) }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -101,6 +101,9 @@ jobs:
           - suite: workflow
             database: eam_workflow_test_20261117
             test: WorkflowMySqlIT
+          - suite: system-user
+            database: eam_system_quality_test_20261117_v2
+            test: SystemUserQueryMySqlIT
     services:
       mysql:
         image: mysql:8.4
@@ -112,6 +115,7 @@ jobs:
           --health-cmd="mysqladmin ping -h localhost -uroot"
           --health-interval=10s --health-timeout=5s --health-retries=12
     env:
+      EAM_SYSTEM_TEST_URL: jdbc:mysql://127.0.0.1:3308/eam_system_quality_test_20261117_v2?connectionTimeZone=UTC
       EAM_WORKFLOW_TEST_URL: jdbc:mysql://127.0.0.1:3308/eam_workflow_test_20261117?connectionTimeZone=UTC
       EAM_REPAIR_APPROVAL_TEST_URL: jdbc:mysql://127.0.0.1:3308/eam_repair_approval_test_20261030?connectionTimeZone=UTC
       EAM_EQUIPMENT_COMMAND_TEST_URL: jdbc:mysql://127.0.0.1:3308/eam_equipment_command_test_20261030?connectionTimeZone=UTC
@@ -127,14 +131,14 @@ jobs:
           java-version: 21
           cache: maven
       - run: mvn -B -f equipment-ledger/backend/pom.xml "-Dtest=${{ matrix.test }}" test
-      - name: Verify workflow database tests actually executed
-        if: matrix.suite == 'workflow'
+      - name: Verify isolated database tests actually executed
+        if: matrix.suite == 'workflow' || matrix.suite == 'system-user'
         run: |
           python3 - <<'PY'
           import xml.etree.ElementTree as ET
-          report = ET.parse('equipment-ledger/backend/target/surefire-reports/TEST-com.windasoft.eam.integration.WorkflowMySqlIT.xml').getroot()
-          assert int(report.attrib['tests']) > 0, 'Workflow tests did not execute'
-          assert int(report.attrib.get('skipped', 0)) == 0, 'Workflow tests must not be skipped'
+          report = ET.parse('equipment-ledger/backend/target/surefire-reports/TEST-com.windasoft.eam.integration.${{ matrix.test }}.xml').getroot()
+          assert int(report.attrib['tests']) > 0, 'Isolated tests did not execute'
+          assert int(report.attrib.get('skipped', 0)) == 0, 'Isolated tests must not be skipped'
           PY
       - uses: actions/upload-artifact@v4
         if: always()

@@ -490,7 +490,9 @@ class EngineeringQueryMySqlIT {
     assertEquals(10005, userLists.count(selected));
     recordPlan("user-authorized-list", selected.from(), selected.predicate(), selected.order());
     assertEquals(5, userLists.page(selected, q.at(51, 200)).size());
-    assertFalse(userLists.page(selected, q).getFirst().containsKey("password_hash"));
+    var userProjection = new ObjectMapper().valueToTree(userLists.page(selected, q).getFirst());
+    assertFalse(userProjection.has("password_hash"));
+    assertFalse(userProjection.has("passwordHash"));
     assertEquals(0, userLists.count(userLists.select(10001, q, false, Set.of(71007L), null, true)));
   }
 

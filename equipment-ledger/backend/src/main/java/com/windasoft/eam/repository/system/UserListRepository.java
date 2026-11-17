@@ -1,11 +1,20 @@
 package com.windasoft.eam.repository.system;
 
-import static com.windasoft.eam.repository.common.SqlListFilters.Kind.*;
+import static com.windasoft.eam.repository.common.SqlListFilters.Kind.CHOICE;
+import static com.windasoft.eam.repository.common.SqlListFilters.Kind.TEXT;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.common.ListQuery;
-import com.windasoft.eam.repository.common.*;
-import java.util.*;
+import com.windasoft.eam.dto.system.UserQueryRow;
+import com.windasoft.eam.repository.common.JdbcListRepository;
+import com.windasoft.eam.repository.common.SqlListFilters;
+import com.windasoft.eam.repository.common.SqlPredicate;
+import com.windasoft.eam.repository.common.SqlScopes;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import org.springframework.stereotype.Repository;
 
 /** 用户列表仓储：执行分页、筛选及角色关联查询，不改变用户状态。 */
@@ -64,22 +73,38 @@ public class UserListRepository {
     return lists.count(selection.from(), selection.predicate());
   }
 
-  public List<Map<String, Object>> page(Selection selected, ListQuery query) {
-    return lists.rows(
-        "t.id,t.account,t.display_name,t.employee_no,t.phone,t.email,t.email_version,t.org_id,t.status,o.name department,"
-            + selected.roles()
-            + " roles",
-        selected.from(),
-        selected.predicate(),
-        selected.order(),
-        query);
+  public List<UserQueryRow> page(Selection selected, ListQuery query) {
+    return lists
+        .rows(
+            "t.id,t.account,t.display_name,t.employee_no,t.phone,t.email,t.email_version,t.org_id,t.status,o.name"
+                + " department,"
+                + selected.roles()
+                + " roles",
+            selected.from(),
+            selected.predicate(),
+            selected.order(),
+            query)
+        .stream()
+        .map(
+            row ->
+                new UserQueryRow(
+                    ((Number) row.get("id")).longValue(),
+                    text(row, "account"),
+                    text(row, "display_name"),
+                    text(row, "employee_no"),
+                    text(row, "phone"),
+                    text(row, "email"),
+                    ((Number) row.get("email_version")).intValue(),
+                    row.get("org_id") == null ? null : ((Number) row.get("org_id")).longValue(),
+                    ((Number) row.get("status")).intValue(),
+                    text(row, "department"),
+                    text(row, "roles")))
+        .toList();
   }
 
-  public List<Map<String, Object>> roleLinks(long tenant, Collection<Long> ids) {
-    return lists.distinct(
-        "t.user_id,t.role_id",
-        "FROM eam_sys_user_role t",
-        SqlPredicate.of("t.tenant_id=?", tenant).and(SqlScopes.in("t.user_id", ids)));
+  /** 通用JDBC列表组件的动态映射在此结束，空文本保留旧接口的空串语义。 */
+  private static String text(Map<String, Object> row, String key) {
+    return Objects.toString(row.get(key), "");
   }
 
   public Map<String, Long> roleCounts(Selection selected) {
