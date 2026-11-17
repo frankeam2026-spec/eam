@@ -42,7 +42,7 @@ public class OrgUnitRepository {
     return mapper.selectById(id);
   }
 
-  public java.util.List<OrgUnit> organizations(long tenant, boolean activeOnly) {
+  public List<OrgUnit> organizations(long tenant, boolean activeOnly) {
     return mapper.selectList(
         new LambdaQueryWrapper<OrgUnit>()
             .eq(OrgUnit::getTenantId, tenant)
@@ -110,5 +110,21 @@ public class OrgUnitRepository {
             .eq(OrgUnit::getTenantId, tenant)
             .eq(OrgUnit::getOrgType, type)
             .in(OrgUnit::getId, ids));
+  }
+
+  public List<OrgUnit> companies(long tenant) {
+    return mapper.selectList(
+        new LambdaQueryWrapper<OrgUnit>()
+            .eq(OrgUnit::getTenantId, tenant)
+            .in(OrgUnit::getOrgType, "集团", "公司")
+            .orderByAsc(OrgUnit::getId));
+  }
+
+  public OrgUnit company(long tenant, Long id) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<OrgUnit>()
+            .eq(OrgUnit::getTenantId, tenant)
+            .eq(OrgUnit::getId, id)
+            .eq(OrgUnit::getOrgType, "公司"));
   }
 }

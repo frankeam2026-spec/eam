@@ -1,11 +1,11 @@
 package com.windasoft.eam.repository.inventory;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.windasoft.eam.entity.inventory.Material;
 import java.util.List;
 import java.util.Map;
-
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -54,8 +54,7 @@ public class MaterialRepository {
                     .like(Material::getCategory, keyword));
   }
 
-
-    public List<Map<String, Object>> lockMaterial(long tenant, long id) {
+  public List<Map<String, Object>> lockMaterial(long tenant, long id) {
     return db.queryForList(
         "SELECT id,code,name,model,unit,enabled FROM inv_material WHERE tenant_id=? AND id=? FOR"
             + " UPDATE",
@@ -63,4 +62,27 @@ public class MaterialRepository {
         id);
   }
 
+  /** 基础单位改名只同步同租户、同ID且名称变化的物料；每行版本递增，原业务事务负责一起回滚。 */
+  public void renameUnit(long tenant, long unitId, String name) {
+    mapper.update(
+        null,
+        new LambdaUpdateWrapper<Material>()
+            .eq(Material::getTenantId, tenant)
+            .eq(Material::getUnitId, unitId)
+            .ne(Material::getUnit, name)
+            .set(Material::getUnit, name)
+            .setSql("row_version=row_version+1"));
+  }
+
+  /** 分类改名保留与单位相同的原子版本语义，不通过动态列名决定写入字段。 */
+  public void renameCategory(long tenant, long categoryId, String name) {
+    mapper.update(
+        null,
+        new LambdaUpdateWrapper<Material>()
+            .eq(Material::getTenantId, tenant)
+            .eq(Material::getCategoryId, categoryId)
+            .ne(Material::getCategory, name)
+            .set(Material::getCategory, name)
+            .setSql("row_version=row_version+1"));
+  }
 }

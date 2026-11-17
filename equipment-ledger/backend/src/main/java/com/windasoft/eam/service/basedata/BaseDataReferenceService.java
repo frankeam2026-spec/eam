@@ -3,17 +3,17 @@ package com.windasoft.eam.service.basedata;
 import com.windasoft.eam.common.FieldValidationException;
 import com.windasoft.eam.common.MessageRef;
 import com.windasoft.eam.entity.basedata.BaseItem;
-import com.windasoft.eam.repository.basedata.BaseDataRepository;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
-/** Resolves IDs only. Names are display snapshots and never establish a new reference. */
+/** 基础资料引用按真实ID与租户取得共享锁；名称仅供历史展示，不能替代关联校验。 */
 @Service
 public class BaseDataReferenceService {
   public static final String RESOLVED_CODE = "SYS_RESOLVED";
-  private final BaseDataRepository repository;
+  private final BaseItemRepository repository;
 
-  public BaseDataReferenceService(BaseDataRepository repository) {
+  public BaseDataReferenceService(BaseItemRepository repository) {
     this.repository = repository;
   }
 

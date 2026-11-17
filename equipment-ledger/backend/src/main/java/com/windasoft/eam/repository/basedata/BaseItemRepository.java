@@ -23,9 +23,11 @@ public class BaseItemRepository {
 
   /** 历史分类适用性可包含停用项；选择器由调用方显式限定启用，逻辑删除始终排除。 */
   public List<BaseItem> itemsByType(long tenant, String itemType, boolean activeOnly) {
-    return mapper.selectList(new LambdaQueryWrapper<BaseItem>()
-        .eq(BaseItem::getTenantId, tenant).eq(BaseItem::getItemType, itemType)
-        .eq(activeOnly, BaseItem::getStatus, 1));
+    return mapper.selectList(
+        new LambdaQueryWrapper<BaseItem>()
+            .eq(BaseItem::getTenantId, tenant)
+            .eq(BaseItem::getItemType, itemType)
+            .eq(activeOnly, BaseItem::getStatus, 1));
   }
 
   public BaseItem findForShare(Long id) {
@@ -93,5 +95,73 @@ public class BaseItemRepository {
             .eq(BaseItem::getItemType, itemType)
             .eq(BaseItem::getStatus, 1)
             .orderByAsc(BaseItem::getSortNo));
+  }
+
+  public List<BaseItem> list(long tenant, String type, Long company) {
+    return mapper.selectList(
+        new LambdaQueryWrapper<BaseItem>()
+            .eq(BaseItem::getTenantId, tenant)
+            .eq(BaseItem::getItemType, type)
+            .eq("LOCATION".equals(type) && company != null, BaseItem::getCompanyOrgId, company)
+            .orderByAsc(BaseItem::getSortNo)
+            .orderByAsc(BaseItem::getId));
+  }
+
+  public BaseItem find(long tenant, String type, Long id) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<BaseItem>()
+            .eq(BaseItem::getTenantId, tenant)
+            .eq(BaseItem::getId, id)
+            .eq(BaseItem::getItemType, type));
+  }
+
+  public BaseItem reference(long tenant, String type, long id) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<BaseItem>()
+            .eq(BaseItem::getTenantId, tenant)
+            .eq(BaseItem::getItemType, type)
+            .eq(BaseItem::getId, id)
+            .last("FOR SHARE"));
+  }
+
+  public BaseItem locked(long tenant, String type, long id) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<BaseItem>()
+            .eq(BaseItem::getTenantId, tenant)
+            .eq(BaseItem::getItemType, type)
+            .eq(BaseItem::getId, id)
+            .last("FOR UPDATE"));
+  }
+
+  public long codeCount(long tenant, String type, String code, Long current) {
+    var q =
+        new LambdaQueryWrapper<BaseItem>()
+            .eq(BaseItem::getTenantId, tenant)
+            .eq(BaseItem::getItemType, type)
+            .eq(BaseItem::getCode, code)
+            .eq(BaseItem::getDeleted, 0);
+    if (current != null) q.ne(BaseItem::getId, current);
+    return mapper.selectCount(q);
+  }
+
+  public long childCount(long tenant, String type, Long id) {
+    return mapper.selectCount(
+        new LambdaQueryWrapper<BaseItem>()
+            .eq(BaseItem::getTenantId, tenant)
+            .eq(BaseItem::getItemType, type)
+            .eq(BaseItem::getParentId, id)
+            .eq(BaseItem::getDeleted, 0));
+  }
+
+  public void insert(BaseItem x) {
+    mapper.insert(x);
+  }
+
+  public void update(BaseItem x) {
+    mapper.updateById(x);
+  }
+
+  public void delete(Long id) {
+    mapper.deleteById(id);
   }
 }

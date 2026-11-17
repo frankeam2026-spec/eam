@@ -1,11 +1,26 @@
 package com.windasoft.eam.controller.basedata;
 
 import com.windasoft.eam.dto.basedata.BaseItemForm;
+import com.windasoft.eam.dto.basedata.BaseItemStatusForm;
+import com.windasoft.eam.dto.basedata.BaseItemView;
+import com.windasoft.eam.dto.common.DataResponse;
+import com.windasoft.eam.dto.common.DeletionResult;
+import com.windasoft.eam.dto.system.OrganizationView;
 import com.windasoft.eam.service.basedata.BaseDataService;
 import jakarta.validation.Valid;
-import java.util.Map;
-import org.springframework.web.bind.annotation.*;
+import java.util.List;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
+/** 基础资料和地点的协议入口；业务访问范围及引用规则由服务层核对。 */
 @RestController
 @RequestMapping("/api/v1/base-data")
 public class BaseDataController {
@@ -16,38 +31,39 @@ public class BaseDataController {
   }
 
   @GetMapping("/{resource}")
-  public Map<String, Object> list(
+  public DataResponse<List<BaseItemView>> list(
       @PathVariable String resource, @RequestParam(required = false) Long companyId) {
-    return service.list(resource, companyId);
+    return new DataResponse<>(service.list(resource, companyId));
   }
 
   @PostMapping("/{resource}")
-  public Map<String, Object> create(
+  public DataResponse<BaseItemView> create(
       @PathVariable String resource, @Valid @RequestBody BaseItemForm f) {
-    return service.create(resource, f);
+    return new DataResponse<>(service.create(resource, f));
   }
 
   @PutMapping("/{resource}/{id}")
-  public Map<String, Object> update(
+  public DataResponse<BaseItemView> update(
       @PathVariable String resource, @PathVariable Long id, @Valid @RequestBody BaseItemForm f) {
-    return service.update(resource, id, f);
+    return new DataResponse<>(service.update(resource, id, f));
   }
 
   @PatchMapping("/{resource}/{id}/status")
-  public Map<String, Object> status(
+  public DataResponse<BaseItemView> status(
       @PathVariable String resource,
       @PathVariable Long id,
-      @RequestBody Map<String, Integer> body) {
-    return service.status(resource, id, body);
+      @Valid @RequestBody BaseItemStatusForm body) {
+    return new DataResponse<>(service.status(resource, id, body));
   }
 
   @DeleteMapping("/{resource}/{id}")
-  public Map<String, Object> delete(@PathVariable String resource, @PathVariable Long id) {
-    return service.delete(resource, id);
+  public DataResponse<DeletionResult> delete(@PathVariable String resource, @PathVariable Long id) {
+    service.delete(resource, id);
+    return new DataResponse<>(new DeletionResult(true));
   }
 
   @GetMapping("/location-companies")
-  public Map<String, Object> companies() {
-    return service.companies();
+  public DataResponse<List<OrganizationView>> companies() {
+    return new DataResponse<>(service.companies());
   }
 }

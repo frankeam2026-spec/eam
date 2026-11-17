@@ -1,120 +1,25 @@
 package com.windasoft.eam.repository.basedata;
 
-import com.baomidou.mybatisplus.core.conditions.query.*;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.windasoft.eam.entity.basedata.BaseItem;
 import com.windasoft.eam.entity.equipment.Equipment;
-import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.repository.equipment.EquipmentMapper;
-import com.windasoft.eam.repository.repair.RepairOrderMapper;
-import com.windasoft.eam.repository.system.OrgUnitMapper;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/** 基础资料的跨表引用只读查询；主体CRUD由BaseItemRepository维护，不写入物料或组织。 */
 @Repository
 public class BaseDataRepository {
-  private final BaseItemMapper mapper;
   private final EquipmentMapper equipment;
-  private final RepairOrderMapper repairs;
-  private final OrgUnitMapper orgs;
   private final JdbcTemplate db;
 
-  public BaseDataRepository(
-      BaseItemMapper mapper,
-      EquipmentMapper equipment,
-      RepairOrderMapper repairs,
-      OrgUnitMapper orgs,
-      JdbcTemplate db) {
-    this.mapper = mapper;
+  public BaseDataRepository(EquipmentMapper equipment, JdbcTemplate db) {
     this.equipment = equipment;
-    this.repairs = repairs;
-    this.orgs = orgs;
     this.db = db;
-  }
-
-  public List<BaseItem> list(long tenant, String type, Long company) {
-    return mapper.selectList(
-        new LambdaQueryWrapper<BaseItem>()
-            .eq(BaseItem::getTenantId, tenant)
-            .eq(BaseItem::getItemType, type)
-            .eq("LOCATION".equals(type) && company != null, BaseItem::getCompanyOrgId, company)
-            .orderByAsc(BaseItem::getSortNo)
-            .orderByAsc(BaseItem::getId));
-  }
-
-  public BaseItem find(long tenant, String type, Long id) {
-    return mapper.selectOne(
-        new LambdaQueryWrapper<BaseItem>()
-            .eq(BaseItem::getTenantId, tenant)
-            .eq(BaseItem::getId, id)
-            .eq(BaseItem::getItemType, type));
-  }
-
-  public BaseItem reference(long tenant, String type, long id) {
-    return mapper.selectOne(
-        new LambdaQueryWrapper<BaseItem>()
-            .eq(BaseItem::getTenantId, tenant)
-            .eq(BaseItem::getItemType, type)
-            .eq(BaseItem::getId, id)
-            .last("FOR SHARE"));
-  }
-
-  public BaseItem locked(long tenant, String type, long id) {
-    return mapper.selectOne(
-        new LambdaQueryWrapper<BaseItem>()
-            .eq(BaseItem::getTenantId, tenant)
-            .eq(BaseItem::getItemType, type)
-            .eq(BaseItem::getId, id)
-            .last("FOR UPDATE"));
-  }
-
-  public long codeCount(long tenant, String type, String code, Long current) {
-    var q =
-        new LambdaQueryWrapper<BaseItem>()
-            .eq(BaseItem::getTenantId, tenant)
-            .eq(BaseItem::getItemType, type)
-            .eq(BaseItem::getCode, code)
-            .eq(BaseItem::getDeleted, 0);
-    if (current != null) q.ne(BaseItem::getId, current);
-    return mapper.selectCount(q);
-  }
-
-  public long childCount(long tenant, String type, Long id) {
-    return mapper.selectCount(
-        new LambdaQueryWrapper<BaseItem>()
-            .eq(BaseItem::getTenantId, tenant)
-            .eq(BaseItem::getItemType, type)
-            .eq(BaseItem::getParentId, id)
-            .eq(BaseItem::getDeleted, 0));
-  }
-
-  public void insert(BaseItem x) {
-    mapper.insert(x);
-  }
-
-  public void update(BaseItem x) {
-    mapper.updateById(x);
-  }
-
-  public void delete(Long id) {
-    mapper.deleteById(id);
-  }
-
-  public void renameMaterialField(String field, long itemId, String name, long tenant) {
-    if (!Set.of("unit", "category").contains(field))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0005");
-    db.update(
-        "UPDATE inv_material SET "
-            + field
-            + "=?,row_version=row_version+1 WHERE tenant_id=? AND "
-            + field
-            + "_id=? AND "
-            + field
-            + "<>?",
-        name,
-        tenant,
-        itemId,
-        name);
   }
 
   public long dictionaryReferenceCount(long tenant, String type, long id, String name) {
@@ -212,21 +117,5 @@ public class BaseDataRepository {
                                 legacy
                                     .isNull(Equipment::getFunctionLocationId)
                                     .like(Equipment::getFunctionLocation, item.getName()))));
-  }
-
-  public List<OrgUnit> companies(long tenant) {
-    return orgs.selectList(
-        new LambdaQueryWrapper<OrgUnit>()
-            .eq(OrgUnit::getTenantId, tenant)
-            .in(OrgUnit::getOrgType, "集团", "公司")
-            .orderByAsc(OrgUnit::getId));
-  }
-
-  public OrgUnit company(long tenant, Long id) {
-    return orgs.selectOne(
-        new LambdaQueryWrapper<OrgUnit>()
-            .eq(OrgUnit::getTenantId, tenant)
-            .eq(OrgUnit::getId, id)
-            .eq(OrgUnit::getOrgType, "公司"));
   }
 }

@@ -8,7 +8,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 物料主表模型；本批仅用于只读候选查询，不改变现有库存写入入口。 */
+/** 物料主表模型；基础资料改名只同步名称和版本，不修改库存数量、价格或记账。 */
 @Data
 @TableName("inv_material")
 public class Material {
