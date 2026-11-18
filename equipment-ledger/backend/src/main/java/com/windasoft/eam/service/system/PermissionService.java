@@ -1,18 +1,20 @@
 package com.windasoft.eam.service.system;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.windasoft.eam.dto.system.PermissionScope;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.domain.system.PermissionMenu;
+import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.entity.system.OrgUnit;
+import com.windasoft.eam.entity.system.SystemRole;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
-import com.windasoft.eam.entity.system.SystemRole;
 import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
+import com.windasoft.eam.repository.system.AuthorizationQueryPredicates;
+import com.windasoft.eam.repository.system.AuthorizationRepository;
 import java.util.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -21,29 +23,23 @@ import org.springframework.web.server.ResponseStatusException;
 /** 统一权限入口：综合角色动作授权、组织数据范围和业务参与资格，服务端操作必须再次校验。 */
 @Service
 public class PermissionService {
-  private final com.windasoft.eam.repository.system.AuthorizationRepository repository;
+  private final AuthorizationRepository repository;
   private final AuthContext auth;
   private final InventoryQueryRepository inventoryQueries;
-  private final com.windasoft.eam.service.system.OrganizationScopeService organizationScopes;
-  private final ObjectMapper json;
+  private final OrganizationScopeService organizationScopes;
 
   public PermissionService(
       AuthContext auth,
       InventoryQueryRepository inventoryQueries,
-      com.windasoft.eam.repository.system.AuthorizationRepository repository,
-      ObjectMapper json,
-      com.windasoft.eam.service.system.OrganizationScopeService organizationScopes) {
+      AuthorizationRepository repository,
+      OrganizationScopeService organizationScopes) {
     this.auth = auth;
     this.inventoryQueries = inventoryQueries;
     this.repository = repository;
-    this.json = json;
     this.organizationScopes = organizationScopes;
   }
 
-  /**
-   * 保留字符串入口以兼容数据库授权、动态菜单和已有调用方；
-   * 领域代码优先通过类型安全重载避免拼错动作或菜单键。
-   */
+  /** 保留字符串入口以兼容数据库授权、动态菜单和已有调用方； 领域代码优先通过类型安全重载避免拼错动作或菜单键。 */
   public void require(String menu, String action) {
     scopes(menu, action);
   }
@@ -79,9 +75,9 @@ public class PermissionService {
             .map(UserRoleLink::getRoleId)
             .toList();
     Map<String, Set<String>> result = new LinkedHashMap<>();
-    if(repository.approvalParticipation(auth.tenantId(),auth.userId())) {
-      result.put("inventoryRequisition",new HashSet<>(Set.of("查看")));
-      result.put("workspace",new HashSet<>(Set.of("查看")));
+    if (repository.approvalParticipation(auth.tenantId(), auth.userId())) {
+      result.put("inventoryRequisition", new HashSet<>(Set.of("查看")));
+      result.put("workspace", new HashSet<>(Set.of("查看")));
     }
     if (repository.personalRepairAccess(auth.tenantId(), auth.userId())) {
       result.put("repair", new HashSet<>(Set.of("查看")));
@@ -104,18 +100,19 @@ public class PermissionService {
     }
     if (roleIds.isEmpty()) return result;
     var activeRoles = repository.activeRoles(auth.tenantId(), roleIds);
-    var grantsByRole = repository.grantsForRoles(
-        auth.tenantId(), activeRoles.stream().map(SystemRole::getId).toList(), null);
+    var grantsByRole =
+        repository.grantsForRoles(
+            auth.tenantId(), activeRoles.stream().map(SystemRole::getId).toList(), null);
     for (var role : activeRoles) {
       var rows = grantsByRole.getOrDefault(role.getId(), List.of());
       if (!rows.isEmpty())
         for (var row : rows)
           result
               .computeIfAbsent(row.getMenuKey(), k -> new HashSet<>())
-              .addAll(strings(row.getActionsJson()));
+              .addAll(new LinkedHashSet<>(row.getActions()));
       else if (!"PER_MENU".equals(role.getDataScope())) {
         Map<String, Set<String>> legacyMenus = new LinkedHashMap<>();
-        for (var raw : strings(role.getPermissionsJson())) {
+        for (var raw : new LinkedHashSet<>(role.getLegacyActions())) {
           var parts = raw.split("\\.", 2);
           if (parts.length != 2) continue;
           legacyMenus
@@ -155,7 +152,8 @@ public class PermissionService {
           Map.entry("inspectionStandard", Set.of("查看", "新增", "编辑", "删除", "导出")),
           Map.entry("inspectionDailyPlan", Set.of("查看", "新增", "编辑", "删除", "导出")),
           Map.entry("inspectionPeriodicPlan", Set.of("查看", "新增", "编辑", "删除", "导出")),
-          Map.entry("inspectionDailyTask", Set.of("查看", "执行", "修改结果", "审核", "转派", "免检", "删除", "导出")),
+          Map.entry(
+              "inspectionDailyTask", Set.of("查看", "执行", "修改结果", "审核", "转派", "免检", "删除", "导出")),
           Map.entry("inspectionPeriodicTask", Set.of("查看", "执行", "审核", "转派", "删除", "导出")));
 
   public static Set<String> legacyTargets(String parent) {
@@ -209,9 +207,7 @@ public class PermissionService {
       case "standards" -> "maintenanceStandard";
       case "plans" -> "maintenancePlan";
       case "tasks" -> "maintenanceTask";
-      default ->
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.system.message0045");
+      default -> throw new LocalizedArgumentException("server.system.message0045");
     };
   }
 
@@ -223,9 +219,7 @@ public class PermissionService {
       case "periodic-plans" -> "inspectionPeriodicPlan";
       case "daily", "daily-tasks" -> "inspectionDailyTask";
       case "periodic", "periodic-tasks" -> "inspectionPeriodicTask";
-      default ->
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.system.message0046");
+      default -> throw new LocalizedArgumentException("server.system.message0046");
     };
   }
 
@@ -279,8 +273,7 @@ public class PermissionService {
 
   public void filterEquipment(LambdaQueryWrapper<Equipment> query, String action) {
     var scope = equipment(action);
-    com.windasoft.eam.repository.system.AuthorizationQueryPredicates.equipment(
-        query, scope, auth.tenantId(), auth.userId());
+    AuthorizationQueryPredicates.equipment(query, scope, auth.tenantId(), auth.userId());
   }
 
   public void filterRepair(LambdaQueryWrapper<RepairOrder> query) {
@@ -299,8 +292,7 @@ public class PermissionService {
       scope =
           new PermissionScope(
               scope.all(), scope.companyId(), scope.departmentIds(), true, scope.companyIds());
-    com.windasoft.eam.repository.system.AuthorizationQueryPredicates.repair(
-        query, scope, auth.tenantId(), auth.userId());
+    AuthorizationQueryPredicates.repair(query, scope, auth.tenantId(), auth.userId());
   }
 
   public void filterRepairAcceptance(LambdaQueryWrapper<RepairOrder> query) {
@@ -310,8 +302,7 @@ public class PermissionService {
     } catch (ResponseStatusException denied) {
       scope = new PermissionScope(false, null, Set.of(), false);
     }
-    com.windasoft.eam.repository.system.AuthorizationQueryPredicates.acceptance(
-        query, scope, auth.userId());
+    AuthorizationQueryPredicates.acceptance(query, scope, auth.userId());
   }
 
   public void checkEquipment(Equipment e, String action) {
@@ -492,21 +483,22 @@ public class PermissionService {
     if (roleIds.isEmpty()) deny();
     var matches = new ArrayList<Grant>();
     var activeRoles = repository.activeRoles(auth.tenantId(), roleIds);
-    var grantsByRole = repository.grantsForRoles(
-        auth.tenantId(), activeRoles.stream().map(SystemRole::getId).toList(), menu);
+    var grantsByRole =
+        repository.grantsForRoles(
+            auth.tenantId(), activeRoles.stream().map(SystemRole::getId).toList(), menu);
     for (var role : activeRoles) {
       var rows = grantsByRole.getOrDefault(role.getId(), List.of());
       if (!rows.isEmpty())
         for (var row : rows) {
           var grant =
               new Grant(
-                  strings(row.getActionsJson()),
-                  strings(row.getDataScopesJson()),
-                  longs(row.getOrgIdsJson()));
+                  new LinkedHashSet<>(row.getActions()),
+                  new LinkedHashSet<>(row.getDataScopes()),
+                  new LinkedHashSet<>(row.getTargetIds()));
           if (grant.actions.contains(action)) matches.add(grant);
         }
       else if (!"PER_MENU".equals(role.getDataScope())) {
-        var legacy = strings(role.getPermissionsJson());
+        var legacy = new LinkedHashSet<>(role.getLegacyActions());
         if (legacy.contains(menu + "." + action)
             || legacy.contains(menu + "." + legacyAction(action))
             || (CHILD_ACTIONS.getOrDefault(menu, Set.of()).contains(action)
@@ -516,7 +508,7 @@ public class PermissionService {
               new Grant(
                   Set.of(action),
                   Set.of(legacyScope(role.getDataScope())),
-                  longs(role.getOrgIdsJson())));
+                  new LinkedHashSet<>(role.getOrganizationIds())));
       }
     }
     if (matches.isEmpty()) deny();
@@ -639,24 +631,7 @@ public class PermissionService {
     };
   }
 
-  private Set<String> strings(String raw) {
-    try {
-      return new HashSet<>(json.readValue(raw, new TypeReference<List<String>>() {}));
-    } catch (Exception e) {
-      return Set.of();
-    }
-  }
-
-  private Set<Long> longs(String raw) {
-    try {
-      return new HashSet<>(json.readValue(raw, new TypeReference<List<Long>>() {}));
-    } catch (Exception e) {
-      return Set.of();
-    }
-  }
-
   private static void deny() {
-    throw new com.windasoft.eam.common.LocalizedStatusException(
-        HttpStatus.FORBIDDEN, "server.system.message0047");
+    throw new LocalizedStatusException(HttpStatus.FORBIDDEN, "server.system.message0047");
   }
 }

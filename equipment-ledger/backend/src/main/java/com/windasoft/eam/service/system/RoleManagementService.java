@@ -1,7 +1,5 @@
 package com.windasoft.eam.service.system;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.domain.system.PermissionMenu;
@@ -10,11 +8,19 @@ import com.windasoft.eam.dto.system.MenuGrantForm;
 import com.windasoft.eam.dto.system.MenuGrantView;
 import com.windasoft.eam.dto.system.RoleForm;
 import com.windasoft.eam.dto.system.RoleView;
+import com.windasoft.eam.entity.system.RoleMenuAction;
 import com.windasoft.eam.entity.system.RoleMenuPermission;
+import com.windasoft.eam.entity.system.RoleMenuScope;
+import com.windasoft.eam.entity.system.RoleMenuTarget;
 import com.windasoft.eam.entity.system.SystemRole;
 import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.repository.system.RoleLegacyActionRepository;
 import com.windasoft.eam.repository.system.RoleManagementRepository;
+import com.windasoft.eam.repository.system.RoleMenuActionRepository;
+import com.windasoft.eam.repository.system.RoleMenuScopeRepository;
+import com.windasoft.eam.repository.system.RoleMenuTargetRepository;
+import com.windasoft.eam.repository.system.RoleOrganizationRepository;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -30,25 +36,37 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class RoleManagementService {
   private final RoleManagementRepository repository;
+  private final RoleMenuTargetRepository roleMenuTarget;
+  private final RoleMenuScopeRepository roleMenuScope;
+  private final RoleMenuActionRepository roleMenuAction;
+  private final RoleLegacyActionRepository roleLegacyAction;
+  private final RoleOrganizationRepository roleOrganization;
   private final OrgUnitRepository orgUnits;
   private final InventoryQueryRepository inventoryQueries;
   private final AuthContext auth;
   private final PermissionService permissions;
-  private final ObjectMapper json;
 
   public RoleManagementService(
       RoleManagementRepository repository,
+      RoleMenuTargetRepository roleMenuTarget,
+      RoleMenuScopeRepository roleMenuScope,
+      RoleMenuActionRepository roleMenuAction,
+      RoleLegacyActionRepository roleLegacyAction,
+      RoleOrganizationRepository roleOrganization,
       OrgUnitRepository orgUnits,
       InventoryQueryRepository inventoryQueries,
       AuthContext auth,
-      PermissionService permissions,
-      ObjectMapper json) {
+      PermissionService permissions) {
     this.repository = repository;
+    this.roleMenuTarget = roleMenuTarget;
+    this.roleMenuScope = roleMenuScope;
+    this.roleMenuAction = roleMenuAction;
+    this.roleLegacyAction = roleLegacyAction;
+    this.roleOrganization = roleOrganization;
     this.orgUnits = orgUnits;
     this.inventoryQueries = inventoryQueries;
     this.auth = auth;
     this.permissions = permissions;
-    this.json = json;
   }
 
   public List<WarehouseChoice> roleWarehouses() {
@@ -77,6 +95,7 @@ public class RoleManagementService {
     x.setTenantId(auth.tenantId());
     applyRole(x, f);
     repository.insertRole(x);
+    clearLegacyRelations(x);
     saveMenuPermissions(x.getId(), f.menuPermissions());
     return roleView(x);
   }
@@ -90,6 +109,7 @@ public class RoleManagementService {
     validateRoleForm(f);
     applyRole(x, f);
     repository.updateRole(x);
+    clearLegacyRelations(x);
     saveMenuPermissions(id, f.menuPermissions());
     return roleView(x);
   }
@@ -110,8 +130,8 @@ public class RoleManagementService {
     x.setDescription(f.description() == null ? "" : f.description().trim());
     x.setStatus(f.status() == null ? 1 : f.status());
     x.setDataScope("PER_MENU");
-    x.setOrgIdsJson("[]");
-    x.setPermissionsJson("[]");
+    x.setOrganizationIds(List.of());
+    x.setLegacyActions(List.of());
   }
 
   private void validateRoleForm(RoleForm f) {
@@ -275,10 +295,11 @@ public class RoleManagementService {
       row.setTenantId(auth.tenantId());
       row.setRoleId(roleId);
       row.setMenuKey(entry.getKey());
-      row.setActionsJson(write(grant.actions()));
-      row.setDataScopesJson(write(grant.dataScopes()));
-      row.setOrgIdsJson(write(grant.orgIds() == null ? List.of() : grant.orgIds()));
+      row.setActions(grant.actions());
+      row.setDataScopes(grant.dataScopes());
+      row.setTargetIds(grant.orgIds() == null ? List.of() : grant.orgIds());
       repository.insertMenuPermission(row);
+      saveGrantRelations(row);
     }
   }
 
@@ -303,12 +324,12 @@ public class RoleManagementService {
       grants.put(
           row.getMenuKey(),
           new MenuGrantView(
-              read(row.getActionsJson()),
-              read(row.getDataScopesJson()),
-              read(row.getOrgIdsJson())));
+              row.getActions(),
+              row.getDataScopes(),
+              row.getTargetIds().stream().map(String::valueOf).toList()));
     if (rows.isEmpty() && !"PER_MENU".equals(x.getDataScope())) {
       Map<String, List<String>> actions = new LinkedHashMap<>();
-      for (var raw : read(x.getPermissionsJson())) {
+      for (var raw : x.getLegacyActions()) {
         var parts = String.valueOf(raw).split("\\.", 2);
         if (parts.length != 2) continue;
         var action = legacyAction(parts[1]);
@@ -339,7 +360,9 @@ public class RoleManagementService {
             new MenuGrantView(
                 menuActions,
                 List.of(menuScope),
-                "selected".equals(menuScope) ? read(x.getOrgIdsJson()) : List.of()));
+                "selected".equals(menuScope)
+                    ? x.getOrganizationIds().stream().map(String::valueOf).toList()
+                    : List.of()));
       }
     }
     return new RoleView(
@@ -366,19 +389,51 @@ public class RoleManagementService {
     };
   }
 
-  private String write(Object o) {
-    try {
-      return json.writeValueAsString(o);
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
+  /** 普通角色编辑切换为逐菜单授权，清除旧角色范围；与主体及菜单重写保持同一服务事务。 */
+  private void clearLegacyRelations(SystemRole role) {
+    roleOrganization.delete(role.getTenantId(), role.getId());
+    roleLegacyAction.delete(role.getTenantId(), role.getId());
   }
 
-  private List<String> read(String s) {
-    try {
-      return s == null ? List.of() : json.readValue(s, new TypeReference<List<String>>() {});
-    } catch (Exception e) {
-      return List.of();
+  /** 授权主体已生成真实ID；三种关系按原次序写入，失败由外层角色事务整体回滚。 */
+  private void saveGrantRelations(RoleMenuPermission grant) {
+    var actions = new ArrayList<RoleMenuAction>();
+    int at = 0;
+    for (var value : grant.getActions()) {
+      var row = new RoleMenuAction();
+      row.setTenantId(grant.getTenantId());
+      row.setGrantId(grant.getId());
+      row.setActionName(value);
+      row.setSortNo(at++);
+      actions.add(row);
     }
+    roleMenuAction.insert(actions);
+    var scopes = new ArrayList<RoleMenuScope>();
+    at = 0;
+    for (var value : grant.getDataScopes()) {
+      var row = new RoleMenuScope();
+      row.setTenantId(grant.getTenantId());
+      row.setGrantId(grant.getId());
+      row.setScopeCode(value);
+      row.setSortNo(at++);
+      scopes.add(row);
+    }
+    roleMenuScope.insert(scopes);
+    String kind =
+        grant.getDataScopes().contains("warehouse")
+            ? "warehouse"
+            : grant.getDataScopes().contains("companies") ? "company" : "department";
+    var targets = new ArrayList<RoleMenuTarget>();
+    at = 0;
+    for (var value : grant.getTargetIds()) {
+      var row = new RoleMenuTarget();
+      row.setTenantId(grant.getTenantId());
+      row.setGrantId(grant.getId());
+      row.setTargetKind(kind);
+      row.setTargetId(value);
+      row.setSortNo(at++);
+      targets.add(row);
+    }
+    roleMenuTarget.insert(targets);
   }
 }

@@ -2,6 +2,7 @@ package com.windasoft.eam.entity.system;
 
 import com.baomidou.mybatisplus.annotation.*;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.Data;
 
 @Data
@@ -15,13 +16,13 @@ public class RoleMenuPermission {
   private String menuKey;
 
   @TableField(exist = false)
-  private String actionsJson;
+  private List<String> actions = List.of();
 
   @TableField(exist = false)
-  private String dataScopesJson;
+  private List<String> dataScopes = List.of();
 
   @TableField(exist = false)
-  private String orgIdsJson;
+  private List<Long> targetIds = List.of();
 
   private LocalDateTime createdAt;
   private LocalDateTime updatedAt;

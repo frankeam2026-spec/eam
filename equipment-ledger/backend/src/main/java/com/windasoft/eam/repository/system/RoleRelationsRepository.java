@@ -1,85 +1,59 @@
 package com.windasoft.eam.repository.system;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.windasoft.eam.entity.system.*;
-import java.util.*;
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.windasoft.eam.entity.system.RoleLegacyAction;
+import com.windasoft.eam.entity.system.RoleMenuAction;
+import com.windasoft.eam.entity.system.RoleMenuPermission;
+import com.windasoft.eam.entity.system.RoleMenuScope;
+import com.windasoft.eam.entity.system.RoleMenuTarget;
+import com.windasoft.eam.entity.system.RoleOrganization;
+import com.windasoft.eam.entity.system.SystemRole;
+import java.util.List;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Repository;
 
-/** JSON strings below are legacy in-memory DTO adapters, never database storage. */
-/** 角色关联适配：组装权限关系数据；兼容字段中的 JSON 不代表底层采用 JSON 存储。 */
+/** 只批量读取关系并装配权限投影，不负责跨表写入，不再经JSON序列化往返。 */
 @Repository
 public class RoleRelationsRepository {
-  private final JdbcTemplate db;
-  private final ObjectMapper json;
+  private final RoleOrganizationRepository organizations;
+  private final RoleLegacyActionRepository legacy;
+  private final RoleMenuActionRepository actions;
+  private final RoleMenuScopeRepository scopes;
+  private final RoleMenuTargetRepository targets;
 
-  public RoleRelationsRepository(JdbcTemplate db, ObjectMapper json) {
-    this.db = db;
-    this.json = json;
-  }
-
-  private String encode(Object value) {
-    try {
-      return json.writeValueAsString(value);
-    } catch (Exception e) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException(
-          com.windasoft.eam.common.MessageRef.of("server.system.message0005"), e);
-    }
-  }
-
-  private List<String> strings(String value) {
-    if (value == null) return List.of();
-    try {
-      return json.readValue(value, new TypeReference<List<String>>() {});
-    } catch (Exception e) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException(
-          com.windasoft.eam.common.MessageRef.of("server.system.message0005"), e);
-    }
-  }
-
-  private List<Map<String, Object>> read(
-      String table, String key, long tenant, Collection<Long> ids) {
-    if (ids.isEmpty()) return List.of();
-    var args = new ArrayList<Object>();
-    args.add(tenant);
-    args.addAll(ids);
-    return db.queryForList(
-        "SELECT * FROM "
-            + table
-            + " WHERE tenant_id=? AND "
-            + key
-            + " IN ("
-            + String.join(",", Collections.nCopies(ids.size(), "?"))
-            + ") ORDER BY sort_no",
-        args.toArray());
+  public RoleRelationsRepository(
+      RoleOrganizationRepository organizations,
+      RoleLegacyActionRepository legacy,
+      RoleMenuActionRepository actions,
+      RoleMenuScopeRepository scopes,
+      RoleMenuTargetRepository targets) {
+    this.organizations = organizations;
+    this.legacy = legacy;
+    this.actions = actions;
+    this.scopes = scopes;
+    this.targets = targets;
   }
 
   public List<SystemRole> roles(List<SystemRole> rows) {
     for (var group :
-        rows.stream()
-            .collect(java.util.stream.Collectors.groupingBy(SystemRole::getTenantId))
-            .entrySet()) {
-      var byId = new HashMap<Long, SystemRole>();
-      group
-          .getValue()
-          .forEach(
-              r -> {
-                byId.put(r.getId(), r);
-                r.setOrgIdsJson("[]");
-                r.setPermissionsJson("[]");
-              });
-      var orgs = new HashMap<Long, List<Long>>();
-      for (var v : read("eam_role_organization", "role_id", group.getKey(), byId.keySet()))
-        orgs.computeIfAbsent(((Number) v.get("role_id")).longValue(), k -> new ArrayList<>())
-            .add(((Number) v.get("org_id")).longValue());
-      var actions = new HashMap<Long, List<String>>();
-      for (var v : read("eam_role_legacy_action", "role_id", group.getKey(), byId.keySet()))
-        actions
-            .computeIfAbsent(((Number) v.get("role_id")).longValue(), k -> new ArrayList<>())
-            .add(v.get("menu_key") + "." + v.get("action_code"));
-      orgs.forEach((id, v) -> byId.get(id).setOrgIdsJson(encode(v)));
-      actions.forEach((id, v) -> byId.get(id).setPermissionsJson(encode(v)));
+        rows.stream().collect(Collectors.groupingBy(SystemRole::getTenantId)).entrySet()) {
+      var ids = group.getValue().stream().map(SystemRole::getId).toList();
+      var orgs =
+          organizations.find(group.getKey(), ids).stream()
+              .collect(
+                  Collectors.groupingBy(
+                      RoleOrganization::getRoleId,
+                      Collectors.mapping(RoleOrganization::getOrgId, Collectors.toList())));
+      var old =
+          legacy.find(group.getKey(), ids).stream()
+              .collect(
+                  Collectors.groupingBy(
+                      RoleLegacyAction::getRoleId,
+                      Collectors.mapping(
+                          v -> v.getMenuKey() + "." + v.getActionCode(), Collectors.toList())));
+      for (var row : group.getValue()) {
+        row.setOrganizationIds(orgs.getOrDefault(row.getId(), List.of()));
+        row.setLegacyActions(old.getOrDefault(row.getId(), List.of()));
+      }
     }
     return rows;
   }
@@ -91,94 +65,32 @@ public class RoleRelationsRepository {
 
   public List<RoleMenuPermission> grants(List<RoleMenuPermission> rows) {
     for (var group :
-        rows.stream()
-            .collect(java.util.stream.Collectors.groupingBy(RoleMenuPermission::getTenantId))
-            .entrySet()) {
+        rows.stream().collect(Collectors.groupingBy(RoleMenuPermission::getTenantId)).entrySet()) {
       var ids = group.getValue().stream().map(RoleMenuPermission::getId).toList();
-      var actions = groupByGrant(read("eam_role_menu_action", "grant_id", group.getKey(), ids), "action_name");
-      var scopes = groupByGrant(read("eam_role_menu_scope", "grant_id", group.getKey(), ids), "scope_code");
-      var targets = groupByGrant(read("eam_role_menu_target", "grant_id", group.getKey(), ids), "target_id");
-      for (var r : group.getValue()) {
-        r.setActionsJson(encode(actions.getOrDefault(r.getId(), List.of())));
-        r.setDataScopesJson(encode(scopes.getOrDefault(r.getId(), List.of())));
-        r.setOrgIdsJson(encode(targets.getOrDefault(r.getId(), List.of())));
+      var actionMap =
+          actions.find(group.getKey(), ids).stream()
+              .collect(
+                  Collectors.groupingBy(
+                      RoleMenuAction::getGrantId,
+                      Collectors.mapping(RoleMenuAction::getActionName, Collectors.toList())));
+      var scopeMap =
+          scopes.find(group.getKey(), ids).stream()
+              .collect(
+                  Collectors.groupingBy(
+                      RoleMenuScope::getGrantId,
+                      Collectors.mapping(RoleMenuScope::getScopeCode, Collectors.toList())));
+      var targetMap =
+          targets.find(group.getKey(), ids).stream()
+              .collect(
+                  Collectors.groupingBy(
+                      RoleMenuTarget::getGrantId,
+                      Collectors.mapping(RoleMenuTarget::getTargetId, Collectors.toList())));
+      for (var row : group.getValue()) {
+        row.setActions(actionMap.getOrDefault(row.getId(), List.of()));
+        row.setDataScopes(scopeMap.getOrDefault(row.getId(), List.of()));
+        row.setTargetIds(targetMap.getOrDefault(row.getId(), List.of()));
       }
     }
     return rows;
-  }
-
-  private static Map<Long, List<Object>> groupByGrant(
-      List<Map<String, Object>> rows, String valueColumn) {
-    var result = new HashMap<Long, List<Object>>();
-    for (var row : rows) {
-      var grantId = ((Number) row.get("grant_id")).longValue();
-      result.computeIfAbsent(grantId, ignored -> new ArrayList<>()).add(row.get(valueColumn));
-    }
-    return result;
-  }
-
-  public void saveRole(SystemRole row) {
-    db.update(
-        "DELETE FROM eam_role_organization WHERE tenant_id=? AND role_id=?",
-        row.getTenantId(),
-        row.getId());
-    db.update(
-        "DELETE FROM eam_role_legacy_action WHERE tenant_id=? AND role_id=?",
-        row.getTenantId(),
-        row.getId());
-    int order = 0;
-    for (var id : strings(row.getOrgIdsJson()))
-      db.update(
-          "INSERT INTO eam_role_organization VALUES(?,?,?,?)",
-          row.getTenantId(),
-          row.getId(),
-          Long.parseLong(id),
-          order++);
-    order = 0;
-    for (var value : strings(row.getPermissionsJson())) {
-      int dot = value.indexOf('.');
-      if (dot <= 0)
-        throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0006");
-      db.update(
-          "INSERT INTO eam_role_legacy_action VALUES(?,?,?,?,?)",
-          row.getTenantId(),
-          row.getId(),
-          value.substring(0, dot),
-          value.substring(dot + 1),
-          order++);
-    }
-  }
-
-  public void saveGrant(RoleMenuPermission row) {
-    int at = 0;
-    for (var action : strings(row.getActionsJson()))
-      db.update(
-          "INSERT INTO eam_role_menu_action VALUES(?,?,?,?)",
-          row.getTenantId(),
-          row.getId(),
-          action,
-          at++);
-    var scopes = strings(row.getDataScopesJson());
-    at = 0;
-    for (var scope : scopes)
-      db.update(
-          "INSERT INTO eam_role_menu_scope VALUES(?,?,?,?)",
-          row.getTenantId(),
-          row.getId(),
-          scope,
-          at++);
-    String kind =
-        scopes.contains("warehouse")
-            ? "warehouse"
-            : scopes.contains("companies") ? "company" : "department";
-    at = 0;
-    for (var id : strings(row.getOrgIdsJson()))
-      db.update(
-          "INSERT INTO eam_role_menu_target VALUES(?,?,?,?,?)",
-          row.getTenantId(),
-          row.getId(),
-          kind,
-          Long.parseLong(id),
-          at++);
   }
 }

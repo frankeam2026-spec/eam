@@ -7,18 +7,23 @@ import static org.mockito.Mockito.*;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.RoleMenuPermission;
 import com.windasoft.eam.entity.system.SystemRole;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
+import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
+import com.windasoft.eam.repository.system.AuthorizationRepository;
 import com.windasoft.eam.repository.system.OrgUnitMapper;
 import com.windasoft.eam.repository.system.RoleMenuPermissionMapper;
 import com.windasoft.eam.repository.system.SystemRoleMapper;
 import com.windasoft.eam.repository.system.SystemUserMapper;
 import com.windasoft.eam.repository.system.UserRoleLinkMapper;
+import com.windasoft.eam.support.RelationStubs;
 import java.util.List;
+import java.util.Set;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,15 +58,21 @@ class PermissionServiceTest {
     when(auth.tenantId()).thenReturn(10001L);
     when(orgs.selectList(any())).thenReturn(List.of());
     var repository =
-        new com.windasoft.eam.repository.system.AuthorizationRepository(
-            links, roles, grants, orgs, mock(SystemUserMapper.class), null, null, com.windasoft.eam.support.RelationStubs.roles());
+        new AuthorizationRepository(
+            links,
+            roles,
+            grants,
+            orgs,
+            mock(SystemUserMapper.class),
+            null,
+            null,
+            RelationStubs.roles());
     service =
         new PermissionService(
             auth,
-            mock(com.windasoft.eam.repository.inventory.InventoryQueryRepository.class),
+            mock(InventoryQueryRepository.class),
             repository,
-            new ObjectMapper(),
-            new com.windasoft.eam.service.system.OrganizationScopeService(auth, repository));
+            new OrganizationScopeService(auth, repository));
   }
 
   private void assignTwoRoles() {
@@ -79,12 +90,22 @@ class PermissionServiceTest {
     when(roles.selectList(any())).thenReturn(List.of(firstRole, secondRole));
   }
 
+  private <T> List<T> read(String value, Class<T> type) {
+    try {
+      var mapper = new ObjectMapper();
+      return mapper.readValue(
+          value, mapper.getTypeFactory().constructCollectionType(List.class, type));
+    } catch (Exception failure) {
+      throw new IllegalArgumentException(failure);
+    }
+  }
+
   private RoleMenuPermission grant(String actions, String scopes, String departments) {
     RoleMenuPermission grant = new RoleMenuPermission();
     grant.setRoleId(1L);
-    grant.setActionsJson(actions);
-    grant.setDataScopesJson(scopes);
-    grant.setOrgIdsJson(departments);
+    grant.setActions(read(actions, String.class));
+    grant.setDataScopes(read(scopes, String.class));
+    grant.setTargetIds(read(departments, Long.class));
     return grant;
   }
 
@@ -109,10 +130,11 @@ class PermissionServiceTest {
   void viewAllDoesNotGrantDeleteAll() {
     assignTwoRoles();
     when(grants.selectList(any()))
-        .thenReturn(List.of(
-            grantForRole(1L, "[\"查看\"]", "[\"all\"]", "[]"),
-            grantForRole(2L, "[\"删除\"]", "[\"department\"]", "[]")));
-    com.windasoft.eam.dto.system.PermissionScope scope = service.equipment("删除");
+        .thenReturn(
+            List.of(
+                grantForRole(1L, "[\"查看\"]", "[\"all\"]", "[]"),
+                grantForRole(2L, "[\"删除\"]", "[\"department\"]", "[]")));
+    PermissionScope scope = service.equipment("删除");
     assertFalse(scope.all());
     assertTrue(scope.matches(null, 30L, null, 10L));
     assertFalse(scope.matches(null, 99L, null, 10L));
@@ -122,10 +144,11 @@ class PermissionServiceTest {
   void matchingRoleScopesAreCombined() {
     assignTwoRoles();
     when(grants.selectList(any()))
-        .thenReturn(List.of(
-            grantForRole(1L, "[\"查看\"]", "[\"department\"]", "[]"),
-            grantForRole(2L, "[\"查看\"]", "[\"selected\",\"owner\"]", "[40]")));
-    com.windasoft.eam.dto.system.PermissionScope scope = service.equipment("查看");
+        .thenReturn(
+            List.of(
+                grantForRole(1L, "[\"查看\"]", "[\"department\"]", "[]"),
+                grantForRole(2L, "[\"查看\"]", "[\"selected\",\"owner\"]", "[40]")));
+    PermissionScope scope = service.equipment("查看");
     assertTrue(scope.matches(null, 30L, null, 10L));
     assertTrue(scope.matches(null, 40L, null, 10L));
     assertTrue(scope.matches(null, 99L, 10L, 10L));
@@ -180,7 +203,7 @@ class PermissionServiceTest {
             });
   }
 
-  private com.windasoft.eam.dto.system.PermissionScope oneScope(String name, String ids) {
+  private PermissionScope oneScope(String name, String ids) {
     assignTwoRoles();
     when(grants.selectList(any()))
         .thenReturn(List.of(grant("[\"查看\"]", "[\"" + name + "\"]", ids)));
@@ -195,7 +218,7 @@ class PermissionServiceTest {
     assertTrue(s.matches(2L, 31L, null, 10L));
     assertFalse(s.matches(3L, 32L, null, 10L));
     assertFalse(s.matches(1L, 20L, null, 10L));
-    assertEquals(java.util.Set.of(2L), s.companyIds());
+    assertEquals(Set.of(2L), s.companyIds());
   }
 
   @Test
@@ -204,7 +227,7 @@ class PermissionServiceTest {
     var s = oneScope("companyTree", "[]");
     assertTrue(s.matches(3L, 32L, null, 10L));
     assertFalse(s.matches(4L, 40L, null, 10L));
-    assertEquals(java.util.Set.of(2L, 3L), s.companyIds());
+    assertEquals(Set.of(2L, 3L), s.companyIds());
   }
 
   @Test
@@ -249,9 +272,10 @@ class PermissionServiceTest {
     hierarchy();
     assignTwoRoles();
     when(grants.selectList(any()))
-        .thenReturn(List.of(
-            grantForRole(1L, "[\"查看\"]", "[\"companyTree\"]", "[]"),
-            grantForRole(2L, "[\"编辑\"]", "[\"company\"]", "[]")));
+        .thenReturn(
+            List.of(
+                grantForRole(1L, "[\"查看\"]", "[\"companyTree\"]", "[]"),
+                grantForRole(2L, "[\"编辑\"]", "[\"company\"]", "[]")));
     var s = service.equipment("编辑");
     assertTrue(s.matches(2L, 30L, null, 10L));
     assertFalse(s.matches(3L, 32L, null, 10L));

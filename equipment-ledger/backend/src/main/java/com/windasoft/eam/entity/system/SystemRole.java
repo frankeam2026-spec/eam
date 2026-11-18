@@ -2,6 +2,7 @@ package com.windasoft.eam.entity.system;
 
 import com.baomidou.mybatisplus.annotation.*;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.Data;
 
 @Data
@@ -18,10 +19,10 @@ public class SystemRole {
   private String dataScope;
 
   @TableField(exist = false)
-  private String orgIdsJson;
+  private List<Long> organizationIds = List.of();
 
   @TableField(exist = false)
-  private String permissionsJson;
+  private List<String> legacyActions = List.of();
 
   @TableLogic private Integer deleted;
   private LocalDateTime createdAt;

@@ -49,13 +49,11 @@ public class RoleManagementRepository {
 
   public int insertRole(SystemRole x) {
     int changed = roles.insert(x);
-    if (changed > 0) relations.saveRole(x);
     return changed;
   }
 
   public int updateRole(SystemRole x) {
     int changed = roles.updateById(x);
-    if (changed > 0) relations.saveRole(x);
     return changed;
   }
 
@@ -150,6 +148,5 @@ public class RoleManagementRepository {
 
   public void insertMenuPermission(RoleMenuPermission row) {
     grants.insert(row);
-    relations.saveGrant(row);
   }
 }

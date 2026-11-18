@@ -1,54 +1,62 @@
 package com.windasoft.eam.repository.system;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.entity.system.RoleMenuAction;
 import com.windasoft.eam.entity.system.RoleMenuPermission;
+import com.windasoft.eam.entity.system.RoleMenuScope;
+import com.windasoft.eam.entity.system.RoleMenuTarget;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 class RoleRelationsRepositoryTest {
   @Test
   void groupsGrantRelationsWithoutMixingGrantsAndKeepsRowOrder() {
-    var db = mock(JdbcTemplate.class);
-    when(db.queryForList(anyString(), any(Object[].class)))
-        .thenAnswer(invocation -> {
-          String sql = invocation.getArgument(0);
-          if (sql.contains("eam_role_menu_action")) {
-            return List.of(
-                Map.of("grant_id", 11L, "action_name", "查看"),
-                Map.of("grant_id", 12L, "action_name", "编辑"),
-                Map.of("grant_id", 11L, "action_name", "删除"));
-          }
-          if (sql.contains("eam_role_menu_scope")) {
-            return List.of(Map.of("grant_id", 11L, "scope_code", "all"));
-          }
-          if (sql.contains("eam_role_menu_target")) {
-            return List.of(Map.of("grant_id", 12L, "target_id", 100L));
-          }
-          throw new AssertionError(sql);
-        });
+    var actions = mock(RoleMenuActionRepository.class);
+    var scopes = mock(RoleMenuScopeRepository.class);
+    var targets = mock(RoleMenuTargetRepository.class);
     var first = new RoleMenuPermission();
     first.setId(11L);
     first.setTenantId(7L);
     var second = new RoleMenuPermission();
     second.setId(12L);
     second.setTenantId(7L);
-
-    var result = new RoleRelationsRepository(db, new ObjectMapper()).grants(List.of(first, second));
-
+    var a = new RoleMenuAction();
+    a.setGrantId(11L);
+    a.setActionName("查看");
+    var b = new RoleMenuAction();
+    b.setGrantId(12L);
+    b.setActionName("编辑");
+    var c = new RoleMenuAction();
+    c.setGrantId(11L);
+    c.setActionName("删除");
+    var scope = new RoleMenuScope();
+    scope.setGrantId(11L);
+    scope.setScopeCode("all");
+    var target = new RoleMenuTarget();
+    target.setGrantId(12L);
+    target.setTargetId(100L);
+    when(actions.find(7L, List.of(11L, 12L))).thenReturn(List.of(a, b, c));
+    when(scopes.find(7L, List.of(11L, 12L))).thenReturn(List.of(scope));
+    when(targets.find(7L, List.of(11L, 12L))).thenReturn(List.of(target));
+    var result =
+        new RoleRelationsRepository(
+                mock(RoleOrganizationRepository.class),
+                mock(RoleLegacyActionRepository.class),
+                actions,
+                scopes,
+                targets)
+            .grants(List.of(first, second));
     assertEquals(List.of(first, second), result);
-    assertEquals("[\"查看\",\"删除\"]", first.getActionsJson());
-    assertEquals("[\"all\"]", first.getDataScopesJson());
-    assertEquals("[]", first.getOrgIdsJson());
-    assertEquals("[\"编辑\"]", second.getActionsJson());
-    assertEquals("[]", second.getDataScopesJson());
-    assertEquals("[100]", second.getOrgIdsJson());
+    assertEquals(List.of("查看", "删除"), first.getActions());
+    assertEquals(List.of("all"), first.getDataScopes());
+    assertEquals(List.of(), first.getTargetIds());
+    assertEquals(List.of("编辑"), second.getActions());
+    assertEquals(List.of(), second.getDataScopes());
+    assertEquals(List.of(100L), second.getTargetIds());
+    verify(actions).find(7L, List.of(11L, 12L));
+    verify(scopes).find(7L, List.of(11L, 12L));
+    verify(targets).find(7L, List.of(11L, 12L));
   }
 }
