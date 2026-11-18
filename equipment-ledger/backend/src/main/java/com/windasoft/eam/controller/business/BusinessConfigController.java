@@ -1,5 +1,6 @@
 package com.windasoft.eam.controller.business;
 
+import com.windasoft.eam.dto.business.BusinessChoices.ChoicePage;
 import com.windasoft.eam.dto.business.BusinessConfigurationContracts.EventView;
 import com.windasoft.eam.dto.business.BusinessConfigurationContracts.ObjectOption;
 import com.windasoft.eam.dto.business.BusinessConfigurationContracts.RestoreRequest;
@@ -81,7 +82,7 @@ public class BusinessConfigController {
   }
 
   @GetMapping("/runtime/{object}/options")
-  public Object options(
+  public ChoicePage options(
       @PathVariable String object,
       @RequestParam String source,
       @RequestParam(defaultValue = "") String q,

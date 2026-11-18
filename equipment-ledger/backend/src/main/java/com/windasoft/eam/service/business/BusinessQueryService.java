@@ -6,6 +6,7 @@ import com.windasoft.eam.dto.business.BusinessFilterTerm;
 import com.windasoft.eam.dto.business.BusinessFilterTerm.Operator;
 import com.windasoft.eam.repository.business.*;
 import com.windasoft.eam.repository.common.SqlPredicate;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import java.math.BigDecimal;
 import java.time.*;
@@ -15,25 +16,25 @@ import org.springframework.stereotype.Service;
 @Service
 public class BusinessQueryService {
   private final BusinessConfigService config;
-  private final BusinessConfigRepository repo;
   private final BusinessQueryRepository queries;
+  private final OrgUnitRepository organizations;
   private final BusinessReferenceService references;
   private final AuthContext auth;
   private final ObjectMapper json;
 
   public BusinessQueryService(
       BusinessConfigService config,
-      BusinessConfigRepository repo,
       BusinessReferenceService references,
       AuthContext auth,
       ObjectMapper json,
-      BusinessQueryRepository queries) {
+      BusinessQueryRepository queries,
+      OrgUnitRepository organizations) {
     this.config = config;
-    this.repo = repo;
     this.references = references;
     this.auth = auth;
     this.json = json;
     this.queries = queries;
+    this.organizations = organizations;
   }
 
   private JsonNode conditions(String raw) {
@@ -145,24 +146,24 @@ public class BusinessQueryService {
         if (type.equals("DEPARTMENT")) {
           var allowed =
               references.all(object, "department", true).stream()
-                  .map(r -> r.get("id").toString())
+                  .map(r -> r.id())
                   .collect(java.util.stream.Collectors.toSet());
           if (!allowed.containsAll(selected))
             throw new com.windasoft.eam.common.LocalizedArgumentException(
                 "server.business.message0014");
-          var orgs = repo.organizations(auth.tenantId());
+          var orgs = organizations.organizations(auth.tenantId(), true);
           boolean changed;
           do {
             changed = false;
             for (var r : orgs)
-              if (selected.contains(Objects.toString(r.get("parentId"), ""))
-                  && allowed.contains(r.get("id").toString()))
-                changed |= selected.add(r.get("id").toString());
+              if (selected.contains(Objects.toString(r.getParentId(), ""))
+                  && allowed.contains(r.getId().toString()))
+                changed |= selected.add(r.getId().toString());
           } while (changed);
         } else if (BusinessRules.reference(f)) {
           var allowed =
               references.fieldOptions(object, f, true).stream()
-                  .map(r -> r.get("id").toString())
+                  .map(r -> r.id())
                   .collect(java.util.stream.Collectors.toSet());
           if (!allowed.containsAll(selected))
             throw new com.windasoft.eam.common.LocalizedArgumentException(

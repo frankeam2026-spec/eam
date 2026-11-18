@@ -1,6 +1,9 @@
 package com.windasoft.eam.repository.basedata;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.windasoft.eam.dto.business.BusinessChoiceQuery;
 import com.windasoft.eam.entity.basedata.BaseItem;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -163,5 +166,28 @@ public class BaseItemRepository {
 
   public void delete(Long id) {
     mapper.deleteById(id);
+  }
+
+  /** 旧选择器按字符串ID排序；使用固定CAST表达式保留同序号的真实顺序，字段名不接受客户端输入。 */
+  public List<BaseItem> referenceItems(long tenant, String type) {
+    return mapper.selectList(
+        new QueryWrapper<BaseItem>()
+            .select("id", "name", "status", "sort_no")
+            .eq("tenant_id", tenant)
+            .eq("item_type", type)
+            .orderByAsc("sort_no", "CAST(id AS CHAR)"));
+  }
+
+  public Page<BaseItem> businessChoices(
+      long tenant, String type, BusinessChoiceQuery query, boolean inactive) {
+    var where =
+        new QueryWrapper<BaseItem>()
+            .select("id", "name", "status", "sort_no")
+            .eq("tenant_id", tenant)
+            .eq("item_type", type)
+            .eq(!inactive, "status", 1)
+            .apply("LOWER(name) LIKE {0} ESCAPE '!'", query.likePattern())
+            .orderByAsc("sort_no", "CAST(id AS CHAR)");
+    return mapper.selectPage(new Page<>(query.page(), query.size()), where);
   }
 }

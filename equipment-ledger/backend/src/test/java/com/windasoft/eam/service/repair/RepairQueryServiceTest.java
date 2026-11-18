@@ -8,17 +8,19 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.entity.business.BusinessSchema;
 import com.windasoft.eam.entity.repair.RepairOrder;
-import com.windasoft.eam.repository.business.BusinessConfigRepository;
+import com.windasoft.eam.repository.business.BusinessConfigEventRepository;
+import com.windasoft.eam.repository.business.BusinessDictionaryRepository;
+import com.windasoft.eam.repository.business.BusinessFieldRepository;
+import com.windasoft.eam.repository.business.BusinessOptionRepository;
+import com.windasoft.eam.repository.business.BusinessQueryRepository;
 import com.windasoft.eam.repository.business.BusinessSchemaRepository;
 import com.windasoft.eam.repository.business.BusinessSchemaVersionRepository;
-import com.windasoft.eam.repository.business.BusinessFieldRepository;
-import com.windasoft.eam.repository.business.BusinessConfigEventRepository;
-import com.windasoft.eam.entity.business.BusinessSchema;
-import com.windasoft.eam.repository.business.BusinessQueryRepository;
 import com.windasoft.eam.repository.repair.RepairAssistantRepository;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
 import com.windasoft.eam.repository.repair.RepairQueryRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.business.BusinessConfigService;
 import com.windasoft.eam.service.business.BusinessQueryService;
 import com.windasoft.eam.service.business.BusinessReferenceService;
@@ -30,6 +32,7 @@ import java.util.Map;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 class RepairQueryServiceTest {
   private RepairQueryService service;
@@ -54,24 +57,30 @@ class RepairQueryServiceTest {
             permissions,
             new ObjectMapper(),
             mock(RepairAssistantRepository.class));
-    var repo = mock(BusinessConfigRepository.class);
     var schemas = mock(BusinessSchemaRepository.class);
     var schema = new BusinessSchema();
     schema.setPublished("{\"fields\":[]}");
     schema.setPublishedVersion(0);
     when(schemas.find(anyLong(), anyString(), anyBoolean())).thenReturn(schema);
-    var config = new BusinessConfigService(
-        repo, schemas, mock(BusinessSchemaVersionRepository.class),
-        mock(BusinessFieldRepository.class), mock(BusinessConfigEventRepository.class),
-        new ObjectMapper(), auth, permissions);
+    var config =
+        new BusinessConfigService(
+            mock(BusinessDictionaryRepository.class),
+            mock(BusinessOptionRepository.class),
+            schemas,
+            mock(BusinessSchemaVersionRepository.class),
+            mock(BusinessFieldRepository.class),
+            mock(BusinessConfigEventRepository.class),
+            new ObjectMapper(),
+            auth,
+            permissions);
     var query =
         new BusinessQueryService(
             config,
-            repo,
             mock(BusinessReferenceService.class),
             auth,
             new ObjectMapper(),
-            new BusinessQueryRepository(mock(org.springframework.jdbc.core.JdbcTemplate.class)));
+            new BusinessQueryRepository(mock(JdbcTemplate.class)),
+            mock(OrgUnitRepository.class));
     var custom = mock(BusinessValueService.class);
     when(custom.batch(anyString(), anyCollection())).thenReturn(Map.of());
     when(custom.repairCategories(anyCollection())).thenReturn(Map.of());

@@ -18,8 +18,9 @@ import com.windasoft.eam.entity.business.BusinessConfigEvent;
 import com.windasoft.eam.entity.business.BusinessSchema;
 import com.windasoft.eam.entity.business.BusinessSchemaVersion;
 import com.windasoft.eam.repository.business.BusinessConfigEventRepository;
-import com.windasoft.eam.repository.business.BusinessConfigRepository;
+import com.windasoft.eam.repository.business.BusinessDictionaryRepository;
 import com.windasoft.eam.repository.business.BusinessFieldRepository;
+import com.windasoft.eam.repository.business.BusinessOptionRepository;
 import com.windasoft.eam.repository.business.BusinessSchemaRepository;
 import com.windasoft.eam.repository.business.BusinessSchemaVersionRepository;
 import com.windasoft.eam.service.system.AuthContext;
@@ -77,7 +78,8 @@ public class BusinessConfigService {
           "BOOLEAN",
           "USER",
           "DEPARTMENT");
-  private final BusinessConfigRepository repo;
+  private final BusinessDictionaryRepository dictionaries;
+  private final BusinessOptionRepository dictionaryOptions;
   private final BusinessSchemaRepository schemas;
   private final BusinessSchemaVersionRepository versions;
   private final BusinessFieldRepository identities;
@@ -87,7 +89,8 @@ public class BusinessConfigService {
   private final PermissionService permissions;
 
   public BusinessConfigService(
-      BusinessConfigRepository repo,
+      BusinessDictionaryRepository dictionaries,
+      BusinessOptionRepository dictionaryOptions,
       BusinessSchemaRepository schemas,
       BusinessSchemaVersionRepository versions,
       BusinessFieldRepository identities,
@@ -95,7 +98,8 @@ public class BusinessConfigService {
       ObjectMapper json,
       AuthContext auth,
       PermissionService permissions) {
-    this.repo = repo;
+    this.dictionaries = dictionaries;
+    this.dictionaryOptions = dictionaryOptions;
     this.schemas = schemas;
     this.versions = versions;
     this.identities = identities;
@@ -157,18 +161,16 @@ public class BusinessConfigService {
               source,
               key -> {
                 var result = json.createArrayNode();
-                var dictionaries = repo.dictionary(auth.tenantId(), key.substring(11), false);
+                var dictionary = dictionaries.find(auth.tenantId(), key.substring(11));
                 boolean enabled =
-                    !dictionaries.isEmpty()
-                        && BusinessReferenceService.enabled(dictionaries.getFirst().get("enabled"));
-                for (var option : repo.options(auth.tenantId(), key.substring(11))) {
+                    dictionary != null && BusinessReferenceService.enabled(dictionary.getEnabled());
+                for (var option : dictionaryOptions.options(auth.tenantId(), key.substring(11))) {
                   var row = json.createObjectNode();
-                  row.put("id", option.get("id").toString());
-                  row.put("name", option.get("name").toString());
+                  row.put("id", option.getId());
+                  row.put("name", option.getName());
                   row.put(
-                      "enabled",
-                      enabled && BusinessReferenceService.enabled(option.get("enabled")));
-                  row.put("sortOrder", ((Number) option.get("sortOrder")).intValue());
+                      "enabled", enabled && BusinessReferenceService.enabled(option.getEnabled()));
+                  row.put("sortOrder", option.getSortNo());
                   result.add(row);
                 }
                 return result;

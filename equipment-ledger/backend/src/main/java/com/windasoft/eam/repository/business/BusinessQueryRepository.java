@@ -1,11 +1,23 @@
 package com.windasoft.eam.repository.business;
 
 import com.windasoft.eam.dto.business.BusinessFilterTerm;
-import com.windasoft.eam.repository.common.*;
-import java.util.*;
+import com.windasoft.eam.repository.common.SqlListFilters;
+import com.windasoft.eam.repository.common.SqlPredicate;
+import com.windasoft.eam.repository.common.SqlScopes;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+/** 扩展字段的受控SQL表达式及授权ID求交；负责只读查询，不接收Controller拼接的SQL或执行业务写入。 */
 @Repository
 public class BusinessQueryRepository {
   private final JdbcTemplate db;
@@ -124,5 +136,24 @@ public class BusinessQueryRepository {
             "SELECT CAST(t.id AS CHAR) FROM " + table + " t WHERE " + scope.sql(),
             String.class,
             scope.arguments().toArray()));
+  }
+
+  /** 为扩展字段条件批量读取维修设备的当前分类；保留原LEFT JOIN及空分类为空串的协议。 */
+  public Map<Long, String> repairCategories(long tenant, Collection<Long> ids) {
+    if (ids.isEmpty()) return Map.of();
+    var args = new ArrayList<Object>(List.of(tenant));
+    args.addAll(ids);
+    Map<Long, String> result = new HashMap<>();
+    db.query(
+        "SELECT r.id,CAST(e.category_id AS CHAR) category FROM eam_repair_order r LEFT JOIN"
+            + " eam_equipment e ON e.tenant_id=r.tenant_id AND e.id=r.equipment_id WHERE"
+            + " r.tenant_id=? AND r.id IN ("
+            + String.join(",", Collections.nCopies(ids.size(), "?"))
+            + ")",
+        row -> {
+          result.put(row.getLong("id"), Objects.toString(row.getString("category"), ""));
+        },
+        args.toArray());
+    return result;
   }
 }

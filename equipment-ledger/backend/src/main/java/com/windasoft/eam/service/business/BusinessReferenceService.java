@@ -1,25 +1,68 @@
 package com.windasoft.eam.service.business;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.domain.business.BusinessReferenceSource;
+import com.windasoft.eam.domain.business.BusinessReferenceSource.Kind;
+import com.windasoft.eam.domain.system.PermissionAction;
+import com.windasoft.eam.dto.business.BusinessChoiceQuery;
+import com.windasoft.eam.dto.business.BusinessChoices.Choice;
+import com.windasoft.eam.dto.business.BusinessChoices.ChoicePage;
+import com.windasoft.eam.dto.business.BusinessChoices.InlineChoice;
+import com.windasoft.eam.dto.business.BusinessChoices.ReferenceOption;
+import com.windasoft.eam.dto.business.BusinessChoices.StoredChoice;
 import com.windasoft.eam.dto.system.PermissionScope;
-import com.windasoft.eam.repository.business.BusinessConfigRepository;
-import com.windasoft.eam.service.system.*;
-import java.util.*;
+import com.windasoft.eam.entity.system.OrgUnit;
+import com.windasoft.eam.repository.basedata.BaseItemRepository;
+import com.windasoft.eam.repository.business.BusinessDictionaryRepository;
+import com.windasoft.eam.repository.business.BusinessOptionRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
+import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.OrganizationScopeService;
+import com.windasoft.eam.service.system.PermissionService;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
+/** 业务字段引用的资格、名称和授权编排；数据访问由各对象仓储承担，固定选项不再通过Map传递。 */
 @Service
 public class BusinessReferenceService {
-  private final BusinessConfigRepository repo;
+  private final BusinessDictionaryRepository dictionaries;
+  private final BusinessOptionRepository options;
+  private final BaseItemRepository bases;
+  private final OrgUnitRepository organizations;
+  private final SystemUserRepository users;
+  private final OrganizationScopeService scopes;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final BusinessConfigService configs;
 
   public BusinessReferenceService(
-      BusinessConfigRepository repo,
+      BusinessDictionaryRepository dictionaries,
+      BusinessOptionRepository options,
+      BaseItemRepository bases,
+      OrgUnitRepository organizations,
+      SystemUserRepository users,
+      OrganizationScopeService scopes,
       AuthContext auth,
       PermissionService permissions,
       BusinessConfigService configs) {
-    this.repo = repo;
+    this.dictionaries = dictionaries;
+    this.options = options;
+    this.bases = bases;
+    this.organizations = organizations;
+    this.users = users;
+    this.scopes = scopes;
     this.auth = auth;
     this.permissions = permissions;
     this.configs = configs;
@@ -27,161 +70,228 @@ public class BusinessReferenceService {
 
   public String menu(String object) {
     if (!BusinessConfigService.OBJECTS.containsKey(object))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.business.message0039");
+      throw new LocalizedArgumentException("server.business.message0039");
     return BusinessObjects.get(object).menu();
   }
 
   public void access(String object) {
     String menu = menu(object);
-    if (BusinessObjects.get(object).actions().stream()
-        .noneMatch(action -> permissions.allowed(menu, action))) permissions.require(menu, "查看");
+    if (BusinessObjects.get(object).actions().stream().noneMatch(a -> permissions.allowed(menu, a)))
+      permissions.require(menu, PermissionAction.VIEW.code());
   }
 
-  public boolean allowed(String object, Object organization, Object user) {
-    PermissionScope scope;
-    String menu = menu(object);
+  private PermissionScope optionalScope(String object) {
     try {
-      scope = permissions.scope(menu(object), "查看");
-    } catch (org.springframework.web.server.ResponseStatusException e) {
+      return permissions.scope(menu(object), PermissionAction.VIEW.code());
+    } catch (ResponseStatusException denied) {
+      return new PermissionScope(false, null, Set.of(), false);
+    }
+  }
+
+  public boolean allowed(String object, Long organization, Long user) {
+    PermissionScope scope;
+    try {
+      scope = permissions.scope(menu(object), PermissionAction.VIEW.code());
+    } catch (ResponseStatusException denied) {
       return false;
     }
-    Long org = null;
-    try {
-      org = organization == null ? null : Long.valueOf(organization.toString());
-    } catch (NumberFormatException ignored) {
-    }
-    Long company = org == null ? null : permissions.companyOfOrganization(org);
-    if (scope.matches(
-        company, org, user == null ? null : Long.valueOf(user.toString()), auth.userId()))
-      return true;
-    return scope.owner()
-        && Objects.equals(org, auth.user().getOrgId())
-        && (user == null || user.toString().equals(Long.toString(auth.userId())));
+    Long company = organization == null ? null : permissions.companyOfOrganization(organization);
+    return matches(scope, company, organization, user);
   }
 
-  public List<Map<String, Object>> all(String object, String source, boolean inactive) {
-    access(object);
-    var rows = new ArrayList<Map<String, Object>>();
-    if (source.startsWith("field:")) {
-      var fields = configs.fields(configs.decode(configs.current(object, false).getPublished()));
-      var field = fields.get(source.substring(6));
-      if (field == null || !BusinessRules.inlineOptions(field))
-        throw new com.windasoft.eam.common.LocalizedArgumentException(
-            "server.business.message0040");
-      if (!inactive && !field.path("enabled").asBoolean(true)) return rows;
-      return fieldOptions(object, field, inactive);
-    }
-    if (source.startsWith("dictionary:")) {
-      var dict = repo.dictionary(auth.tenantId(), source.substring(11), false);
-      if (dict.isEmpty() || !inactive && ((Number) dict.getFirst().get("enabled")).intValue() != 1)
-        return rows;
-      rows.addAll(repo.options(auth.tenantId(), source.substring(11)));
-    } else if (source.startsWith("base:")
-        && BusinessConfigService.BASES.containsKey(source.substring(5)))
-      rows.addAll(repo.baseOptions(auth.tenantId(), source.substring(5)));
-    else if (source.equals("department")) {
-      var all = repo.organizations(auth.tenantId());
-      var byId = new HashMap<String, Map<String, Object>>();
-      all.forEach(o -> byId.put(o.get("id").toString(), o));
-      for (var org : all)
-        if ("部门".equals(org.get("type")) && allowed(object, org.get("id"), null)) {
-          var row = new LinkedHashMap<>(org);
-          var path = new ArrayList<String>();
-          var visited = new HashSet<String>();
-          var node = org;
-          while (node != null && visited.add(node.get("id").toString())) {
-            path.addFirst(node.get("name").toString());
-            node = byId.get(Objects.toString(node.get("parentId"), ""));
-          }
-          row.put("name", String.join(" > ", path));
-          row.put("enabled", 1);
-          rows.add(row);
-        }
-    } else if (source.equals("user")) {
-      for (var row : repo.users(auth.tenantId()))
-        if (allowed(object, row.get("org_id"), row.get("id"))) {
-          var r = new LinkedHashMap<>(row);
-          r.remove("org_id");
-          r.put("enabled", 1);
-          rows.add(r);
-        }
-    } else
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.business.message0002");
-    return rows.stream().filter(r -> inactive || enabled(r.get("enabled"))).toList();
+  private boolean matches(PermissionScope scope, Long company, Long organization, Long user) {
+    return scope.matches(company, organization, user, auth.userId())
+        || scope.owner()
+            && Objects.equals(organization, auth.user().getOrgId())
+            && (user == null || user.equals(auth.userId()));
   }
 
-  public Map<String, Object> choices(
-      String object, String source, String q, int page, int size, boolean inactive) {
+  private record OrganizationContext(
+      List<OrgUnit> active,
+      Map<Long, OrgUnit> byId,
+      Map<Long, Long> companies,
+      PermissionScope scope) {}
+
+  /** 公司授权沿用包含停用上级的完整快照，显示路径仍仅由启用组织组成；两种口径不能合并。 */
+  private OrganizationContext organizationContext(PermissionScope scope) {
+    var all = organizations.organizations(auth.tenantId());
+    var active = all.stream().filter(o -> Integer.valueOf(1).equals(o.getStatus())).toList();
+    Map<Long, OrgUnit> byId = new LinkedHashMap<>();
+    active.forEach(o -> byId.put(o.getId(), o));
+    return new OrganizationContext(active, byId, scopes.companiesForOrganizations(all), scope);
+  }
+
+  private String path(Long id, Map<Long, OrgUnit> byId) {
+    var names = new ArrayList<String>();
+    var visited = new HashSet<Long>();
+    var node = byId.get(id);
+    while (node != null && visited.add(node.getId())) {
+      names.addFirst(node.getName());
+      node = byId.get(node.getParentId());
+    }
+    return String.join(" > ", names);
+  }
+
+  private List<ReferenceOption> departments(OrganizationContext context) {
+    return context.active().stream()
+        .filter(
+            o ->
+                "部门".equals(o.getOrgType())
+                    && matches(
+                        context.scope(), context.companies().get(o.getId()), o.getId(), null))
+        .map(
+            o ->
+                new ReferenceOption(o.getId().toString(), path(o.getId(), context.byId()), true, 0))
+        .toList();
+  }
+
+  public List<ReferenceOption> all(String object, String source, boolean inactive) {
     access(object);
-    if (q.length() > 200)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.business.message0041");
-    size = Math.max(1, Math.min(100, size));
-    page = Math.max(1, page);
-    if (source.startsWith("field:")) {
-      var term = q.toLowerCase(Locale.ROOT);
+    var parsed = BusinessReferenceSource.parse(source);
+    return switch (parsed.kind()) {
+      case FIELD -> {
+        var field =
+            configs
+                .fields(configs.decode(configs.current(object, false).getPublished()))
+                .get(parsed.key());
+        if (field == null || !BusinessRules.inlineOptions(field))
+          throw new LocalizedArgumentException("server.business.message0040");
+        yield !inactive && !field.path("enabled").asBoolean(true)
+            ? List.of()
+            : fieldOptions(object, field, inactive);
+      }
+      case DICTIONARY -> {
+        var dictionary = dictionaries.find(auth.tenantId(), parsed.key());
+        if (dictionary == null || !inactive && !enabled(dictionary.getEnabled())) yield List.of();
+        yield options.options(auth.tenantId(), parsed.key()).stream()
+            .map(
+                o ->
+                    new ReferenceOption(
+                        o.getId(), o.getName(), enabled(o.getEnabled()), o.getSortNo()))
+            .filter(o -> inactive || o.enabled())
+            .toList();
+      }
+      case BASE -> {
+        if (!BusinessConfigService.BASES.containsKey(parsed.key()))
+          throw new LocalizedArgumentException("server.business.message0002");
+        yield bases.referenceItems(auth.tenantId(), parsed.key()).stream()
+            .map(
+                o ->
+                    new ReferenceOption(
+                        o.getId().toString(), o.getName(), enabled(o.getStatus()), o.getSortNo()))
+            .filter(o -> inactive || o.enabled())
+            .toList();
+      }
+      case DEPARTMENT -> departments(organizationContext(optionalScope(object)));
+      case USER -> {
+        var context = organizationContext(optionalScope(object));
+        var allowed = new HashSet<>(context.scope().departmentIds());
+        context
+            .companies()
+            .forEach(
+                (id, company) -> {
+                  if (context.scope().matches(company, id, null, auth.userId())) allowed.add(id);
+                });
+        yield users
+            .businessReferences(
+                auth.tenantId(),
+                context.scope().all(),
+                allowed,
+                context.scope().owner() ? auth.userId() : null)
+            .stream()
+            .map(u -> new ReferenceOption(u.getId().toString(), u.getDisplayName(), true, 0))
+            .toList();
+      }
+    };
+  }
+
+  /** 授权在分页前进入SQL；字段内置选项已在配置内，继续在该有限集合内筛选及分页。 */
+  public ChoicePage choices(
+      String object, String source, String keyword, int page, int size, boolean inactive) {
+    access(object);
+    var query = new BusinessChoiceQuery(keyword, page, size);
+    var parsed = BusinessReferenceSource.parse(source);
+    if (parsed.kind() == Kind.FIELD) {
+      var term = keyword.toLowerCase(Locale.ROOT);
       var matches =
           all(object, source, inactive).stream()
-              .filter(row -> row.get("name").toString().toLowerCase(Locale.ROOT).contains(term))
+              .filter(o -> o.name().toLowerCase(Locale.ROOT).contains(term))
               .toList();
-      long start = (long) (page - 1) * size;
-      return Map.of(
-          "data", matches.stream().skip(start).limit(size).toList(), "total", matches.size());
+      long offset = (long) (page - 1) * size;
+      List<Choice> rows =
+          matches.stream()
+              .skip(offset)
+              .limit(size)
+              .<Choice>map(o -> new InlineChoice(o.id(), o.name(), o.enabled(), o.sortOrder()))
+              .toList();
+      return new ChoicePage(rows, matches.size());
     }
-    if (source.startsWith("base:") && !BusinessConfigService.BASES.containsKey(source.substring(5)))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.business.message0042");
-    if (!source.startsWith("base:")
-        && !source.startsWith("dictionary:")
-        && !Set.of("user", "department").contains(source))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.business.message0002");
-    var orgs = new ArrayList<String>();
-    Long ownUser = null;
-    if (source.equals("user") || source.equals("department")) {
-      var scope = permissions.scope(menu(object), "查看");
-      for (var org : repo.organizations(auth.tenantId())) {
-        Long id = Long.valueOf(org.get("id").toString());
-        Long company = permissions.companyOfOrganization(id);
-        if (scope.matches(company, id, null, auth.userId())
-            || source.equals("department")
-                && scope.owner()
-                && Objects.equals(id, auth.user().getOrgId())) orgs.add(id.toString());
-      }
-      if (scope.owner()) ownUser = auth.userId();
+    if (parsed.kind() == Kind.BASE) {
+      if (!BusinessConfigService.BASES.containsKey(parsed.key()))
+        throw new LocalizedArgumentException("server.business.message0042");
+      var result = bases.businessChoices(auth.tenantId(), parsed.key(), query, inactive);
+      List<Choice> rows =
+          result.getRecords().stream()
+              .<Choice>map(
+                  o ->
+                      new StoredChoice(
+                          o.getId().toString(), o.getName(), o.getStatus(), o.getSortNo()))
+              .toList();
+      return new ChoicePage(rows, result.getTotal());
     }
-    var result = repo.pageOptions(auth.tenantId(), source, q, page, size, inactive, orgs, ownUser);
-    if (source.equals("department")) {
-      var names = new HashMap<String, String>();
-      for (var row : all(object, source, inactive))
-        names.put(row.get("id").toString(), row.get("name").toString());
-      if (result.get("data") instanceof List<?> rows)
-        for (var value : rows) {
-          @SuppressWarnings("unchecked")
-          var row = (Map<String, Object>) value;
-          row.put("name", names.getOrDefault(row.get("id").toString(), row.get("name").toString()));
-        }
+    if (parsed.kind() == Kind.DICTIONARY) {
+      var result = options.choices(auth.tenantId(), parsed.key(), query, inactive);
+      return new ChoicePage(new ArrayList<Choice>(result.getRecords()), result.getTotal());
     }
-    return result;
+    var scope = permissions.scope(menu(object), PermissionAction.VIEW.code());
+    var context = organizationContext(scope);
+    var allowed = new ArrayList<Long>();
+    for (var org : context.active()) {
+      if (scope.matches(context.companies().get(org.getId()), org.getId(), null, auth.userId())
+          || parsed.kind() == Kind.DEPARTMENT
+              && scope.owner()
+              && Objects.equals(org.getId(), auth.user().getOrgId())) allowed.add(org.getId());
+    }
+    if (parsed.kind() == Kind.USER) {
+      var result =
+          users.businessChoices(
+              auth.tenantId(), query, allowed, scope.owner() ? auth.userId() : null);
+      List<Choice> rows =
+          result.getRecords().stream()
+              .<Choice>map(
+                  u ->
+                      new StoredChoice(
+                          u.getId().toString(), u.getDisplayName(), u.getStatus(), null))
+              .toList();
+      return new ChoicePage(rows, result.getTotal());
+    }
+    var result = organizations.businessChoices(auth.tenantId(), query, allowed);
+    List<Choice> rows =
+        result.getRecords().stream()
+            .<Choice>map(
+                o ->
+                    new StoredChoice(
+                        o.getId().toString(), path(o.getId(), context.byId()), o.getStatus(), null))
+            .toList();
+    return new ChoicePage(rows, result.getTotal());
   }
 
-  public List<Map<String, Object>> fieldOptions(String object, JsonNode field, boolean inactive) {
+  public List<ReferenceOption> fieldOptions(String object, JsonNode field, boolean inactive) {
     access(object);
     if (!BusinessRules.inlineOptions(field))
       return all(object, field.path("source").asText(), inactive);
-    var result = new ArrayList<Map<String, Object>>();
-    for (var option : field.path("options"))
+    var result = new ArrayList<ReferenceOption>();
+    for (var option : field.path("options")) {
       if (inactive || option.path("enabled").asBoolean())
         result.add(
-            Map.of(
-                "id",
+            new ReferenceOption(
                 option.path("id").asText(),
-                "name",
                 option.path("name").asText(),
-                "enabled",
                 option.path("enabled").asBoolean(),
-                "sortOrder",
                 option.path("sortOrder").asInt()));
+    }
     result.sort(
-        Comparator.<Map<String, Object>, Integer>comparing(r -> (Integer) r.get("sortOrder"))
-            .thenComparing(r -> r.get("id").toString()));
+        Comparator.comparingInt(ReferenceOption::sortOrder).thenComparing(ReferenceOption::id));
     return result;
   }
 
@@ -189,38 +299,66 @@ public class BusinessReferenceService {
     if (!BusinessRules.inlineOptions(field))
       return resolve(object, field.path("source").asText(), id);
     return fieldOptions(object, field, false).stream()
-        .filter(o -> id.equals(o.get("id")))
-        .map(o -> o.get("name").toString())
+        .filter(o -> id.equals(o.id()))
+        .map(ReferenceOption::name)
         .findFirst()
-        .orElseThrow(
-            () ->
-                new com.windasoft.eam.common.LocalizedArgumentException(
-                    "server.business.message0043"));
+        .orElseThrow(() -> new LocalizedArgumentException("server.business.message0043"));
   }
 
+  private record Resolution(String name, boolean enabled, Long organization) {}
+
+  /** 新引用沿用共享锁及父子启用检查；历史引用是否保留快照由动态值服务决定，不在这里自动放行。 */
   public String resolve(String object, String source, String id) {
+    var parsed = BusinessReferenceSource.parse(source);
     try {
-      if (source.startsWith("dictionary:")) UUID.fromString(id);
+      if (parsed.kind() == Kind.DICTIONARY) UUID.fromString(id);
       else if (Long.parseLong(id) <= 0) throw new NumberFormatException();
-    } catch (IllegalArgumentException e) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.business.message0044");
+    } catch (IllegalArgumentException invalid) {
+      throw new LocalizedArgumentException("server.business.message0044");
     }
-    var row = repo.reference(auth.tenantId(), source, id);
-    if (row == null || !enabled(row.get("enabled")))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.business.message0045");
-    if ((source.equals("user") || source.equals("department"))
-        && !allowed(object, row.get("orgId"), source.equals("user") ? id : null))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.business.message0046");
-    if (source.equals("department"))
+    Resolution row =
+        switch (parsed.kind()) {
+          case DICTIONARY -> {
+            var value = options.locked(auth.tenantId(), parsed.key(), id);
+            yield value == null ? null : new Resolution(value.name(), value.enabled(), null);
+          }
+          case BASE -> {
+            var value = bases.reference(auth.tenantId(), parsed.key(), Long.parseLong(id));
+            yield value == null
+                ? null
+                : new Resolution(value.getName(), enabled(value.getStatus()), null);
+          }
+          case USER -> {
+            var value = users.referenceForShare(auth.tenantId(), Long.parseLong(id));
+            yield value == null
+                ? null
+                : new Resolution(
+                    value.getDisplayName(), enabled(value.getStatus()), value.getOrgId());
+          }
+          case DEPARTMENT -> {
+            var value = organizations.referenceForShare(auth.tenantId(), Long.parseLong(id));
+            yield value == null
+                ? null
+                : new Resolution(value.getName(), enabled(value.getStatus()), value.getId());
+          }
+          default -> throw new LocalizedArgumentException("server.business.message0002");
+        };
+    if (row == null || !row.enabled())
+      throw new LocalizedArgumentException("server.business.message0045");
+    if ((parsed.kind() == Kind.USER || parsed.kind() == Kind.DEPARTMENT)
+        && !allowed(
+            object, row.organization(), parsed.kind() == Kind.USER ? Long.valueOf(id) : null))
+      throw new LocalizedArgumentException("server.business.message0046");
+    if (parsed.kind() == Kind.DEPARTMENT)
       return all(object, source, false).stream()
-          .filter(r -> r.get("id").toString().equals(id))
-          .map(r -> r.get("name").toString())
+          .filter(o -> o.id().equals(id))
+          .map(ReferenceOption::name)
           .findFirst()
           .orElseThrow();
-    return row.get("name").toString();
+    return row.name();
   }
 
-  public static boolean enabled(Object v) {
-    return v instanceof Boolean b ? b : v instanceof Number n && n.intValue() == 1;
+  public static boolean enabled(Object value) {
+    return value instanceof Boolean b ? b : value instanceof Number n && n.intValue() == 1;
   }
 }

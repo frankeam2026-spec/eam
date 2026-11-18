@@ -2,6 +2,7 @@ package com.windasoft.eam.service.imports;
 
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.*;
+import com.windasoft.eam.dto.business.BusinessChoices.ReferenceOption;
 import com.windasoft.eam.dto.equipment.EquipmentForm;
 import com.windasoft.eam.dto.imports.*;
 import com.windasoft.eam.dto.system.PermissionScope;
@@ -249,7 +250,7 @@ public class EquipmentImportValidation {
                       ? com.windasoft.eam.common.MessageContext.text("output.import.diagnostic3251")
                       : "")));
       if (BusinessRules.reference(f)) {
-        List<Map<String, Object>> opts;
+        List<ReferenceOption> opts;
         if (type.equals("USER"))
           opts =
               c.users.values().stream()
@@ -257,11 +258,8 @@ public class EquipmentImportValidation {
                       u -> active(u) && referenceAllowed(c, id(u.get("org_id")), id(u.get("id"))))
                   .map(
                       u ->
-                          Map.<String, Object>of(
-                              "id",
-                              u.get("id").toString(),
-                              "name",
-                              u.get("display_name").toString()))
+                          new ReferenceOption(
+                              u.get("id").toString(), u.get("display_name").toString(), true, 0))
                   .toList();
         else if (type.equals("DEPARTMENT"))
           opts =
@@ -273,11 +271,8 @@ public class EquipmentImportValidation {
                               && referenceAllowed(c, id(o.get("id")), null))
                   .map(
                       o ->
-                          Map.<String, Object>of(
-                              "id",
-                              o.get("id").toString(),
-                              "name",
-                              c.orgPaths.get(id(o.get("id")))))
+                          new ReferenceOption(
+                              o.get("id").toString(), c.orgPaths.get(id(o.get("id"))), true, 0))
                   .toList();
         else opts = references.fieldOptions("equipment", f, false);
         var names = new LinkedHashMap<String, String>();
@@ -285,7 +280,7 @@ public class EquipmentImportValidation {
         var ambiguous = new HashSet<String>();
         var displays = new ArrayList<String>();
         for (var o : opts) {
-          String oid = o.get("id").toString(), name = o.get("name").toString();
+          String oid = o.id(), name = o.name();
           String display = name;
           if (type.equals("USER")) {
             var u = c.users.get(Long.valueOf(oid));

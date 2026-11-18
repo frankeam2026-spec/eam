@@ -1,7 +1,11 @@
 package com.windasoft.eam.repository.system;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.windasoft.eam.dto.business.BusinessChoiceQuery;
 import com.windasoft.eam.entity.system.OrgUnit;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -126,5 +130,31 @@ public class OrgUnitRepository {
             .eq(OrgUnit::getTenantId, tenant)
             .eq(OrgUnit::getId, id)
             .eq(OrgUnit::getOrgType, "公司"));
+  }
+
+  /** 授权集合由Service计算，数据库只在该集合内完成匹配、计数和分页；空集合不能省略授权条件。 */
+  public Page<OrgUnit> businessChoices(
+      long tenant, BusinessChoiceQuery query, Collection<Long> allowed) {
+    var where =
+        new QueryWrapper<OrgUnit>()
+            .select("id", "name", "status")
+            .eq("tenant_id", tenant)
+            .eq("status", 1)
+            .eq("org_type", "部门")
+            .apply("LOWER(name) LIKE {0} ESCAPE '!'", query.likePattern())
+            .orderByAsc("name", "CAST(id AS CHAR)");
+    if (allowed.isEmpty()) where.apply("0=1");
+    else where.in("id", allowed);
+    return mapper.selectPage(new Page<>(query.page(), query.size()), where);
+  }
+
+  public OrgUnit referenceForShare(long tenant, long id) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<OrgUnit>()
+            .select(OrgUnit::getId, OrgUnit::getName, OrgUnit::getParentId, OrgUnit::getStatus)
+            .eq(OrgUnit::getTenantId, tenant)
+            .eq(OrgUnit::getId, id)
+            .eq(OrgUnit::getOrgType, "部门")
+            .last("FOR SHARE"));
   }
 }

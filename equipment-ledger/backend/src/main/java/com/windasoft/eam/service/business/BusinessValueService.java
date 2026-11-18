@@ -10,7 +10,7 @@ import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.MessageRef;
 import com.windasoft.eam.dto.business.BusinessFieldValue;
 import com.windasoft.eam.entity.business.BusinessValue;
-import com.windasoft.eam.repository.business.BusinessConfigRepository;
+import com.windasoft.eam.repository.business.BusinessQueryRepository;
 import com.windasoft.eam.repository.business.BusinessValueRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import java.math.BigDecimal;
@@ -33,7 +33,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BusinessValueService {
   private static final int MAX_MULTIPLE_VALUES = 200;
-  private final BusinessConfigRepository repo;
+  private final BusinessQueryRepository queries;
   private final BusinessValueRepository storage;
   private final BusinessConfigService configs;
   private final BusinessReferenceService references;
@@ -41,13 +41,13 @@ public class BusinessValueService {
   private final ObjectMapper json;
 
   public BusinessValueService(
-      BusinessConfigRepository repo,
+      BusinessQueryRepository queries,
       BusinessValueRepository storage,
       BusinessConfigService configs,
       BusinessReferenceService references,
       AuthContext auth,
       ObjectMapper json) {
-    this.repo = repo;
+    this.queries = queries;
     this.storage = storage;
     this.configs = configs;
     this.references = references;
@@ -136,7 +136,7 @@ public class BusinessValueService {
   }
 
   public Map<Long, String> repairCategories(Collection<Long> ids) {
-    return repo.repairCategories(auth.tenantId(), ids);
+    return queries.repairCategories(auth.tenantId(), ids);
   }
 
   public Values read(String object, long id) {

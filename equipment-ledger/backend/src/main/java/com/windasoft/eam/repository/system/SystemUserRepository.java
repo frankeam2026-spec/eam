@@ -1,8 +1,10 @@
 package com.windasoft.eam.repository.system;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.windasoft.eam.dto.business.BusinessChoiceQuery;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.system.UserEmailProfile;
 import com.windasoft.eam.dto.system.UserNameOption;
@@ -163,5 +165,55 @@ public class SystemUserRepository {
   /** 历史执行人可能已停用或删除；仅按租户和标识读取姓名，不因此恢复其业务操作资格。 */
   public String displayNameIncludingDeleted(long tenant, long id) {
     return mapper.displayNameIncludingDeleted(tenant, id);
+  }
+
+  /** 内部完整引用列表与分页有不同历史口径：全范围可保留组织已失效的启用用户，分页仍限定启用组织集合。 */
+  public List<SystemUser> businessReferences(
+      long tenant, boolean all, Collection<Long> organizations, Long ownUser) {
+    return mapper.selectList(referenceScope(tenant, all, organizations, ownUser));
+  }
+
+  /** 公司/部门授权与本人回退在SQL内取并集；不能先分页再到Java中过滤。 */
+  public Page<SystemUser> businessChoices(
+      long tenant, BusinessChoiceQuery query, Collection<Long> organizations, Long ownUser) {
+    var where =
+        referenceScope(tenant, false, organizations, ownUser)
+            .apply("LOWER(display_name) LIKE {0} ESCAPE '!'", query.likePattern());
+    return mapper.selectPage(new Page<>(query.page(), query.size()), where);
+  }
+
+  private QueryWrapper<SystemUser> referenceScope(
+      long tenant, boolean all, Collection<Long> organizations, Long ownUser) {
+    var where =
+        new QueryWrapper<SystemUser>()
+            .select("id", "display_name", "org_id", "status")
+            .eq("tenant_id", tenant)
+            .eq("status", 1)
+            .orderByAsc("display_name", "CAST(id AS CHAR)");
+    if (!all) {
+      if (organizations.isEmpty()) {
+        if (ownUser == null) where.apply("0=1");
+        else where.eq("id", ownUser);
+      } else
+        where.and(
+            scope -> {
+              scope.in("org_id", organizations);
+              if (ownUser != null) scope.or().eq("id", ownUser);
+            });
+    }
+    return where;
+  }
+
+  public SystemUser referenceForShare(long tenant, long id) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<SystemUser>()
+            .select(
+                SystemUser::getId,
+                SystemUser::getDisplayName,
+                SystemUser::getOrgId,
+                SystemUser::getStatus)
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getId, id)
+            .last("FOR SHARE"));
   }
 }
