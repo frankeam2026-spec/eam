@@ -5,7 +5,10 @@ import static org.mockito.Mockito.*;
 
 import com.windasoft.eam.dto.repair.RepairContext;
 import com.windasoft.eam.entity.repair.RepairOrder;
+import com.windasoft.eam.repository.knowledge.KnowledgeCaseSourceRepository;
 import com.windasoft.eam.repository.knowledge.KnowledgeDocumentRepository;
+import com.windasoft.eam.repository.knowledge.KnowledgeEquipmentRepository;
+import com.windasoft.eam.repository.knowledge.KnowledgeVersionRepository;
 import com.windasoft.eam.service.repair.RepairDetailService;
 import com.windasoft.eam.service.system.*;
 import org.junit.jupiter.api.Test;
@@ -23,6 +26,9 @@ class KnowledgeRepairCaseServiceTest {
         new KnowledgeRepairCaseService(
             workflow,
             docs,
+            mock(KnowledgeVersionRepository.class),
+            mock(KnowledgeEquipmentRepository.class),
+            mock(KnowledgeCaseSourceRepository.class),
             mock(KnowledgeContentWriter.class),
             mock(AuthContext.class),
             mock(PermissionService.class),

@@ -54,7 +54,7 @@ class AiPlatformMySqlIT {
   @Autowired AiGateway gateway;
   @Autowired AiMonthlyUsageRepository runtime;
   @Autowired KnowledgeDocumentService documents;
-  @Autowired KnowledgeJobRepository jobs;
+  @Autowired KnowledgeVersionRepository jobs;
   @Autowired KnowledgeIndexService indexing;
   @Autowired KnowledgeSearchRepository search;
   @Autowired KnowledgeVectorClient vectors;
@@ -166,17 +166,11 @@ class AiPlatformMySqlIT {
       pdf.save(out);
       bytes = out.toByteArray();
     }
-    var uploaded =
-        (Map<?, ?>) ((Map<?, ?>) documents.upload(990120, "Integration manual", bytes)).get("data");
-    long document = Long.parseLong(uploaded.get("id").toString()),
-        version = Long.parseLong(uploaded.get("versionId").toString());
-    var row =
-        jobs.parsing().stream()
-            .filter(r -> ((Number) r.get("id")).longValue() == version)
-            .findFirst()
-            .orElseThrow();
+    var uploaded = documents.upload(990120, "Integration manual", bytes).data();
+    long document = Long.parseLong(uploaded.id()), version = Long.parseLong(uploaded.versionId());
+    var row = jobs.parsing().stream().filter(r -> r.getId() == version).findFirst().orElseThrow();
     int attempt = jobs.claim(990112, version);
-    documents.parseVersion(row, attempt, jobs);
+    documents.parseVersion(row, attempt);
     assertEquals(
         "READY",
         db.queryForObject(
@@ -211,13 +205,10 @@ class AiPlatformMySqlIT {
         "INSERT IGNORE INTO eam_org_unit(id,tenant_id,name,code,org_type,status,deleted)"
             + " VALUES(990120,990112,'AI Test','AI-TEST','公司',1,0)");
     var uploaded =
-        (Map<?, ?>)
-            ((Map<?, ?>)
-                    documents.upload(
-                        990120, "Retry test", "%PDF-invalid".getBytes(StandardCharsets.US_ASCII)))
-                .get("data");
-    long document = Long.parseLong(uploaded.get("id").toString()),
-        version = Long.parseLong(uploaded.get("versionId").toString());
+        documents
+            .upload(990120, "Retry test", "%PDF-invalid".getBytes(StandardCharsets.US_ASCII))
+            .data();
+    long document = Long.parseLong(uploaded.id()), version = Long.parseLong(uploaded.versionId());
     int attempt = jobs.claim(990112, version);
     jobs.failed(990112, version, attempt);
     documents.retryParse(document, 0);
@@ -231,8 +222,8 @@ class AiPlatformMySqlIT {
         1L,
         db.queryForObject(
             "SELECT row_version FROM eam_knowledge_document WHERE id=?", Long.class, document));
-    var history = (Map<?, ?>) documents.versions(document, 1, 20);
-    assertEquals(1L, history.get("total"));
+    var history = documents.versions(document, 1, 20);
+    assertEquals(1L, history.total());
     jobs.failed(990112, version, jobs.claim(990112, version));
   }
 }

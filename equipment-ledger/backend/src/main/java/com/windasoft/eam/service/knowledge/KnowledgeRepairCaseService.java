@@ -1,16 +1,23 @@
 package com.windasoft.eam.service.knowledge;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.windasoft.eam.dto.knowledge.KnowledgeViews;
+import com.windasoft.eam.entity.knowledge.KnowledgeCaseSource;
+import com.windasoft.eam.entity.knowledge.KnowledgeDocument;
+import com.windasoft.eam.entity.knowledge.KnowledgeVersion;
 import com.windasoft.eam.entity.repair.RepairOrder;
+import com.windasoft.eam.repository.knowledge.KnowledgeCaseSourceRepository;
 import com.windasoft.eam.repository.knowledge.KnowledgeDocumentRepository;
+import com.windasoft.eam.repository.knowledge.KnowledgeEquipmentRepository;
+import com.windasoft.eam.repository.knowledge.KnowledgeVersionRepository;
 import com.windasoft.eam.service.repair.RepairDetailService;
-import com.windasoft.eam.service.system.*;
+import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.PermissionService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -20,6 +27,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class KnowledgeRepairCaseService {
   private final RepairDetailService repair;
   private final KnowledgeDocumentRepository docs;
+  private final KnowledgeVersionRepository versions;
+  private final KnowledgeEquipmentRepository equipment;
+  private final KnowledgeCaseSourceRepository sources;
   private final KnowledgeContentWriter writer;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -28,12 +38,18 @@ public class KnowledgeRepairCaseService {
   public KnowledgeRepairCaseService(
       RepairDetailService repair,
       KnowledgeDocumentRepository docs,
+      KnowledgeVersionRepository versions,
+      KnowledgeEquipmentRepository equipment,
+      KnowledgeCaseSourceRepository sources,
       KnowledgeContentWriter writer,
       AuthContext auth,
       PermissionService permissions,
       TransactionTemplate tx) {
     this.repair = repair;
     this.docs = docs;
+    this.versions = versions;
+    this.equipment = equipment;
+    this.sources = sources;
     this.writer = writer;
     this.auth = auth;
     this.permissions = permissions;
@@ -53,7 +69,7 @@ public class KnowledgeRepairCaseService {
     return order;
   }
 
-  public Object draft(long id) {
+  public KnowledgeViews.CaseDraft draft(long id) {
     var order = order(id);
     String text =
         "设备："
@@ -66,16 +82,13 @@ public class KnowledgeRepairCaseService {
             + Objects.toString(order.getFaultCause(), "未填写，请核对")
             + "\n实际处理："
             + Objects.toString(order.getRepairAction(), "未填写，请核对");
-    return Map.of(
-        "text",
-        text,
-        "rowVersion",
-        order.getRowVersion(),
-        "title",
-        order.getEquipmentName() + "维修案例");
+    return new KnowledgeViews.CaseDraft(
+        text, order.getRowVersion(), order.getEquipmentName() + "维修案例");
   }
 
-  public Object create(long repairId, long repairVersion, String title, String text) {
+  /** 案例内容与工单来源、适用设备一起提交。没有原始 PDF，仍使用内容版本锁校验解析提交。 */
+  public KnowledgeViews.CaseCreated create(
+      long repairId, long repairVersion, String title, String text) {
     if (title == null
         || title.isBlank()
         || title.length() > 200
@@ -98,23 +111,38 @@ public class KnowledgeRepairCaseService {
           if (order.getRowVersion() != repairVersion)
             throw new IllegalArgumentException("工单已修改，请重新生成案例草稿");
           long id = IdWorker.getId(), version = IdWorker.getId(), tenant = auth.tenantId();
-          docs.create(
-              tenant,
-              auth.userId(),
-              id,
-              version,
-              order.getCompanyOrgId(),
-              title,
-              "case-" + UUID.randomUUID(),
-              digest,
-              "confirmed-case-v1");
-          docs.caseSource(tenant, id, version, repairId, repairVersion);
+          var document = new KnowledgeDocument();
+          document.setId(id);
+          document.setTenantId(tenant);
+          document.setCompanyId(order.getCompanyOrgId());
+          document.setTitle(title);
+          document.setDocumentType("CASE");
+          document.setCreatedBy(auth.userId());
+          docs.insert(document);
+          var content = new KnowledgeVersion();
+          content.setId(version);
+          content.setTenantId(tenant);
+          content.setDocumentId(id);
+          content.setVersionNo(1);
+          content.setFileKey("case-" + UUID.randomUUID());
+          content.setSha256(digest);
+          content.setParserVersion("confirmed-case-v1");
+          content.setParseStatus("RUNNING");
+          content.setHasOriginal(false);
+          versions.insert(content);
+          var source = new KnowledgeCaseSource();
+          source.setTenantId(tenant);
+          source.setDocumentId(id);
+          source.setRepairOrderId(repairId);
+          source.setRepairRowVersion(repairVersion);
+          sources.insert(source);
           writer.commit(
               tenant,
               version,
               List.of(new KnowledgePdfParser.Page(1, text, false, KnowledgePdfParser.split(text))));
-          docs.bind(tenant, id, 0, false, List.of(order.getEquipmentId()));
-          return Map.of("id", Long.toString(id), "rowVersion", 1);
+          if (!docs.bind(tenant, id, 0, false)) throw new IllegalStateException("文档已变更，请刷新");
+          equipment.replace(tenant, id, List.of(order.getEquipmentId()));
+          return new KnowledgeViews.CaseCreated(Long.toString(id), 1);
         });
   }
 }

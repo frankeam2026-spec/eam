@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.windasoft.eam.dto.business.BusinessChoiceQuery;
+import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.system.OrgUnit;
 import java.util.Collection;
 import java.util.List;
@@ -132,6 +133,19 @@ public class OrgUnitRepository {
             .eq(OrgUnit::getStatus, 1)
             .in(OrgUnit::getOrgType, "集团", "公司")
             .orderByAsc(OrgUnit::getId));
+  }
+
+  /** 知识资料只允许启用的公司，沿用原授权集合和名称/ID排序，不扩为集团。 */
+  public List<OrgUnit> knowledgeCompanies(long tenant, PermissionScope scope) {
+    if (!scope.all() && scope.companyIds().isEmpty()) return List.of();
+    return mapper.selectList(
+        new QueryWrapper<OrgUnit>()
+            .select("id", "name")
+            .eq("tenant_id", tenant)
+            .eq("org_type", "公司")
+            .eq("status", 1)
+            .in(!scope.all(), "id", scope.companyIds())
+            .orderByAsc("name", "CAST(id AS CHAR)"));
   }
 
   public OrgUnit company(long tenant, Long id) {
