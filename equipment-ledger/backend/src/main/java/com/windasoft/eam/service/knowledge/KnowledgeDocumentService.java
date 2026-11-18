@@ -306,7 +306,7 @@ public class KnowledgeDocumentService {
   }
 
   /** 后台解析仅在发起人的租户/公司授权下执行；解析在事务外，提交仍由内容写入器校验租约。 */
-  public void parseVersion(KnowledgeVersion row, int attempt) throws Exception {
+  public void parseVersion(KnowledgeVersion row, String token) throws Exception {
     long tenant = row.getTenantId(), version = row.getId(), id = row.getDocumentId();
     if (auth.tenantId() != tenant) throw new IllegalStateException("解析任务租户不符");
     var d = document(id, "编辑", "文档不存在");
@@ -315,8 +315,8 @@ public class KnowledgeDocumentService {
     var file = root.resolve(Long.toString(tenant)).resolve(key);
     if (Files.size(file) > MAX_PDF_BYTES) throw new IllegalArgumentException("文档大小超限");
     var parsed =
-        parser.parse(Files.readAllBytes(file), () -> versions.heartbeat(tenant, version, attempt));
+        parser.parse(Files.readAllBytes(file), () -> versions.heartbeat(tenant, version, token));
     company(d.getCompanyId(), "编辑");
-    writer.commitAttempt(tenant, version, parsed, attempt);
+    writer.commitAttempt(tenant, version, parsed, token);
   }
 }

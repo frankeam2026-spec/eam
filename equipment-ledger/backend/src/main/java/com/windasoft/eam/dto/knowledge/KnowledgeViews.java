@@ -63,5 +63,6 @@ public final class KnowledgeViews {
       String embeddingModel,
       long createdBy,
       Long documentRowVersion,
-      long documentId) {}
+      long documentId,
+      String leaseToken) {}
 }

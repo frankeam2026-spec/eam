@@ -20,6 +20,7 @@ public class KnowledgeIndexJob {
   private Integer attempts;
   private LocalDateTime nextAttemptAt;
   private LocalDateTime leaseUntil;
+  private String leaseToken;
   private String errorMessage;
   private Long createdBy;
   private Long documentRowVersion;

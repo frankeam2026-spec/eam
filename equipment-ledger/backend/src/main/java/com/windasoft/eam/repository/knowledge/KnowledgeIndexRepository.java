@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.windasoft.eam.dto.knowledge.KnowledgeViews;
 import com.windasoft.eam.entity.knowledge.KnowledgeIndexJob;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.jdbc.core.DataClassRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -29,6 +30,7 @@ public class KnowledgeIndexRepository {
     row.setEmbeddingModel(model);
     row.setCreatedBy(user);
     row.setDocumentRowVersion(rowVersion);
+    row.setLeaseToken(UUID.randomUUID().toString());
     mapper.ensure(row);
   }
 
@@ -48,16 +50,27 @@ public class KnowledgeIndexRepository {
             .eq(KnowledgeIndexJob::getStatus, "FAILED")
             .set(KnowledgeIndexJob::getStatus, "PENDING")
             .set(KnowledgeIndexJob::getAttempts, 0)
+            .set(KnowledgeIndexJob::getLeaseToken, UUID.randomUUID().toString())
             .set(KnowledgeIndexJob::getCreatedBy, user)
             .set(KnowledgeIndexJob::getDocumentRowVersion, rowVersion)
             .setSql("next_attempt_at=CURRENT_TIMESTAMP(6)"));
   }
 
-  public int claim(long id, long tenant, long version, String model) {
+  public String claim(long id, long tenant, long version, String model) {
     ensure(id, tenant, version, model, null, null);
+    return claim(target(tenant, version, model));
+  }
+
+  /** 调度器只能领取自己读取的那一代任务，避免以此前发起人的身份领取重试后的任务。 */
+  public String claim(KnowledgeViews.IndexCandidate candidate) {
+    return claim(observed(candidate).lt(KnowledgeIndexJob::getAttempts, 3));
+  }
+
+  private String claim(LambdaUpdateWrapper<KnowledgeIndexJob> query) {
+    String token = UUID.randomUUID().toString();
     if (mapper.update(
             null,
-            target(tenant, version, model)
+            query
                 .and(
                     q ->
                         q.in(KnowledgeIndexJob::getStatus, List.of("PENDING", "FAILED"))
@@ -65,38 +78,33 @@ public class KnowledgeIndexRepository {
                             .eq(KnowledgeIndexJob::getStatus, "RUNNING")
                             .apply("lease_until<CURRENT_TIMESTAMP(6)"))
                 .set(KnowledgeIndexJob::getStatus, "RUNNING")
+                .set(KnowledgeIndexJob::getLeaseToken, token)
                 .set(KnowledgeIndexJob::getErrorMessage, null)
                 .setSql(
                     "attempts=attempts+1,lease_until=DATE_ADD(CURRENT_TIMESTAMP(6),INTERVAL 5"
                         + " MINUTE)"))
         != 1) throw new IllegalStateException("索引已完成或正在建立，请刷新状态");
-    return mapper
-        .selectOne(
-            new LambdaQueryWrapper<KnowledgeIndexJob>()
-                .select(KnowledgeIndexJob::getAttempts)
-                .eq(KnowledgeIndexJob::getTenantId, tenant)
-                .eq(KnowledgeIndexJob::getVersionId, version)
-                .eq(KnowledgeIndexJob::getEmbeddingModel, model))
-        .getAttempts();
+    return token;
   }
 
-  public void heartbeat(long tenant, long version, String model, int attempt) {
+  public void heartbeat(long tenant, long version, String model, String token) {
     if (mapper.update(
             null,
             target(tenant, version, model)
-                .eq(KnowledgeIndexJob::getAttempts, attempt)
+                .eq(KnowledgeIndexJob::getLeaseToken, token)
                 .eq(KnowledgeIndexJob::getStatus, "RUNNING")
                 .apply("lease_until>CURRENT_TIMESTAMP(6)")
                 .setSql("lease_until=DATE_ADD(CURRENT_TIMESTAMP(6),INTERVAL 5 MINUTE)"))
         != 1) throw new IllegalStateException("索引任务租约已失效");
   }
 
-  public void finish(long tenant, long version, String model, int attempt, boolean success) {
+  public void finish(long tenant, long version, String model, String token, boolean success) {
     if (mapper.update(
             null,
             target(tenant, version, model)
-                .eq(KnowledgeIndexJob::getAttempts, attempt)
+                .eq(KnowledgeIndexJob::getLeaseToken, token)
                 .eq(KnowledgeIndexJob::getStatus, "RUNNING")
+                .apply("lease_until>CURRENT_TIMESTAMP(6)")
                 .set(KnowledgeIndexJob::getStatus, success ? "READY" : "FAILED")
                 .set(KnowledgeIndexJob::getLeaseUntil, null)
                 .set(
@@ -118,7 +126,7 @@ public class KnowledgeIndexRepository {
   public List<KnowledgeViews.IndexCandidate> indexing() {
     return db.query(
         "SELECT"
-            + " j.id,j.tenant_id,j.version_id,j.embedding_model,j.created_by,j.document_row_version,v.document_id"
+            + " j.id,j.tenant_id,j.version_id,j.embedding_model,j.created_by,j.document_row_version,v.document_id,j.lease_token"
             + " FROM eam_knowledge_index_job j JOIN eam_knowledge_version v ON"
             + " v.tenant_id=j.tenant_id AND v.id=j.version_id WHERE j.created_by IS NOT NULL AND"
             + " j.attempts<3 AND (j.status='PENDING' OR (j.status='RUNNING' AND"
@@ -137,12 +145,20 @@ public class KnowledgeIndexRepository {
             .set(KnowledgeIndexJob::getErrorMessage, "索引重试达到上限，请检查后手工重试"));
   }
 
-  public void failIndex(long tenant, long id) {
+  private LambdaUpdateWrapper<KnowledgeIndexJob> observed(KnowledgeViews.IndexCandidate candidate) {
+    var q =
+        target(candidate.tenantId(), candidate.versionId(), candidate.embeddingModel())
+            .eq(KnowledgeIndexJob::getId, candidate.id());
+    return candidate.leaseToken() == null
+        ? q.isNull(KnowledgeIndexJob::getLeaseToken)
+        : q.eq(KnowledgeIndexJob::getLeaseToken, candidate.leaseToken());
+  }
+
+  /** 未能领取的任务只可在仍是同一代时标记失败。 */
+  public void failIndex(KnowledgeViews.IndexCandidate candidate) {
     mapper.update(
         null,
-        new LambdaUpdateWrapper<KnowledgeIndexJob>()
-            .eq(KnowledgeIndexJob::getTenantId, tenant)
-            .eq(KnowledgeIndexJob::getId, id)
+        observed(candidate)
             .and(
                 q ->
                     q.eq(KnowledgeIndexJob::getStatus, "PENDING")

@@ -1,7 +1,10 @@
 package com.windasoft.eam.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
@@ -21,11 +24,15 @@ import com.windasoft.eam.scheduler.system.NotificationScheduler;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.AuthenticationService;
 import com.windasoft.eam.service.system.PermissionService;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -34,6 +41,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 /** 仅在本专项隔离库验证会话摘要、改密回滚、初始化保护和租户隔离。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
@@ -57,7 +65,7 @@ class AuthenticationMySqlIT {
   @Autowired JdbcTemplate db;
 
   @Autowired AuthenticationService authentication;
-  @Autowired SystemUserRepository users;
+  @MockitoSpyBean SystemUserRepository users;
 
   @MockitoSpyBean AuthenticationRepository sessions;
 
@@ -169,9 +177,76 @@ class AuthenticationMySqlIT {
           db.queryForObject(
               "SELECT password_hash FROM eam_sys_user WHERE id=?", String.class, user));
     } finally {
-      db.update("DELETE FROM eam_auth_session WHERE tenant_id=?", tenant);
-      db.update("DELETE FROM eam_sys_user WHERE tenant_id=?", tenant);
-      db.update("DELETE FROM eam_org_unit WHERE tenant_id=?", tenant);
+      deleteFixture();
     }
+  }
+
+  @Test
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  void loginReadingOldCredentialsCannotIssueSessionAfterChange() throws Exception {
+    create();
+    var observed = new CountDownLatch(1);
+    var changed = new CountDownLatch(1);
+    var worker = Executors.newSingleThreadExecutor();
+    try {
+      doAnswer(
+              call -> {
+                var result = call.callRealMethod();
+                observed.countDown();
+                if (!changed.await(10, TimeUnit.SECONDS)) throw new AssertionError("改密未完成");
+                return result;
+              })
+          .when(users)
+          .activeUser(tenant, account);
+      var login =
+          worker.submit(
+              () ->
+                  assertThrows(
+                      ResponseStatusException.class,
+                      () -> authentication.login(new LoginForm(tenant, account, "old-password"))));
+      assertTrue(observed.await(10, TimeUnit.SECONDS));
+      authentication.changePassword(new ChangePasswordForm("old-password", "new-password"), null);
+      changed.countDown();
+      assertEquals(HttpStatus.UNAUTHORIZED, login.get(10, TimeUnit.SECONDS).getStatusCode());
+      assertEquals(
+          0,
+          db.queryForObject(
+              "SELECT COUNT(*) FROM eam_auth_session WHERE tenant_id=? AND user_id=?",
+              Integer.class,
+              tenant,
+              user));
+    } finally {
+      changed.countDown();
+      worker.shutdownNow();
+      worker.awaitTermination(10, TimeUnit.SECONDS);
+      deleteFixture();
+    }
+  }
+
+  @Test
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  void staleProfileCannotOverwriteChangedCredentials() {
+    create();
+    try {
+      var former = users.user(tenant, user);
+      authentication.changePassword(new ChangePasswordForm("old-password", "new-password"), null);
+      former.setDisplayName("资料已更新");
+      users.updateProfile(former);
+      users.updateStatus(former);
+      users.updateDepartment(former);
+      var current = users.user(tenant, user);
+      var encoder = new BCryptPasswordEncoder();
+      assertEquals("资料已更新", current.getDisplayName());
+      assertTrue(encoder.matches("new-password", current.getPasswordHash()));
+      assertFalse(encoder.matches("old-password", current.getPasswordHash()));
+    } finally {
+      deleteFixture();
+    }
+  }
+
+  private void deleteFixture() {
+    db.update("DELETE FROM eam_auth_session WHERE tenant_id=?", tenant);
+    db.update("DELETE FROM eam_sys_user WHERE tenant_id=?", tenant);
+    db.update("DELETE FROM eam_org_unit WHERE tenant_id=?", tenant);
   }
 }

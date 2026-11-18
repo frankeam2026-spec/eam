@@ -169,7 +169,7 @@ class AiPlatformMySqlIT {
     var uploaded = documents.upload(990120, "Integration manual", bytes).data();
     long document = Long.parseLong(uploaded.id()), version = Long.parseLong(uploaded.versionId());
     var row = jobs.parsing().stream().filter(r -> r.getId() == version).findFirst().orElseThrow();
-    int attempt = jobs.claim(990112, version);
+    String attempt = jobs.claim(jobs.find(990112, version));
     documents.parseVersion(row, attempt);
     assertEquals(
         "READY",
@@ -209,7 +209,7 @@ class AiPlatformMySqlIT {
             .upload(990120, "Retry test", "%PDF-invalid".getBytes(StandardCharsets.US_ASCII))
             .data();
     long document = Long.parseLong(uploaded.id()), version = Long.parseLong(uploaded.versionId());
-    int attempt = jobs.claim(990112, version);
+    String attempt = jobs.claim(jobs.find(990112, version));
     jobs.failed(990112, version, attempt);
     documents.retryParse(document, 0);
     assertEquals(
@@ -224,6 +224,6 @@ class AiPlatformMySqlIT {
             "SELECT row_version FROM eam_knowledge_document WHERE id=?", Long.class, document));
     var history = documents.versions(document, 1, 20);
     assertEquals(1L, history.total());
-    jobs.failed(990112, version, jobs.claim(990112, version));
+    jobs.failed(990112, version, jobs.claim(jobs.find(990112, version)));
   }
 }

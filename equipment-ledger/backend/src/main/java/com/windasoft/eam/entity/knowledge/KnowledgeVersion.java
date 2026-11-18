@@ -24,6 +24,7 @@ public class KnowledgeVersion {
   private Long createdBy;
   private Integer parseAttempts;
   private LocalDateTime parseLeaseUntil;
+  private String parseLeaseToken;
   private Boolean hasOriginal;
   private LocalDateTime createdAt;
 }

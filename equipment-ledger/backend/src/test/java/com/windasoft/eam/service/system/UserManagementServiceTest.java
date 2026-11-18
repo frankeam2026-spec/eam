@@ -39,15 +39,15 @@ class UserManagementServiceTest {
     user.setStatus(1);
     when(auth.tenantId()).thenReturn(7L);
     when(auth.userId()).thenReturn(99L);
-    when(users.user(7L, 21L)).thenReturn(user);
+    when(users.lockUser(7L, 21L)).thenReturn(user);
     doThrow(new IllegalStateException("session delete failed"))
         .when(sessions)
         .revokeSessions(7L, 21L);
 
     assertThrows(IllegalStateException.class, () -> service.userStatus(21L, new UserStatusForm(0)));
     var order = inOrder(sessions);
-    verify(users).user(7L, 21L);
-    verify(users).updateUser(user);
+    verify(users).lockUser(7L, 21L);
+    verify(users).updateStatus(user);
     order.verify(sessions).revokeSessions(7L, 21L);
     verify(permissions).checkUser("user", "停用", user);
   }

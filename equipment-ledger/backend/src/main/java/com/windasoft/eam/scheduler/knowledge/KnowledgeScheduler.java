@@ -37,22 +37,22 @@ public class KnowledgeScheduler {
     jobs.failExhausted();
     for (var row : versions.parsing()) {
       long tenant = row.getTenantId(), id = row.getId();
-      int attempt = versions.claim(tenant, id);
-      if (attempt < 0) continue;
+      String token = versions.claim(row);
+      if (token == null) continue;
       try {
         var user = users.activeUser(tenant, row.getCreatedBy());
         SystemExecution.run(
             user,
             () -> {
               try {
-                documents.parseVersion(row, attempt);
+                documents.parseVersion(row, token);
                 return null;
               } catch (Exception error) {
                 throw new IllegalStateException("资料解析失败", error);
               }
             });
       } catch (Exception error) {
-        versions.failed(tenant, id, attempt);
+        versions.failed(tenant, id, token);
       }
     }
   }
@@ -67,14 +67,13 @@ public class KnowledgeScheduler {
             user,
             () -> {
               try {
-                return indexes.indexJob(
-                    row.documentId(), row.documentRowVersion(), row.embeddingModel());
+                return indexes.indexJob(row);
               } catch (Exception error) {
                 throw new IllegalStateException("资料索引失败", error);
               }
             });
       } catch (Exception error) {
-        jobs.failIndex(tenant, row.id());
+        jobs.failIndex(row);
       }
     }
   }

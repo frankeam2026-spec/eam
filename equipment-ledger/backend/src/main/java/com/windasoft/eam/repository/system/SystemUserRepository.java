@@ -77,8 +77,40 @@ public class SystemUserRepository {
     return mapper.insert(x);
   }
 
-  public int updateUser(SystemUser x) {
-    return mapper.updateById(x);
+  /** 普通资料变更不能携带整行读出的凭据或独立版本管理的邮箱。 */
+  public void updateProfile(SystemUser user) {
+    mapper.update(
+        null,
+        accountRow(user)
+            .set(SystemUser::getAccount, user.getAccount())
+            .set(SystemUser::getDisplayName, user.getDisplayName())
+            .set(SystemUser::getEmployeeNo, user.getEmployeeNo())
+            .set(SystemUser::getPhone, user.getPhone())
+            .set(SystemUser::getOrgId, user.getOrgId())
+            .set(SystemUser::getStatus, user.getStatus())
+            .set(SystemUser::getUpdatedAt, user.getUpdatedAt()));
+  }
+
+  public void updateStatus(SystemUser user) {
+    mapper.update(
+        null,
+        accountRow(user)
+            .set(SystemUser::getStatus, user.getStatus())
+            .set(SystemUser::getUpdatedAt, user.getUpdatedAt()));
+  }
+
+  public void updateDepartment(SystemUser user) {
+    mapper.update(
+        null,
+        accountRow(user)
+            .set(SystemUser::getOrgId, user.getOrgId())
+            .set(SystemUser::getUpdatedAt, user.getUpdatedAt()));
+  }
+
+  private LambdaUpdateWrapper<SystemUser> accountRow(SystemUser user) {
+    return new LambdaUpdateWrapper<SystemUser>()
+        .eq(SystemUser::getTenantId, user.getTenantId())
+        .eq(SystemUser::getId, user.getId());
   }
 
   public int deleteUser(Long id) {
@@ -168,11 +200,12 @@ public class SystemUserRepository {
   }
 
   public SystemUser activeUser(long tenant, String account) {
-    return mapper.selectOne(
+    var query =
         new LambdaQueryWrapper<SystemUser>()
             .eq(SystemUser::getTenantId, tenant)
             .eq(SystemUser::getAccount, account)
-            .eq(SystemUser::getStatus, 1));
+            .eq(SystemUser::getStatus, 1);
+    return mapper.selectOne(query);
   }
 
   /** 改密先锁本租户用户，密码写入和会话撤销由认证服务的同一事务协调。 */
@@ -188,9 +221,7 @@ public class SystemUserRepository {
   public void updatePassword(SystemUser user) {
     mapper.update(
         null,
-        new LambdaUpdateWrapper<SystemUser>()
-            .eq(SystemUser::getTenantId, user.getTenantId())
-            .eq(SystemUser::getId, user.getId())
+        accountRow(user)
             .set(SystemUser::getPasswordHash, user.getPasswordHash())
             .set(SystemUser::getUpdatedAt, user.getUpdatedAt()));
   }

@@ -4,12 +4,12 @@ import com.windasoft.eam.common.FieldValidationException;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.config.security.AuthFilter;
+import com.windasoft.eam.dto.common.SuccessResponse;
 import com.windasoft.eam.dto.system.AuthenticatedUserView;
 import com.windasoft.eam.dto.system.AuthenticationResult;
 import com.windasoft.eam.dto.system.ChangePasswordForm;
 import com.windasoft.eam.dto.system.CurrentUserView;
 import com.windasoft.eam.dto.system.LoginForm;
-import com.windasoft.eam.dto.common.SuccessResponse;
 import com.windasoft.eam.entity.system.AuthSession;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.system.AuthenticationRepository;
@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.Objects;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpStatus;
@@ -53,11 +54,20 @@ public class AuthenticationService {
     this.environment = environment;
   }
 
+  /** 密码校验后锁定并复核凭据，保证会话签发与密码修改、停用和删除互斥。 */
+  @Transactional
   public AuthenticationResult login(LoginForm form) {
-    var user = users.activeUser(form.tenantId(), form.account().trim());
+    String account = form.account().trim();
+    var observed = users.activeUser(form.tenantId(), account);
+    if (observed == null
+        || observed.getPasswordHash() == null
+        || !passwords.matches(form.password(), observed.getPasswordHash()))
+      throw new LocalizedStatusException(HttpStatus.UNAUTHORIZED, "server.system.message0035");
+    var user = users.lockUser(form.tenantId(), observed.getId());
     if (user == null
-        || user.getPasswordHash() == null
-        || !passwords.matches(form.password(), user.getPasswordHash()))
+        || user.getStatus() != 1
+        || !Objects.equals(user.getAccount(), observed.getAccount())
+        || !Objects.equals(user.getPasswordHash(), observed.getPasswordHash()))
       throw new LocalizedStatusException(HttpStatus.UNAUTHORIZED, "server.system.message0035");
     byte[] bytes = new byte[32];
     random.nextBytes(bytes);

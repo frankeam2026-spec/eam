@@ -330,11 +330,7 @@ public class NotificationPolicyService {
   }
 
   /** OFF取消旧提醒；默认绑定和策略本身取较晚生效时间，不补发绑定前错过的时间点。 */
-  public NotifyPolicy effectivePolicy(long tenant, String kind, Long plan) {
-    return resolvePolicy(tenant, kind, plan == null ? null : planBinding(tenant, kind, plan));
-  }
-
-  private NotifyPolicy resolvePolicy(long tenant, String kind, PlanReminderBinding binding) {
+  public NotifyPolicy effectivePolicy(long tenant, String kind, PlanReminderBinding binding) {
     if (binding != null && binding.reminderMode().equals("OFF")) return null;
     if (binding != null && binding.reminderMode().equals("POLICY"))
       return binding.reminderPolicyId() == null
@@ -354,6 +350,6 @@ public class NotificationPolicyService {
 
   public boolean replacesLegacy(long tenant, String kind, long plan) {
     var binding = planBinding(tenant, kind, plan);
-    return binding.reminderMode().equals("OFF") || resolvePolicy(tenant, kind, binding) != null;
+    return binding.reminderMode().equals("OFF") || effectivePolicy(tenant, kind, binding) != null;
   }
 }

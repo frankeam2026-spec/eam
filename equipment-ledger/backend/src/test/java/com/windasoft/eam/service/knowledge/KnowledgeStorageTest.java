@@ -32,6 +32,7 @@ class KnowledgeStorageTest {
             new ClassPathResource("db/migration/V108__knowledge_documents.sql"))
         .execute(source);
     var db = new JdbcTemplate(source);
+    db.execute("ALTER TABLE eam_knowledge_version ADD COLUMN parse_lease_token CHAR(36)");
     db.update(
         "INSERT INTO eam_knowledge_document(id,tenant_id,company_id,title,document_type,created_by)"
             + " VALUES(1,10,20,'manual','MANUAL',30)");

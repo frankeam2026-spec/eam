@@ -13,6 +13,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,13 +38,18 @@ public class KnowledgeContentWriter {
 
   @Transactional
   public void commit(long tenant, long version, List<KnowledgePdfParser.Page> parsed) {
-    commitAttempt(tenant, version, parsed, -1);
+    write(tenant, version, parsed, null);
   }
 
   /** 保存前校验整包与租约，仍先锁版本/文档再写页和切片，任一批次失败应整体回滚。 */
   @Transactional
   public void commitAttempt(
-      long tenant, long version, List<KnowledgePdfParser.Page> parsed, int attempt) {
+      long tenant, long version, List<KnowledgePdfParser.Page> parsed, String token) {
+    write(tenant, version, parsed, Objects.requireNonNull(token));
+  }
+
+  private void write(
+      long tenant, long version, List<KnowledgePdfParser.Page> parsed, String token) {
     if (tenant <= 0 || version == 0 || parsed == null || parsed.isEmpty())
       throw new IllegalArgumentException("文档解析结果无效");
     for (int i = 0; i < parsed.size(); i++) {
@@ -55,9 +61,9 @@ public class KnowledgeContentWriter {
           || p.chunks().stream().anyMatch(c -> c == null || c.isBlank()))
         throw new IllegalArgumentException("文档页码或切片无效");
     }
-    if (!(attempt < 0
+    if (!(token == null
         ? locks.lockParsingVersion(tenant, version)
-        : locks.lockParsingAttempt(tenant, version, attempt)))
+        : locks.lockParsingAttempt(tenant, version, token)))
       throw new IllegalStateException("版本不存在、已处理或已发布，请重新读取解析任务状态");
     var pageRows = new ArrayList<KnowledgePage>();
     var chunkRows = new ArrayList<KnowledgeChunk>();

@@ -1,6 +1,8 @@
 package com.windasoft.eam.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
@@ -190,7 +192,7 @@ class KnowledgeAdministrationMySqlIT {
         json.readTree(json.writeValueAsString(documents.list("", 1, 20).data().getFirst())));
     var job =
         versions.parsing().stream().filter(v -> v.getId() == version).findFirst().orElseThrow();
-    int attempt = versions.claim(tenant, version);
+    String attempt = versions.claim(versions.find(tenant, version));
     documents.parseVersion(job, attempt);
     assertEquals("READY", versions.latest(tenant, id).getParseStatus());
     assertTrue(documents.pages(id).data().getFirst().chunkCount() > 0);
@@ -253,7 +255,7 @@ class KnowledgeAdministrationMySqlIT {
     try {
       long id = Long.parseLong(documents.upload(company, "重试", pdf()).data().id());
       long version = versions.latest(tenant, id).getId();
-      int attempt = versions.claim(tenant, version);
+      String attempt = versions.claim(versions.find(tenant, version));
       versions.failed(tenant, version, attempt);
       documents.retryParse(id, 0);
       org.junit.jupiter.api.Assertions.assertThrows(
@@ -273,7 +275,7 @@ class KnowledgeAdministrationMySqlIT {
     try {
       long id = Long.parseLong(documents.upload(company, "内容回滚", pdf()).data().id());
       long version = versions.latest(tenant, id).getId();
-      int attempt = versions.claim(tenant, version);
+      String attempt = versions.claim(versions.find(tenant, version));
       Mockito.doThrow(new IllegalStateException("模拟切片保存失败")).when(chunks).insert(Mockito.anyList());
       org.junit.jupiter.api.Assertions.assertThrows(
           IllegalStateException.class,
@@ -325,5 +327,55 @@ class KnowledgeAdministrationMySqlIT {
       pool.shutdownNow();
       cleanTenant();
     }
+  }
+
+  @Test
+  void resetAttemptsCannotRestoreEarlierWorkerOwnership() throws Exception {
+    long document = Long.parseLong(documents.upload(company, "租约回归", pdf()).data().id());
+    var initial = versions.latest(tenant, document);
+    long version = initial.getId();
+    String oldParse = versions.claim(initial);
+    versions.failed(tenant, version, oldParse);
+    documents.retryParse(document, 0);
+    var fresh = versions.latest(tenant, document);
+    String currentParse = versions.claim(fresh);
+    assertEquals(1, versions.latest(tenant, document).getParseAttempts());
+    assertNotEquals(oldParse, currentParse);
+    assertThrows(IllegalStateException.class, () -> versions.heartbeat(tenant, version, oldParse));
+    var parsed = List.of(new KnowledgePdfParser.Page(1, "正文", false, List.of("正文")));
+    assertThrows(
+        IllegalStateException.class, () -> writer.commitAttempt(tenant, version, parsed, oldParse));
+    versions.failed(tenant, version, oldParse);
+    assertEquals("RUNNING", versions.latest(tenant, document).getParseStatus());
+    writer.commitAttempt(tenant, version, parsed, currentParse);
+
+    String model = "lease-regression";
+    long job = IdWorker.getId();
+    indexJobs.queue(job, tenant, 73001L, version, model, 1);
+    var oldCandidate =
+        indexJobs.indexing().stream().filter(c -> c.id() == job).findFirst().orElseThrow();
+    String oldIndex = indexJobs.claim(oldCandidate);
+    indexJobs.finish(tenant, version, model, oldIndex, false);
+    indexJobs.queue(job, tenant, 73001L, version, model, 1);
+    indexJobs.failIndex(oldCandidate);
+    var currentCandidate =
+        indexJobs.indexing().stream().filter(c -> c.id() == job).findFirst().orElseThrow();
+    assertThrows(IllegalStateException.class, () -> indexJobs.claim(oldCandidate));
+    String currentIndex = indexJobs.claim(currentCandidate);
+    assertEquals(
+        1,
+        db.queryForObject(
+            "SELECT attempts FROM eam_knowledge_index_job WHERE id=?", Integer.class, job));
+    assertNotEquals(oldIndex, currentIndex);
+    assertThrows(
+        IllegalStateException.class, () -> indexJobs.heartbeat(tenant, version, model, oldIndex));
+    assertThrows(
+        IllegalStateException.class,
+        () -> indexJobs.finish(tenant, version, model, oldIndex, true));
+    assertThrows(
+        IllegalStateException.class,
+        () -> indexJobs.finish(tenant, version, model, oldIndex, false));
+    indexJobs.finish(tenant, version, model, currentIndex, true);
+    assertTrue(indexJobs.ready(tenant, version, model));
   }
 }

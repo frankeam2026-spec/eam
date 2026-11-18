@@ -16,8 +16,10 @@ public final class NotificationContracts {
       @Min(0) @Max(525600) @JsonDeserialize(using = ExactIntegerDeserializer.class) int value,
       @NotBlank String unit,
       boolean enabled,
-      @NotNull List<Long> recipients,
-      @NotNull List<Long> cc) {}
+      @NotNull @JsonDeserialize(contentUsing = ExactLongDeserializer.class)
+          List<@NotNull Long> recipients,
+      @NotNull @JsonDeserialize(contentUsing = ExactLongDeserializer.class)
+          List<@NotNull Long> cc) {}
 
   public record Policy(
       @JsonDeserialize(using = ExactLongDeserializer.class) Long id,

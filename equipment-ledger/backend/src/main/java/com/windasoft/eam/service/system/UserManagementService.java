@@ -15,6 +15,7 @@ import com.windasoft.eam.repository.system.AuthenticationRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.system.RoleManagementRepository;
 import com.windasoft.eam.repository.system.SystemUserRepository;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -91,7 +92,8 @@ public class UserManagementService {
     permissions.checkUser("user", "编辑", x);
     requireStatusChangeAllowed(id, x.getStatus());
     setPassword(x, f.password(), false);
-    systemUsers.updateUser(x);
+    systemUsers.updateProfile(x);
+    if (f.password() != null && !f.password().isBlank()) systemUsers.updatePassword(x);
     if (f.email() != null) {
       if (f.emailVersion() == null)
         throw new LocalizedArgumentException("server.common.message0018");
@@ -113,7 +115,7 @@ public class UserManagementService {
     int status = body.status();
     requireStatusChangeAllowed(id, status);
     x.setStatus(status);
-    systemUsers.updateUser(x);
+    systemUsers.updateStatus(x);
     if (status == 0) revokeSessions(id);
     return userView(x);
   }
@@ -132,7 +134,11 @@ public class UserManagementService {
         throw new LocalizedArgumentException("server.system.message0040");
     } else if (f.password() == null || f.password().length() < 6 || f.password().length() > 72)
       throw new LocalizedArgumentException("ui.equipment.text1179");
-    var users = new LinkedHashSet<>(f.ids()).stream().map(this::requireUser).toList();
+    // 多账号按 ID 加锁，避免两个相反顺序的批次互相等待。响应仍按输入去重后的顺序。
+    var requested = new LinkedHashSet<>(f.ids());
+    var locked = new HashMap<Long, SystemUser>();
+    requested.stream().sorted().forEach(id -> locked.put(id, requireUser(id)));
+    var users = requested.stream().map(locked::get).toList();
     for (var user : users) {
       permissions.checkUser("user", "编辑", user);
       if ("department".equals(f.operation())) {
@@ -141,8 +147,12 @@ public class UserManagementService {
       }
     }
     for (var user : users) {
-      if ("password".equals(f.operation())) setPassword(user, f.password(), true);
-      systemUsers.updateUser(user);
+      if ("password".equals(f.operation())) {
+        setPassword(user, f.password(), true);
+        systemUsers.updatePassword(user);
+      } else {
+        systemUsers.updateDepartment(user);
+      }
       revokeSessions(user.getId());
     }
     var ids = users.stream().map(SystemUser::getId).toList();
@@ -236,7 +246,7 @@ public class UserManagementService {
   }
 
   private SystemUser requireUser(Long id) {
-    var x = systemUsers.user(auth.tenantId(), id);
+    var x = systemUsers.lockUser(auth.tenantId(), id);
     if (x == null) throw new LocalizedArgumentException("server.system.message0044");
     return x;
   }

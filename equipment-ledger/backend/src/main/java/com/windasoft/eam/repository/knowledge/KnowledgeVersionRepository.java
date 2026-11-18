@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.windasoft.eam.dto.knowledge.KnowledgeViews;
 import com.windasoft.eam.entity.knowledge.KnowledgeVersion;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.jdbc.core.DataClassRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -95,6 +96,7 @@ WHERE v.tenant_id=? AND d.id=? AND v.id=? AND d.status='PUBLISHED' AND v.has_ori
                 .eq(KnowledgeVersion::getParseStatus, "FAILED")
                 .set(KnowledgeVersion::getParseStatus, "PENDING")
                 .set(KnowledgeVersion::getParseAttempts, 0)
+                .set(KnowledgeVersion::getParseLeaseToken, UUID.randomUUID().toString())
                 .set(KnowledgeVersion::getParseLeaseUntil, null)
                 .set(KnowledgeVersion::getErrorMessage, null)
                 .set(KnowledgeVersion::getCreatedBy, user))
@@ -116,11 +118,16 @@ WHERE v.tenant_id=? AND d.id=? AND v.id=? AND d.status='PUBLISHED' AND v.has_ori
             .last("LIMIT 3"));
   }
 
-  /** 条件领取与尝试次数一起推进，恢复过期租约时不接管仍有效的解析。 */
-  public int claim(long tenant, long version) {
-    if (mapper.update(
+  /** 领取时比较扫描快照标识，随后更换标识，原执行者不能借用重试后的次数。 */
+  public String claim(KnowledgeVersion candidate) {
+    String token = UUID.randomUUID().toString();
+    var query = target(candidate.getTenantId(), candidate.getId());
+    if (candidate.getParseLeaseToken() == null) query.isNull(KnowledgeVersion::getParseLeaseToken);
+    else query.eq(KnowledgeVersion::getParseLeaseToken, candidate.getParseLeaseToken());
+    int changed =
+        mapper.update(
             null,
-            target(tenant, version)
+            query
                 .lt(KnowledgeVersion::getParseAttempts, 3)
                 .and(
                     q ->
@@ -129,37 +136,39 @@ WHERE v.tenant_id=? AND d.id=? AND v.id=? AND d.status='PUBLISHED' AND v.has_ori
                             .eq(KnowledgeVersion::getParseStatus, "RUNNING")
                             .apply("parse_lease_until<CURRENT_TIMESTAMP(6)"))
                 .set(KnowledgeVersion::getParseStatus, "RUNNING")
+                .set(KnowledgeVersion::getParseLeaseToken, token)
                 .set(KnowledgeVersion::getErrorMessage, null)
                 .setSql(
                     "parse_attempts=parse_attempts+1,parse_lease_until=DATE_ADD(CURRENT_TIMESTAMP(6),INTERVAL"
-                        + " 5 MINUTE)"))
-        != 1) return -1;
-    return mapper
-        .selectOne(
-            new LambdaQueryWrapper<KnowledgeVersion>()
-                .select(KnowledgeVersion::getParseAttempts)
-                .eq(KnowledgeVersion::getTenantId, tenant)
-                .eq(KnowledgeVersion::getId, version))
-        .getParseAttempts();
+                        + " 5 MINUTE)"));
+    return changed == 1 ? token : null;
   }
 
-  public void heartbeat(long tenant, long version, int attempt) {
+  public KnowledgeVersion find(long tenant, long version) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<KnowledgeVersion>()
+            .eq(KnowledgeVersion::getTenantId, tenant)
+            .eq(KnowledgeVersion::getId, version));
+  }
+
+  public void heartbeat(long tenant, long version, String token) {
     if (mapper.update(
             null,
             target(tenant, version)
                 .eq(KnowledgeVersion::getParseStatus, "RUNNING")
-                .eq(KnowledgeVersion::getParseAttempts, attempt)
+                .eq(KnowledgeVersion::getParseLeaseToken, token)
                 .apply("parse_lease_until>CURRENT_TIMESTAMP(6)")
                 .setSql("parse_lease_until=DATE_ADD(CURRENT_TIMESTAMP(6),INTERVAL 5 MINUTE)"))
         != 1) throw new IllegalStateException("解析任务租约已失效");
   }
 
-  public void failed(long tenant, long version, int attempt) {
+  public void failed(long tenant, long version, String token) {
     mapper.update(
         null,
         target(tenant, version)
             .eq(KnowledgeVersion::getParseStatus, "RUNNING")
-            .eq(KnowledgeVersion::getParseAttempts, attempt)
+            .eq(KnowledgeVersion::getParseLeaseToken, token)
+            .apply("parse_lease_until>CURRENT_TIMESTAMP(6)")
             .set(KnowledgeVersion::getParseStatus, "FAILED")
             .set(KnowledgeVersion::getErrorMessage, "解析失败，请检查PDF、OCR配置和权限后重试")
             .set(KnowledgeVersion::getParseLeaseUntil, null));

@@ -28,10 +28,6 @@ public class ReminderRepository {
     }
     return row;
   }
-  public Map<String,Object> plan(long tenant,String kind,long id) {
-    var rows=db.queryForList("SELECT name,reminder_mode,reminder_effective_at FROM "+NotificationRepository.planTable(kind)+" WHERE tenant_id=? AND id=?",tenant,id);
-    return rows.isEmpty()?Map.of():rows.getFirst();
-  }
   public void message(long tenant,String key,String module,long object,long rule,int version,String scene,String subject,String content,long user,String role,LocalDateTime trigger) {
     String delivered="EXISTS(SELECT 1 FROM eam_notify_delivery d WHERE d.message_id=eam_notify_message.id AND d.status='SENT') OR EXISTS(SELECT 1 FROM eam_notify_receipt r WHERE r.message_id=eam_notify_message.id AND r.terminal_status='SENT')";
     db.update("INSERT INTO eam_notify_message(tenant_id,source_key,module,object_id,rule_id,policy_version,scene,subject,content,recipient_id,recipient_kind,trigger_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE subject=IF("+delivered+",subject,VALUES(subject)),content=IF("+delivered+",content,VALUES(content)),policy_version=IF("+delivered+",policy_version,VALUES(policy_version)),trigger_at=IF("+delivered+",trigger_at,VALUES(trigger_at)),recipient_kind=IF("+delivered+",recipient_kind,VALUES(recipient_kind)),cancelled_at=IF("+delivered+",cancelled_at,NULL)",tenant,key,module,object,rule,version,scene,subject,content,user,role,trigger);

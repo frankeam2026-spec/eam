@@ -3,6 +3,7 @@ package com.windasoft.eam.dto.printing;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.windasoft.eam.common.ExactIntegerDeserializer;
+import com.windasoft.eam.common.ExactLongDeserializer;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -12,7 +13,7 @@ public final class PrintForms {
 
   public record Template(
       @NotBlank @Size(max = 100) String name,
-      Long companyId,
+      @JsonDeserialize(using = ExactLongDeserializer.class) Long companyId,
       boolean enabled,
       boolean isDefault,
       @JsonDeserialize(using = ExactIntegerDeserializer.class) Integer rowVersion,
