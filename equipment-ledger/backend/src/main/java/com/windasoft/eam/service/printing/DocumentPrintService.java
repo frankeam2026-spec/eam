@@ -1,13 +1,41 @@
 package com.windasoft.eam.service.printing;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
-import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.common.LocalizedStatusException;
+import com.windasoft.eam.common.MessageContext;
+import com.windasoft.eam.common.MessageRef;
 import com.windasoft.eam.dto.printing.PrintForms;
+import com.windasoft.eam.dto.printing.PrintViews;
+import com.windasoft.eam.entity.printing.PrintJob;
+import com.windasoft.eam.entity.printing.PrintTemplate;
 import com.windasoft.eam.repository.printing.DocumentPrintRepository;
+import com.windasoft.eam.repository.printing.PrintJobRepository;
+import com.windasoft.eam.repository.printing.PrintTemplateRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.inventory.OutboundService;
-import com.windasoft.eam.service.system.*;
-import java.math.*;
-import java.util.*;
+import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.PermissionService;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import org.apache.pdfbox.Loader;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -17,6 +45,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class DocumentPrintService {
   private static final String MENU = "printTemplate", OUTBOUND = "inventoryOutbound";
   private final DocumentPrintRepository repo;
+  private final PrintTemplateRepository templates;
+  private final PrintJobRepository jobs;
+  private final OrgUnitRepository organizations;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final OutboundService outbounds;
@@ -26,22 +57,24 @@ public class DocumentPrintService {
 
   public DocumentPrintService(
       DocumentPrintRepository repo,
+      PrintTemplateRepository templates,
+      PrintJobRepository jobs,
+      OrgUnitRepository organizations,
       AuthContext auth,
       PermissionService permissions,
       OutboundService outbounds,
       DocumentPrintLayout layout,
       ObjectMapper json) {
     this.repo = repo;
+    this.templates = templates;
+    this.jobs = jobs;
+    this.organizations = organizations;
     this.auth = auth;
     this.permissions = permissions;
     this.outbounds = outbounds;
     this.layout = layout;
     this.json = json;
-    new java.security.SecureRandom().nextBytes(previewKey);
-  }
-
-  private long id(Object value) {
-    return value instanceof Boolean b ? (b ? 1 : 0) : Long.parseLong(String.valueOf(value));
+    new SecureRandom().nextBytes(previewKey);
   }
 
   private String text(Object value) {
@@ -58,8 +91,7 @@ public class DocumentPrintService {
           .with(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
           .writeValueAsString(value);
     } catch (Exception e) {
-      throw new com.windasoft.eam.common.LocalizedArgumentException(
-          com.windasoft.eam.common.MessageRef.of("server.printing.message0005"), e);
+      throw new LocalizedArgumentException(MessageRef.of("server.printing.message0005"), e);
     }
   }
 
@@ -74,8 +106,7 @@ public class DocumentPrintService {
   private void company(Long company, String action) {
     var scope = permissions.scope(MENU, action);
     if (!(scope.all() || company != null && scope.companyIds().contains(company)))
-      throw new com.windasoft.eam.common.LocalizedStatusException(
-          HttpStatus.FORBIDDEN, "server.printing.message0006");
+      throw new LocalizedStatusException(HttpStatus.FORBIDDEN, "server.printing.message0006");
   }
 
   private boolean permitted(Long company, String action) {
@@ -88,116 +119,95 @@ public class DocumentPrintService {
     return s.all() || company == null || s.companyIds().contains(company);
   }
 
-  private Long owner(Map<String, Object> t) {
-    return t.get("company_id") == null ? null : id(t.get("company_id"));
+  private PrintViews.Template templateView(PrintTemplate t) {
+    return new PrintViews.Template(
+        t.getId().toString(),
+        t.getName(),
+        t.getCompanyId() == null ? "" : t.getCompanyId().toString(),
+        text(t.getCompanyName()),
+        t.getEnabled() == 1,
+        t.getIsDefault() == 1,
+        t.getRowVersion(),
+        decode(t.getConfigJson()),
+        text(t.getUpdatedAt()),
+        permitted(t.getCompanyId(), "编辑"),
+        permitted(t.getCompanyId(), "删除"));
   }
 
-  private Map<String, Object> templateView(Map<String, Object> t) {
-    var v = new LinkedHashMap<String, Object>();
-    v.put("id", text(t.get("id")));
-    v.put("name", t.get("name"));
-    v.put("companyId", t.get("company_id") == null ? "" : text(t.get("company_id")));
-    v.put("companyName", text(t.get("company_name")));
-    v.put("enabled", id(t.get("enabled")) == 1);
-    v.put("isDefault", id(t.get("is_default")) == 1);
-    v.put("rowVersion", t.get("row_version"));
-    v.put("config", decode(t.get("config_json")));
-    v.put("updatedAt", text(t.get("updated_at")));
-    v.put("canEdit", permitted(owner(t), "编辑"));
-    v.put("canDelete", permitted(owner(t), "删除"));
-    return v;
-  }
-
-  public Map<String, Object> catalog() {
+  public PrintViews.Catalog catalog() {
     permissions.require(MENU, "查看");
     var companies =
-        repo.companies(auth.tenantId()).stream()
-            .filter(c -> visible(id(c.get("id"))))
-            .map(c -> Map.of("id", text(c.get("id")), "name", text(c.get("name"))))
+        organizations.activeCompanies(auth.tenantId()).stream()
+            .filter(c -> visible(c.getId()))
+            .map(c -> new PrintViews.Company(c.getId().toString(), text(c.getName())))
             .toList();
-    return Map.of(
-        "defaults",
+    return new PrintViews.Catalog(
         layout.defaults(),
-        "headers",
         layout.headerLabels(),
-        "columns",
         layout.columnLabels(),
-        "companies",
         companies,
-        "canManageCommon",
         permissions.scope(MENU, "查看").all());
   }
 
-  public List<Map<String, Object>> templates() {
+  public List<PrintViews.Template> templates() {
     permissions.require(MENU, "查看");
-    return repo.templates(auth.tenantId()).stream()
-        .filter(t -> visible(owner(t)))
+    return templates.list(auth.tenantId()).stream()
+        .filter(t -> visible(t.getCompanyId()))
         .map(this::templateView)
         .toList();
   }
 
+  /** 校验原归属及目标公司，默认项清理和乐观锁写入仍在同一事务；冲突回滚全部变更。 */
   @Transactional
-  public Map<String, Object> saveTemplate(Long templateId, PrintForms.Template f) {
+  public PrintViews.Template saveTemplate(Long templateId, PrintForms.Template f) {
     String action = templateId == null ? "新增" : "编辑";
     permissions.require(MENU, action);
     company(f.companyId(), action);
     layout.validate(f.config());
     if (f.companyId() != null)
       require(
-          repo.companies(auth.tenantId()).stream().anyMatch(c -> id(c.get("id")) == f.companyId()),
-          com.windasoft.eam.common.MessageContext.text("server.printing.message0018"));
-    require(
-        !f.isDefault() || f.enabled(),
-        com.windasoft.eam.common.MessageContext.text("server.printing.message0019"));
+          organizations.activeCompanies(auth.tenantId()).stream()
+              .anyMatch(c -> c.getId().equals(f.companyId())),
+          MessageContext.text("server.printing.message0018"));
+    require(!f.isDefault() || f.enabled(), MessageContext.text("server.printing.message0019"));
     long key = templateId == null ? IdWorker.getId() : templateId;
     if (templateId != null) {
-      var old = repo.template(auth.tenantId(), key);
-      company(owner(old), action);
+      var old = templates.find(auth.tenantId(), key);
+      company(old.getCompanyId(), action);
       require(
-          f.rowVersion() != null && id(old.get("row_version")) == f.rowVersion(),
-          com.windasoft.eam.common.MessageContext.text("server.common.message0067"));
+          f.rowVersion() != null && old.getRowVersion().equals(f.rowVersion()),
+          MessageContext.text("server.common.message0067"));
     }
-    if (f.isDefault()) repo.clearDefaults(auth.tenantId(), f.companyId(), key);
-    if (templateId == null)
-      repo.insertTemplate(
-          key,
-          auth.tenantId(),
-          f.name().trim(),
-          f.companyId(),
-          f.enabled(),
-          f.isDefault(),
-          encode(f.config()));
+    if (f.isDefault()) templates.clearDefaults(auth.tenantId(), f.companyId(), key);
+    var row = new PrintTemplate();
+    row.setId(key);
+    row.setTenantId(auth.tenantId());
+    row.setName(f.name().trim());
+    row.setCompanyId(f.companyId());
+    row.setEnabled(f.enabled() ? 1 : 0);
+    row.setIsDefault(f.isDefault() ? 1 : 0);
+    row.setConfigJson(encode(f.config()));
+    if (templateId == null) templates.insert(row);
     else
       require(
-          repo.updateTemplate(
-                  auth.tenantId(),
-                  key,
-                  f.name().trim(),
-                  f.companyId(),
-                  f.enabled(),
-                  f.isDefault(),
-                  encode(f.config()),
-                  f.rowVersion())
-              == 1,
-          com.windasoft.eam.common.MessageContext.text("server.common.message0067"));
-    return templateView(repo.template(auth.tenantId(), key));
+          templates.update(row, f.rowVersion()) == 1,
+          MessageContext.text("server.common.message0067"));
+    return templateView(templates.find(auth.tenantId(), key));
   }
 
   @Transactional
   public void deleteTemplate(long key, int version) {
     permissions.require(MENU, "删除");
-    var t = repo.template(auth.tenantId(), key);
-    company(owner(t), "删除");
+    var t = templates.find(auth.tenantId(), key);
+    company(t.getCompanyId(), "删除");
     require(
-        repo.deleteTemplate(auth.tenantId(), key, version) == 1,
-        com.windasoft.eam.common.MessageContext.text("server.printing.message0020"));
+        templates.delete(auth.tenantId(), key, version) == 1,
+        MessageContext.text("server.printing.message0020"));
   }
 
-  public byte[] designerPreview(PrintForms.Template f) throws java.io.IOException {
+  public byte[] designerPreview(PrintForms.Template f) throws IOException {
     permissions.require(MENU, "查看");
-    require(
-        visible(f.companyId()),
-        com.windasoft.eam.common.MessageContext.text("server.printing.message0021"));
+    require(visible(f.companyId()), MessageContext.text("server.printing.message0021"));
     layout.validate(f.config());
     var d = new LinkedHashMap<String, Object>();
     d.put("code", "CK-202610-0001");
@@ -250,9 +260,9 @@ public class DocumentPrintService {
     return layout.render(f.config(), d, List.of(line));
   }
 
-  private Map<String, Object> source(String document) {
+  private PrintViews.Source source(String document) {
     var s = repo.source(auth.tenantId(), document);
-    checkWarehouse(id(s.get("warehouse_id")), false);
+    checkWarehouse(s.warehouseId(), false);
     return s;
   }
 
@@ -262,134 +272,121 @@ public class DocumentPrintService {
     if (money) permissions.checkInventoryWarehouse(OUTBOUND, warehouse, "查看金额");
   }
 
-  private Map<String, Object> builtin() {
-    return new LinkedHashMap<>(
-        Map.of(
-            "id",
-            "system",
-            "name",
-            com.windasoft.eam.common.MessageContext.text("output.print.builtinName"),
-            "enabled",
-            1,
-            "is_default",
-            1,
-            "row_version",
-            0,
-            "config_json",
-            encode(layout.defaults())));
-  }
+  private record SelectedTemplate(String id, String name, int rowVersion, JsonNode config) {}
 
-  private List<Map<String, Object>> available(long company, long warehouse) {
+  private List<SelectedTemplate> available(long company, long warehouse) {
     boolean money = permissions.inventoryWarehouseAllowed(OUTBOUND, warehouse, "查看金额");
-    var rows = new ArrayList<Map<String, Object>>();
-    for (var t : repo.templates(auth.tenantId()))
-      if (id(t.get("enabled")) == 1
-          && (owner(t) == null || owner(t) == company)
-          && (!layout.money(decode(t.get("config_json"))) || money)) rows.add(t);
-    rows.sort(
-        Comparator.comparingInt(
-            t -> id(t.get("is_default")) == 1 ? (owner(t) == null ? 1 : 0) : 2));
-    rows.add(builtin());
+    var rows =
+        templates.list(auth.tenantId()).stream()
+            .filter(
+                t ->
+                    t.getEnabled() == 1
+                        && (t.getCompanyId() == null || t.getCompanyId() == company))
+            .filter(t -> !layout.money(decode(t.getConfigJson())) || money)
+            .sorted(
+                Comparator.comparingInt(
+                    t -> t.getIsDefault() == 1 ? (t.getCompanyId() == null ? 1 : 0) : 2))
+            .map(
+                t ->
+                    new SelectedTemplate(
+                        t.getId().toString(),
+                        t.getName(),
+                        t.getRowVersion(),
+                        decode(t.getConfigJson())))
+            .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+    rows.add(
+        new SelectedTemplate(
+            "system", MessageContext.text("output.print.builtinName"), 0, layout.defaults()));
     return rows;
   }
 
-  public Map<String, Object> options(String document) {
+  public PrintViews.Options options(String document) {
     var s = source(document);
-    var list = available(id(s.get("company_id")), id(s.get("warehouse_id")));
-    return Map.of(
-        "templates",
+    var list = available(s.companyId(), s.warehouseId());
+    return new PrintViews.Options(
         list.stream()
             .map(
                 t ->
-                    Map.of(
-                        "id",
-                        text(t.get("id")),
-                        "name",
-                        text(t.get("name")),
-                        "rowVersion",
-                        t.get("row_version"),
-                        "containsMoney",
-                        layout.money(decode(t.get("config_json")))))
+                    new PrintViews.Choice(
+                        t.id(), t.name(), t.rowVersion(), layout.money(t.config())))
             .toList(),
-        "defaultId",
-        text(list.getFirst().get("id")));
+        list.getFirst().id());
   }
 
+  /** document/lines仅是打印器白名单字段字典，不用于持久化或跨层传递固定业务元数据。 */
   private record Prepared(
-      Map<String, Object> source,
-      Map<String, Object> template,
+      PrintViews.Source source,
+      SelectedTemplate template,
       JsonNode config,
       Map<String, Object> document,
       List<Map<String, String>> lines,
       String fingerprint) {}
 
   @SuppressWarnings("unchecked")
+  /** 来源先校验仓库查看/打印权限，选定模板后复核金额权限；字段字典仅交给现有渲染器和规范化签名。 */
   private Prepared prepare(PrintForms.Output f) {
     var s = source(f.documentId());
     var t =
-        available(id(s.get("company_id")), id(s.get("warehouse_id"))).stream()
-            .filter(x -> text(x.get("id")).equals(f.templateId()))
+        available(s.companyId(), s.warehouseId()).stream()
+            .filter(x -> x.id().equals(f.templateId()))
             .findFirst()
-            .orElseThrow(
-                () ->
-                    new com.windasoft.eam.common.LocalizedArgumentException(
-                        "server.printing.message0007"));
-    var config = decode(t.get("config_json"));
-    ((com.fasterxml.jackson.databind.node.ObjectNode) config)
-        .put("generatedLocale", com.windasoft.eam.common.MessageContext.locale());
+            .orElseThrow(() -> new LocalizedArgumentException("server.printing.message0007"));
+    var config = t.config();
+    ((ObjectNode) config).put("generatedLocale", MessageContext.locale());
     layout.validate(config);
     boolean money = layout.money(config);
-    checkWarehouse(id(s.get("warehouse_id")), money);
-    var raw = (Map<String, Object>) outbounds.detail(f.documentId());
+    checkWarehouse(s.warehouseId(), money);
+    var original = json.valueToTree(outbounds.detail(f.documentId()));
+    var raw = json.convertValue(original, PrintViews.Outbound.class);
+    // 仅在渲染器边界转换已类型化字段；精确保留旧签名使用的键、值和规范化排序。
+    var header = json.convertValue(raw, new TypeReference<Map<String, Object>>() {});
     var d = new LinkedHashMap<String, Object>();
-    for (String key : DocumentPrintLayout.HEADERS.keySet()) d.put(key, text(raw.get(key)));
+    for (String key : DocumentPrintLayout.HEADERS.keySet()) d.put(key, text(header.get(key)));
     d.put(
         "confirmedAt",
-        text(raw.getOrDefault("confirmedAt", raw.get("createdAt")))
+        text(original.has("confirmedAt") ? raw.confirmedAt() : raw.createdAt())
             .replaceFirst("T", " ")
             .replaceFirst("\\.\\d+$", ""));
-    d.put("code", raw.get("code"));
-    d.put("status", raw.get("status"));
-    d.put("companyName", text(s.get("company_name")));
-    d.put("rowVersion", raw.getOrDefault("rowVersion", 0));
+    d.put("code", raw.code());
+    d.put("status", raw.status());
+    d.put("companyName", text(s.companyName()));
+    d.put("rowVersion", original.has("rowVersion") ? raw.rowVersion() : Integer.valueOf(0));
     var lines = new ArrayList<Map<String, String>>();
-    if (!text(raw.get("status")).equals("草稿")) {
+    if (!text(raw.status()).equals("草稿")) {
       var allocations = repo.allocations(auth.tenantId(), f.documentId());
-      require(
-          allocations.size() <= 1000,
-          com.windasoft.eam.common.MessageContext.text("server.printing.message0022"));
+      require(allocations.size() <= 1000, MessageContext.text("server.printing.message0022"));
       for (var a : allocations) {
+        var values = json.convertValue(a, new TypeReference<Map<String, Object>>() {});
         var row = new LinkedHashMap<String, String>();
         for (String key : DocumentPrintLayout.COLUMNS.keySet())
-          if (!DocumentPrintLayout.MONEY.contains(key) || money) row.put(key, text(a.get(key)));
+          if (!DocumentPrintLayout.MONEY.contains(key) || money)
+            row.put(key, text(values.get(key)));
         row.put("sequence", String.valueOf(lines.size() + 1));
-        row.put("quantity", decimal(a.get("quantity")));
+        row.put("quantity", decimal(a.quantity()));
         if (money) {
-          row.put("unitCost", decimal(a.get("unit_cost")));
-          row.put("amount", decimal(a.get("amount")));
+          row.put("unitCost", decimal(a.unitCost()));
+          row.put("amount", decimal(a.amount()));
         }
         lines.add(row);
       }
     } else {
-      require(!money, com.windasoft.eam.common.MessageContext.text("server.printing.message0023"));
-      for (var a : (List<Map<String, Object>>) raw.get("lines")) {
+      require(!money, MessageContext.text("server.printing.message0023"));
+      for (var a : raw.lines()) {
         var row = new LinkedHashMap<String, String>();
         row.put("sequence", String.valueOf(lines.size() + 1));
-        row.put("code", text(a.get("materialCode")));
-        row.put("name", text(a.get("materialName")));
-        row.put("model", text(a.get("model")));
-        row.put("unit", text(a.get("unit")));
-        row.put("quantity", decimal(a.get("quantity")));
-        row.put("recipient", text(a.get("recipientName")));
-        row.put("department", text(a.get("departmentName")));
-        row.put("task", text(a.get("taskCode")));
-        row.put("requisition", text(a.get("requisitionCode")));
+        row.put("code", text(a.materialCode()));
+        row.put("name", text(a.materialName()));
+        row.put("model", text(a.model()));
+        row.put("unit", text(a.unit()));
+        row.put("quantity", decimal(a.quantity()));
+        row.put("recipient", text(a.recipientName()));
+        row.put("department", text(a.departmentName()));
+        row.put("task", text(a.taskCode()));
+        row.put("requisition", text(a.requisitionCode()));
         lines.add(row);
       }
     }
-    require(
-        !lines.isEmpty(),
-        com.windasoft.eam.common.MessageContext.text("server.printing.message0024"));
+    require(!lines.isEmpty(), MessageContext.text("server.printing.message0024"));
     for (var pair :
         Map.of("recipientName", "recipient", "departmentName", "department", "taskCode", "task")
             .entrySet()) {
@@ -407,165 +404,139 @@ public class DocumentPrintService {
         sign(
             encode(
                 Map.of(
-                    "document",
-                    d,
-                    "lines",
-                    lines,
-                    "template",
-                    config,
-                    "version",
-                    t.get("row_version"))));
+                    "document", d, "lines", lines, "template", config, "version", t.rowVersion())));
     return new Prepared(s, t, config, d, lines, fingerprint);
   }
 
-  private String decimal(Object n) {
-    return n == null
-        ? ""
-        : new BigDecimal(n.toString()).setScale(2, RoundingMode.HALF_UP).toPlainString();
+  private String decimal(BigDecimal n) {
+    return n == null ? "" : n.setScale(2, RoundingMode.HALF_UP).toPlainString();
   }
 
   private String sign(String value) {
     try {
-      var mac = javax.crypto.Mac.getInstance("HmacSHA256");
-      mac.init(new javax.crypto.spec.SecretKeySpec(previewKey, "HmacSHA256"));
-      return HexFormat.of()
-          .formatHex(mac.doFinal(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+      var mac = Mac.getInstance("HmacSHA256");
+      mac.init(new SecretKeySpec(previewKey, "HmacSHA256"));
+      return HexFormat.of().formatHex(mac.doFinal(value.getBytes(StandardCharsets.UTF_8)));
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }
   }
 
   private String hash(String value) {
-    return hashBytes(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    return hashBytes(value.getBytes(StandardCharsets.UTF_8));
   }
 
   private String hashBytes(byte[] value) {
     try {
-      return HexFormat.of()
-          .formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value));
+      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }
   }
 
   @Transactional(readOnly = true)
-  public Map<String, Object> preview(PrintForms.Output f) throws java.io.IOException {
+  public PrintViews.Preview preview(PrintForms.Output f) throws IOException {
     var p = prepare(f);
     byte[] pdf = layout.render(p.config, p.document, p.lines);
-    return Map.of(
-        "pdf",
-        Base64.getEncoder().encodeToString(pdf),
-        "fingerprint",
-        p.fingerprint,
-        "code",
-        p.document.get("code"));
+    return new PrintViews.Preview(
+        Base64.getEncoder().encodeToString(pdf), p.fingerprint, text(p.document.get("code")));
   }
 
+  /** 预览指纹绑定当前来源和模板；幂等键冲突只取原记录，保持请求摘要核对及原事务/锁顺序。 */
   @Transactional
-  public Map<String, Object> generate(PrintForms.Output f) throws java.io.IOException {
+  public PrintViews.Job generate(PrintForms.Output f) throws IOException {
     require(
         f.requestKey() != null && f.requestKey().matches("[A-Za-z0-9_-]{16,64}"),
-        com.windasoft.eam.common.MessageContext.text("server.printing.message0025"));
+        MessageContext.text("server.printing.message0025"));
     String requestHash =
         hash(encode(List.of(text(f.documentId()), text(f.templateId()), text(f.fingerprint()))));
-    var retry = repo.retry(auth.tenantId(), auth.userId(), f.requestKey(), false);
+    var retry = jobs.retry(auth.tenantId(), auth.userId(), f.requestKey(), false);
     if (retry != null) {
       require(
-          requestHash.equals(retry.get("request_hash")),
-          com.windasoft.eam.common.MessageContext.text("server.printing.message0026"));
-      return job(id(retry.get("id")));
+          requestHash.equals(retry.getRequestHash()),
+          MessageContext.text("server.printing.message0026"));
+      return job(retry.getId());
     }
     var p = prepare(f);
     require(
-        p.fingerprint.equals(f.fingerprint()),
-        com.windasoft.eam.common.MessageContext.text("server.printing.message0027"));
+        p.fingerprint.equals(f.fingerprint()), MessageContext.text("server.printing.message0027"));
     byte[] pdf = layout.render(p.config, p.document, p.lines);
     int pages;
     try (var doc = Loader.loadPDF(pdf)) {
       pages = doc.getNumberOfPages();
     }
-    require(
-        pages <= 100, com.windasoft.eam.common.MessageContext.text("server.printing.message0028"));
+    require(pages <= 100, MessageContext.text("server.printing.message0028"));
     long key = IdWorker.getId();
-    Long template = p.template.get("id").equals("system") ? null : id(p.template.get("id"));
-    repo.insertJob(
-        key,
-        auth.tenantId(),
-        id(p.source.get("company_id")),
-        id(p.source.get("warehouse_id")),
-        f.documentId(),
-        text(p.document.get("code")),
-        text(p.document.get("status")),
-        template,
-        text(p.template.get("name")),
-        (int) id(p.template.get("row_version")),
-        encode(p.config),
-        encode(Map.of("header", p.document, "lines", p.lines)),
-        layout.money(p.config),
-        auth.userId(),
-        auth.user().getDisplayName(),
-        f.requestKey(),
-        requestHash,
-        hashBytes(pdf),
-        pages,
-        pdf);
-    var stored = repo.retry(auth.tenantId(), auth.userId(), f.requestKey(), true);
+    var row = new PrintJob();
+    row.setId(key);
+    row.setTenantId(auth.tenantId());
+    row.setCompanyId(p.source.companyId());
+    row.setWarehouseId(p.source.warehouseId());
+    row.setDocumentId(f.documentId());
+    row.setDocumentCode(text(p.document.get("code")));
+    row.setDocumentStatus(text(p.document.get("status")));
+    row.setTemplateId(p.template.id().equals("system") ? null : Long.valueOf(p.template.id()));
+    row.setTemplateName(p.template.name());
+    row.setTemplateVersion(p.template.rowVersion());
+    row.setTemplateSnapshot(encode(p.config));
+    row.setDocumentSnapshot(encode(Map.of("header", p.document, "lines", p.lines)));
+    row.setContainsMoney(layout.money(p.config) ? 1 : 0);
+    row.setActorId(auth.userId());
+    row.setActorName(auth.user().getDisplayName());
+    row.setRequestKey(f.requestKey());
+    row.setRequestHash(requestHash);
+    row.setPdfSha256(hashBytes(pdf));
+    row.setPageCount(pages);
+    row.setPdfContent(pdf);
+    jobs.insertOnce(row);
+    var stored = jobs.retry(auth.tenantId(), auth.userId(), f.requestKey(), true);
     require(
-        requestHash.equals(stored.get("request_hash")),
-        com.windasoft.eam.common.MessageContext.text("server.printing.message0026"));
-    var result = repo.lockedJob(auth.tenantId(), id(stored.get("id")));
+        requestHash.equals(stored.getRequestHash()),
+        MessageContext.text("server.printing.message0026"));
+    var result = jobs.locked(auth.tenantId(), stored.getId());
     checkJob(result);
     return jobView(result);
   }
 
-  private void checkJob(Map<String, Object> j) {
-    checkWarehouse(id(j.get("warehouse_id")), id(j.get("contains_money")) == 1);
+  private void checkJob(PrintJob j) {
+    checkWarehouse(j.getWarehouseId(), j.getContainsMoney() == 1);
   }
 
-  private Map<String, Object> jobView(Map<String, Object> j) {
-    var v = new LinkedHashMap<String, Object>();
-    for (var e : j.entrySet())
-      if (!Set.of("pdf_content", "company_id", "warehouse_id", "contains_money")
-          .contains(e.getKey()))
-        v.put(
-            camel(e.getKey()), e.getValue() instanceof Number ? text(e.getValue()) : e.getValue());
-    return v;
+  private PrintViews.Job jobView(PrintJob j) {
+    return new PrintViews.Job(
+        j.getId().toString(),
+        j.getDocumentId(),
+        j.getDocumentCode(),
+        j.getDocumentStatus(),
+        j.getTemplateId() == null ? null : j.getTemplateId().toString(),
+        j.getTemplateName(),
+        j.getTemplateVersion().toString(),
+        j.getActorName(),
+        j.getCreatedAt(),
+        j.getPageCount().toString(),
+        j.getPdfSha256());
   }
 
-  private String camel(String key) {
-    var b = new StringBuilder();
-    boolean upper = false;
-    for (char c : key.toCharArray()) {
-      if (c == '_') upper = true;
-      else {
-        b.append(upper ? Character.toUpperCase(c) : c);
-        upper = false;
-      }
-    }
-    return b.toString();
-  }
-
-  public Map<String, Object> job(long key) {
-    var j = repo.job(auth.tenantId(), key, false);
+  public PrintViews.Job job(long key) {
+    var j = jobs.find(auth.tenantId(), key, false);
     checkJob(j);
     return jobView(j);
   }
 
-  public List<Map<String, Object>> jobs(String document) {
+  public List<PrintViews.Job> jobs(String document) {
     source(document);
-    return repo.jobs(auth.tenantId(), document).stream()
+    return jobs.list(auth.tenantId(), document).stream()
         .filter(
             j ->
-                id(j.get("contains_money")) == 0
-                    || permissions.inventoryWarehouseAllowed(
-                        OUTBOUND, id(j.get("warehouse_id")), "查看金额"))
+                j.getContainsMoney() == 0
+                    || permissions.inventoryWarehouseAllowed(OUTBOUND, j.getWarehouseId(), "查看金额"))
         .map(this::jobView)
         .toList();
   }
 
   public byte[] file(long key) {
-    var j = repo.job(auth.tenantId(), key, true);
+    var j = jobs.find(auth.tenantId(), key, true);
     checkJob(j);
-    return (byte[]) j.get("pdf_content");
+    return j.getPdfContent();
   }
 }

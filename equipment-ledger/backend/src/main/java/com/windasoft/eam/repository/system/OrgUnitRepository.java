@@ -124,6 +124,16 @@ public class OrgUnitRepository {
             .orderByAsc(OrgUnit::getId));
   }
 
+  /** 打印公司候选保留原启用、集团/公司、未删除和ID排序语义。 */
+  public List<OrgUnit> activeCompanies(long tenant) {
+    return mapper.selectList(
+        new LambdaQueryWrapper<OrgUnit>()
+            .eq(OrgUnit::getTenantId, tenant)
+            .eq(OrgUnit::getStatus, 1)
+            .in(OrgUnit::getOrgType, "集团", "公司")
+            .orderByAsc(OrgUnit::getId));
+  }
+
   public OrgUnit company(long tenant, Long id) {
     return mapper.selectOne(
         new LambdaQueryWrapper<OrgUnit>()
