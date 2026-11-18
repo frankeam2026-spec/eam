@@ -24,14 +24,6 @@ public class BusinessConfigRepository {
     return db.query(sql, (row, index) -> row.getString(1), bindings.toArray());
   }
 
-  public void removeValues(long tenant, String object, long record) {
-    db.update(
-        "DELETE FROM eam_business_value WHERE tenant_id=? AND object_key=? AND record_id=?",
-        tenant,
-        object,
-        record);
-  }
-
   public List<Map<String, Object>> dictionary(long tenant, String id, boolean lock) {
     return db.queryForList(
         "SELECT id,name,enabled,row_version rowVersion FROM eam_business_dictionary WHERE"
@@ -47,46 +39,6 @@ public class BusinessConfigRepository {
             + " WHERE tenant_id=? AND dictionary_id=? ORDER BY sort_no,id",
         tenant,
         id);
-  }
-
-  public List<Map<String, Object>> values(long tenant, String object, Collection<Long> ids) {
-    if (ids.isEmpty()) return List.of();
-    var args = new ArrayList<Object>(List.of(tenant, object));
-    args.addAll(ids);
-    return db.queryForList(
-        "SELECT * FROM eam_business_value WHERE tenant_id=? AND object_key=? AND record_id IN ("
-            + String.join(",", Collections.nCopies(ids.size(), "?"))
-            + ") ORDER BY field_id,ordinal_no",
-        args.toArray());
-  }
-
-  public void replace(
-      long tenant, String object, long record, String field, List<Map<String, Object>> rows) {
-    db.update(
-        "DELETE FROM eam_business_value WHERE tenant_id=? AND object_key=? AND record_id=? AND"
-            + " field_id=?",
-        tenant,
-        object,
-        record,
-        field);
-    int i = 0;
-    for (var r : rows)
-      db.update(
-          "INSERT INTO"
-              + " eam_business_value(tenant_id,object_key,record_id,field_id,ordinal_no,text_value,number_value,date_value,datetime_value,bool_value,reference_id,reference_name)"
-              + " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-          tenant,
-          object,
-          record,
-          field,
-          i++,
-          r.get("text_value"),
-          r.get("number_value"),
-          r.get("date_value"),
-          r.get("datetime_value"),
-          r.get("bool_value"),
-          r.get("reference_id"),
-          r.get("reference_name"));
   }
 
   public List<Map<String, Object>> baseOptions(long tenant, String type) {

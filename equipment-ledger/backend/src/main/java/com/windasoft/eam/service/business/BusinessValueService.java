@@ -1,19 +1,40 @@
 package com.windasoft.eam.service.business;
 
-import com.fasterxml.jackson.databind.*;
-import com.fasterxml.jackson.databind.node.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.windasoft.eam.common.FieldValidationException;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.common.LocalizedStatusException;
+import com.windasoft.eam.common.MessageContext;
+import com.windasoft.eam.common.MessageRef;
+import com.windasoft.eam.dto.business.BusinessFieldValue;
+import com.windasoft.eam.entity.business.BusinessValue;
 import com.windasoft.eam.repository.business.BusinessConfigRepository;
+import com.windasoft.eam.repository.business.BusinessValueRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import java.math.BigDecimal;
-import java.time.*;
-import java.util.*;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+/** 扩展字段按已发布配置校验和规范化；记录权限与完整事务沿用所属业务调用方。存储行固定建模，对外字段ID字典保持动态。 */
 @Service
 public class BusinessValueService {
+  private static final int MAX_MULTIPLE_VALUES = 200;
   private final BusinessConfigRepository repo;
+  private final BusinessValueRepository storage;
   private final BusinessConfigService configs;
   private final BusinessReferenceService references;
   private final AuthContext auth;
@@ -21,11 +42,13 @@ public class BusinessValueService {
 
   public BusinessValueService(
       BusinessConfigRepository repo,
+      BusinessValueRepository storage,
       BusinessConfigService configs,
       BusinessReferenceService references,
       AuthContext auth,
       ObjectMapper json) {
     this.repo = repo;
+    this.storage = storage;
     this.configs = configs;
     this.references = references;
     this.auth = auth;
@@ -41,11 +64,11 @@ public class BusinessValueService {
     var schema = configs.current(object, false);
     int version = schema.getPublishedVersion();
     var fs = configs.fields(configs.decode(schema.getPublished()));
-    var grouped = new HashMap<Long, Map<String, List<Map<String, Object>>>>();
-    for (var row : repo.values(auth.tenantId(), object, ids))
+    var grouped = new HashMap<Long, Map<String, List<BusinessValue>>>();
+    for (var row : storage.values(auth.tenantId(), object, ids))
       grouped
-          .computeIfAbsent(((Number) row.get("record_id")).longValue(), x -> new LinkedHashMap<>())
-          .computeIfAbsent(row.get("field_id").toString(), x -> new ArrayList<>())
+          .computeIfAbsent(row.getRecordId(), x -> new LinkedHashMap<>())
+          .computeIfAbsent(row.getFieldId(), x -> new ArrayList<>())
           .add(row);
     var result = new HashMap<Long, Values>();
     for (long id : ids) {
@@ -69,7 +92,7 @@ public class BusinessValueService {
     attach(object, List.of(row));
   }
 
-  /** Read a whole authorized result set in one query, never one query per row. */
+  /** 授权后的业务结果集一次附加扩展字段；这里不扩大所属业务已经限定的记录范围。 */
   public void attach(String object, List<Map<String, Object>> rows) {
     if (object == null || rows.isEmpty()) return;
     var ids = rows.stream().map(r -> Long.parseLong(r.get("id").toString())).toList();
@@ -98,7 +121,7 @@ public class BusinessValueService {
 
   public void saveDraft(String object, long id, Map<String, Object> body, boolean isNew) {
     var version = body.get("customSchemaVersion") instanceof Number n ? n.intValue() : null;
-    // Internal source-generated stock drafts have no user input yet. Defaults are applied on edit.
+    // 系统生成的库存草稿尚无用户输入，沿用后续编辑时补默认值的原规则。
     if (isNew && version == null && !body.containsKey("customFields")) return;
     save(object, id, json.valueToTree(body.get("customFields")), version, "", isNew, false);
   }
@@ -109,7 +132,7 @@ public class BusinessValueService {
   }
 
   public void remove(String object, long id) {
-    repo.removeValues(auth.tenantId(), object, id);
+    storage.remove(auth.tenantId(), object, id);
   }
 
   public Map<Long, String> repairCategories(Collection<Long> ids) {
@@ -120,30 +143,24 @@ public class BusinessValueService {
     return batch(object, List.of(id)).get(id);
   }
 
-  private Object read(JsonNode f, Map<String, Object> row) {
+  private Object read(JsonNode f, BusinessValue row) {
     return switch (f.path("type").asText()) {
-      case "NUMBER" -> Objects.toString(row.get("number_value"), "");
-      case "DATE" -> Objects.toString(row.get("date_value"), "");
-      case "DATETIME" ->
-          row.get("datetime_value") instanceof java.sql.Timestamp t
-              ? t.toLocalDateTime()
-                  .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"))
-              : Objects.toString(row.get("datetime_value"), "").replace(' ', 'T');
-      case "BOOLEAN" -> BusinessReferenceService.enabled(row.get("bool_value"));
+      case "NUMBER" -> Objects.toString(row.getNumberValue(), "");
+      case "DATE" -> Objects.toString(row.getDateValue(), "");
+      case "DATETIME" -> Objects.toString(row.getDatetimeValue(), "");
+      case "BOOLEAN" -> BusinessReferenceService.enabled(row.getBoolValue());
       case "CHOICE", "MULTI_CHOICE", "USER", "DEPARTMENT" ->
-          Objects.toString(row.get("reference_id"), "");
-      default -> Objects.toString(row.get("text_value"), "");
+          Objects.toString(row.getReferenceId(), "");
+      default -> Objects.toString(row.getTextValue(), "");
     };
   }
 
-  private String display(JsonNode f, Map<String, Object> row) {
-    if (BusinessRules.reference(f)) return Objects.toString(row.get("reference_name"), "");
+  private String display(JsonNode f, BusinessValue row) {
+    if (BusinessRules.reference(f)) return Objects.toString(row.getReferenceName(), "");
     if (f.path("type").asText().equals("BOOLEAN"))
-      return BusinessReferenceService.enabled(row.get("bool_value")) ? "是" : "否";
+      return BusinessReferenceService.enabled(row.getBoolValue()) ? "是" : "否";
     if (f.path("type").asText().equals("NUMBER"))
-      return new BigDecimal(row.get("number_value").toString())
-          .setScale(2, java.math.RoundingMode.HALF_UP)
-          .toPlainString();
+      return row.getNumberValue().setScale(2, RoundingMode.HALF_UP).toPlainString();
     return read(f, row).toString().replace('T', ' ');
   }
 
@@ -157,6 +174,7 @@ public class BusinessValueService {
     save(object, record, submitted, version, category, isNew, true);
   }
 
+  /** 在所属业务事务内锁定配置版本，合并原值后校验可见性与必填，再逐字段替换并记录审计。 隐藏字段及未提交字段保留原值；已有引用沿用快照名称，不能强制重新解析已停用的历史人员/选项。 */
   public void save(
       String object,
       long record,
@@ -169,11 +187,9 @@ public class BusinessValueService {
     int current = schema.getPublishedVersion();
     var fs = configs.fields(configs.decode(schema.getPublished()));
     if (current != 0 && (version == null || version != current))
-      throw new com.windasoft.eam.common.LocalizedStatusException(
-          HttpStatus.CONFLICT, "server.business.message0047");
+      throw new LocalizedStatusException(HttpStatus.CONFLICT, "server.business.message0047");
     if (submitted == null || submitted.isNull()) submitted = json.createObjectNode();
-    if (!submitted.isObject())
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.business.message0048");
+    if (!submitted.isObject()) throw new LocalizedArgumentException("server.business.message0048");
     var input = ((ObjectNode) submitted).deepCopy();
     var defaulted = new HashSet<String>();
     if (isNew)
@@ -193,11 +209,10 @@ public class BusinessValueService {
             e -> {
               if (!fs.containsKey(e.getKey()))
                 throw new FieldValidationException(
-                    "customFields." + e.getKey(),
-                    com.windasoft.eam.common.MessageRef.of("server.business.message0049"));
+                    "customFields." + e.getKey(), MessageRef.of("server.business.message0049"));
               merged.set(e.getKey(), e.getValue());
             });
-    var previousRows = repo.values(auth.tenantId(), object, List.of(record));
+    var previousRows = storage.values(auth.tenantId(), object, List.of(record));
     var changes = new LinkedHashMap<String, Object>();
     for (var e : fs.entrySet()) {
       String id = e.getKey();
@@ -207,23 +222,21 @@ public class BusinessValueService {
       if (!visible) {
         if (submitted.has(id) && !defaulted.contains(id) && !same(value, before))
           throw new FieldValidationException(
-              "customFields." + id,
-              com.windasoft.eam.common.MessageRef.of("server.business.message0050"));
+              "customFields." + id, MessageRef.of("server.business.message0050"));
         continue;
       }
       if (complete && BusinessRules.required(f, fs, merged, category) && BusinessRules.empty(value))
         throw new FieldValidationException(
             "customFields." + id,
-            com.windasoft.eam.common.MessageRef.of(
-                "server.business.message0051", f.path("name").asText()));
+            MessageRef.of("server.business.message0051", f.path("name").asText()));
       if (!submitted.has(id)) continue;
       var rows =
           normalize(
               object,
               f,
               value,
-              previousRows.stream().filter(r -> id.equals(r.get("field_id"))).toList());
-      repo.replace(auth.tenantId(), object, record, id, rows);
+              previousRows.stream().filter(r -> id.equals(r.getFieldId())).toList());
+      storage.replace(auth.tenantId(), object, record, id, rows);
       if (!same(value, before))
         changes.put(id, Map.of("name", f.path("name").asText(), "before", before, "after", value));
     }
@@ -234,57 +247,55 @@ public class BusinessValueService {
     return BusinessRules.empty(a) && BusinessRules.empty(b) || a.equals(b);
   }
 
-  public List<Map<String, Object>> normalize(
-      String object, JsonNode f, JsonNode value, List<Map<String, Object>> previous) {
+  public List<BusinessFieldValue> normalize(
+      String object, JsonNode f, JsonNode value, List<BusinessValue> previous) {
     return normalizeWithNames(object, f, value, previous, null);
   }
 
-  private List<Map<String, Object>> normalizeWithNames(
+  private List<BusinessFieldValue> normalizeWithNames(
       String object,
       JsonNode f,
       JsonNode value,
-      List<Map<String, Object>> previous,
+      List<BusinessValue> previous,
       Map<String, String> referenceNames) {
     if (BusinessRules.empty(value)) return List.of();
     String field = "customFields." + f.path("id").asText();
     try {
-      var rows = new ArrayList<Map<String, Object>>();
+      var rows = new ArrayList<BusinessFieldValue>();
       var values = new ArrayList<JsonNode>();
       if (BusinessRules.multiple(f)) {
-        if (!value.isArray() || value.size() > 200)
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.business.message0052");
+        if (!value.isArray() || value.size() > MAX_MULTIPLE_VALUES)
+          throw new LocalizedArgumentException("server.business.message0052");
         value.forEach(values::add);
       } else {
         if (value.isContainerNode())
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.business.message0053");
+          throw new LocalizedArgumentException("server.business.message0053");
         values.add(value);
       }
       var seen = new HashSet<String>();
       for (var v : values) {
         if (!seen.add(v.asText()))
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.business.message0054");
-        var row = new HashMap<String, Object>();
+          throw new LocalizedArgumentException("server.business.message0054");
+        String textValue = null, referenceId = null, referenceName = null;
+        BigDecimal numberValue = null;
+        LocalDate dateValue = null;
+        LocalDateTime datetimeValue = null;
+        Integer boolValue = null;
         switch (f.path("type").asText()) {
           case "TEXT", "LONG_TEXT" -> {
-            if (!v.isTextual())
-              throw new com.windasoft.eam.common.LocalizedArgumentException(
-                  "server.business.message0055");
+            if (!v.isTextual()) throw new LocalizedArgumentException("server.business.message0055");
             String text = v.asText();
             if (text.length()
                 > f.path("maxLength")
                     .asInt(f.path("type").asText().equals("LONG_TEXT") ? 4000 : 200))
-              throw new com.windasoft.eam.common.LocalizedArgumentException(
-                  "server.business.message0056");
-            row.put("text_value", text);
+              throw new LocalizedArgumentException("server.business.message0056");
+            textValue = text;
           }
           case "NUMBER" -> {
             var n = new BigDecimal(v.asText());
+            // 与既有DECIMAL(24,6)列一致：最多6位小数、18位整数，不在规范化时提前舍入。
             if (n.scale() > 6 || n.precision() - (long) n.scale() > 18)
-              throw new com.windasoft.eam.common.LocalizedArgumentException(
-                  "server.business.message0057");
+              throw new LocalizedArgumentException("server.business.message0057");
             for (String bound : List.of("min", "max")) {
               String limit = f.path(bound).asText();
               if (!limit.isBlank()
@@ -293,43 +304,44 @@ public class BusinessValueService {
                       : n.compareTo(new BigDecimal(limit)) > 0))
                 throw new IllegalArgumentException(bound.equals("min") ? "数值小于下限" : "数值大于上限");
             }
-            row.put("number_value", n);
+            numberValue = n;
           }
-          case "DATE" -> row.put("date_value", LocalDate.parse(v.asText()));
-          case "DATETIME" ->
-              row.put("datetime_value", LocalDateTime.parse(v.asText().replace(' ', 'T')));
+          case "DATE" -> dateValue = LocalDate.parse(v.asText());
+          case "DATETIME" -> datetimeValue = LocalDateTime.parse(v.asText().replace(' ', 'T'));
           case "BOOLEAN" -> {
-            if (!v.isBoolean())
-              throw new com.windasoft.eam.common.LocalizedArgumentException(
-                  "server.business.message0058");
-            row.put("bool_value", v.asBoolean() ? 1 : 0);
+            if (!v.isBoolean()) throw new LocalizedArgumentException("server.business.message0058");
+            boolValue = v.asBoolean() ? 1 : 0;
           }
           default -> {
             String id = v.asText();
             if (id.isBlank() || id.length() > 64)
-              throw new com.windasoft.eam.common.LocalizedArgumentException(
-                  "server.business.message0044");
-            var retained =
-                previous.stream().filter(r -> id.equals(r.get("reference_id"))).findFirst();
+              throw new LocalizedArgumentException("server.business.message0044");
+            var retained = previous.stream().filter(r -> id.equals(r.getReferenceId())).findFirst();
             String name;
-            if (retained.isPresent()) name = retained.get().get("reference_name").toString();
+            if (retained.isPresent()) name = retained.get().getReferenceName().toString();
             else if (referenceNames != null) {
               name = referenceNames.get(id);
-              if (name == null)
-                throw new com.windasoft.eam.common.LocalizedArgumentException(
-                    "server.business.message0059");
+              if (name == null) throw new LocalizedArgumentException("server.business.message0059");
             } else name = references.resolve(object, f, id);
-            row.put("reference_id", id);
-            row.put("reference_name", name);
+            referenceId = id;
+            referenceName = name;
           }
         }
-        rows.add(row);
+        rows.add(
+            new BusinessFieldValue(
+                textValue,
+                numberValue,
+                dateValue,
+                datetimeValue,
+                boolValue,
+                referenceId,
+                referenceName));
       }
       return rows;
     } catch (Exception e) {
       throw new FieldValidationException(
           field,
-          e instanceof java.time.format.DateTimeParseException
+          e instanceof DateTimeParseException
               ? "请选择有效日期或时间"
               : e instanceof NumberFormatException
                   ? "请输入有效数值"
@@ -337,8 +349,8 @@ public class BusinessValueService {
     }
   }
 
-  /** Pure new-record validation for imports; rules and value normalization are shared with save. */
-  public Map<String, List<Map<String, Object>>> prepareNew(
+  /** 导入先共享新记录的默认值、可见性及类型校验；只返回规范化值，不在校验阶段写入数据库。 */
+  public Map<String, List<BusinessFieldValue>> prepareNew(
       String object,
       JsonNode configuration,
       JsonNode submitted,
@@ -358,22 +370,18 @@ public class BusinessValueService {
         values.set(f.path("id").asText(), f.get("defaultValue"));
         defaulted.add(f.path("id").asText());
       }
-    var prepared = new LinkedHashMap<String, List<Map<String, Object>>>();
+    var prepared = new LinkedHashMap<String, List<BusinessFieldValue>>();
     for (var entry : fs.entrySet()) {
       var f = entry.getValue();
       String id = entry.getKey();
       var value = values.path(id);
       if (!BusinessRules.visible(f, fs, values, category)) {
         if (!BusinessRules.empty(value) && !defaulted.contains(id))
-          errors.put(
-              id, com.windasoft.eam.common.MessageContext.text("server.business.message0080"));
+          errors.put(id, MessageContext.text("server.business.message0080"));
         continue;
       }
       if (BusinessRules.required(f, fs, values, category) && BusinessRules.empty(value)) {
-        errors.put(
-            id,
-            com.windasoft.eam.common.MessageContext.text(
-                "server.business.message0051", f.path("name").asText()));
+        errors.put(id, MessageContext.text("server.business.message0051", f.path("name").asText()));
         continue;
       }
       try {
@@ -393,10 +401,10 @@ public class BusinessValueService {
   }
 
   public void savePreparedNew(
-      String object, long id, Map<String, List<Map<String, Object>>> prepared) {
+      String object, long id, Map<String, List<BusinessFieldValue>> prepared) {
     for (var entry : prepared.entrySet())
       if (!entry.getValue().isEmpty())
-        repo.replace(auth.tenantId(), object, id, entry.getKey(), entry.getValue());
+        storage.replace(auth.tenantId(), object, id, entry.getKey(), entry.getValue());
     if (prepared.values().stream().anyMatch(v -> !v.isEmpty()))
       configs.event(object, id, "导入扩展字段", Map.of("fields", prepared.keySet()));
   }
