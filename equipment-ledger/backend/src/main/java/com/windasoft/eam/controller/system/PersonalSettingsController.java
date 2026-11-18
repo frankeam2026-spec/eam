@@ -1,10 +1,16 @@
 package com.windasoft.eam.controller.system;
 
+import com.windasoft.eam.dto.common.DataResponse;
 import com.windasoft.eam.dto.system.PersonalSettingsForm;
+import com.windasoft.eam.dto.system.PersonalSettingsView;
+import com.windasoft.eam.dto.system.ThemeView;
 import com.windasoft.eam.service.system.PersonalSettingsService;
 import jakarta.validation.Valid;
-import java.util.Map;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/auth/settings")
@@ -16,12 +22,12 @@ public class PersonalSettingsController {
   }
 
   @GetMapping
-  public Map<String, Object> settings() {
-    return service.settings();
+  public DataResponse<PersonalSettingsView> settings() {
+    return new DataResponse<>(service.settings());
   }
 
   @PutMapping
-  public Map<String, Object> save(@Valid @RequestBody PersonalSettingsForm form) {
-    return service.save(form);
+  public DataResponse<ThemeView> save(@Valid @RequestBody PersonalSettingsForm form) {
+    return new DataResponse<>(service.save(form));
   }
 }

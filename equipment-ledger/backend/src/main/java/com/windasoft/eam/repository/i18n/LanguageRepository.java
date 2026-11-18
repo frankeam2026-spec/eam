@@ -1,116 +1,59 @@
 package com.windasoft.eam.repository.i18n;
 
-import java.util.*;
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.windasoft.eam.entity.i18n.LanguageDefinition;
+import java.util.List;
 import org.springframework.stereotype.Repository;
 
+/** 语言元数据唯一仓储；词条和事件分别归各自主仓储。 */
 @Repository
 public class LanguageRepository {
-  private final JdbcTemplate db;
+  private final LanguageDefinitionMapper mapper;
 
-  public LanguageRepository(JdbcTemplate db) {
-    this.db = db;
+  public LanguageRepository(LanguageDefinitionMapper mapper) {
+    this.mapper = mapper;
   }
 
-  public List<Map<String, Object>> list(long tenant) {
-    return db.queryForList(
-        "SELECT locale,native_name nativeName,builtin,enabled,row_version rowVersion,updated_at"
-            + " updatedAt FROM eam_language WHERE tenant_id=? ORDER BY builtin DESC,locale",
-        tenant);
+  public List<LanguageDefinition> list(long tenant) {
+    return mapper.selectList(
+        new LambdaQueryWrapper<LanguageDefinition>()
+            .eq(LanguageDefinition::getTenantId, tenant)
+            .orderByDesc(LanguageDefinition::getBuiltin)
+            .orderByAsc(LanguageDefinition::getLocale));
   }
 
-  public Map<String, Object> find(long tenant, String locale) {
-    var rows =
-        db.queryForList(
-            "SELECT * FROM eam_language WHERE tenant_id=? AND locale=?", tenant, locale);
-    return rows.isEmpty() ? null : rows.getFirst();
-  }
-
-  public Map<String, String> messages(long tenant, String locale) {
-    var result = new LinkedHashMap<String, String>();
-    db.query(
-        "SELECT message_key,message_text FROM eam_language_message WHERE tenant_id=? AND locale=?",
-        rs -> {
-          result.put(rs.getString(1), rs.getString(2));
-        },
-        tenant,
-        locale);
-    return result;
-  }
-
-  public String preference(long tenant, long user) {
-    var a =
-        db.queryForList(
-            "SELECT locale FROM eam_user_preference WHERE tenant_id=? AND user_id=?",
-            String.class,
-            tenant,
-            user);
-    return a.isEmpty() ? "zh-CN" : a.getFirst();
-  }
-
-  public void preference(long tenant, long user, String locale) {
-    db.update(
-        "INSERT INTO eam_user_preference(tenant_id,user_id,theme,locale) VALUES(?,?,'blue',?) ON"
-            + " DUPLICATE KEY UPDATE locale=VALUES(locale)",
-        tenant,
-        user,
-        locale);
+  public LanguageDefinition find(long tenant, String locale) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<LanguageDefinition>()
+            .eq(LanguageDefinition::getTenantId, tenant)
+            .eq(LanguageDefinition::getLocale, locale));
   }
 
   public boolean update(
       long tenant, String locale, int version, String name, boolean enabled, long actor) {
-    return db.update(
-            "UPDATE eam_language SET native_name=?,enabled=?,row_version=row_version+1,updated_by=?"
-                + " WHERE tenant_id=? AND locale=? AND row_version=?",
-            name,
-            enabled,
-            actor,
-            tenant,
-            locale,
-            version)
+    return mapper.update(
+            null,
+            new LambdaUpdateWrapper<LanguageDefinition>()
+                .eq(LanguageDefinition::getTenantId, tenant)
+                .eq(LanguageDefinition::getLocale, locale)
+                .eq(LanguageDefinition::getRowVersion, version)
+                .set(LanguageDefinition::getNativeName, name)
+                .set(LanguageDefinition::getEnabled, enabled ? 1 : 0)
+                .set(LanguageDefinition::getUpdatedBy, actor)
+                .setSql("row_version=row_version+1"))
         == 1;
   }
 
   public void insert(long tenant, String locale, String name, long actor, boolean builtin) {
-    db.update(
-        "INSERT INTO"
-            + " eam_language(tenant_id,locale,native_name,builtin,enabled,row_version,updated_by)"
-            + " VALUES(?,?,?,?,?,1,?)",
-        tenant,
-        locale,
-        name,
-        builtin,
-        builtin,
-        actor);
-  }
-
-  public void replace(long tenant, String locale, Map<String, String> messages) {
-    db.update("DELETE FROM eam_language_message WHERE tenant_id=? AND locale=?", tenant, locale);
-    db.batchUpdate(
-        "INSERT INTO eam_language_message(tenant_id,locale,message_key,message_text,module_key)"
-            + " VALUES(?,?,?,?,?)",
-        messages.entrySet(),
-        500,
-        (ps, e) -> {
-          ps.setLong(1, tenant);
-          ps.setString(2, locale);
-          ps.setString(3, e.getKey());
-          ps.setString(4, e.getValue());
-          ps.setString(
-              5, String.join(".", Arrays.stream(e.getKey().split("\\.")).limit(2).toList()));
-        });
-  }
-
-  public void event(long tenant, String locale, String action, long actor, int version, int count) {
-    db.update(
-        "INSERT INTO"
-            + " eam_language_event(tenant_id,locale,action_code,actor_id,row_version,message_count)"
-            + " VALUES(?,?,?,?,?,?)",
-        tenant,
-        locale,
-        action,
-        actor,
-        version,
-        count);
+    var row = new LanguageDefinition();
+    row.setTenantId(tenant);
+    row.setLocale(locale);
+    row.setNativeName(name);
+    row.setBuiltin(builtin ? 1 : 0);
+    row.setEnabled(builtin ? 1 : 0);
+    row.setRowVersion(1);
+    row.setUpdatedBy(actor);
+    mapper.insert(row);
   }
 }

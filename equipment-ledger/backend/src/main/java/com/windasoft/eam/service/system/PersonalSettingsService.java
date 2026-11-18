@@ -1,39 +1,49 @@
 package com.windasoft.eam.service.system;
 
+import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.dto.system.PersonalSettingsForm;
-import com.windasoft.eam.repository.system.PersonalSettingsRepository;
-import java.util.Map;
+import com.windasoft.eam.dto.system.PersonalSettingsView;
+import com.windasoft.eam.dto.system.ThemeView;
+import com.windasoft.eam.repository.system.RoleManagementRepository;
+import com.windasoft.eam.repository.system.UserPreferenceRepository;
+import com.windasoft.eam.service.i18n.LanguageService;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class PersonalSettingsService {
-  private final PersonalSettingsRepository repository;
+  private final UserPreferenceRepository preferences;
+  private final RoleManagementRepository roles;
   private final AuthContext auth;
-  private final com.windasoft.eam.service.i18n.LanguageService languages;
+  private final LanguageService languages;
 
   public PersonalSettingsService(
-      PersonalSettingsRepository repository,
+      UserPreferenceRepository preferences,
+      RoleManagementRepository roles,
       AuthContext auth,
-      com.windasoft.eam.service.i18n.LanguageService languages) {
-    this.repository = repository;
+      LanguageService languages) {
+    this.preferences = preferences;
+    this.roles = roles;
     this.auth = auth;
     this.languages = languages;
   }
 
-  public Map<String, Object> settings() {
-    var data = new java.util.LinkedHashMap<String, Object>(languages.preference());
-    data.put("theme", repository.theme(auth.tenantId(), auth.userId()));
-    data.put("roles", repository.roleNames(auth.tenantId(), auth.userId()));
-    return Map.of("data", data);
+  /** 语言有效性仍以LanguageService为权威；只读取当前可信用户的皮肤与有效角色。 */
+  public PersonalSettingsView settings() {
+    var locale = languages.preference();
+    return new PersonalSettingsView(
+        locale.locale(),
+        locale.effectiveLocale(),
+        preferences.theme(auth.tenantId(), auth.userId()),
+        roles.roleNames(auth.tenantId(), auth.userId()));
   }
 
   @Transactional
-  public Map<String, Object> save(PersonalSettingsForm form) {
+  public ThemeView save(PersonalSettingsForm form) {
     if (!Set.of("blue", "navy", "pink").contains(form.theme()))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.system.message0004");
-    repository.saveTheme(auth.tenantId(), auth.userId(), form.theme());
-    return Map.of("data", Map.of("theme", form.theme()));
+      throw new LocalizedArgumentException("server.system.message0004");
+    preferences.saveTheme(auth.tenantId(), auth.userId(), form.theme());
+    return new ThemeView(form.theme());
   }
 }

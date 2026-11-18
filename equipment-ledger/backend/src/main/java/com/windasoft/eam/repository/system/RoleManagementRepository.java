@@ -4,12 +4,14 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.windasoft.eam.entity.system.*;
 import java.util.*;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Repository;
 
 /** 角色管理仓储：维护角色主体及授权关联，权限配置有效性由服务端校验。 */
 @Repository
 public class RoleManagementRepository {
   private final RoleRelationsRepository relations;
+
   private final SystemRoleMapper roles;
   private final UserRoleLinkMapper links;
   private final RoleMenuPermissionMapper grants;
@@ -23,6 +25,10 @@ public class RoleManagementRepository {
     this.roles = roles;
     this.links = links;
     this.grants = grants;
+  }
+
+  public List<String> roleNames(long tenant, long user) {
+    return roles.names(tenant, user);
   }
 
   public List<SystemRole> roles(long tenant) {
@@ -80,7 +86,7 @@ public class RoleManagementRepository {
                 .in(SystemRole::getId, ids))
         .stream()
         .map(SystemRole::getId)
-        .collect(java.util.stream.Collectors.toSet());
+        .collect(Collectors.toSet());
   }
 
   public long roleCount(long tenant, List<Long> ids) {
@@ -100,8 +106,7 @@ public class RoleManagementRepository {
     var linksForUsers =
         links.selectList(
             new QueryWrapper<UserRoleLink>().eq("tenant_id", tenant).in("user_id", userIds));
-    return linksForUsers.stream()
-        .collect(java.util.stream.Collectors.groupingBy(UserRoleLink::getUserId));
+    return linksForUsers.stream().collect(Collectors.groupingBy(UserRoleLink::getUserId));
   }
 
   public List<UserRoleLink> userRoles(long tenant, Long id) {
@@ -127,8 +132,7 @@ public class RoleManagementRepository {
                     .eq(RoleMenuPermission::getTenantId, tenant)
                     .in(RoleMenuPermission::getRoleId, roleIds)
                     .orderByAsc(RoleMenuPermission::getId)));
-    return rows.stream()
-        .collect(java.util.stream.Collectors.groupingBy(RoleMenuPermission::getRoleId));
+    return rows.stream().collect(Collectors.groupingBy(RoleMenuPermission::getRoleId));
   }
 
   public List<RoleMenuPermission> menuPermissions(long tenant, Long id) {
