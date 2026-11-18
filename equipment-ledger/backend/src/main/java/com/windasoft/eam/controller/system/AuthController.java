@@ -7,7 +7,7 @@ import com.windasoft.eam.dto.system.ChangePasswordForm;
 import com.windasoft.eam.dto.system.CurrentUserView;
 import com.windasoft.eam.dto.system.LoginForm;
 import com.windasoft.eam.dto.system.LogoutResult;
-import com.windasoft.eam.dto.system.PasswordChangeResult;
+import com.windasoft.eam.dto.common.SuccessResponse;
 import com.windasoft.eam.service.system.AuthenticationService;
 import jakarta.servlet.http.*;
 import jakarta.validation.Valid;
@@ -53,7 +53,7 @@ public class AuthController {
   }
 
   @PostMapping("/password")
-  public PasswordChangeResult changePassword(
+  public SuccessResponse changePassword(
       @Valid @RequestBody ChangePasswordForm form, HttpServletRequest request) {
     return service.changePassword(form, token(request));
   }

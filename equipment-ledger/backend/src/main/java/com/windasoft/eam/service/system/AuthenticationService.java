@@ -9,7 +9,7 @@ import com.windasoft.eam.dto.system.AuthenticationResult;
 import com.windasoft.eam.dto.system.ChangePasswordForm;
 import com.windasoft.eam.dto.system.CurrentUserView;
 import com.windasoft.eam.dto.system.LoginForm;
-import com.windasoft.eam.dto.system.PasswordChangeResult;
+import com.windasoft.eam.dto.common.SuccessResponse;
 import com.windasoft.eam.entity.system.AuthSession;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.system.AuthenticationRepository;
@@ -84,7 +84,7 @@ public class AuthenticationService {
   }
 
   @Transactional
-  public PasswordChangeResult changePassword(ChangePasswordForm form, String token) {
+  public SuccessResponse changePassword(ChangePasswordForm form, String token) {
     if (environment.acceptsProfiles(Profiles.of("local-dev")))
       throw new LocalizedArgumentException("server.system.message0036");
     var user = users.lockUser(auth.tenantId(), auth.userId());
@@ -100,7 +100,7 @@ public class AuthenticationService {
     user.setPasswordHash(passwords.encode(form.newPassword()));
     users.updatePassword(user);
     repository.revokeOtherSessions(auth.tenantId(), auth.userId(), null);
-    return new PasswordChangeResult(true);
+    return new SuccessResponse(true);
   }
 
   private AuthenticatedUserView view(SystemUser user) {
