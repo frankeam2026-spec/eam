@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.*;
+import com.windasoft.eam.dto.system.WorkInboxViews;
 import com.windasoft.eam.service.system.WorkInboxService;
 import java.util.*;
 import org.junit.jupiter.api.*;
@@ -30,7 +31,7 @@ class AiBusinessAssistantTest {
   @BeforeEach
   void catalog() {
     when(queries.catalog()).thenReturn(Map.of("equipment", Map.of("label", "设备台账")));
-    when(inbox.assistantKinds()).thenReturn(List.of(Map.of("module", "inspection", "kind", "待审核")));
+    when(inbox.assistantKinds()).thenReturn(List.of(new WorkInboxViews.Kind("inspection", "待审核")));
   }
 
   @Test
@@ -84,7 +85,7 @@ class AiBusinessAssistantTest {
     response(
         "{\"operation\":\"TODO\",\"queries\":[{\"module\":\"inspection\",\"kind\":\"待审核\",\"state\":\"pending\",\"search\":\"\"}]}");
     when(inbox.list("todo", "pending", "inspection", "待审核", "", 1, 20))
-        .thenReturn(Map.of("data", List.of(), "total", 0));
+        .thenReturn(new WorkInboxViews.Page(List.of(), 0));
     assertTrue(
         ((Map<?, ?>) service.tryAnswer("待我审核的点检", List.of(), null)).containsKey("workInboxes"));
     verify(inbox).list("todo", "pending", "inspection", "待审核", "", 1, 20);

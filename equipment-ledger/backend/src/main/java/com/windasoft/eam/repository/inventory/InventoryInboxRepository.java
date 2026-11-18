@@ -29,4 +29,16 @@ public class InventoryInboxRepository {
             .in(InventoryInbox::getId, ids)
             .set(InventoryInbox::getDone, 1));
   }
+
+  /** 工作中心只标记当前租户、当前用户未读的消息，空ID表示本人的全部消息。 */
+  public void markWorkRead(long tenant, long user, String id) {
+    mapper.update(
+        null,
+        new LambdaUpdateWrapper<InventoryInbox>()
+            .eq(InventoryInbox::getTenantId, tenant)
+            .eq(InventoryInbox::getUserId, user)
+            .eq(!id.isBlank(), InventoryInbox::getId, id)
+            .isNull(InventoryInbox::getReadAt)
+            .setSql("read_at=NOW()"));
+  }
 }

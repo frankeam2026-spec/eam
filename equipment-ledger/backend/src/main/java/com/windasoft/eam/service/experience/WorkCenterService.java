@@ -4,6 +4,7 @@ import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.windasoft.eam.dto.common.SuccessResponse;
+import com.windasoft.eam.dto.system.WorkInboxViews;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.experience.HomePreferenceRepository;
 import com.windasoft.eam.repository.experience.WorkCenterRepository;
@@ -262,45 +263,33 @@ public class WorkCenterService {
     int limit = (int) id(config.get("limit"));
     if (type.equals("todo") || type.equals("inventory")) {
       var data =
-          (Map<String, Object>)
-              inbox.list(
-                  "todo",
-                  "pending",
-                  type.equals("inventory") ? "inventory" : module,
-                  "",
-                  "",
-                  1,
-                  limit);
-      var output = new ArrayList<Map<String, Object>>();
-      for (var row : rows(data.get("data"))) {
-        var v = new LinkedHashMap<>(row);
-        v.put("code", row.get("orderNo"));
-        v.put("name", row.get("title"));
-        v.put(
-            "url",
-            text(row, "module").equals("anomaly")
-                ? "/anomalies/" + row.get("orderId")
-                : text(row, "module").equals("repairPlan")
-                    ? "/repair-plans/" + row.get("orderId")
-                    : text(row, "module").equals("repair")
-                        ? "/repairs/" + row.get("orderId")
-                        : text(row, "module").equals("maintenance")
-                            ? "/maintenance/task/" + row.get("orderId")
-                            : text(row, "module").equals("inspection")
-                                ? "/inspection/task/" + row.get("orderId")
-                                : text(row, "module").equals("inventory")
-                                    ? "/inventory/outbounds/new?requests=" + row.get("orderId")
-                                    : "/inventory/outbounds/" + row.get("orderId"));
-        output.add(v);
-      }
-      return Map.of(
-          "data",
+          inbox.list(
+              "todo", "pending", type.equals("inventory") ? "inventory" : module, "", "", 1, limit);
+      var output =
+          data.data().stream()
+              .map(
+                  row ->
+                      new WorkInboxViews.Card(
+                          row,
+                          row.orderNo(),
+                          row.title(),
+                          switch (row.module()) {
+                            case "anomaly" -> "/anomalies/" + row.orderId();
+                            case "repairPlan" -> "/repair-plans/" + row.orderId();
+                            case "repair" -> "/repairs/" + row.orderId();
+                            case "maintenance" -> "/maintenance/task/" + row.orderId();
+                            case "inspection" -> "/inspection/task/" + row.orderId();
+                            case "inventory" ->
+                                "/inventory/outbounds/new?requests=" + row.orderId();
+                            default -> "/inventory/outbounds/" + row.orderId();
+                          }))
+              .toList();
+      return new WorkInboxViews.Block(
           output,
-          "total",
-          data.get("total"),
-          "url",
+          data.total(),
           "/workspace/inbox?tab=pending" + (module.isBlank() ? "" : "&module=" + module));
     }
+
     if (type.equals("surplus")) return custody.list(!team, "", 1, limit);
     if (type.equals("anomalies"))
       return anomalies.list(

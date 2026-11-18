@@ -96,4 +96,16 @@ WHERE i.tenant_id=? AND i.user_id=? ORDER BY i.created_at DESC,i.id DESC LIMIT 3
             .eq(MaintenanceInbox::getTaskId, task)
             .eq(MaintenanceInbox::getKind, kind));
   }
+
+  /** 工作中心只标记当前租户、当前用户未读的消息，空ID表示本人的全部消息。 */
+  public void markWorkRead(long tenant, long user, String id) {
+    mapper.update(
+        null,
+        new LambdaUpdateWrapper<MaintenanceInbox>()
+            .eq(MaintenanceInbox::getTenantId, tenant)
+            .eq(MaintenanceInbox::getUserId, user)
+            .eq(!id.isBlank(), MaintenanceInbox::getId, id)
+            .isNull(MaintenanceInbox::getReadAt)
+            .setSql("read_at=NOW()"));
+  }
 }

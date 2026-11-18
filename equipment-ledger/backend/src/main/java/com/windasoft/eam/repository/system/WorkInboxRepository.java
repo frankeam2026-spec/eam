@@ -1,6 +1,10 @@
 package com.windasoft.eam.repository.system;
 
-import java.util.*;
+import com.windasoft.eam.dto.system.WorkInboxViews;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import org.springframework.jdbc.core.DataClassRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -71,26 +75,33 @@ public class WorkInboxRepository {
     return values.toArray();
   }
 
-  public Object summary(long tenantId, long userId) {
+  public WorkInboxViews.Summary summary(long tenantId, long userId) {
     var counts =
-        db.queryForMap(
+        db.queryForObject(
             "SELECT COALESCE(SUM(todo=1 AND done=0),0) pending,COALESCE(SUM(todo=1 AND done=1),0)"
                 + " completed,COALESCE(SUM(isRead=0),0) unread FROM "
                 + ROWS,
+            DataClassRowMapper.newInstance(WorkInboxViews.Counts.class),
             identity(tenantId, userId));
     var kinds =
-        db.queryForList(
+        db.query(
             "SELECT module,kind,COALESCE(SUM(done=0),0) count,COALESCE(SUM(done=1),0) completed"
                 + " FROM "
                 + ROWS
                 + " WHERE todo=1 GROUP BY module,kind ORDER BY module,kind",
+            DataClassRowMapper.newInstance(WorkInboxViews.KindCount.class),
             identity(tenantId, userId));
-    return Map.of("counts", counts, "kinds", kinds);
+    return new WorkInboxViews.Summary(counts, kinds);
   }
 
-  public List<Map<String,Object>> assistantKinds(long tenant,long user){return db.queryForList("SELECT DISTINCT module,kind FROM "+ROWS+" WHERE todo=1 ORDER BY module,kind",identity(tenant,user));}
+  public List<WorkInboxViews.Kind> assistantKinds(long tenant, long user) {
+    return db.query(
+        "SELECT DISTINCT module,kind FROM " + ROWS + " WHERE todo=1 ORDER BY module,kind",
+        DataClassRowMapper.newInstance(WorkInboxViews.Kind.class),
+        identity(tenant, user));
+  }
 
-  public Object list(
+  public WorkInboxViews.Page list(
       long tenantId,
       long userId,
       String channel,
@@ -127,65 +138,11 @@ public class WorkInboxRepository {
         db.queryForObject("SELECT COUNT(*) FROM " + ROWS + where, Long.class, args.toArray());
     args.add(size);
     args.add((long) (page - 1) * size);
-    return Map.of(
-        "data",
-        db.queryForList(
+    return new WorkInboxViews.Page(
+        db.query(
             "SELECT * FROM " + ROWS + where + " ORDER BY time DESC,id DESC LIMIT ? OFFSET ?",
+            DataClassRowMapper.newInstance(WorkInboxViews.Row.class),
             args.toArray()),
-        "total",
         total);
-  }
-
-  public Object read(long tenantId, long userId, String module, String id) {
-    if(id.startsWith("n:")) {
-      db.update("UPDATE eam_notify_message SET read_at=COALESCE(read_at,NOW(6)) WHERE tenant_id=? AND recipient_id=? AND id=? AND legacy_id IS NULL",tenantId,userId,Long.parseLong(id.substring(2)));
-      return Map.of("success",true);
-    }
-    if(id.isBlank()) db.update("UPDATE eam_notify_message SET read_at=COALESCE(read_at,NOW(6)) WHERE tenant_id=? AND recipient_id=? AND (?='' OR module=?)",tenantId,userId,module,module);
-    else db.update("UPDATE eam_notify_message SET read_at=COALESCE(read_at,NOW(6)) WHERE tenant_id=? AND recipient_id=? AND legacy_id=? AND (?='' OR module=?)",tenantId,userId,id,module,module);
-
-    if (module.isBlank() || module.equals("anomaly") || module.equals("repairPlan")) {
-      var args = new ArrayList<Object>();
-      args.add(tenantId);
-      args.add(userId);
-      String filter = "";
-      if (!module.isBlank()) {
-        filter += " AND object_kind=?";
-        args.add(module);
-      }
-      if (!id.isBlank()) {
-        filter += " AND id=?";
-        args.add(id);
-      }
-      db.update(
-          "UPDATE eam_experience_inbox SET read_at=NOW(3) WHERE tenant_id=? AND user_id=? AND"
-              + " read_at IS NULL"
-              + filter,
-          args.toArray());
-    }
-    for (var entry :
-        Map.of(
-                "inventory",
-                "inv_inbox",
-                "repair",
-                "eam_repair_inbox",
-                "maintenance",
-                "eam_maintenance_inbox",
-                "inspection",
-                "eam_inspection_inbox")
-            .entrySet()) {
-      if (!module.isBlank() && !entry.getKey().equals(module)) continue;
-      var args = new ArrayList<Object>();
-      args.add(tenantId);
-      args.add(userId);
-      if (!id.isBlank()) args.add(id);
-      db.update(
-          "UPDATE "
-              + entry.getValue()
-              + " SET read_at=NOW() WHERE tenant_id=? AND user_id=? AND read_at IS NULL"
-              + (id.isBlank() ? "" : " AND id=?"),
-          args.toArray());
-    }
-    return Map.of("success", true);
   }
 }

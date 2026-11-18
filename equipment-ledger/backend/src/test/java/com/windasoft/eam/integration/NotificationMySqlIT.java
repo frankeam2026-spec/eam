@@ -1,5 +1,9 @@
 package com.windasoft.eam.integration;
 
+import org.junit.jupiter.api.Assertions;
+
+import com.windasoft.eam.dto.system.WorkInboxViews;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -56,6 +60,7 @@ class NotificationMySqlIT {
   @Autowired ReminderRepository repository;
   @Autowired ReminderService reminders;
   @Autowired WorkInboxRepository inbox;
+  @Autowired WorkInboxService workInbox;
   @Autowired NotificationRetentionService retention;
   @Autowired NotificationRetentionRepository retentionRepository;
   @Autowired UserManagementService usersService;
@@ -206,25 +211,20 @@ class NotificationMySqlIT {
     assertEquals(4, count(id));
     send(id, "SYSTEM");
     var list =
-        (Map<?, ?>)
-            inbox.list(
-                10001, user, "notification", "all", "repair", "", "notification-test", 1, 20);
-    assertTrue(((Number) list.get("total")).longValue() >= 2);
-    var rows = (List<Map<String, Object>>) list.get("data");
+        inbox.list(10001, user, "notification", "all", "repair", "", "notification-test", 1, 20);
+    assertTrue(list.total() >= 2);
+    var rows = list.data();
     var row =
         rows.stream()
-            .filter(
-                r ->
-                    id == Long.parseLong(r.get("orderId").toString())
-                        && r.get("id").toString().startsWith("n:"))
+            .filter(r -> id == Long.parseLong(r.orderId()) && r.id().startsWith("n:"))
             .findFirst()
             .orElseThrow();
-    inbox.read(10001, user, "repair", row.get("id").toString());
+    workInbox.read(new WorkInboxViews.Read("repair", row.id()));
     assertNotNull(
         db.queryForObject(
             "SELECT read_at FROM eam_notify_message WHERE id=?",
             java.sql.Timestamp.class,
-            Long.parseLong(row.get("id").toString().substring(2))));
+            Long.parseLong(row.id().substring(2))));
   }
 
   @Test
@@ -614,21 +614,19 @@ class NotificationMySqlIT {
                 "SELECT * FROM eam_notify_message WHERE id=?", logs.getFirst().get("message_id"))
             .get("subject"));
     var page =
-        (Map<?, ?>)
-            inbox.list(
-                10001, user, "notification", "all", "repair", "", "notification-test", 1, 100);
-    var list = (List<Map<String, Object>>) page.get("data");
+        inbox.list(10001, user, "notification", "all", "repair", "", "notification-test", 1, 100);
+    var list = page.data();
     var row =
         list.stream()
-            .filter(r -> Long.toString(order).equals(r.get("orderId")))
+            .filter(r -> Long.toString(order).equals(r.orderId()))
             .findFirst()
             .orElseThrow();
-    inbox.read(10001, user, "repair", row.get("id").toString());
+    workInbox.read(new WorkInboxViews.Read("repair", row.id()));
     assertNotNull(
         db.queryForObject(
             "SELECT read_at FROM eam_notify_message WHERE id=?",
             java.sql.Timestamp.class,
-            Long.parseLong(row.get("id").toString().substring(2))));
+            Long.parseLong(row.id().substring(2))));
   }
 
   @Test

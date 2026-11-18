@@ -113,4 +113,16 @@ public class RepairInboxRepository {
   public List<RepairInboxView> inboxRows(long tenant, long user) {
     return mapper.inboxRows(tenant, user, MAX_RECENT_MESSAGES);
   }
+
+  /** 工作中心只标记当前租户、当前用户未读的消息，空ID表示本人的全部消息。 */
+  public void markWorkRead(long tenant, long user, String id) {
+    mapper.update(
+        null,
+        new LambdaUpdateWrapper<RepairInbox>()
+            .eq(RepairInbox::getTenantId, tenant)
+            .eq(RepairInbox::getUserId, user)
+            .eq(!id.isBlank(), RepairInbox::getId, id)
+            .isNull(RepairInbox::getReadAt)
+            .setSql("read_at=NOW()"));
+  }
 }

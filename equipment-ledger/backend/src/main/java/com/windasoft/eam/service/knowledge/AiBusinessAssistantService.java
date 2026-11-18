@@ -1,5 +1,6 @@
 package com.windasoft.eam.service.knowledge;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.*;
 import com.windasoft.eam.dto.knowledge.AiBusinessCatalog;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
@@ -145,12 +146,14 @@ KNOWLEDGE/ANALYTICS/CLARIFY的queries必须为空。message使用客户可懂的
                 && todoKinds.stream()
                     .noneMatch(
                         row ->
-                            Objects.toString(row.get("module"), "").equals(module)
-                                && Objects.toString(row.get("kind"), "").equals(kind)))
+                            Objects.toString(row.module(), "").equals(module)
+                                && Objects.toString(row.kind(), "").equals(kind)))
           return clarification("未匹配到你有权查看的待办类型，请明确事项类型。");
         var result =
             new LinkedHashMap<>(
-                (Map<String, Object>) inbox.list("todo", state, module, kind, search, 1, 20));
+                json.convertValue(
+                    inbox.list("todo", state, module, kind, search, 1, 20),
+                    new TypeReference<Map<String, Object>>() {}));
         result.put(
             "criteria", Map.of("module", module, "kind", kind, "state", state, "search", search));
         cards.add(result);

@@ -1,8 +1,14 @@
 package com.windasoft.eam.controller.system;
 
+import com.windasoft.eam.dto.common.SuccessResponse;
+import com.windasoft.eam.dto.system.WorkInboxViews;
 import com.windasoft.eam.service.system.WorkInboxService;
-import java.util.Map;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 /** 统一待办接口：展示待办视图，不作为业务单据状态的权威来源。 */
 @RestController
@@ -15,12 +21,12 @@ public class WorkInboxController {
   }
 
   @GetMapping("/summary")
-  public Object summary() {
+  public WorkInboxViews.Summary summary() {
     return service.summary();
   }
 
   @GetMapping
-  public Object list(
+  public WorkInboxViews.Page list(
       @RequestParam(defaultValue = "todo") String channel,
       @RequestParam(defaultValue = "pending") String state,
       @RequestParam(defaultValue = "") String module,
@@ -32,7 +38,7 @@ public class WorkInboxController {
   }
 
   @PatchMapping("/read")
-  public Object read(@RequestBody Map<String, Object> body) {
+  public SuccessResponse read(@RequestBody WorkInboxViews.Read body) {
     return service.read(body);
   }
 }
