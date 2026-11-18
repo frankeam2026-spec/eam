@@ -3,6 +3,10 @@ package com.windasoft.eam.service.experience;
 import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.dto.experience.HomeContracts.LayoutForm;
+import com.windasoft.eam.dto.experience.HomeContracts.Overview;
+import com.windasoft.eam.dto.experience.HomeContracts.Selected;
+import com.windasoft.eam.dto.experience.HomeContracts.Summary;
 import com.windasoft.eam.repository.experience.HomeOverviewRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -10,6 +14,7 @@ import java.util.*;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class HomeOverviewService {
@@ -51,7 +56,7 @@ public class HomeOverviewService {
   }
 
   Set<String> available() {
-    var values = new HashSet<String>((List<String>) ((Map<?, ?>) work.catalog()).get("data"));
+    var values = new HashSet<String>(work.catalog());
     values.retainAll(SECTIONS);
     values.add("work");
     analytics.metrics().forEach(m -> values.add("analytics:" + m.id()));
@@ -63,8 +68,8 @@ public class HomeOverviewService {
         && (!text(b, "scope").equals("team") || permissions.allowed("workspace", "团队工作查看"));
   }
 
-  Map<String, Object> defaults(Map<String, Object> selected, Set<String> available) {
-    var source = (Map<String, Object>) selected.get("layout");
+  Map<String, Object> defaults(Selected selected, Set<String> available) {
+    var source = home.canvas(selected.layout());
     if (source.get("overviewLayout") instanceof Map<?, ?> configured) {
       var value = new LinkedHashMap<>((Map<String, Object>) configured);
       value.put(
@@ -125,41 +130,30 @@ public class HomeOverviewService {
         input, available, permissions.allowed("workspace", "团队工作查看"), home::normalize);
   }
 
+  /** 选择模板仍复用首页授权，个人总览以完整复合键读取，不借管理模板权限扩大范围。 */
   @Transactional
-  public Object get(Long requested) {
+  public Overview get(Long requested) {
     home.access();
     Long template = requested;
     if (template == null) {
       var recent = repository.latest(auth.tenantId(), auth.userId());
-      if (!recent.isEmpty()) {
-        long candidate = id(recent.getFirst().get("template_id"));
+      if (recent != null) {
+        long candidate = recent.getTemplateId();
         try {
           home.assigned(candidate);
           template = candidate;
-        } catch (org.springframework.web.server.ResponseStatusException ignored) {
-          /* Fall back to the current role template. */
+        } catch (ResponseStatusException denied) {
+          if (denied.getStatusCode().value() != 403) throw denied;
         }
       }
     }
-    var base = (Map<String, Object>) home.home(template);
-    var selected = (Map<String, Object>) base.get("selected");
-    long tid = id(selected.get("id"));
+    var base = home.home(template);
+    var selected = base.selected();
+    long id = Long.parseLong(selected.id());
     var available = available();
     var defaults = defaults(selected, available);
-    var stored = repository.load(auth.tenantId(), auth.userId(), tid);
-    Map<String, Object> layout =
-        stored.isEmpty() ? defaults : object(json, stored.getFirst().get("payload"));
-    var output = new LinkedHashMap<String, Object>();
-    output.put("templates", base.get("templates"));
-    output.put(
-        "selected",
-        Map.of(
-            "id",
-            selected.get("id"),
-            "name",
-            selected.get("name"),
-            "version",
-            selected.get("version")));
+    var stored = repository.find(auth.tenantId(), auth.userId(), id);
+    var layout = stored == null ? defaults : object(json, stored.getPayload());
     var compatible = new LinkedHashMap<>(layout);
     compatible.putIfAbsent("schemaVersion", 2);
     compatible.putIfAbsent("layoutMode", "work");
@@ -168,42 +162,36 @@ public class HomeOverviewService {
     compatible.putIfAbsent("departmentIds", List.of());
     compatible.put(
         "blocks", rows(layout.get("blocks")).stream().filter(b -> visible(b, available)).toList());
-    output.put("layout", compatible);
-    output.put("defaultLayout", defaults);
-    output.put("catalog", available.stream().sorted().toList());
-    output.put("rowVersion", stored.isEmpty() ? -1 : stored.getFirst().get("row_version"));
-    output.put("templateVersion", selected.get("version"));
-    output.put(
-        "updateAvailable",
-        !stored.isEmpty()
-            && id(stored.getFirst().get("template_version")) != id(selected.get("version")));
-    return output;
+    return new Overview(
+        base.templates(),
+        new Summary(selected.id(), selected.name(), selected.version()),
+        json.valueToTree(compatible),
+        json.valueToTree(defaults),
+        available.stream().sorted().toList(),
+        stored == null ? -1 : stored.getRowVersion(),
+        selected.version(),
+        stored != null && stored.getTemplateVersion() != selected.version());
   }
 
+  /** 模板版本不匹配不能覆盖个人布局，唯一键与原版本条件更新共同防止重复保存。 */
   @Transactional
-  public Object save(Map<String, Object> body) {
+  public Overview save(LayoutForm form) {
     home.access();
-    check(
-        body.containsKey("templateId")
-            && body.containsKey("templateVersion")
-            && body.containsKey("rowVersion"),
-        "缺少配置版本，请重新加载首页");
-    long tid = id(body.get("templateId"));
-    var selected = home.assigned(tid);
-    long version = id(body.get("templateVersion"));
-    check(version == id(selected.get("version")), "角色模板已更新，请重新加载后再保存");
-    check(body.get("layout") instanceof Map<?, ?>, "首页布局无效");
-    String payload = encode(json, normalize((Map<String, Object>) body.get("layout"), available()));
+    long id = form.templateId();
+    var selected = home.assigned(id);
+    int version = form.templateVersion();
+    check(version == selected.version(), "角色模板已更新，请重新加载后再保存");
+    String payload = encode(json, normalize(home.canvas(form.layout()), available()));
     check(payload.length() <= 32000, "首页配置过大");
-    long rowVersion = id(body.get("rowVersion"));
-    if (rowVersion == -1) {
+    if (form.rowVersion() == -1) {
       try {
-        repository.insert(auth.tenantId(), auth.userId(), tid, version, payload);
+        repository.insert(auth.tenantId(), auth.userId(), id, version, payload);
       } catch (DuplicateKeyException duplicate) {
         conflict();
       }
-    } else if (repository.update(auth.tenantId(), auth.userId(), tid, version, rowVersion, payload)
+    } else if (repository.update(
+            auth.tenantId(), auth.userId(), id, version, form.rowVersion(), payload)
         != 1) conflict();
-    return get(tid);
+    return get(id);
   }
 }

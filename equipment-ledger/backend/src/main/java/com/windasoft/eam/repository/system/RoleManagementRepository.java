@@ -2,8 +2,13 @@ package com.windasoft.eam.repository.system;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.windasoft.eam.dto.experience.HomeContracts;
 import com.windasoft.eam.entity.system.*;
 import java.util.*;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Repository;
 
@@ -29,6 +34,28 @@ public class RoleManagementRepository {
 
   public List<String> roleNames(long tenant, long user) {
     return roles.names(tenant, user);
+  }
+
+  public List<HomeContracts.PresetRole> homePresetRoles(long tenant, Collection<String> codes) {
+    return codes.isEmpty() ? List.of() : roles.homePresetRoles(tenant, codes);
+  }
+
+  public Set<Long> homeActiveRoleIds(long tenant, Collection<Long> ids) {
+    return ids.isEmpty() ? Set.of() : new HashSet<>(roles.homeActiveRoleIds(tenant, ids));
+  }
+
+  public List<Long> homeUserRoleIds(long tenant, long user) {
+    return roles.homeUserRoleIds(tenant, user);
+  }
+
+  public List<SystemRole> homeRoleChoices(long tenant) {
+    return roles.selectList(
+        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<SystemRole>()
+            .select(SystemRole::getId, SystemRole::getName)
+            .eq(SystemRole::getTenantId, tenant)
+            .eq(SystemRole::getStatus, 1)
+            .orderByAsc(SystemRole::getName)
+            .orderByAsc(SystemRole::getId));
   }
 
   public List<SystemRole> roles(long tenant) {

@@ -11,20 +11,28 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
-import com.windasoft.eam.repository.experience.HomeRepository;
+import com.windasoft.eam.repository.experience.HomeTemplateVersionRepository;
 import com.windasoft.eam.repository.inspection.InspectionDefinitionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
+import com.windasoft.eam.scheduler.experience.RepairPlanScheduler;
+import com.windasoft.eam.scheduler.inspection.InspectionScheduler;
+import com.windasoft.eam.scheduler.inventory.InventoryReservationCleanup;
+import com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler;
+import com.windasoft.eam.scheduler.maintenance.MaintenanceScheduler;
+import com.windasoft.eam.scheduler.system.NotificationScheduler;
 import com.windasoft.eam.service.experience.HomeService;
-import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.inspection.InspectionService;
+import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
@@ -62,13 +70,13 @@ class InspectionQualityMySqlIT {
 
   @MockitoBean AuthContext auth;
   @MockitoBean PermissionService permissions;
-  @MockitoBean com.windasoft.eam.scheduler.system.NotificationScheduler notificationScheduler;
-  @MockitoBean com.windasoft.eam.scheduler.inspection.InspectionScheduler inspectionScheduler;
-  @MockitoBean com.windasoft.eam.scheduler.maintenance.MaintenanceScheduler maintenanceScheduler;
-  @MockitoBean com.windasoft.eam.scheduler.inventory.InventoryReservationCleanup reservationCleanup;
-  @MockitoBean com.windasoft.eam.scheduler.experience.RepairPlanScheduler repairScheduler;
-  @MockitoBean com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler knowledgeScheduler;
-  @MockitoSpyBean HomeRepository homeRepository;
+  @MockitoBean NotificationScheduler notificationScheduler;
+  @MockitoBean InspectionScheduler inspectionScheduler;
+  @MockitoBean MaintenanceScheduler maintenanceScheduler;
+  @MockitoBean InventoryReservationCleanup reservationCleanup;
+  @MockitoBean RepairPlanScheduler repairScheduler;
+  @MockitoBean KnowledgeScheduler knowledgeScheduler;
+  @MockitoSpyBean HomeTemplateVersionRepository homeRepository;
   @MockitoSpyBean MaintenanceTypeRepository maintenanceRepository;
   @MockitoSpyBean InspectionDefinitionStorage inspectionDefinitionStorage;
   @Autowired HomeService home;
@@ -87,9 +95,7 @@ class InspectionQualityMySqlIT {
   void cleanup() {
     // 测试没有外围事务，以便真实验证业务入口提交和回滚；只清理本用例专属租户。
     db.update(
-        "DELETE FROM eam_inspection_type WHERE tenant_id=? AND code=?",
-        TENANT,
-        "IT-QA-ROLLBACK");
+        "DELETE FROM eam_inspection_type WHERE tenant_id=? AND code=?", TENANT, "IT-QA-ROLLBACK");
     for (String table :
         List.of(
             "eam_home_template_version_role",
@@ -107,9 +113,7 @@ class InspectionQualityMySqlIT {
 
   @Test
   void templateInitializationRollsBackHeaderWhenVersionFails() {
-    doThrow(new IllegalStateException("模拟版本保存失败"))
-        .when(homeRepository)
-        .insertPresetVersion(anyLong(), any(), any(), any(), any(), anyLong());
+    doThrow(new IllegalStateException("模拟版本保存失败")).when(homeRepository).insert(any());
     assertThrows(IllegalStateException.class, home::templates);
     assertEquals(0L, count("eam_home_template"));
     assertEquals(0L, count("eam_home_template_version"));
@@ -122,7 +126,7 @@ class InspectionQualityMySqlIT {
     doThrow(denied).when(permissions).require("homeTemplate", "查看");
     assertThrows(ResponseStatusException.class, home::templates);
     assertEquals(0L, count("eam_home_template"));
-    org.mockito.Mockito.doNothing().when(permissions).require("homeTemplate", "查看");
+    Mockito.doNothing().when(permissions).require("homeTemplate", "查看");
     var first = home.templates();
     long templates = count("eam_home_template");
     assertTrue(templates > 0);
@@ -139,15 +143,7 @@ class InspectionQualityMySqlIT {
               throw new IllegalStateException("模拟定义保存后的步骤失败");
             })
         .when(inspectionDefinitionStorage)
-        .insert(
-            anyLong(),
-            eq(TENANT),
-            eq("types"),
-            any(),
-            any(),
-            any(),
-            anyLong(),
-            anyString());
+        .insert(anyLong(), eq(TENANT), eq("types"), any(), any(), any(), anyLong(), anyString());
 
     assertThrows(
         IllegalStateException.class,
@@ -155,13 +151,19 @@ class InspectionQualityMySqlIT {
             inspection.save(
                 "types",
                 null,
-                java.util.Map.of(
-                    "name", "事务回滚测试类型",
-                    "code", "IT-QA-ROLLBACK",
-                    "sortOrder", 1,
-                    "period", 1,
-                    "unit", "日",
-                    "enabled", true)));
+                Map.of(
+                    "name",
+                    "事务回滚测试类型",
+                    "code",
+                    "IT-QA-ROLLBACK",
+                    "sortOrder",
+                    1,
+                    "period",
+                    1,
+                    "unit",
+                    "日",
+                    "enabled",
+                    true)));
 
     assertEquals(
         0L,
@@ -183,7 +185,7 @@ class InspectionQualityMySqlIT {
         .when(maintenanceRepository)
         .list(TENANT);
     assertEquals(List.of(), maintenance.exportRows("types"));
-    org.mockito.Mockito.verify(permissions).require("maintenanceType", "导出");
-    org.mockito.Mockito.verify(permissions).require("maintenanceType", "查看");
+    Mockito.verify(permissions).require("maintenanceType", "导出");
+    Mockito.verify(permissions).require("maintenanceType", "查看");
   }
 }

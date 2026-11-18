@@ -41,35 +41,4 @@ public class WorkCenterRepository {
     return db.queryForList(
         "SELECT name FROM eam_org_unit WHERE tenant_id=? AND id=?", tenantId, value);
   }
-
-  public List<Map<String, Object>> loadRecent(long tenantId, long userId) {
-    return db.queryForList(
-        "SELECT recent_json FROM eam_home_preference WHERE tenant_id=? AND user_id=?",
-        tenantId,
-        userId);
-  }
-
-  public int ensurePreference(long tenantId, long userId) {
-    return db.update(
-        "INSERT IGNORE INTO eam_home_preference(tenant_id,user_id,recent_json)"
-            + " VALUES(?,?,JSON_ARRAY())",
-        tenantId,
-        userId);
-  }
-
-  public Map<String, Object> lockRecent(long tenantId, long userId) {
-    return db.queryForMap(
-        "SELECT recent_json FROM eam_home_preference WHERE tenant_id=? AND user_id=? FOR"
-            + " UPDATE",
-        tenantId,
-        userId);
-  }
-
-  public int updateRecent(String payload, long tenantId, long userId) {
-    return db.update(
-        "UPDATE eam_home_preference SET recent_json=? WHERE tenant_id=? AND user_id=?",
-        payload,
-        tenantId,
-        userId);
-  }
 }

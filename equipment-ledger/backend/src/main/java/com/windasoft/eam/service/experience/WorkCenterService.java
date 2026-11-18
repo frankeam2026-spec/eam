@@ -3,24 +3,31 @@ package com.windasoft.eam.service.experience;
 import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.windasoft.eam.dto.common.SuccessResponse;
 import com.windasoft.eam.entity.repair.RepairOrder;
-import com.windasoft.eam.service.inspection.InspectionTaskService;
+import com.windasoft.eam.repository.experience.HomePreferenceRepository;
+import com.windasoft.eam.repository.experience.WorkCenterRepository;
 import com.windasoft.eam.service.inspection.InspectionListService;
+import com.windasoft.eam.service.inspection.InspectionTaskService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import com.windasoft.eam.service.system.WorkInboxService;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class WorkCenterService {
-  final com.windasoft.eam.repository.experience.WorkCenterRepository repository;
+  final WorkCenterRepository repository;
   final com.fasterxml.jackson.databind.ObjectMapper json;
   final AuthContext auth;
+  private final HomePreferenceRepository homePreferences;
   final PermissionService permissions;
   final RepairWorkflowService workflow;
   final MaintenanceService maintenance;
@@ -31,9 +38,10 @@ public class WorkCenterService {
   final AnomalyService anomalies;
 
   public WorkCenterService(
-      com.windasoft.eam.repository.experience.WorkCenterRepository repository,
+      WorkCenterRepository repository,
       com.fasterxml.jackson.databind.ObjectMapper json,
       AuthContext auth,
+      HomePreferenceRepository homePreferences,
       PermissionService permissions,
       RepairWorkflowService workflow,
       MaintenanceService maintenance,
@@ -45,6 +53,7 @@ public class WorkCenterService {
     this.repository = repository;
     this.json = json;
     this.auth = auth;
+    this.homePreferences = homePreferences;
     this.permissions = permissions;
     this.workflow = workflow;
     this.maintenance = maintenance;
@@ -55,26 +64,24 @@ public class WorkCenterService {
     this.anomalies = anomalies;
   }
 
-  public Object catalog() {
+  public List<String> catalog() {
     var actions = permissions.menuActions();
-    return Map.of(
-        "data",
-        HomeService.TYPES.stream()
-            .filter(
-                t ->
-                    switch (t) {
-                      case "load" -> permissions.allowed("workspace", "团队工作查看");
-                      case "inventory" ->
-                          actions.keySet().stream().anyMatch(k -> k.startsWith("inventory"));
-                      case "anomalies" ->
-                          actions.containsKey("anomaly")
-                              || actions.containsKey("maintenanceTask")
-                              || actions.containsKey("inspectionDailyTask")
-                              || actions.containsKey("inspectionPeriodicTask");
-                      default -> true;
-                    })
-            .sorted()
-            .toList());
+    return HomeService.TYPES.stream()
+        .filter(
+            t ->
+                switch (t) {
+                  case "load" -> permissions.allowed("workspace", "团队工作查看");
+                  case "inventory" ->
+                      actions.keySet().stream().anyMatch(k -> k.startsWith("inventory"));
+                  case "anomalies" ->
+                      actions.containsKey("anomaly")
+                          || actions.containsKey("maintenanceTask")
+                          || actions.containsKey("inspectionDailyTask")
+                          || actions.containsKey("inspectionPeriodicTask");
+                  default -> true;
+                })
+        .sorted()
+        .toList();
   }
 
   boolean accessible(Runnable action) {
@@ -192,7 +199,8 @@ public class WorkCenterService {
                                 .startsWith(LocalDate.now(ZoneId.of("Asia/Shanghai")).toString())
                             : state.equals("active")
                                 ? Set.of("处理中", "执行中", "挂起").contains(r.get("status"))
-                                : !Set.of("已完成", "已撤销", "已作废", "已免检", "已取消").contains(r.get("status")))
+                                : !Set.of("已完成", "已撤销", "已作废", "已免检", "已取消")
+                                    .contains(r.get("status")))
             .filter(
                 r ->
                     search.isBlank()
@@ -315,11 +323,9 @@ public class WorkCenterService {
                           List.of(text(config, "status"))))));
     if (type.equals("shortcuts")) return Map.of("data", shortcuts(), "total", shortcuts().size());
     if (type.equals("recent")) {
-      var pref = repository.loadRecent(auth.tenantId(), auth.userId());
+      var pref = homePreferences.find(auth.tenantId(), auth.userId());
       var recent =
-          pref.isEmpty()
-              ? List.<Map<String, Object>>of()
-              : rows(decode(json, pref.getFirst().get("recent_json")));
+          pref == null ? List.<Map<String, Object>>of() : rows(decode(json, pref.getRecentJson()));
       var safe =
           recent.stream()
               .map(v -> recentTarget(text(v, "url")))
@@ -394,8 +400,7 @@ public class WorkCenterService {
             + "&module="
             + module
             + "&status="
-            + java.net.URLEncoder.encode(
-                text(config, "status"), java.nio.charset.StandardCharsets.UTF_8)
+            + URLEncoder.encode(text(config, "status"), StandardCharsets.UTF_8)
             + "&companyId="
             + text(config, "companyId")
             + "&departmentId="
@@ -453,18 +458,17 @@ public class WorkCenterService {
     return null;
   }
 
-  @org.springframework.transaction.annotation.Transactional
-  public Object recent(String url) {
+  @Transactional
+  public SuccessResponse recent(String url) {
     var target = recentTarget(url);
     check(target != null, "访问记录不属于当前授权页面");
-    repository.ensurePreference(auth.tenantId(), auth.userId());
-    var row = repository.lockRecent(auth.tenantId(), auth.userId());
+    var row = homePreferences.lockRecent(auth.tenantId(), auth.userId());
     var recent = new ArrayList<Map<String, Object>>();
     recent.add(Map.of("url", url));
-    for (var old : rows(decode(json, row.get("recent_json"))))
+    for (var old : rows(decode(json, row.getRecentJson())))
       if (!url.equals(text(old, "url")) && recent.size() < 20)
         recent.add(Map.of("url", text(old, "url")));
-    repository.updateRecent(encode(json, recent), auth.tenantId(), auth.userId());
-    return Map.of("success", true);
+    homePreferences.saveRecent(auth.tenantId(), auth.userId(), encode(json, recent));
+    return new SuccessResponse(true);
   }
 }

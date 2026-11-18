@@ -12,12 +12,17 @@ import com.windasoft.eam.dto.equipment.EquipmentQueryParameters;
 import com.windasoft.eam.dto.maintenance.MaintenanceTaskCommand;
 import com.windasoft.eam.dto.repair.RepairForm;
 import com.windasoft.eam.dto.system.PermissionScope;
+import com.windasoft.eam.entity.experience.HomeTemplate;
+import com.windasoft.eam.entity.experience.HomeTemplateVersion;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.business.BusinessQueryRepository;
 import com.windasoft.eam.repository.common.*;
 import com.windasoft.eam.repository.equipment.EquipmentMediaRepository;
 import com.windasoft.eam.repository.equipment.EquipmentWriteRepository;
-import com.windasoft.eam.repository.experience.HomeRepository;
+import com.windasoft.eam.repository.experience.HomeTemplateRepository;
+import com.windasoft.eam.repository.experience.HomeTemplateRoleRepository;
+import com.windasoft.eam.repository.experience.HomeTemplateVersionRepository;
+import com.windasoft.eam.repository.experience.HomeTemplateVersionRoleRepository;
 import com.windasoft.eam.repository.inspection.InspectionExecutionStorage;
 import com.windasoft.eam.repository.inspection.InspectionListRepository;
 import com.windasoft.eam.repository.inventory.InventoryListRepository;
@@ -125,7 +130,10 @@ class EngineeringQueryMySqlIT {
   @Autowired RepairWorkflowService repairWorkflow;
   @Autowired EquipmentQueryService equipmentQueries;
   @Autowired RepairQueryService repairQueries;
-  @Autowired HomeRepository homeRepository;
+  @Autowired HomeTemplateRepository homeRepository;
+  @Autowired HomeTemplateRoleRepository homeRoles;
+  @Autowired HomeTemplateVersionRepository homeVersions;
+  @Autowired HomeTemplateVersionRoleRepository homeVersionRoles;
   @Autowired EquipmentMediaRepository equipmentMedia;
   @Autowired EquipmentWriteRepository equipmentWrites;
   @Autowired ObjectMapper json;
@@ -1901,20 +1909,35 @@ class EngineeringQueryMySqlIT {
 
   @Test
   void homeTemplateDraftAndPublishedRoleRelationsStayIndependent() {
-    homeRepository.insertTemplate(990300001L, 10001L, "QA首页", "{}", "[\"72001\"]", 3, 73001L);
+    var header = new HomeTemplate();
+    header.setId(990300001L);
+    header.setTenantId(10001L);
+    header.setName("QA首页");
+    header.setDraft("{}");
+    header.setPriority(3);
+    header.setCreatedBy(73001L);
+    homeRepository.insert(header);
+    homeRoles.replace(10001L, 990300001L, List.of(72001L));
     assertEquals(
         List.of("72001"),
-        json.convertValue(
-            decodeFixture(
-                homeRepository.loadTemplate(10001L, 990300001L, true).getFirst().get("role_ids")),
-            List.class));
-    homeRepository.insertVersion(10001L, 990300001L, 1, "{}", "[\"72001\"]", 3, 73001L);
-    homeRepository.publishVersion(1, 10001L, 990300001L);
-    homeRepository.updateTemplate("QA首页改", "{}", "[]", 4, 10001L, 990300001L);
-    assertTrue(
-        decodeFixture(
-                homeRepository.loadTemplate(10001L, 990300001L, false).getFirst().get("role_ids"))
-            .isEmpty());
+        homeRoles.find(10001L, List.of(990300001L)).stream()
+            .map(r -> String.valueOf(r.getRoleId()))
+            .toList());
+    var version = new HomeTemplateVersion();
+    version.setTenantId(10001L);
+    version.setTemplateId(990300001L);
+    version.setVersion(1);
+    version.setPayload("{}");
+    version.setPriority(3);
+    version.setPublishedBy(73001L);
+    homeVersions.insert(version);
+    homeVersionRoles.insert(10001L, 990300001L, 1, List.of(72001L));
+    homeRepository.publish(10001L, 990300001L, 1, false);
+    header.setName("QA首页改");
+    header.setPriority(4);
+    homeRepository.update(header);
+    homeRoles.replace(10001L, 990300001L, List.of());
+    assertTrue(homeRoles.find(10001L, List.of(990300001L)).isEmpty());
     assertEquals(
         1,
         db.queryForObject(

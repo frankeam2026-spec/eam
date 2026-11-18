@@ -1,8 +1,19 @@
 package com.windasoft.eam.controller.experience;
 
-import com.windasoft.eam.common.experience.ExperienceSupport;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.windasoft.eam.dto.common.DataResponse;
+import com.windasoft.eam.dto.common.SuccessResponse;
+import com.windasoft.eam.dto.experience.HomeContracts.Identity;
+import com.windasoft.eam.dto.experience.HomeContracts.LayoutForm;
+import com.windasoft.eam.dto.experience.HomeContracts.Recent;
+import com.windasoft.eam.dto.experience.HomeContracts.RoleChoice;
+import com.windasoft.eam.dto.experience.HomeContracts.State;
+import com.windasoft.eam.dto.experience.HomeContracts.TemplateForm;
+import com.windasoft.eam.dto.experience.HomeContracts.TemplateView;
+import com.windasoft.eam.dto.experience.HomeContracts.Version;
 import com.windasoft.eam.service.experience.HomeService;
 import com.windasoft.eam.service.experience.WorkCenterService;
+import jakarta.validation.Valid;
 import java.util.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,38 +43,38 @@ public class HomeController {
   }
 
   @GetMapping("/home")
-  public Object home(@RequestParam(required = false) Long templateId) {
+  public State home(@RequestParam(required = false) Long templateId) {
     return home.home(templateId);
   }
 
   @PutMapping("/home/layout")
-  public Object layout(@RequestBody Map<String, Object> b) {
+  public State layout(@Valid @RequestBody LayoutForm b) {
     return home.layout(b);
   }
 
   @PostMapping("/home/reset")
-  public Object reset(@RequestBody Map<String, Object> b) {
-    return home.reset(ExperienceSupport.id(b.get("templateId")));
+  public State reset(@Valid @RequestBody Identity b) {
+    return home.reset(b.templateId());
   }
 
   @PutMapping("/home/default")
-  public Object preferred(@RequestBody Map<String, Object> b) {
-    return home.defaultHome(ExperienceSupport.id(b.get("templateId")));
+  public SuccessResponse preferred(@Valid @RequestBody Identity b) {
+    return home.defaultHome(b.templateId());
   }
 
   @PostMapping("/home/recent")
-  public Object recent(@RequestBody Map<String, Object> b) {
+  public SuccessResponse recent(@RequestBody Recent b) {
     home.access();
-    return work.recent(ExperienceSupport.text(b, "url"));
+    return work.recent(Objects.toString(b.url(), "").trim());
   }
 
   @GetMapping("/home/page-preferences/{key}")
-  public Object pagePreferences(@PathVariable String key) {
-    return home.pagePreferences(key);
+  public DataResponse<JsonNode> pagePreferences(@PathVariable String key) {
+    return new DataResponse<>(home.pagePreferences(key));
   }
 
   @PutMapping("/home/page-preferences/{key}")
-  public Object pagePreferences(@PathVariable String key, @RequestBody Map<String, Object> values) {
+  public SuccessResponse pagePreferences(@PathVariable String key, @RequestBody JsonNode values) {
     return home.pagePreferences(key, values);
   }
 
@@ -74,9 +85,9 @@ public class HomeController {
   }
 
   @GetMapping("/home/catalog")
-  public Object catalog() {
+  public DataResponse<List<String>> catalog() {
     home.access();
-    return work.catalog();
+    return new DataResponse<>(work.catalog());
   }
 
   @PostMapping("/home/blocks")
@@ -86,32 +97,32 @@ public class HomeController {
   }
 
   @GetMapping("/home-templates/role-choices")
-  public Object roles() {
-    return home.roleChoices();
+  public DataResponse<List<RoleChoice>> roles() {
+    return new DataResponse<>(home.roleChoices());
   }
 
   @GetMapping("/home-templates")
-  public Object templates() {
-    return Map.of("data", home.templates());
+  public DataResponse<List<TemplateView>> templates() {
+    return new DataResponse<>(home.templates());
   }
 
   @PostMapping("/home-templates")
-  public Object create(@RequestBody Map<String, Object> b) {
-    return Map.of("data", home.save(null, b));
+  public DataResponse<TemplateView> create(@RequestBody TemplateForm b) {
+    return new DataResponse<>(home.save(null, b));
   }
 
   @PutMapping("/home-templates/{id}")
-  public Object save(@PathVariable long id, @RequestBody Map<String, Object> b) {
-    return Map.of("data", home.save(id, b));
+  public DataResponse<TemplateView> save(@PathVariable long id, @RequestBody TemplateForm b) {
+    return new DataResponse<>(home.save(id, b));
   }
 
   @PostMapping("/home-templates/{id}/publish")
-  public Object publish(@PathVariable long id, @RequestBody Map<String, Object> b) {
-    return Map.of("data", home.publish(id, b));
+  public DataResponse<TemplateView> publish(@PathVariable long id, @Valid @RequestBody Version b) {
+    return new DataResponse<>(home.publish(id, b));
   }
 
   @PostMapping("/home-templates/{id}/disable")
-  public Object disable(@PathVariable long id, @RequestBody Map<String, Object> b) {
+  public SuccessResponse disable(@PathVariable long id, @Valid @RequestBody Version b) {
     return home.disable(id, b);
   }
 }

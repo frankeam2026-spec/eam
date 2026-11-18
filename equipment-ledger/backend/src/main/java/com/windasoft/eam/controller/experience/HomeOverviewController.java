@@ -1,7 +1,9 @@
 package com.windasoft.eam.controller.experience;
 
+import com.windasoft.eam.dto.experience.HomeContracts.LayoutForm;
+import com.windasoft.eam.dto.experience.HomeContracts.Overview;
 import com.windasoft.eam.service.experience.HomeOverviewService;
-import java.util.Map;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -14,12 +16,12 @@ public class HomeOverviewController {
   }
 
   @GetMapping
-  public Object get(@RequestParam(required = false) Long templateId) {
+  public Overview get(@RequestParam(required = false) Long templateId) {
     return overview.get(templateId);
   }
 
   @PutMapping
-  public Object save(@RequestBody Map<String, Object> body) {
+  public Overview save(@Valid @RequestBody LayoutForm body) {
     return overview.save(body);
   }
 }

@@ -3,17 +3,58 @@ package com.windasoft.eam.service.experience;
 import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.windasoft.eam.repository.experience.HomeRepository;
+import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.dto.common.SuccessResponse;
+import com.windasoft.eam.dto.experience.HomeContracts.LayoutForm;
+import com.windasoft.eam.dto.experience.HomeContracts.PresetRole;
+import com.windasoft.eam.dto.experience.HomeContracts.RoleChoice;
+import com.windasoft.eam.dto.experience.HomeContracts.Selected;
+import com.windasoft.eam.dto.experience.HomeContracts.State;
+import com.windasoft.eam.dto.experience.HomeContracts.Summary;
+import com.windasoft.eam.dto.experience.HomeContracts.TemplateForm;
+import com.windasoft.eam.dto.experience.HomeContracts.TemplateView;
+import com.windasoft.eam.dto.experience.HomeContracts.Version;
+import com.windasoft.eam.entity.experience.HomeTemplate;
+import com.windasoft.eam.entity.experience.HomeTemplateRole;
+import com.windasoft.eam.entity.experience.HomeTemplateVersion;
+import com.windasoft.eam.entity.experience.HomeTemplateVersionRole;
+import com.windasoft.eam.repository.experience.HomeLayoutRepository;
+import com.windasoft.eam.repository.experience.HomePagePreferenceRepository;
+import com.windasoft.eam.repository.experience.HomePreferenceRepository;
+import com.windasoft.eam.repository.experience.HomeTemplateRepository;
+import com.windasoft.eam.repository.experience.HomeTemplateRoleRepository;
+import com.windasoft.eam.repository.experience.HomeTemplateVersionRepository;
+import com.windasoft.eam.repository.experience.HomeTemplateVersionRoleRepository;
+import com.windasoft.eam.repository.system.RoleManagementRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class HomeService {
-  final HomeRepository repository;
+  private final HomeTemplateRepository templates;
+  private final HomeTemplateVersionRepository versions;
+  private final HomeTemplateRoleRepository templateRoles;
+  private final HomeTemplateVersionRoleRepository versionRoles;
+  private final HomeLayoutRepository layouts;
+  private final HomePreferenceRepository preferences;
+  private final HomePagePreferenceRepository pagePreferences;
+  private final RoleManagementRepository roles;
   final ObjectMapper json;
   final AuthContext auth;
   final PermissionService permissions;
@@ -33,12 +74,26 @@ public class HomeService {
           "stats");
 
   public HomeService(
-      HomeRepository repository,
+      HomeTemplateRepository templates,
+      HomeTemplateVersionRepository versions,
+      HomeTemplateRoleRepository templateRoles,
+      HomeTemplateVersionRoleRepository versionRoles,
+      HomeLayoutRepository layouts,
+      HomePreferenceRepository preferences,
+      HomePagePreferenceRepository pagePreferences,
+      RoleManagementRepository roles,
       ObjectMapper json,
       AuthContext auth,
       PermissionService permissions,
       HomeAnalyticsService analytics) {
-    this.repository = repository;
+    this.templates = templates;
+    this.versions = versions;
+    this.templateRoles = templateRoles;
+    this.versionRoles = versionRoles;
+    this.layouts = layouts;
+    this.preferences = preferences;
+    this.pagePreferences = pagePreferences;
+    this.roles = roles;
     this.json = json;
     this.auth = auth;
     this.permissions = permissions;
@@ -61,9 +116,7 @@ public class HomeService {
       var type = required(b, "type", 30);
       check(TYPES.contains(type), "未知首页区块");
       int width = (int) id(b.getOrDefault("width", 6));
-      check(
-          Set.of(4, 6, 12).contains(width) && (type.equals("stats") || width != 4),
-          "区块宽度无效");
+      check(Set.of(4, 6, 12).contains(width) && (type.equals("stats") || width != 4), "区块宽度无效");
       int limit = (int) id(b.getOrDefault("limit", 5));
       check(Set.of(5, 10, 20).contains(limit), "展示数量无效");
       String scope = text(b, "scope");
@@ -140,19 +193,29 @@ public class HomeService {
             .toList());
   }
 
-  public Object pagePreferences(String key) {
+  /** 动态画布仅在校验边界转为字典，固定模板元数据不进入任意Map。 */
+  Map<String, Object> canvas(JsonNode value) {
+    if (value == null || !value.isObject()) throw new IllegalArgumentException("首页布局无效");
+    return json.convertValue(value, new TypeReference<Map<String, Object>>() {});
+  }
+
+  private JsonNode node(String value) {
+    return json.valueToTree(object(json, value));
+  }
+
+  public JsonNode pagePreferences(String key) {
     access();
     check(Set.of("anomalies", "repair-plans", "material-custody").contains(key), "不支持的页面偏好");
-    var rows = repository.loadPagePreference(auth.tenantId(), auth.userId(), key);
-    return Map.of(
-        "data", rows.isEmpty() ? Map.of() : object(json, rows.getFirst().get("preferences")));
+    var row = pagePreferences.find(auth.tenantId(), auth.userId(), key);
+    return row == null ? json.createObjectNode() : node(row.getPreferences());
   }
 
   @Transactional
-  public Object pagePreferences(String key, Map<String, Object> values) {
+  public SuccessResponse pagePreferences(String key, JsonNode values) {
     pagePreferences(key);
+    var data = canvas(values);
     check(
-        values.keySet().stream()
+        data.keySet().stream()
             .allMatch(
                 Set.of(
                         "query",
@@ -164,14 +227,23 @@ public class HomeService {
                         "personal")
                     ::contains),
         "页面偏好字段无效");
-    String encoded = encode(json, values);
+    String encoded = encode(json, data);
     check(encoded.length() <= 32000, "页面偏好过大");
-    repository.savePagePreference(auth.tenantId(), auth.userId(), key, encoded);
-    return Map.of("success", true);
+    pagePreferences.save(auth.tenantId(), auth.userId(), key, encoded);
+    return new SuccessResponse(true);
   }
 
-  // 初始化是入口事务的一部分，内部调用不依赖事务代理。
+  /** 预置创建、版本和角色快照同属调用方事务；唯一预置键防并发重复初始化。 */
   private void seed() {
+    var presetRoles =
+        roles
+            .homePresetRoles(
+                auth.tenantId(),
+                List.of("SYS_ADMIN", "EQUIP_MANAGER", "DEPT_MANAGER", "__unassigned__"))
+            .stream()
+            .collect(
+                Collectors.groupingBy(
+                    PresetRole::code, Collectors.mapping(PresetRole::id, Collectors.toList())));
     var names =
         Map.of(
             "reporter",
@@ -186,118 +258,146 @@ public class HomeService {
             "公司与集团管理",
             "system",
             "系统维护");
-    for (var key :
+    for (String key :
         List.of("reporter", "executor", "supervisor", "warehouse", "manager", "system")) {
-      long tid = IdWorker.getId();
-      var roleIds =
-          repository
-              .findPresetRole(
-                  auth.tenantId(),
-                  key.equals("system")
-                      ? "SYS_ADMIN"
-                      : key.equals("supervisor")
-                          ? "EQUIP_MANAGER"
-                          : key.equals("manager") ? "DEPT_MANAGER" : "__unassigned__")
-              .stream()
-              .map(r -> r.get("id"))
-              .toList();
-      int inserted =
-          repository.insertPreset(
-              tid,
-              auth.tenantId(),
-              names.get(key),
-              encode(json, defaults(key)),
-              encode(json, roleIds),
-              key.equals("system") ? 10 : 100,
-              auth.userId(),
-              key);
-      if (inserted == 1) {
+      String code =
+          key.equals("system")
+              ? "SYS_ADMIN"
+              : key.equals("supervisor")
+                  ? "EQUIP_MANAGER"
+                  : key.equals("manager") ? "DEPT_MANAGER" : "__unassigned__";
+      var ids = presetRoles.getOrDefault(code, List.of());
+      var row = preset(names.get(key), key, defaults(key), key.equals("system") ? 10 : 100);
+      if (templates.insertPreset(row)) {
+        templateRoles.replace(auth.tenantId(), row.getId(), ids);
         var published = new LinkedHashMap<String, Object>(defaults(key));
-        published.put("templateName", names.get(key));
-        repository.insertPresetVersion(
-            auth.tenantId(),
-            tid,
-            encode(json, published),
-            encode(json, roleIds),
-            key.equals("system") ? 10 : 100,
-            auth.userId());
-        repository.publishPreset(auth.tenantId(), tid);
+        published.put("templateName", row.getName());
+        insertVersion(row, 1, encode(json, published), ids);
+        templates.publish(auth.tenantId(), row.getId(), 1, true);
       }
     }
     var metricTypes = new HashSet<String>();
     AnalyticsCatalog.ALL.forEach(m -> metricTypes.add("analytics:" + m.id()));
-    var analysisPresets = OverviewLayoutSchema.presets(true, metricTypes);
-    for (int i = 0; i < analysisPresets.size(); i++) {
-      var preset = analysisPresets.get(i);
-      long templateId = IdWorker.getId();
-      if (repository.insertPreset(
-              templateId,
-              auth.tenantId(),
-              preset.get("name"),
-              encode(json, defaults(i == 2 ? "warehouse" : "manager")),
-              "[]",
-              100,
-              auth.userId(),
-              "analytics-" + i)
-          == 1)
-        repository.overviewDraft(auth.tenantId(), templateId, encode(json, preset.get("layout")));
+    var analysis = OverviewLayoutSchema.presets(true, metricTypes);
+    for (int i = 0; i < analysis.size(); i++) {
+      var configured = analysis.get(i);
+      var row =
+          preset(
+              Objects.toString(configured.get("name")),
+              "analytics-" + i,
+              defaults(i == 2 ? "warehouse" : "manager"),
+              100);
+      if (templates.insertPreset(row)) {
+        templateRoles.replace(auth.tenantId(), row.getId(), List.of());
+        templates.overview(auth.tenantId(), row.getId(), encode(json, configured.get("layout")));
+      }
     }
   }
 
+  private HomeTemplate preset(String name, String key, Map<String, Object> layout, int priority) {
+    var row = new HomeTemplate();
+    row.setId(IdWorker.getId());
+    row.setTenantId(auth.tenantId());
+    row.setName(name);
+    row.setPresetKey(key);
+    row.setDraft(encode(json, layout));
+    row.setPriority(priority);
+    row.setCreatedBy(auth.userId());
+    return row;
+  }
+
+  private void insertVersion(HomeTemplate template, int version, String payload, List<Long> ids) {
+    var row = new HomeTemplateVersion();
+    row.setTenantId(auth.tenantId());
+    row.setTemplateId(template.getId());
+    row.setVersion(version);
+    row.setPayload(payload);
+    row.setPriority(template.getPriority());
+    row.setPublishedBy(auth.userId());
+    versions.insert(row);
+    versionRoles.insert(auth.tenantId(), template.getId(), version, ids);
+  }
+
   @Transactional
-  public List<Map<String, Object>> templates() {
+  public List<TemplateView> templates() {
     permissions.require("homeTemplate", "查看");
     seed();
-    return repository.listTemplates(auth.tenantId()).stream().map(this::templateView).toList();
+    var rows = templates.list(auth.tenantId());
+    var related =
+        templateRoles
+            .find(auth.tenantId(), rows.stream().map(HomeTemplate::getId).toList())
+            .stream()
+            .collect(Collectors.groupingBy(HomeTemplateRole::getTemplateId));
+    return rows.stream()
+        .map(row -> templateView(row, related.getOrDefault(row.getId(), List.of())))
+        .toList();
   }
 
-  Map<String, Object> templateView(Map<String, Object> r) {
-    var v = view(r);
-    v.put("draft", object(json, r.get("draft")));
-    v.put("roleIds", decode(json, r.get("role_ids")));
-    v.put(
-        "overviewDraft",
-        r.get("overview_draft") == null ? null : object(json, r.get("overview_draft")));
-    return v;
+  /** 保留旧接口的蛇形字段和JSON文本格式；角色JSON仅为兼容响应派生，不作为存储权威。 */
+  private TemplateView templateView(HomeTemplate row, List<HomeTemplateRole> links) {
+    var ids = links.stream().map(r -> String.valueOf(r.getRoleId())).toList();
+    String legacy = ids.isEmpty() ? "[]" : "[\"" + String.join("\", \"", ids) + "\"]";
+    return new TemplateView(
+        String.valueOf(row.getId()),
+        String.valueOf(row.getTenantId()),
+        row.getName(),
+        row.getPresetKey(),
+        node(row.getDraft()),
+        row.getPriority(),
+        row.getPublishedVersion(),
+        row.getEnabled(),
+        row.getRowVersion(),
+        String.valueOf(row.getCreatedBy()),
+        row.getCreatedAt(),
+        row.getUpdatedAt(),
+        row.getOverviewDraft(),
+        legacy,
+        ids,
+        row.getOverviewDraft() == null ? null : node(row.getOverviewDraft()));
   }
 
-  Map<String, Object> raw(long id, boolean lock) {
-    var rows = repository.loadTemplate(auth.tenantId(), id, lock);
-    check(rows.size() == 1, "首页模板不存在");
-    return rows.getFirst();
+  private HomeTemplate raw(long id, boolean lock) {
+    var row = templates.find(auth.tenantId(), id, lock);
+    check(row != null, "首页模板不存在");
+    return row;
   }
 
+  private TemplateView view(long id) {
+    return templateView(raw(id, false), templateRoles.find(auth.tenantId(), List.of(id)));
+  }
+
+  /** 模板主体、角色和画布更新同一事务；编辑必须显式匹配锁定版本，不能把缺失版本当0。 */
   @Transactional
-  public Object save(Long tid, Map<String, Object> body) {
-    permissions.require("homeTemplate", tid == null ? "新增" : "编辑");
-    var payload = normalize((Map<String, Object>) body.getOrDefault("draft", Map.of()));
-    String name = required(body, "name", 100);
-    var ids = body.get("roleIds") instanceof List<?> l ? l : List.of();
+  public TemplateView save(Long id, TemplateForm form) {
+    permissions.require("homeTemplate", id == null ? "新增" : "编辑");
+    var layout = normalize(canvas(form.getDraft()));
+    String name = Objects.toString(form.getName(), "").trim();
+    if (name.isBlank() || name.length() > 100)
+      throw new LocalizedArgumentException("server.experience.message0005", "name", 100);
+    var ids = form.getRoleIds() == null ? List.<Long>of() : form.getRoleIds();
     check(ids.size() <= 100, "角色数量过多");
-    for (var role : ids)
-      check(repository.countActiveRole(auth.tenantId(), id(role)) == 1, "角色不存在或停用");
-    int priority = (int) id(body.getOrDefault("priority", 100));
+    check(roles.homeActiveRoleIds(auth.tenantId(), ids).containsAll(ids), "角色不存在或停用");
+    int priority = form.getPriority();
     check(priority >= 0 && priority <= 10000, "优先级应为0到10000");
-    if (tid == null) {
-      tid = IdWorker.getId();
-      repository.insertTemplate(
-          tid,
-          auth.tenantId(),
-          name,
-          encode(json, payload),
-          encode(json, ids),
-          priority,
-          auth.userId());
+    HomeTemplate row;
+    if (id == null) {
+      row = preset(name, null, layout, priority);
+      templates.insert(row);
+      id = row.getId();
     } else {
-      var old = raw(tid, true);
-      if (id(old.get("row_version")) != id(body.get("rowVersion"))) conflict();
-      repository.updateTemplate(
-          name, encode(json, payload), encode(json, ids), priority, auth.tenantId(), tid);
+      row = raw(id, true);
+      if (form.getRowVersion() == null || !row.getRowVersion().equals(form.getRowVersion()))
+        conflict();
+      row.setName(name);
+      row.setDraft(encode(json, layout));
+      row.setPriority(priority);
+      templates.update(row);
     }
-    if (body.get("overviewDraft") instanceof Map<?, ?> overview)
-      repository.overviewDraft(
-          auth.tenantId(), tid, encode(json, normalizeOverview((Map<String, Object>) overview)));
-    return templateView(raw(tid, false));
+    templateRoles.replace(auth.tenantId(), id, ids);
+    if (form.getOverviewDraft() != null && form.getOverviewDraft().isObject())
+      templates.overview(
+          auth.tenantId(), id, encode(json, normalizeOverview(canvas(form.getOverviewDraft()))));
+    return view(id);
   }
 
   public Map<String, Object> normalizeOverview(Map<String, Object> value) {
@@ -308,176 +408,143 @@ public class HomeService {
         value, available, permissions.allowed("workspace", "团队工作查看"), this::normalize);
   }
 
+  /** 发布版本与其角色快照冻结，后续草稿变化不能影响已经发布的访问范围。 */
   @Transactional
-  public Object publish(long tid, Map<String, Object> body) {
+  public TemplateView publish(long id, Version form) {
     permissions.require("homeTemplate", "发布");
-    var r = raw(tid, true);
-    if (id(r.get("row_version")) != id(body.get("rowVersion"))) conflict();
-    var published = new LinkedHashMap<String, Object>(normalize(object(json, r.get("draft"))));
-    published.put("templateName", r.get("name"));
-    if (r.get("overview_draft") != null)
-      published.put("overviewLayout", normalizeOverview(object(json, r.get("overview_draft"))));
-    int next = (int) id(r.get("published_version")) + 1;
-    repository.insertVersion(
-        auth.tenantId(),
-        tid,
-        next,
-        encode(json, published),
-        r.get("role_ids"),
-        r.get("priority"),
-        auth.userId());
-    repository.publishVersion(next, auth.tenantId(), tid);
-    return templateView(raw(tid, false));
+    var row = raw(id, true);
+    if (!Objects.equals(row.getRowVersion(), form.rowVersion())) conflict();
+    var links = templateRoles.find(auth.tenantId(), List.of(id));
+    var payload = new LinkedHashMap<String, Object>(normalize(object(json, row.getDraft())));
+    payload.put("templateName", row.getName());
+    if (row.getOverviewDraft() != null)
+      payload.put("overviewLayout", normalizeOverview(object(json, row.getOverviewDraft())));
+    int next = Math.addExact(row.getPublishedVersion(), 1);
+    insertVersion(
+        row, next, encode(json, payload), links.stream().map(HomeTemplateRole::getRoleId).toList());
+    templates.publish(auth.tenantId(), id, next, false);
+    row.setPublishedVersion(next);
+    row.setEnabled(1);
+    row.setRowVersion(row.getRowVersion() + 1);
+    return templateView(row, links);
   }
 
   @Transactional
-  public Object disable(long tid, Map<String, Object> b) {
+  public SuccessResponse disable(long id, Version form) {
     permissions.require("homeTemplate", "停用");
-    var r = raw(tid, true);
-    if (id(r.get("row_version")) != id(b.get("rowVersion"))) conflict();
-    repository.disableTemplate(auth.tenantId(), tid);
-    return Map.of("success", true);
+    var row = raw(id, true);
+    if (!Objects.equals(row.getRowVersion(), form.rowVersion())) conflict();
+    templates.disable(auth.tenantId(), id);
+    return new SuccessResponse(true);
   }
 
-  List<Map<String, Object>> assigned() {
-    var roles =
-        repository.listUserRoles(auth.tenantId(), auth.userId()).stream()
-            .map(r -> r.get("id").toString())
-            .collect(java.util.stream.Collectors.toSet());
-    return repository.listPublishedTemplates(auth.tenantId()).stream()
-        .filter(
-            r -> {
-              Object x = decode(json, r.get("role_ids"));
-              return x instanceof List<?> l
-                  && l.stream().anyMatch(v -> roles.contains(v.toString()));
-            })
-        .map(
-            r -> {
-              var v = view(r);
-              v.put("version", r.get("published_version"));
-              var payload = object(json, r.get("payload"));
-              v.put("layout", payload);
-              if (payload.containsKey("templateName")) v.put("name", payload.get("templateName"));
-              v.remove("payload");
-              v.remove("role_ids");
-              return v;
-            })
-        .filter(
-            v ->
-                permissions.allowed("workspace", "团队工作查看")
-                    || rows(((Map<String, Object>) v.get("layout")).get("blocks")).stream()
-                        .anyMatch(b -> !text(b, "scope").equals("team")))
-        .toList();
+  /** 只按当前用户角色和当前发布版本取模板；工作台团队权限不能通过模板布局绕过。 */
+  List<Selected> assigned() {
+    var member = new HashSet<>(roles.homeUserRoleIds(auth.tenantId(), auth.userId()));
+    var links =
+        versionRoles.published(auth.tenantId()).stream()
+            .collect(Collectors.groupingBy(HomeTemplateVersionRole::getTemplateId));
+    boolean team = permissions.allowed("workspace", "团队工作查看");
+    var out = new ArrayList<Selected>();
+    for (var row : templates.published(auth.tenantId())) {
+      if (links.getOrDefault(row.id(), List.of()).stream()
+          .noneMatch(r -> member.contains(r.getRoleId()))) continue;
+      var layout = node(row.payload());
+      if (!team
+          && rows(canvas(layout).get("blocks")).stream()
+              .noneMatch(b -> !text(b, "scope").equals("team"))) continue;
+      String name = layout.has("templateName") ? layout.path("templateName").asText() : row.name();
+      out.add(
+          new Selected(
+              String.valueOf(row.id()),
+              name,
+              row.publishedVersion(),
+              row.priority(),
+              row.publishedVersion(),
+              layout));
+    }
+    return out;
   }
 
-  Map<String, Object> assigned(long tid) {
-    if (tid == 0)
-      return new LinkedHashMap<>(
-          Map.of("id", "0", "name", "个人首页", "version", 1, "layout", defaults("executor")));
+  Selected assigned(long id) {
+    if (id == 0)
+      return new Selected("0", "个人首页", null, null, 1, json.valueToTree(defaults("executor")));
     return assigned().stream()
-        .filter(r -> id(r.get("id")) == tid)
+        .filter(row -> Long.parseLong(row.id()) == id)
         .findFirst()
-        .orElseThrow(
-            () ->
-                new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.FORBIDDEN, "首页模板不再适用，请选择其他首页"));
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "首页模板不再适用，请选择其他首页"));
   }
 
   @Transactional
-  public Object home(Long requested) {
+  public State home(Long requested) {
     access();
     seed();
     var choices = new ArrayList<>(assigned());
     choices.add(assigned(0));
-    long tid = requested == null ? -1 : requested;
-    var pref = repository.loadDefaultTemplate(auth.tenantId(), auth.userId());
-    if (tid < 0 && !pref.isEmpty() && pref.getFirst().get("default_template_id") != null)
-      tid = id(pref.getFirst().get("default_template_id"));
-    final long wanted = tid;
+    long id = requested == null ? -1 : requested;
+    var preferred = preferences.find(auth.tenantId(), auth.userId());
+    if (id < 0 && preferred != null && preferred.getDefaultTemplateId() != null)
+      id = preferred.getDefaultTemplateId();
+    final long wanted = id;
     var selected =
         choices.stream()
-            .filter(r -> id(r.get("id")) == wanted)
+            .filter(row -> Long.parseLong(row.id()) == wanted)
             .findFirst()
             .orElse(choices.getFirst());
-    tid = id(selected.get("id"));
-    var personal = repository.loadLayout(auth.tenantId(), auth.userId(), tid);
-    var out = new LinkedHashMap<String, Object>();
-    out.put(
-        "templates",
-        choices.stream()
-            .map(c -> Map.of("id", c.get("id"), "name", c.get("name"), "version", c.get("version")))
-            .toList());
-    out.put("selected", selected);
-    out.put(
-        "layout",
-        personal.isEmpty()
-            ? selected.get("layout")
-            : object(json, personal.getFirst().get("payload")));
-    out.put("rowVersion", personal.isEmpty() ? -1 : personal.getFirst().get("row_version"));
-    out.put(
-        "templateVersion",
-        personal.isEmpty() ? selected.get("version") : personal.getFirst().get("template_version"));
-    out.put(
-        "updateAvailable",
-        !personal.isEmpty()
-            && id(personal.getFirst().get("template_version")) != id(selected.get("version")));
-    out.put("permissions", permissions.menuActions());
-    return out;
+    id = Long.parseLong(selected.id());
+    var stored = layouts.find(auth.tenantId(), auth.userId(), id);
+    return new State(
+        choices.stream().map(row -> new Summary(row.id(), row.name(), row.version())).toList(),
+        selected,
+        stored == null ? selected.layout() : node(stored.getPayload()),
+        stored == null ? -1 : stored.getRowVersion(),
+        stored == null ? selected.version() : stored.getTemplateVersion(),
+        stored != null && stored.getTemplateVersion() != selected.version(),
+        permissions.menuActions());
   }
 
+  /** 个人布局与默认模板各自保存，按完整租户/用户/模板复合键和版本控制，不覆盖其他用户。 */
   @Transactional
-  public Object layout(Map<String, Object> b) {
+  public State layout(LayoutForm form) {
     access();
-    long tid = id(b.get("templateId"));
-    var selected = assigned(tid);
+    long id = form.templateId();
+    var selected = assigned(id);
     check(
-        id(b.get("templateVersion")) == id(selected.get("version"))
-            || repository.countTemplateVersion(auth.tenantId(), tid, id(b.get("templateVersion")))
-                == 1,
+        form.templateVersion() == selected.version()
+            || versions.exists(auth.tenantId(), id, form.templateVersion()),
         "模板版本不存在");
-    var normalized = normalize((Map<String, Object>) b.get("layout"));
-    int version = (int) id(b.get("rowVersion"));
-    if (version == -1) {
+    String value = encode(json, normalize(canvas(form.layout())));
+    if (form.rowVersion() == -1) {
       try {
-        repository.insertLayout(
-            auth.tenantId(),
-            auth.userId(),
-            tid,
-            id(b.get("templateVersion")),
-            encode(json, normalized));
-      } catch (org.springframework.dao.DuplicateKeyException e) {
+        layouts.insert(auth.tenantId(), auth.userId(), id, form.templateVersion(), value);
+      } catch (DuplicateKeyException duplicate) {
         conflict();
       }
-    } else {
-      if (repository.updateLayout(
-              id(b.get("templateVersion")),
-              encode(json, normalized),
-              auth.tenantId(),
-              auth.userId(),
-              tid,
-              version)
-          != 1) conflict();
-    }
-    return home(tid);
+    } else if (layouts.update(
+            auth.tenantId(), auth.userId(), id, form.templateVersion(), form.rowVersion(), value)
+        != 1) conflict();
+    return home(id);
   }
 
   @Transactional
-  public Object reset(long tid) {
+  public State reset(long id) {
     access();
-    assigned(tid);
-    repository.resetLayout(auth.tenantId(), auth.userId(), tid);
-    return home(tid);
+    assigned(id);
+    layouts.delete(auth.tenantId(), auth.userId(), id);
+    return home(id);
   }
 
-  public Object defaultHome(long tid) {
+  public SuccessResponse defaultHome(long id) {
     access();
-    assigned(tid);
-    repository.saveDefaultTemplate(auth.tenantId(), auth.userId(), tid);
-    return Map.of("success", true);
+    assigned(id);
+    preferences.saveDefault(auth.tenantId(), auth.userId(), id);
+    return new SuccessResponse(true);
   }
 
-  public Object roleChoices() {
+  public List<RoleChoice> roleChoices() {
     permissions.require("homeTemplate", "查看");
-    return Map.of("data", repository.listRoleChoices(auth.tenantId()));
+    return roles.homeRoleChoices(auth.tenantId()).stream()
+        .map(row -> new RoleChoice(String.valueOf(row.getId()), row.getName()))
+        .toList();
   }
 }
