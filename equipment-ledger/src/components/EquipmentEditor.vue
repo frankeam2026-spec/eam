@@ -988,7 +988,7 @@ function relationSaved(record: EquipmentRecord) {
 
 <style scoped>
 .equipment-editor .editor-head {
-  min-height: 68px;
+  min-height: 50px;
   height: auto;
   padding: 12px 16px;
 }
@@ -1003,7 +1003,7 @@ function relationSaved(record: EquipmentRecord) {
   overflow-wrap: anywhere;
 }
 .equipment-editor .editor-body {
-  padding: 8px;
+  padding: 8px 8px 8px 0;
 }
 .equipment-editor .editor-layout {
   grid-template-columns: minmax(0, 1fr) 220px;

@@ -83,7 +83,7 @@ public class EquipmentCommandService {
   }
 
   @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
-  /** 新增设备是完整业务用例：创建主体前执行输入、组织与权限校验，关联记录在同一业务流程内维护。 */
+  /* 新增设备是完整业务用例：创建主体前执行输入、组织与权限校验，关联记录在同一业务流程内维护。 */
   public EquipmentView create(EquipmentForm form) {
     inputValidation.validate(form);
     relations.enter(
