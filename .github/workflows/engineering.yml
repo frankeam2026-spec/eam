@@ -103,7 +103,7 @@ jobs:
             test: WorkflowMySqlIT
           - suite: system-user
             database: eam_system_quality_test_20261117_v2
-            test: SystemUserQueryMySqlIT,SystemAdministrationMySqlIT,BaseDataAdministrationMySqlIT,BusinessConfigurationMySqlIT,BusinessValueMySqlIT,BusinessChoicesMySqlIT
+            test: SystemUserQueryMySqlIT,SystemAdministrationMySqlIT,BaseDataAdministrationMySqlIT,BusinessConfigurationMySqlIT,BusinessValueMySqlIT,BusinessChoicesMySqlIT,PersonalizationMySqlIT
     services:
       mysql:
         image: mysql:8.4
