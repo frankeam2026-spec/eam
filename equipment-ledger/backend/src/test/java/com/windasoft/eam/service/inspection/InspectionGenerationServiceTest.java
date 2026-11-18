@@ -9,7 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
-import com.windasoft.eam.repository.system.NotificationRepository;
+import com.windasoft.eam.service.system.NotificationPolicyService;
 import com.windasoft.eam.service.system.PermissionService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -29,7 +29,8 @@ class InspectionGenerationServiceTest {
   private final InspectionNumbers numbers = mock(InspectionNumbers.class);
   private final InspectionViewAssembler views = mock(InspectionViewAssembler.class);
   private final InspectionTaskJournal journal = mock(InspectionTaskJournal.class);
-  private final NotificationRepository notificationPolicies = mock(NotificationRepository.class);
+  private final NotificationPolicyService notificationPolicies =
+      mock(NotificationPolicyService.class);
   private final DailyArrangementRepository dailyStorage = mock(DailyArrangementRepository.class);
   private final InspectionGenerationService service =
       new InspectionGenerationService(
@@ -37,7 +38,8 @@ class InspectionGenerationServiceTest {
           new ObjectMapper(),
           projectSource,
           views,
-          new InspectionTaskLifecycleService(repository, notificationPolicies, journal, new ObjectMapper()),
+          new InspectionTaskLifecycleService(
+              repository, notificationPolicies, journal, new ObjectMapper()),
           new InspectionTaskCreationService(
               repository,
               new ObjectMapper(),
@@ -68,8 +70,12 @@ class InspectionGenerationServiceTest {
         "{"
             + "\"enabled\":true,"
             + "\"typeId\":\"77\","
-            + "\"startDate\":\"" + firstDate + "\","
-            + "\"endDate\":\"" + secondDate + "\","
+            + "\"startDate\":\""
+            + firstDate
+            + "\","
+            + "\"endDate\":\""
+            + secondDate
+            + "\","
             + "\"period\":1,"
             + "\"unit\":\"日\","
             + "\"validHours\":1,"
@@ -96,8 +102,7 @@ class InspectionGenerationServiceTest {
     when(projectSource.raw("types", TENANT, TYPE_ID, true))
         .thenReturn(Map.of("id", TYPE_ID, "name", "周期类型"));
     when(views.definition(any())).thenReturn(Map.of("enabled", true, "name", "周期类型"));
-    when(
-            projectSource.equipment(TENANT, 101L))
+    when(projectSource.equipment(TENANT, 101L))
         .thenReturn(
             Map.of(
                 "id", 101L,
@@ -190,7 +195,7 @@ class InspectionGenerationServiceTest {
         .changeTaskStatus(InspectionTaskStatus.EXPIRED_CANCELLED.code(), TENANT, TASK_ID);
     verify(journal).closeTodos(TENANT, TASK_ID);
   }
- 
+
   @Test
   void expiredDailyTaskWithoutLateExecutionClosesTodoAndSkipsExecutionReminders() {
     stubDisabledDailyPlan();
@@ -213,8 +218,7 @@ class InspectionGenerationServiceTest {
                     "原状态", InspectionTaskStatus.PENDING.code(),
                     "新状态", InspectionTaskStatus.EXPIRED.code())));
     verify(journal, never())
-        .notify(
-            eq(TENANT), eq(TASK_ID), anyList(), eq("点巡检待执行"), anyString(), eq(true), eq(false));
+        .notify(eq(TENANT), eq(TASK_ID), anyList(), eq("点巡检待执行"), anyString(), eq(true), eq(false));
     verify(journal, never())
         .notify(
             eq(TENANT), eq(TASK_ID), anyList(), eq("点巡检即将过期"), anyString(), eq(false), eq(true));
@@ -264,7 +268,8 @@ class InspectionGenerationServiceTest {
     task.put("status", InspectionTaskStatus.PENDING.code());
     task.put(
         "snapshot",
-        "{\"allowLate\":" + allowLate
+        "{\"allowLate\":"
+            + allowLate
             + ",\"owners\":[\"10\"],"
             + "\"expireRemindHours\":2,\"expireRemindUnit\":\"时\"}");
     task.put("due_at", now.minusHours(3).toString());

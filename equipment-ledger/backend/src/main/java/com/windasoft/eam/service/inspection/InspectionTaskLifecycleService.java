@@ -15,7 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
-import com.windasoft.eam.repository.system.NotificationRepository;
+import com.windasoft.eam.service.system.NotificationPolicyService;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,13 +30,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class InspectionTaskLifecycleService {
   private final InspectionRepository repository;
-  private final NotificationRepository notificationPolicies;
+  private final NotificationPolicyService notificationPolicies;
   private final InspectionTaskJournal journal;
   private final ObjectMapper json;
 
   public InspectionTaskLifecycleService(
       InspectionRepository repository,
-      NotificationRepository notificationPolicies,
+      NotificationPolicyService notificationPolicies,
       InspectionTaskJournal journal,
       ObjectMapper json) {
     this.repository = repository;

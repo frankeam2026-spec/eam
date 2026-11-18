@@ -12,6 +12,7 @@ import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.controller.system.NotificationController;
 import com.windasoft.eam.dto.system.NotificationContracts.Channel;
 import com.windasoft.eam.repository.system.NotificationRepository;
+import com.windasoft.eam.repository.system.NotifyChannelRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -47,6 +48,7 @@ class NotificationChannelValidationTest {
     var service =
         new NotificationChannelService(
             repository,
+            mock(NotifyChannelRepository.class),
             mock(NotificationSecret.class),
             mock(PermissionService.class),
             mock(AuthContext.class));

@@ -33,6 +33,7 @@ import com.windasoft.eam.scheduler.knowledge.KnowledgeScheduler;
 import com.windasoft.eam.scheduler.maintenance.MaintenanceScheduler;
 import com.windasoft.eam.scheduler.system.NotificationScheduler;
 import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.NotificationPolicyService;
 import com.windasoft.eam.service.system.PermissionService;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -122,6 +123,7 @@ class InspectionGenerationMySqlIT {
   @MockitoBean InspectionNumbers numbers;
   @MockitoBean PermissionService permissions;
   @MockitoSpyBean NotificationRepository notifications;
+  @MockitoSpyBean NotificationPolicyService notificationPolicies;
   @MockitoBean NotificationScheduler notificationScheduler;
   @MockitoBean InspectionScheduler inspectionScheduler;
   @MockitoBean MaintenanceScheduler maintenanceScheduler;
@@ -152,7 +154,7 @@ class InspectionGenerationMySqlIT {
         .thenAnswer(call -> "BUDGET-" + sequence.incrementAndGet());
     doReturn("测试部门").when(repository).findOrganizationName(eq(TENANT), any());
     when(permissions.companyOfOrganization(eq(TENANT), anyLong())).thenReturn(90001L);
-    doReturn(true).when(notifications).replacesLegacy(eq(TENANT), anyString(), eq(PLAN));
+    doReturn(true).when(notificationPolicies).replacesLegacy(eq(TENANT), anyString(), eq(PLAN));
     when(projects.equipment(eq(TENANT), anyLong()))
         .thenAnswer(
             call -> {
@@ -852,7 +854,7 @@ class InspectionGenerationMySqlIT {
   @Test
   void openTaskWithoutFollowUpKeepsNullAndDoesNotNotifyUserZero() throws Exception {
     fixture(true, 1, 1);
-    doReturn(false).when(notifications).replacesLegacy(eq(TENANT), anyString(), eq(PLAN));
+    doReturn(false).when(notificationPolicies).replacesLegacy(eq(TENANT), anyString(), eq(PLAN));
     assertEquals(1, generation.generate(TENANT, PLAN));
     assertNull(
         db.queryForObject(
@@ -868,7 +870,7 @@ class InspectionGenerationMySqlIT {
     fixture(true, 1, 1);
     assertEquals(1, generation.generate(TENANT, PLAN));
     db.update("UPDATE eam_inspection_task SET follow_up_user_id=0 WHERE tenant_id=?", TENANT);
-    doReturn(false).when(notifications).replacesLegacy(eq(TENANT), anyString(), eq(PLAN));
+    doReturn(false).when(notificationPolicies).replacesLegacy(eq(TENANT), anyString(), eq(PLAN));
     assertEquals(0, generation.generate(TENANT, PLAN));
     assertEquals(0, count("eam_inspection_inbox"));
     assertEquals(0, count("eam_notify_message"));
@@ -878,7 +880,7 @@ class InspectionGenerationMySqlIT {
   void validFollowUpStillReceivesOneOverdueNotice() throws Exception {
     notificationUser();
     fixture(true, 1, 1, Map.of("followUpUserId", Long.toString(USER)));
-    doReturn(false).when(notifications).replacesLegacy(eq(TENANT), anyString(), eq(PLAN));
+    doReturn(false).when(notificationPolicies).replacesLegacy(eq(TENANT), anyString(), eq(PLAN));
     assertEquals(1, generation.generate(TENANT, PLAN));
     assertEquals(1, inbox("点巡检超期提醒"));
     assertEquals(1, count("eam_notify_message"));

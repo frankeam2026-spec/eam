@@ -4,6 +4,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.dto.system.NotificationViews;
+import com.windasoft.eam.entity.system.NotifyPolicy;
+import com.windasoft.eam.entity.system.NotifyRule;
+import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.system.*;
 import java.time.*;
 import java.util.*;
@@ -14,7 +18,13 @@ class RepairApprovalReminderTest {
   void waitStartsAtApprovalRatherThanReportAndPendingDoesNotRemind() {
     var repo = mock(ReminderRepository.class);
     var notifications = mock(NotificationRepository.class);
-    var service = new ReminderService(repo, notifications, new ObjectMapper());
+    var policies = mock(NotificationPolicyService.class);
+    var rules = mock(NotifyRuleRepository.class);
+    var people = mock(NotifyRulePersonRepository.class);
+    var users = mock(SystemUserRepository.class);
+    var service =
+        new ReminderService(
+            repo, notifications, new ObjectMapper(), policies, rules, people, users);
     var now = LocalDateTime.now(ZoneId.of("Asia/Shanghai"));
     var row =
         new HashMap<String, Object>(
@@ -30,27 +40,22 @@ class RepairApprovalReminderTest {
                 "reminder_excluded",
                 0));
     when(repo.source("repair", 10001, 9, true)).thenReturn(row);
-    when(notifications.effectivePolicy(10001, "repair", null))
-        .thenReturn(Map.of("id", 1L, "row_version", 1, "effective_at", now.minusDays(1)));
-    when(notifications.rules(10001, 1))
-        .thenReturn(
-            List.of(
-                Map.of(
-                    "id",
-                    2L,
-                    "scene",
-                    "WAIT_DISPATCH",
-                    "value",
-                    30,
-                    "unit",
-                    "MINUTE",
-                    "enabled",
-                    1,
-                    "effectiveAt",
-                    now.minusDays(1))));
-    when(notifications.people(10001, 1))
-        .thenReturn(List.of(Map.of("ruleId", 2L, "userId", 3L, "recipientKind", "TO")));
-    when(notifications.activeUser(10001, 3)).thenReturn(true);
+    var policy = new NotifyPolicy();
+    policy.setId(1L);
+    policy.setRowVersion(1);
+    policy.setEffectiveAt(now.minusDays(1));
+    when(policies.effectivePolicy(10001, "repair", null)).thenReturn(policy);
+    var rule = new NotifyRule();
+    rule.setId(2L);
+    rule.setScene("WAIT_DISPATCH");
+    rule.setOffsetValue(30);
+    rule.setOffsetUnit("MINUTE");
+    rule.setEnabled(1);
+    rule.setEffectiveAt(now.minusDays(1));
+    when(rules.list(10001, 1)).thenReturn(List.of(rule));
+    when(people.list(10001, 1))
+        .thenReturn(List.of(new NotificationViews.Person("2", "3", "TO", "审批人")));
+    when(users.activeUser(10001, 3)).thenReturn(new SystemUser());
     service.scan("repair", 10001, 9);
     verify(repo, never())
         .message(

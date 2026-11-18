@@ -133,6 +133,19 @@ public class SystemUserRepository {
   }
 
   /** 固定人员配置批量核对，仅取得身份与所属组织，不读取密码和邮箱。 */
+  public Page<SystemUser> notificationChoices(long tenant, String q, int page, int size) {
+    return mapper.selectPage(
+        new Page<>(page, size),
+        new LambdaQueryWrapper<SystemUser>()
+            .select(SystemUser::getId, SystemUser::getDisplayName, SystemUser::getEmail)
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getStatus, 1)
+            .and(
+                w ->
+                    w.apply("LOCATE({0},display_name)>0", q).or().apply("LOCATE({0},account)>0", q))
+            .orderByAsc(SystemUser::getDisplayName, SystemUser::getId));
+  }
+
   public List<SystemUser> activeIdentities(long tenant, List<Long> ids) {
     if (ids.isEmpty()) {
       return List.of();

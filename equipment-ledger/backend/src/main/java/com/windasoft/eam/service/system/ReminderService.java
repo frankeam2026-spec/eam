@@ -5,9 +5,20 @@ import static com.windasoft.eam.repository.system.NotificationRepository.yes;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.notification.ReminderTiming;
-import com.windasoft.eam.repository.system.*;
-import java.time.*;
-import java.util.*;
+import com.windasoft.eam.entity.system.NotifyPolicy;
+import com.windasoft.eam.entity.system.NotifyRule;
+import com.windasoft.eam.repository.system.NotificationRepository;
+import com.windasoft.eam.repository.system.NotifyRulePersonRepository;
+import com.windasoft.eam.repository.system.NotifyRuleRepository;
+import com.windasoft.eam.repository.system.ReminderRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,12 +27,26 @@ public class ReminderService {
   private final ReminderRepository repo;
   private final NotificationRepository notifications;
   private final ObjectMapper json;
+  private final NotificationPolicyService policies;
+  private final NotifyRuleRepository rules;
+  private final NotifyRulePersonRepository people;
+  private final SystemUserRepository users;
 
   public ReminderService(
-      ReminderRepository repo, NotificationRepository notifications, ObjectMapper json) {
+      ReminderRepository repo,
+      NotificationRepository notifications,
+      ObjectMapper json,
+      NotificationPolicyService policies,
+      NotifyRuleRepository rules,
+      NotifyRulePersonRepository people,
+      SystemUserRepository users) {
     this.repo = repo;
     this.notifications = notifications;
     this.json = json;
+    this.policies = policies;
+    this.rules = rules;
+    this.people = people;
+    this.users = users;
   }
 
   public static LocalDateTime time(Object value) {
@@ -74,10 +99,8 @@ public class ReminderService {
     return stages;
   }
 
-  private LocalDateTime trigger(ReminderTiming.Stage stage, Map<String, Object> rule) {
-    long seconds =
-        ReminderTiming.seconds(
-            ((Number) rule.get("value")).intValue(), rule.get("unit").toString());
+  private LocalDateTime trigger(ReminderTiming.Stage stage, NotifyRule rule) {
+    long seconds = ReminderTiming.seconds(rule.getOffsetValue(), rule.getOffsetUnit());
     return stage.scene().equals("BEFORE_DUE")
         ? stage.anchor().minusSeconds(seconds)
         : stage.trigger(seconds);
@@ -97,9 +120,9 @@ public class ReminderService {
   }
 
   private LocalDateTime cutoff(
-      long tenant, String kind, Long plan, Map<String, Object> policy, Map<String, Object> rule) {
-    var at = time(policy.get("effective_at"));
-    var r = time(rule.get("effectiveAt"));
+      long tenant, String kind, Long plan, NotifyPolicy policy, NotifyRule rule) {
+    var at = policy.getEffectiveAt();
+    var r = rule.getEffectiveAt();
     if (r.isAfter(at)) at = r;
     if (plan != null) {
       var p = repo.plan(tenant, kind, plan);
@@ -116,18 +139,18 @@ public class ReminderService {
     if (row.isEmpty()) return;
     String kind = kind(module, row);
     Long plan = module.equals("repair") ? null : number(row.get("plan_id"));
-    var policy = notifications.effectivePolicy(tenant, kind, plan);
-    if (policy.isEmpty() || policy.containsKey("off")) return;
+    var policy = policies.effectivePolicy(tenant, kind, plan);
+    if (policy == null) return;
     var stages = stages(module, tenant, id, row);
     if (yes(row.get("deleted")) || (module.equals("repair") && row.get("status").equals("挂起")))
       return;
-    long pid = number(policy.get("id"));
-    var rules = notifications.rules(tenant, pid);
-    var people = notifications.people(tenant, pid);
+    long pid = policy.getId();
+    var configuredRules = rules.list(tenant, pid);
+    var recipients = people.list(tenant, pid);
     var now = LocalDateTime.now(ZoneId.of("Asia/Shanghai"));
-    for (var rule : rules) {
-      if (!yes(rule.get("enabled"))) continue;
-      var stage = stages.get(rule.get("scene"));
+    for (var rule : configuredRules) {
+      if (rule.getEnabled() != 1) continue;
+      var stage = stages.get(rule.getScene());
       if (stage == null) continue;
       var trigger = trigger(stage, rule);
       if (trigger == null
@@ -136,23 +159,23 @@ public class ReminderService {
       if (stage.scene().equals("BEFORE_DUE") && !now.isBefore(stage.anchor())) continue;
       String title = sceneName(stage.scene()) + "：" + equipment(row),
           content = content(module, row, stage, trigger);
-      for (var person : people)
-        if (person.get("ruleId").equals(rule.get("id"))) {
-          long user = number(person.get("userId"));
-          if (!notifications.activeUser(tenant, user)) continue;
-          String key = "reminder:" + module + ":" + id + ":" + rule.get("id") + ":" + user;
+      for (var person : recipients)
+        if (person.ruleId().equals(rule.getId().toString())) {
+          long user = Long.parseLong(person.userId());
+          if (users.activeUser(tenant, user) == null) continue;
+          String key = "reminder:" + module + ":" + id + ":" + rule.getId() + ":" + user;
           repo.message(
               tenant,
               key,
               module,
               id,
-              number(rule.get("id")),
-              ((Number) policy.get("row_version")).intValue(),
+              rule.getId(),
+              policy.getRowVersion(),
               stage.scene(),
               title,
               content,
               user,
-              person.get("recipientKind").toString(),
+              person.recipientKind(),
               trigger);
           notifications.deliveries(tenant, key);
         }
@@ -205,18 +228,18 @@ public class ReminderService {
         || (module.equals("repair") && row.get("status").equals("挂起"))) return false;
     String kind = kind(module, row);
     Long plan = module.equals("repair") ? null : number(row.get("plan_id"));
-    var policy = notifications.effectivePolicy(tenant, kind, plan);
-    if (policy.isEmpty() || policy.containsKey("off")) return false;
+    var policy = policies.effectivePolicy(tenant, kind, plan);
+    if (policy == null) return false;
     var rule =
-        notifications.rules(tenant, number(policy.get("id"))).stream()
+        rules.list(tenant, policy.getId()).stream()
             .filter(
                 r ->
-                    r.get("id").toString().equals(message.get("rule_id").toString())
-                        && yes(r.get("enabled")))
+                    r.getId().toString().equals(message.get("rule_id").toString())
+                        && r.getEnabled() == 1)
             .findFirst()
             .orElse(null);
     if (rule == null) return false;
-    var stage = stages(module, tenant, id, row).get(rule.get("scene"));
+    var stage = stages(module, tenant, id, row).get(rule.getScene());
     if (stage == null) return false;
     var trigger = trigger(stage, rule);
     var now = LocalDateTime.now(ZoneId.of("Asia/Shanghai"));
@@ -224,12 +247,10 @@ public class ReminderService {
         && !trigger.isAfter(now)
         && !trigger.isBefore(cutoff(tenant, kind, plan, policy, rule))
         && (!stage.scene().equals("BEFORE_DUE") || now.isBefore(stage.anchor()))
-        && notifications.people(tenant, number(policy.get("id"))).stream()
+        && people.list(tenant, policy.getId()).stream()
             .anyMatch(
                 p ->
-                    p.get("ruleId").toString().equals(rule.get("id").toString())
-                        && p.get("userId")
-                            .toString()
-                            .equals(message.get("recipient_id").toString()));
+                    p.ruleId().equals(rule.getId().toString())
+                        && p.userId().equals(message.get("recipient_id").toString()));
   }
 }
