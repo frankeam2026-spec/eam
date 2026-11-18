@@ -13,6 +13,8 @@ import com.windasoft.eam.dto.system.PasswordChangeResult;
 import com.windasoft.eam.entity.system.AuthSession;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.system.AuthenticationRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -28,6 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuthenticationService {
   private final AuthenticationRepository repository;
+  private final SystemUserRepository users;
+  private final OrgUnitRepository organizations;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final Environment environment;
@@ -36,17 +40,21 @@ public class AuthenticationService {
 
   public AuthenticationService(
       AuthenticationRepository repository,
+      SystemUserRepository users,
+      OrgUnitRepository organizations,
       AuthContext auth,
       PermissionService permissions,
       Environment environment) {
     this.repository = repository;
+    this.users = users;
+    this.organizations = organizations;
     this.auth = auth;
     this.permissions = permissions;
     this.environment = environment;
   }
 
   public AuthenticationResult login(LoginForm form) {
-    var user = repository.activeUser(form.tenantId(), form.account().trim());
+    var user = users.activeUser(form.tenantId(), form.account().trim());
     if (user == null
         || user.getPasswordHash() == null
         || !passwords.matches(form.password(), user.getPasswordHash()))
@@ -79,7 +87,7 @@ public class AuthenticationService {
   public PasswordChangeResult changePassword(ChangePasswordForm form, String token) {
     if (environment.acceptsProfiles(Profiles.of("local-dev")))
       throw new LocalizedArgumentException("server.system.message0036");
-    var user = repository.lockUser(auth.tenantId(), auth.userId());
+    var user = users.lockUser(auth.tenantId(), auth.userId());
     if (user == null
         || user.getPasswordHash() == null
         || !passwords.matches(form.currentPassword(), user.getPasswordHash()))
@@ -90,17 +98,17 @@ public class AuthenticationService {
     if (form.currentPassword().equals(form.newPassword()))
       throw new FieldValidationException("newPassword", "新密码不能与当前密码相同");
     user.setPasswordHash(passwords.encode(form.newPassword()));
-    repository.updateUser(user);
+    users.updatePassword(user);
     repository.revokeOtherSessions(auth.tenantId(), auth.userId(), null);
     return new PasswordChangeResult(true);
   }
 
   private AuthenticatedUserView view(SystemUser user) {
-    var department = repository.organization(user.getTenantId(), user.getOrgId());
+    var department = organizations.organization(user.getTenantId(), user.getOrgId());
     var company =
         department == null
             ? null
-            : repository.organization(user.getTenantId(), department.getParentId());
+            : organizations.organization(user.getTenantId(), department.getParentId());
     return new AuthenticatedUserView(
         String.valueOf(user.getId()),
         String.valueOf(user.getTenantId()),

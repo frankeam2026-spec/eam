@@ -1,5 +1,8 @@
 package com.windasoft.eam.config.security;
 
+import com.windasoft.eam.common.BuiltinMessages;
+import com.windasoft.eam.repository.system.AuthenticationRepository;
+import com.windasoft.eam.repository.system.SystemUserRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -11,23 +14,30 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
 public class AuthFilter extends OncePerRequestFilter {
   public static final String COOKIE = "EAM_SESSION";
-  private final com.windasoft.eam.repository.system.AuthenticationRepository repository;
-  private final org.springframework.core.env.Environment environment;
+  private final AuthenticationRepository repository;
+  private final Environment environment;
+  private final SystemUserRepository users;
 
-  @org.springframework.beans.factory.annotation.Value("${eam.security.demo-tenant-id:10001}")
+  @Value("${eam.security.demo-tenant-id:10001}")
   private Long demoTenant;
 
   public AuthFilter(
-      com.windasoft.eam.repository.system.AuthenticationRepository repository,
-      org.springframework.core.env.Environment environment) {
+      AuthenticationRepository repository, Environment environment, SystemUserRepository users) {
     this.repository = repository;
     this.environment = environment;
+    this.users = users;
   }
 
   @Override
@@ -62,7 +72,7 @@ public class AuthFilter extends OncePerRequestFilter {
               && cookie.getValue().matches("[A-Za-z0-9_-]{40,80}")) {
             var session = repository.activeSession(hash(cookie.getValue()), LocalDateTime.now());
             if (session != null) {
-              var user = repository.activeUserById(session.getTenantId(), session.getUserId());
+              var user = users.activeUser(session.getTenantId(), session.getUserId());
               if (user != null) request.setAttribute(AuthContext.ATTRIBUTE, user);
             }
             break;
@@ -74,8 +84,8 @@ public class AuthFilter extends OncePerRequestFilter {
       chain.doFilter(request, response);
       return;
     }
-    if (environment.acceptsProfiles(org.springframework.core.env.Profiles.of("local-dev"))) {
-      var user = repository.activeUser(demoTenant, "admin");
+    if (environment.acceptsProfiles(Profiles.of("local-dev"))) {
+      var user = users.activeUser(demoTenant, "admin");
       if (user == null) {
         reject(request, response);
         return;
@@ -101,7 +111,7 @@ public class AuthFilter extends OncePerRequestFilter {
       reject(request, response);
       return;
     }
-    var user = repository.activeUserById(session.getTenantId(), session.getUserId());
+    var user = users.activeUser(session.getTenantId(), session.getUserId());
     if (user == null) {
       reject(request, response);
       return;
@@ -128,17 +138,17 @@ public class AuthFilter extends OncePerRequestFilter {
     String locale = "zh-CN";
     try {
       for (var range :
-          java.util.Locale.LanguageRange.parse(
-              java.util.Objects.toString(request.getHeader("Accept-Language"), "zh-CN"))) {
-        String tag = java.util.Locale.forLanguageTag(range.getRange()).toLanguageTag();
-        if (com.windasoft.eam.common.BuiltinMessages.NAMES.containsKey(tag)) {
+          Locale.LanguageRange.parse(
+              Objects.toString(request.getHeader("Accept-Language"), "zh-CN"))) {
+        String tag = Locale.forLanguageTag(range.getRange()).toLanguageTag();
+        if (BuiltinMessages.NAMES.containsKey(tag)) {
           locale = tag;
           break;
         }
       }
     } catch (IllegalArgumentException ignored) {
     }
-    return com.windasoft.eam.common.BuiltinMessages.get(locale).getOrDefault(key, "请求无法完成");
+    return BuiltinMessages.get(locale).getOrDefault(key, "请求无法完成");
   }
 
   private void reject(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -149,7 +159,7 @@ public class AuthFilter extends OncePerRequestFilter {
         .write(
             new com.fasterxml.jackson.databind.ObjectMapper()
                 .writeValueAsString(
-                    java.util.Map.of(
+                    Map.of(
                         "code",
                         "UNAUTHENTICATED",
                         "message",

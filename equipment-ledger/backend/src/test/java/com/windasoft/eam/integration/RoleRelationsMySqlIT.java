@@ -36,7 +36,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 仅在本专项隔离库验证品牌配置的版本、素材访问、事务回滚及并发引用一致性。 */
+/** 仅在本专项隔离库验证角色关系的旧授权、大ID、租户隔离和事务回滚。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @EnabledIfEnvironmentVariable(named = "EAM_SYSTEM_TEST_URL", matches = ".+")
 @Transactional

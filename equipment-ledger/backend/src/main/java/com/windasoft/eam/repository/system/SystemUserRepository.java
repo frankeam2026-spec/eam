@@ -154,6 +154,53 @@ public class SystemUserRepository {
     return mapper.activeRoleMembers(tenant, roles, organizations);
   }
 
+  public SystemUser activeUser(long tenant, String account) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getAccount, account)
+            .eq(SystemUser::getStatus, 1));
+  }
+
+  /** 改密先锁本租户用户，密码写入和会话撤销由认证服务的同一事务协调。 */
+  public SystemUser lockUser(long tenant, long user) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getId, user)
+            .last("FOR UPDATE"));
+  }
+
+  /** 只更新密码；保留旧改密的更新时间语义，不覆盖邮箱、资料或其他并发更新字段。 */
+  public void updatePassword(SystemUser user) {
+    mapper.update(
+        null,
+        new LambdaUpdateWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, user.getTenantId())
+            .eq(SystemUser::getId, user.getId())
+            .set(SystemUser::getPasswordHash, user.getPasswordHash())
+            .set(SystemUser::getUpdatedAt, user.getUpdatedAt()));
+  }
+
+  public SystemUser bootstrapAdmin(long tenant) {
+    return mapper.selectOne(
+        new LambdaQueryWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getAccount, "admin"));
+  }
+
+  /** 多实例初始化只填充空密码，不覆盖已由用户修改或另一个实例初始化的密码。 */
+  public void initializePassword(long tenant, long user, String hash) {
+    mapper.update(
+        null,
+        new LambdaUpdateWrapper<SystemUser>()
+            .eq(SystemUser::getTenantId, tenant)
+            .eq(SystemUser::getId, user)
+            .isNull(SystemUser::getPasswordHash)
+            .set(SystemUser::getPasswordHash, hash)
+            .setSql("updated_at=updated_at"));
+  }
+
   public SystemUser activeUser(long tenant, long id) {
     return mapper.selectOne(
         new LambdaQueryWrapper<SystemUser>()
