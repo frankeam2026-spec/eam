@@ -2,13 +2,20 @@ package com.windasoft.eam.service.experience;
 
 import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
-import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.experience.AnalyticsRepository;
+import com.windasoft.eam.domain.system.PermissionAction;
+import com.windasoft.eam.repository.inventory.WarehouseRepository;
+import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.service.system.*;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintWriter;
 import java.math.*;
+import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -17,23 +24,34 @@ import org.springframework.web.server.ResponseStatusException;
 public class HomeAnalyticsService {
   private static final org.slf4j.Logger LOG =
       org.slf4j.LoggerFactory.getLogger(HomeAnalyticsService.class);
+  private static final int MAX_EXPORT_ROWS = 50_000;
+  private static final Pattern CSV_FORMULA = Pattern.compile("^\\s*[=+@-]");
   private final AnalyticsRepository repository;
   private final AnalyticsSourceService sources;
   private final AnalyticsAccess access;
   private final AuthContext auth;
   private final PermissionService permissions;
+  private final OrgUnitRepository organizations;
+  private final OrganizationScopeService organizationScopes;
+  private final WarehouseRepository warehouseRepository;
 
   public HomeAnalyticsService(
       AnalyticsRepository repository,
       AnalyticsSourceService sources,
       AnalyticsAccess access,
       AuthContext auth,
-      PermissionService permissions) {
+      PermissionService permissions,
+      OrgUnitRepository organizations,
+      OrganizationScopeService organizationScopes,
+      WarehouseRepository warehouseRepository) {
     this.repository = repository;
     this.sources = sources;
     this.access = access;
     this.auth = auth;
     this.permissions = permissions;
+    this.organizations = organizations;
+    this.organizationScopes = organizationScopes;
+    this.warehouseRepository = warehouseRepository;
   }
 
   public static Map<String, Object> map(Object raw) {
@@ -56,7 +74,8 @@ public class HomeAnalyticsService {
   }
 
   public Map<String, Object> catalog() {
-    if (!permissions.menuActions().getOrDefault("workspace", Set.of()).contains(PermissionAction.VIEW.code()))
+    var menus = permissions.menuActions();
+    if (!menus.getOrDefault("workspace", Set.of()).contains(PermissionAction.VIEW.code()))
       AnalyticsAccess.deny();
     var companies = new HashSet<Long>();
     var departments = new HashSet<Long>();
@@ -69,42 +88,45 @@ public class HomeAnalyticsService {
             "inspectionPeriodicTask",
             "anomaly",
             "equipment")) {
-      if (!permissions.menuActions().getOrDefault(menu, Set.of()).contains(PermissionAction.VIEW.code())) continue;
+      if (!menus.getOrDefault(menu, Set.of()).contains(PermissionAction.VIEW.code())) continue;
       var scope = access.scope(menu);
       all |= scope.all();
       companies.addAll(scope.companyIds());
       departments.addAll(scope.departmentIds());
     }
     if (permissions.allowed("inventoryQuery", PermissionAction.VIEW)) {
-      var allowed = access.warehouses(false);
-      repository.warehouses(auth.tenantId()).stream()
-          .filter(w -> allowed.contains(((Number) w.get("id")).longValue()))
-          .forEach(w -> companies.add(((Number) w.get("company_id")).longValue()));
+      var warehouses = warehouseRepository.scopeRows(auth.tenantId());
+      var allowed =
+          permissions.inventoryWarehouses("inventoryQuery", PermissionAction.VIEW, warehouses);
+      warehouses.stream().filter(w -> allowed.contains(w.getId()))
+          .forEach(w -> companies.add(w.getCompanyId()));
     }
     var companyScopes = new HashSet<>(companies);
-    if (auth.user().getOrgId() != null) {
-      departments.add(auth.user().getOrgId());
-      Long c = permissions.companyOfOrganization(auth.user().getOrgId());
-      if (c != null) companies.add(c);
+    var orgSnapshot = organizations.organizationsByName(auth.tenantId());
+    // 祖先关系只读一次；使用统一的最近公司规则，避免补进下属公司的部门。
+    var companyByOrg = organizationScopes.companiesForOrganizations(orgSnapshot);
+    var userOrg = auth.user().getOrgId();
+    if (userOrg != null) {
+      departments.add(userOrg);
+      var ownCompany = companyByOrg.get(userOrg);
+      if (ownCompany != null) {
+        companies.add(ownCompany);
+      }
     }
     final boolean any = all;
-    var orgs =
-        repository.organizations(auth.tenantId()).stream()
-            .filter(
-                o ->
-                    any
-                        || companies.contains(((Number) o.get("id")).longValue())
-                        || departments.contains(((Number) o.get("id")).longValue())
-                        || companyScopes.contains(
-                            permissions.companyOfOrganization(((Number) o.get("id")).longValue())))
-            .map(
-                o -> {
-                  var v = new LinkedHashMap<>(o);
-                  v.put("id", o.get("id").toString());
-                  v.put("parentId", Objects.toString(o.get("parent_id"), ""));
-                  return v;
-                })
-            .toList();
+    var orgs = orgSnapshot.stream()
+        .filter(org -> any || companies.contains(org.getId()) || departments.contains(org.getId())
+            || companyScopes.contains(companyByOrg.get(org.getId())))
+        .map(org -> {
+          var row = new LinkedHashMap<String, Object>();
+          row.put("id", org.getId().toString());
+          row.put("parent_id", org.getParentId());
+          row.put("name", org.getName());
+          row.put("org_type", org.getOrgType());
+          row.put("status", org.getStatus());
+          row.put("parentId", Objects.toString(org.getParentId(), ""));
+          return row;
+        }).toList();
     return Map.of(
         "data",
         metrics().stream().map(this::metricView).toList(),
@@ -979,25 +1001,20 @@ SUM(collaboration) collaboration FROM credits %s GROUP BY pid HAVING SUM(complet
   @Transactional(readOnly = true)
   public Object details(Map<String, Object> body) {
     Detail d = detail(body);
-    int page = (int) id(body.getOrDefault("page", 1)),
-        size = (int) id(body.getOrDefault("size", 20));
-    check(page > 0 && size > 0 && size <= 100, "分页参数无效");
-    var total = one(repository.rows(d.query.source, "COUNT(*) total", d.where, d.args, ""));
-    var data =
-        repository.rows(
-            d.query.source,
-            "s.*",
-            d.where,
-            d.args,
-            "ORDER BY s.occurred_at DESC,s.source_id LIMIT "
-                + size
-                + " OFFSET "
-                + ((long) (page - 1) * size));
+    long page = id(body.getOrDefault("page", 1));
+    long size = id(body.getOrDefault("size", 20));
+    check(page > 0 && page <= Integer.MAX_VALUE && size > 0 && size <= 100, "分页参数无效");
+    long total = repository.count(d.query.source, d.where, d.args);
+    var pageArguments = new ArrayList<>(d.args);
+    pageArguments.add(size);
+    pageArguments.add((page - 1) * size);
+    var data = repository.rows(d.query.source, "s.*", d.where, pageArguments,
+        "ORDER BY s.occurred_at DESC,s.source_id LIMIT ? OFFSET ?");
     return Map.of(
         "data",
         data.stream().map(this::detailView).toList(),
         "total",
-        total.getOrDefault("total", 0),
+        total,
         "asOf",
         d.query.period.asOf().toString(),
         "definition",
@@ -1006,16 +1023,13 @@ SUM(collaboration) collaboration FROM credits %s GROUP BY pid HAVING SUM(complet
         access.exportable(d.query.metric));
   }
 
+  /** 在返回下载前完成导出授权和行数校验；同一只读事务使用明细的原筛选条件。 */
   @Transactional(readOnly = true)
   public byte[] export(Map<String, Object> body) {
     Detail d = detail(body);
     if (!access.exportable(d.query.metric)) AnalyticsAccess.deny();
-    long total =
-        count(one(repository.rows(d.query.source, "COUNT(*) total", d.where, d.args, "")), "total");
-    check(total <= 50000, "单次导出最多50000条，请缩小统计范围");
-    var data =
-        repository.rows(
-            d.query.source, "s.*", d.where, d.args, "ORDER BY s.occurred_at DESC,s.source_id");
+    long total = repository.count(d.query.source, d.where, d.args);
+    check(total <= MAX_EXPORT_ROWS, "单次导出最多50000条，请缩小统计范围");
     var columns =
         d.query.metric.money()
             ? List.of(
@@ -1041,20 +1055,32 @@ SUM(collaboration) collaboration FROM credits %s GROUP BY pid HAVING SUM(complet
                 "occurred_at",
                 "submitted_at",
                 "accepted_at");
-    var csv = new StringBuilder("\ufeff").append("编号,设备,部门,负责人,状态,计划或报修时间,提交时间,验收时间");
-    if (d.query.metric.money())
-      csv = new StringBuilder("\ufeff出库单号,设备,料号,物料,数量,单位,金额,币种,归属,使用时间,分配ID,成本层ID,入库明细ID");
-    csv.append('\n');
-    for (var row : data) {
-      csv.append(String.join(",", columns.stream().map(k -> csvCell(row.get(k))).toList()))
-          .append('\n');
+    String header =
+        d.query.metric.money()
+            ? "出库单号,设备,料号,物料,数量,单位,金额,币种,归属,使用时间,分配ID,成本层ID,入库明细ID"
+            : "编号,设备,部门,负责人,状态,计划或报修时间,提交时间,验收时间";
+    var bytes = new ByteArrayOutputStream();
+    try (var csv = new PrintWriter(bytes, false, StandardCharsets.UTF_8)) {
+      csv.print('\ufeff');
+      csv.print(header);
+      csv.print('\n');
+      repository.exportRows(
+          d.query.source,
+          d.where,
+          d.args,
+          columns,
+          MAX_EXPORT_ROWS,
+          cells -> {
+            csv.print(
+                cells.stream().map(HomeAnalyticsService::csvCell).collect(Collectors.joining(",")));
+            csv.print('\n');
+          });
     }
-    return csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    return bytes.toByteArray();
   }
 
-  private static String csvCell(Object value) {
-    String v = Objects.toString(value, "");
-    if (v.matches("(?s)^[\\s]*[=+@-].*")) v = "'" + v;
-    return "\"" + v.replace("\"", "\"\"") + "\"";
+  private static String csvCell(String value) {
+    String escaped = CSV_FORMULA.matcher(value).find() ? "'" + value : value;
+    return "\"" + escaped.replace("\"", "\"\"") + "\"";
   }
 }

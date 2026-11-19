@@ -1,8 +1,14 @@
 package com.windasoft.eam.service.imports;
 
+import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.domain.system.PermissionAction;
-import com.windasoft.eam.dto.common.*;
-import com.windasoft.eam.dto.imports.*;
+import com.windasoft.eam.dto.common.ListQuery;
+import com.windasoft.eam.dto.common.PageResult;
+import com.windasoft.eam.dto.imports.ImportBatchView;
+import com.windasoft.eam.dto.imports.ImportIssue;
+import com.windasoft.eam.dto.imports.ImportPreview;
+import com.windasoft.eam.dto.imports.ImportResultRow;
+import com.windasoft.eam.dto.imports.ImportWorkbook;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.imports.*;
 import com.windasoft.eam.service.business.BusinessConfigService;
@@ -14,6 +20,7 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +30,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
@@ -292,63 +300,53 @@ public class EquipmentImportService {
         });
   }
 
-  public Map<String, Object> preview(String id, ListQuery q, boolean errors) {
+  /** 分页先定位批次行号，单元格和错误各读取一次，只装配当页数据。 */
+  @Transactional(readOnly = true)
+  public ImportPreview preview(String id, ListQuery query, boolean errorsOnly) {
     var batch = owned(id);
-    var numbers = batches.rowNumbers(id, errors, q.page(), q.size());
-    var cells = batches.cells(id, numbers);
-    var issues = batches.issues(id, numbers);
-    var data = new ArrayList<Map<String, Object>>();
-    for (int row : numbers) {
-      var values = new LinkedHashMap<String, String>();
-      for (var cell : cells)
-        if (((Number) cell.get("row_no")).intValue() == row)
-          values.put(cell.get("field_key").toString(), cell.get("raw_value").toString());
-      data.add(
-          Map.of(
-              "row",
-              row,
-              "values",
-              values,
-              "issues",
-              issues.stream().filter(e -> ((Number) e.get("row")).intValue() == row).toList()));
+    var numbers = batches.rowNumbers(id, errorsOnly, query.page(), query.size());
+    var values = new HashMap<Integer, Map<String, String>>();
+    for (var cell : batches.cells(id, numbers)) {
+      values
+          .computeIfAbsent(cell.rowNo(), row -> new LinkedHashMap<>())
+          .put(cell.fieldKey(), cell.rawValue());
     }
-    return Map.of(
-        "data",
-        data,
-        "columns",
-        batches.columns(id),
-        "page",
-        new PageResult.Page(
-            q.page(),
-            q.size(),
-            ((Number) batch.get(errors ? "error_rows" : "total_rows")).longValue()));
+    var issues =
+        batches.issues(id, numbers).stream().collect(Collectors.groupingBy(ImportIssue::row));
+    var rows =
+        numbers.stream()
+            .map(
+                row ->
+                    new ImportPreview.Row(
+                        row,
+                        values.getOrDefault(row, Map.of()),
+                        issues.getOrDefault(row, List.of())))
+            .toList();
+    long total = ((Number) batch.get(errorsOnly ? "error_rows" : "total_rows")).longValue();
+    return new ImportPreview(
+        rows, batches.columns(id), new PageResult.Page(query.page(), query.size(), total));
   }
 
-  public Map<String, Object> results(String id, ListQuery query) {
+  public PageResult<ImportResultRow> results(String id, ListQuery query) {
     var batch = owned(id);
     permissions.require("equipment", PermissionAction.VIEW);
-    if (!"SUCCEEDED".equals(batch.get("state")))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.imports.message0015");
+    if (!"SUCCEEDED".equals(batch.get("state"))) {
+      throw new LocalizedArgumentException("server.imports.message0015");
+    }
     var result =
         repo.results(
             id, auth.tenantId(), query.page(), query.size(), q -> permissions.filterEquipment(q));
-    return Map.of(
-        "data",
+    var rows =
         result.getRecords().stream()
             .map(
-                e ->
-                    Map.of(
-                        "id",
-                        e.getId().toString(),
-                        "code",
-                        e.getEquipmentCode(),
-                        "name",
-                        e.getName(),
-                        "department",
-                        Objects.toString(e.getDepartmentPath(), "")))
-            .toList(),
-        "page",
-        new PageResult.Page(query.page(), query.size(), result.getTotal()));
+                row ->
+                    new ImportResultRow(
+                        row.getId().toString(),
+                        row.getEquipmentCode(),
+                        row.getName(),
+                        Objects.toString(row.getDepartmentPath(), "")))
+            .toList();
+    return new PageResult<>(rows, query.page(), query.size(), result.getTotal());
   }
 
   public void report(String id, OutputStream out) throws IOException {
@@ -358,20 +356,13 @@ public class EquipmentImportService {
     if (!Files.exists(file(id)))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.imports.message0017");
     var original = excel.read(file(id));
-    var issues =
-        batches.allIssues(id).stream()
-            .map(
-                r ->
-                    new ImportIssue(
-                        ((Number) r.get("row")).intValue(),
-                        r.get("field").toString(),
-                        r.get("label").toString(),
-                        r.get("value").toString(),
-                        r.get("reason").toString(),
-                        r.get("suggestion").toString()))
-            .toList();
     excel.write(
-        out, original.schemaVersion(), original.columns(), Map.of(), original.rows(), issues);
+        out,
+        original.schemaVersion(),
+        original.columns(),
+        Map.of(),
+        original.rows(),
+        batches.allIssues(id));
   }
 
   private static boolean expired(Map<String, Object> b) {

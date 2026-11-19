@@ -46,19 +46,31 @@ public class RepairQueryRepository {
 
   /** 设备履历按稳定设备身份读取维修记录。仅为历史兼容，equipment_id 为空的旧记录才回退到编号。 */
   public List<RepairOrder> historyByEquipment(long tenant, long equipmentId, String equipmentCode) {
-    return mapper.selectList(
-        new LambdaQueryWrapper<RepairOrder>()
-            .eq(RepairOrder::getTenantId, tenant)
-            .and(
-                q ->
-                    q.eq(RepairOrder::getEquipmentId, equipmentId)
-                        .or(
-                            legacy ->
-                                legacy
-                                    .isNull(RepairOrder::getEquipmentId)
-                                    .eq(RepairOrder::getEquipmentCode, equipmentCode)))
-            .orderByDesc(RepairOrder::getReportedAt)
-            .orderByDesc(RepairOrder::getId));
+    return mapper.selectList(equipmentHistory(tenant, equipmentId, equipmentCode));
+  }
+
+  /** 打印明细只需读到上限外的第一条，用于判断是否超过已有的输出限制。 */
+  public List<RepairOrder> historyByEquipment(
+      long tenant, long equipmentId, String equipmentCode, int limit) {
+    return mapper
+        .selectPage(
+            new Page<RepairOrder>(1, limit, false),
+            equipmentHistory(tenant, equipmentId, equipmentCode))
+        .getRecords();
+  }
+
+  private LambdaQueryWrapper<RepairOrder> equipmentHistory(
+      long tenant, long equipmentId, String equipmentCode) {
+    var query = new LambdaQueryWrapper<RepairOrder>().eq(RepairOrder::getTenantId, tenant);
+    restrictEquipment(query, equipmentId, equipmentCode);
+    return query.orderByDesc(RepairOrder::getReportedAt, RepairOrder::getId);
+  }
+
+  /** 旧工单只有编号时可以回退；带设备ID的工单不会随编号复用而改变归属。 */
+  public void restrictEquipment(LambdaQueryWrapper<RepairOrder> query, long equipmentId, String equipmentCode) {
+    query.and(group -> group.eq(RepairOrder::getEquipmentId, equipmentId)
+        .or(legacy -> legacy.isNull(RepairOrder::getEquipmentId)
+            .eq(RepairOrder::getEquipmentCode, equipmentCode)));
   }
 
   public Set<String> fields() {

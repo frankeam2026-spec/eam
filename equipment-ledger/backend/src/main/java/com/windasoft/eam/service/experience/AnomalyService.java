@@ -10,6 +10,13 @@ import com.windasoft.eam.common.experience.ExperienceSupport;
 import com.windasoft.eam.domain.experience.AnomalyAction;
 import com.windasoft.eam.domain.experience.AnomalyStatus;
 import com.windasoft.eam.domain.system.PermissionAction;
+import com.windasoft.eam.dto.experience.ExperienceCommands.AttachmentRef;
+import com.windasoft.eam.dto.experience.ExperienceCommands.ChangeAnomaly;
+import com.windasoft.eam.dto.experience.ExperienceCommands.ChangeRepairPlan;
+import com.windasoft.eam.dto.experience.ExperienceCommands.CreateAnomaly;
+import com.windasoft.eam.dto.experience.ExperienceCommands.SaveRepairPlan;
+import com.windasoft.eam.dto.experience.ExperienceDetails.Anomaly;
+import com.windasoft.eam.dto.experience.ExperienceDetails.RepairPlan;
 import com.windasoft.eam.dto.repair.RepairForm;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.event.experience.ExperienceEvents;
@@ -302,7 +309,7 @@ public class AnomalyService {
         items);
   }
 
-  public Object detail(long id) {
+  public Anomaly detail(long id) {
     var r = raw(id, false);
     if (!canView(r))
       throw new LocalizedStatusException(HttpStatus.FORBIDDEN, "server.experience.message0020");
@@ -310,10 +317,7 @@ public class AnomalyService {
     v.put("events", events("anomaly", id));
     v.put(
         "actions",
-        List.of(
-                PermissionAction.RESOLVE_ANOMALY, PermissionAction.REPORT,
-                PermissionAction.SCHEDULE_REPAIR, PermissionAction.VOID)
-            .stream()
+        List.of(PermissionAction.RESOLVE_ANOMALY, PermissionAction.REPORT, PermissionAction.SCHEDULE_REPAIR, PermissionAction.VOID).stream()
             .filter(
                 a ->
                     scope(
@@ -323,7 +327,7 @@ public class AnomalyService {
                         ExperienceSupport.id(r.get("discovered_by"))))
             .map(PermissionAction::code)
             .toList());
-    return v;
+    return json.convertValue(v, Anomaly.class);
   }
 
   List<Map<String, Object>> events(String kind, long id) {
@@ -342,10 +346,15 @@ public class AnomalyService {
     return text(a, "source_kind").equals("保养") ? "maintenance" : "inspection";
   }
 
-  List<Map<String, Object>> ownFiles(Object value) {
+  /** 附件只采用服务器保存的元数据，表单中的名称、大小和下载地址不参与写入。 */
+  List<Map<String, Object>> ownFiles(List<AttachmentRef> files) {
     var out = new ArrayList<Map<String, Object>>();
-    for (var f : rows(value)) {
-      String fid = text(f, "id");
+    if (files == null) {
+      return out;
+    }
+    check(files.size() <= 30, "最多30个附件");
+    for (var file : files) {
+      String fid = file == null ? "" : Objects.toString(file.id(), "").trim();
       check(fid.matches("[0-9a-f-]{36}"), "附件编号无效");
       var rs = repository.findAttachment(auth.tenantId(), auth.userId(), fid);
       check(rs.size() == 1, "附件未上传或不属于当前用户");
@@ -353,7 +362,6 @@ public class AnomalyService {
       ref.put("source", "anomalies");
       out.add(ref);
     }
-    check(out.size() <= 30, "最多30个附件");
     return out;
   }
 
@@ -369,12 +377,12 @@ public class AnomalyService {
   }
 
   @Transactional
-  public Object create(Map<String, Object> b) {
-    long eqId = id(b.get("equipmentId"));
+  public Anomaly create(CreateAnomaly form) {
+    long eqId = id(form.equipmentId());
     var e = eq(eqId);
-    String kind = text(b, "sourceKind");
-    long taskId = id(b.get("sourceTaskId"));
-    String itemId = text(b, "sourceItemId");
+    String kind = Objects.toString(form.sourceKind(), "").trim();
+    long taskId = id(form.sourceTaskId());
+    String itemId = Objects.toString(form.sourceItemId(), "").trim();
     List<Map<String, Object>> files = List.of();
     if (kind.isBlank() || kind.equals("人工")) {
       kind = "人工";
@@ -406,9 +414,9 @@ public class AnomalyService {
               .toList();
     }
     var combinedFiles = new ArrayList<Map<String, Object>>(files);
-    combinedFiles.addAll(ownFiles(b.get("attachments")));
+    combinedFiles.addAll(ownFiles(form.attachments()));
     files = combinedFiles;
-    String description = required(b, "description", 4000), severity = text(b, "severity");
+    String description = required(form.description(), "description", 4000), severity = Objects.toString(form.severity(), "").trim();
     check(severity.length() <= 40, "等级名称过长");
     long aid = IdWorker.getId();
     try {
@@ -435,9 +443,9 @@ public class AnomalyService {
   }
 
   @Transactional
-  public Object action(long aid, Map<String, Object> b) {
+  public Anomaly action(long aid, ChangeAnomaly form) {
     var r = raw(aid, true);
-    String action = required(b, "action", 30);
+    String action = required(form.action(), "action", 30);
     // 请求动作受控解析，但权限范围和业务状态校验仍由现有流程独立决定。
     var operation = AnomalyAction.parse(action);
     PermissionAction grant =
@@ -448,16 +456,16 @@ public class AnomalyService {
           default -> throw new LocalizedArgumentException("server.experience.message0022");
         };
     checkAction(r, grant);
-    if (id(r.get("row_version")) != id(b.get("rowVersion"))) conflict();
+    if (id(r.get("row_version")) != id(form.rowVersion())) conflict();
     check(
         !Set.of(AnomalyStatus.RESOLVED.code(), AnomalyStatus.VOIDED.code())
             .contains(r.get("status")),
         "异常已结束");
     check(r.get("repair_id") == null && r.get("plan_id") == null, "异常已有处理安排，请先在关联单据处理");
     if (operation == AnomalyAction.RESOLVE || operation == AnomalyAction.VOID) {
-      String reason = required(b, "reason", 4000);
+      String reason = required(form.reason(), "reason", 4000);
       var evidence = new ArrayList<>(rows(decode(json, r.get("attachments"))));
-      evidence.addAll(ownFiles(b.get("attachments")));
+      evidence.addAll(ownFiles(form.attachments()));
       repository.updateEvidence(encode(json, evidence), auth.tenantId(), aid);
       repository.resolveAnomaly(
           operation == AnomalyAction.RESOLVE
@@ -475,15 +483,20 @@ public class AnomalyService {
     } else {
       long repair;
       if (operation == AnomalyAction.LINK) {
-        repair = id(b.get("repairId"));
+        repair = id(form.repairId());
         var order = workflow.require(repair);
         workflow.viewAllowed(order);
+        // 已建立设备关联的工单即使改过编号，也必须按设备ID复核。
+        long equipmentId = id(r.get("equipment_id"));
+        boolean sameEquipment = order.getEquipmentId() != null
+            ? order.getEquipmentId() == equipmentId
+            : Objects.equals(order.getEquipmentCode(), eq(equipmentId).getEquipmentCode());
         check(
-            order.getEquipmentCode().equals(eq(id(r.get("equipment_id"))).getEquipmentCode())
+            sameEquipment
                 && !Set.of("已完成", "已撤销").contains(order.getStatus()),
             "只能关联同设备的有效维修工单");
       } else {
-        repair = createRepair(r, b);
+        repair = createRepair(r, form.faultTypeId(), form.severity());
       }
       repository.linkRepair(repair, auth.tenantId(), aid);
       event(
@@ -495,7 +508,7 @@ public class AnomalyService {
     return detail(aid);
   }
 
-  long createRepair(Map<String, Object> r, Map<String, Object> b) {
+  long createRepair(Map<String, Object> r, Long faultTypeId, String severity) {
     var e = eq(id(r.get("equipment_id")));
     var result =
         repairs.create(
@@ -505,9 +518,9 @@ public class AnomalyService {
                 e.getDepartment(),
                 references
                     .required(
-                        auth.tenantId(), b.get("faultTypeId"), "FAULT_TYPE", "faultTypeId", "故障类型")
+                        auth.tenantId(), faultTypeId, "FAULT_TYPE", "faultTypeId", "故障类型")
                     .getId(),
-                required(b, "severity", 40),
+                required(severity, "severity", 40),
                 text(r, "description"),
                 auth.user().getDisplayName(),
                 null,
@@ -713,12 +726,12 @@ public class AnomalyService {
     return v;
   }
 
-  public Object planDetail(long id) {
+  public RepairPlan planDetail(long id) {
     var r = planRaw(id, false);
     planAccess(r, PermissionAction.VIEW);
     var v = planView(r);
     v.put("events", events("repairPlan", id));
-    return v;
+    return json.convertValue(v, RepairPlan.class);
   }
 
   @Transactional
@@ -739,18 +752,18 @@ public class AnomalyService {
   }
 
   @Transactional
-  public Object savePlan(Long pid, Map<String, Object> b) {
-    long eqId = id(b.get("equipmentId"));
+  public RepairPlan savePlan(Long pid, SaveRepairPlan form) {
+    long eqId = id(form.equipmentId());
     check(scope("repairPlan", pid == null ? PermissionAction.CREATE : PermissionAction.EDIT, eq(eqId), auth.userId()), "没有维护维修计划权限");
-    String description = required(b, "description", 4000),
+    String description = required(form.description(), "description", 4000),
         fault =
             references
                 .required(
-                    auth.tenantId(), b.get("faultTypeId"), "FAULT_TYPE", "faultTypeId", "故障类型")
+                    auth.tenantId(), form.faultTypeId(), "FAULT_TYPE", "faultTypeId", "故障类型")
                 .getName(),
-        severity = required(b, "severity", 40);
-    var planned = LocalDateTime.parse(required(b, "plannedAt", 30));
-    long owner = id(b.get("ownerId"));
+        severity = required(form.severity(), "severity", 40);
+    var planned = LocalDateTime.parse(required(form.plannedAt(), "plannedAt", 30));
+    long owner = id(form.ownerId());
     check(repository.countActiveUser(auth.tenantId(), owner) == 1, "请选择有效的计划负责人");
     if (pid == null) {
       pid = IdWorker.getId();
@@ -770,10 +783,10 @@ public class AnomalyService {
       planAccess(r, PermissionAction.EDIT);
       check(Set.of("草稿", "待生成").contains(r.get("status")), "已生成或取消计划不能编辑");
       check(id(r.get("equipment_id")) == eqId, "编辑不能更换设备");
-      if (id(r.get("row_version")) != id(b.get("rowVersion"))) conflict();
+      if (id(r.get("row_version")) != id(form.rowVersion())) conflict();
       repository.updatePlan(description, planned, owner, fault, severity, auth.tenantId(), pid);
     }
-    var ids = b.get("anomalyIds") instanceof List<?> l ? l : List.of();
+    var ids = form.anomalyIds() == null ? List.<Long>of() : form.anomalyIds();
     var target = pid;
     var retained = ids.stream().map(ExperienceSupport::id).collect(Collectors.toSet());
     for (var previous : repository.lockPlanAnomalyIds(auth.tenantId(), pid)) {
@@ -798,7 +811,7 @@ public class AnomalyService {
       event("anomaly", aid, "安排维修计划", Map.of("planId", pid.toString()));
     }
     repository.setPlanFaultTypeId(
-        auth.tenantId(), pid, Long.parseLong(b.get("faultTypeId").toString()));
+        auth.tenantId(), pid, form.faultTypeId());
     event("repairPlan", pid, "保存维修计划", Map.of("plannedAt", planned.toString()));
     var r = planRaw(pid, false);
     if (r.get("status").equals("待生成")
@@ -807,14 +820,14 @@ public class AnomalyService {
   }
 
   @Transactional
-  public Object planAction(long pid, Map<String, Object> b) {
+  public RepairPlan planAction(long pid, ChangeRepairPlan form) {
     var r = planRaw(pid, true);
-    if (id(r.get("row_version")) != id(b.get("rowVersion"))) conflict();
-    String action = required(b, "action", 30);
+    if (id(r.get("row_version")) != id(form.rowVersion())) conflict();
+    String action = required(form.action(), "action", 30);
     planAccess(r, action.equals("cancel") ? PermissionAction.CANCEL : action.equals("generate") ? PermissionAction.GENERATE_REPAIR_ORDER : PermissionAction.ENABLE);
     check(Set.of("草稿", "待生成").contains(r.get("status")), "计划状态不允许操作");
     if (action.equals("cancel")) {
-      String reason = required(b, "reason", 1000);
+      String reason = required(form.reason(), "reason", 1000);
       repository.cancelPlan(auth.tenantId(), pid);
       var affected = repository.lockCancelledAnomalies(auth.tenantId(), pid);
       for (var a : affected) {
@@ -838,10 +851,8 @@ public class AnomalyService {
     var r = planRaw(pid, true);
     check(r.get("status").equals("待生成"), "计划不在待生成状态");
     planAccess(r, PermissionAction.ENABLE);
-    var b = new HashMap<String, Object>();
-    b.put("faultTypeId", r.get("fault_type_id"));
-    b.put("severity", r.get("severity"));
-    long repair = createRepair(r, b);
+    Long faultTypeId = r.get("fault_type_id") instanceof Number type ? type.longValue() : null;
+    long repair = createRepair(r, faultTypeId, text(r, "severity"));
     repository.finishGeneration(repair, auth.tenantId(), pid);
     var affected = repository.lockPendingAnomalies(auth.tenantId(), pid);
     for (var a : affected) {

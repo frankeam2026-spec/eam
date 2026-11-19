@@ -993,12 +993,15 @@ class MaintenanceReferenceMySqlIT {
   @Test
   void sharedStandardSelectorKeepsCategoryAncestryAfterRepositoryChange() {
     pendingAcceptance();
+    when(permissions.anyMaintenance(PermissionAction.VIEW)).thenReturn(true);
+    when(permissions.maintenance(anyString(), eq(PermissionAction.VIEW)))
+        .thenReturn(new PermissionScope(true, null, Set.of(), false));
     // 无类别限制的标准仍适用于可选设备；实际Service授权和类别父链SQL均执行。
     definitionStorage.insert(
         TYPE + 10, TENANT, "standards", "SELECT-STANDARD", "选择标准", ORG, USER, "{}");
     var selected = selectors.standards("maintenance", ListQuery.from(Map.of()), EQUIPMENT, null);
     assertEquals(1L, selected.page().total());
-    assertEquals(Long.toString(TYPE + 10), selected.data().getFirst().get("id"));
+    assertEquals(Long.toString(TYPE + 10), selected.data().getFirst().id());
   }
 
   @Test

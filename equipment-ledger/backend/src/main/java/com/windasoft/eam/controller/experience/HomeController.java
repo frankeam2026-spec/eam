@@ -3,6 +3,8 @@ package com.windasoft.eam.controller.experience;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.windasoft.eam.dto.common.DataResponse;
 import com.windasoft.eam.dto.common.SuccessResponse;
+import com.windasoft.eam.dto.experience.WorkTaskPage;
+import com.windasoft.eam.dto.experience.WorkTaskPage.ScopeChoices;
 import com.windasoft.eam.dto.experience.HomeContracts.Identity;
 import com.windasoft.eam.dto.experience.HomeContracts.LayoutForm;
 import com.windasoft.eam.dto.experience.HomeContracts.Recent;
@@ -29,7 +31,7 @@ public class HomeController {
   }
 
   @GetMapping("/work-center/tasks")
-  public Object tasks(
+  public WorkTaskPage tasks(
       @RequestParam String state,
       @RequestParam(defaultValue = "") String module,
       @RequestParam(defaultValue = "") String search,
@@ -79,7 +81,7 @@ public class HomeController {
   }
 
   @GetMapping("/home/filter-choices")
-  public Object filterChoices(@RequestParam(defaultValue = "false") boolean team) {
+  public ScopeChoices filterChoices(@RequestParam(defaultValue = "false") boolean team) {
     home.access();
     return work.filterChoices(team);
   }

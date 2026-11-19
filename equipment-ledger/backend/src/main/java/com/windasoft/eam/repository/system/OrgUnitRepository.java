@@ -67,6 +67,14 @@ public class OrgUnitRepository {
             .orderByAsc(OrgUnit::getId));
   }
 
+  /** 保持管理分析选择器的数据库名称排序，并包含停用组织供历史记录筛选。 */
+  public List<OrgUnit> organizationsByName(long tenant) {
+    return mapper.selectList(new LambdaQueryWrapper<OrgUnit>()
+        .select(OrgUnit::getId, OrgUnit::getParentId, OrgUnit::getName, OrgUnit::getOrgType, OrgUnit::getStatus)
+        .eq(OrgUnit::getTenantId, tenant)
+        .orderByAsc(OrgUnit::getName, OrgUnit::getId));
+  }
+
   public OrgUnit organization(long tenant, Long id) {
     return mapper.selectOne(
         new LambdaQueryWrapper<OrgUnit>().eq(OrgUnit::getTenantId, tenant).eq(OrgUnit::getId, id));

@@ -1,12 +1,15 @@
 package com.windasoft.eam.service.knowledge;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.domain.system.PermissionAction;
+import com.windasoft.eam.dto.repair.RepairRecordPage;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
 import com.windasoft.eam.service.repair.RepairQueryService;
 import com.windasoft.eam.service.system.PermissionService;
-import java.time.*;
-import java.util.*;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 
 /** A bounded, read-only business tool. Data never goes through a generation model. */
@@ -15,8 +18,7 @@ public class AiRepairQueryService {
   private final RepairQueryService repairs;
   private final EquipmentQueryService equipment;
   private final PermissionService permissions;
-  private final ObjectMapper json;
-  public AiRepairQueryService(RepairQueryService repairs,EquipmentQueryService equipment,PermissionService permissions,ObjectMapper json){this.repairs=repairs;this.equipment=equipment;this.permissions=permissions;this.json=json;}
+  public AiRepairQueryService(RepairQueryService repairs,EquipmentQueryService equipment,PermissionService permissions){this.repairs=repairs;this.equipment=equipment;this.permissions=permissions;}
   public record Criteria(LocalDate from,LocalDate to,String relation,boolean completed,Long equipmentId){}
   static Criteria interpret(String text,LocalDate today,Long equipmentId){
     String q=text.replaceAll("[\\s，。？！?!,、]","");
@@ -49,18 +51,29 @@ public class AiRepairQueryService {
     var data=query(criteria,1,20);
     return Map.of("answer","已查询系统维修工单，时间口径和结果见下表。历史会话请重新查询最新记录。","citations",List.of(),"repairRecords",data);
   }
-  public Object query(Criteria criteria,int page,int size) throws Exception {
-    permissions.require("knowledge",PermissionAction.VIEW);permissions.require("repair",PermissionAction.VIEW);
-    if(criteria.from()==null||criteria.to()==null||criteria.from().isAfter(criteria.to())||criteria.from().isBefore(criteria.to().minusYears(2))||criteria.to().isAfter(LocalDate.now(ZoneId.of("Asia/Shanghai")))||page<1||page>10_000_000||!Set.of(20,50,100).contains(size)||!Set.of("","owned","created").contains(criteria.relation()))throw new IllegalArgumentException("维修记录查询条件无效");
-    String dateField=criteria.completed()?"completedAt":"reportedAt";
-    var filters=new ArrayList<Map<String,Object>>();
-    filters.add(Map.of("field",dateField,"operator","range","values",List.of(criteria.from().toString(),criteria.to().toString())));
-    if(criteria.completed())filters.add(Map.of("field","status","operator","in","values",List.of("已完成")));
-    if(criteria.equipmentId()!=null){var device=equipment.get(criteria.equipmentId());filters.add(Map.of("field","equipmentCode","operator","eq","values",List.of(device.code())));}
-    var params=new HashMap<String,String>();params.put("advanced",json.writeValueAsString(filters));params.put("page",Integer.toString(page));params.put("size",Integer.toString(size));params.put("sortBy","reportedAt");params.put("direction","desc");params.put("relation",criteria.relation());
-    var result=repairs.list(params).page();
-    var rows=result.getRecords().stream().map(row->{var out=new LinkedHashMap<String,Object>();out.put("id",row.getId().toString());out.put("orderNo",row.getOrderNo());out.put("equipmentName",row.getEquipmentName());out.put("equipmentCode",row.getEquipmentCode());out.put("status",row.getStatus());out.put("reportedAt",row.getReportedAt());out.put("completedAt",row.getCompletedAt());return out;}).toList();
-    var context=Map.of("from",criteria.from().toString(),"to",criteria.to().toString(),"relation",criteria.relation(),"completed",criteria.completed(),"equipmentId",criteria.equipmentId()==null?"":criteria.equipmentId().toString());
-    return Map.of("data",rows,"total",result.getTotal(),"criteria",context,"dateField",dateField);
+  public RepairRecordPage query(Criteria criteria, int page, int size) {
+    permissions.require("knowledge", PermissionAction.VIEW);
+    permissions.require("repair", PermissionAction.VIEW);
+    if (criteria.from() == null || criteria.to() == null || criteria.from().isAfter(criteria.to())
+        || criteria.from().isBefore(criteria.to().minusYears(2))
+        || criteria.to().isAfter(LocalDate.now(ZoneId.of("Asia/Shanghai")))
+        || page < 1 || page > 10_000_000 || !Set.of(20, 50, 100).contains(size)
+        || !Set.of("", "owned", "created").contains(criteria.relation())) {
+      throw new IllegalArgumentException("维修记录查询条件无效");
+    }
+    var equipmentId = criteria.equipmentId();
+    // 先核验设备查看权限，再将已授权设备的身份交给维修查询。
+    var code = equipmentId == null ? null : equipment.get(equipmentId).code();
+    var result = repairs.pageForAssistant(criteria.from(), criteria.to(), criteria.relation(),
+        criteria.completed(), equipmentId, code, page, size);
+    var rows = result.getRecords().stream()
+        .map(row -> new RepairRecordPage.Row(row.getId().toString(), row.getOrderNo(),
+            row.getEquipmentName(), row.getEquipmentCode(), row.getStatus(),
+            row.getReportedAt(), row.getCompletedAt()))
+        .toList();
+    var context = new RepairRecordPage.Criteria(criteria.from().toString(), criteria.to().toString(),
+        criteria.relation(), criteria.completed(), equipmentId == null ? "" : equipmentId.toString());
+    return new RepairRecordPage(rows, result.getTotal(), context,
+        criteria.completed() ? "completedAt" : "reportedAt");
   }
 }

@@ -4,12 +4,14 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-import com.windasoft.eam.dto.experience.EquipmentAttentionItem;
 import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
-import com.windasoft.eam.service.equipment.EquipmentInstalledSpareService;
+import com.windasoft.eam.dto.experience.EquipmentAttentionItem;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.experience.EquipmentExperienceRepository;
+import com.windasoft.eam.repository.repair.RepairQueryRepository;
+import com.windasoft.eam.service.equipment.EquipmentInstalledSpareService;
 import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
@@ -24,6 +26,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 class EquipmentExperienceServiceTest {
   EquipmentExperienceRepository repo = mock(EquipmentExperienceRepository.class);
+  EquipmentQueryRepository equipmentFacts = mock(EquipmentQueryRepository.class);
+  RepairQueryRepository repairHistory = mock(RepairQueryRepository.class);
   AuthContext auth = mock(AuthContext.class);
   PermissionService permissions = mock(PermissionService.class);
   RepairWorkflowService repair = mock(RepairWorkflowService.class);
@@ -43,13 +47,22 @@ class EquipmentExperienceServiceTest {
     equipment.setTenantId(1L);
     equipment.setEquipmentCode("EQ-TEST");
     equipment.setDeleted(0);
-    when(repo.findEquipment(1L)).thenReturn(equipment);
+    when(equipmentFacts.findFacts(1L, 1L)).thenReturn(equipment);
     when(repo.userNames(eq(1L), anySet())).thenReturn(Map.of("11", "张工", "12", "李工"));
     when(anomalies.list(eq(""), eq(1L), anyInt(), eq(100), eq(false)))
         .thenReturn(Map.of("data", List.of(), "total", 0));
     service =
         new EquipmentExperienceService(
-            repo, auth, permissions, repair, maintenance, inspectionLists, anomalies, installedSpares);
+            repo,
+            equipmentFacts,
+            repairHistory,
+            auth,
+            permissions,
+            repair,
+            maintenance,
+            inspectionLists,
+            anomalies,
+            installedSpares);
   }
 
   Map<String, Object> task(String id, String status, String deadline) {
@@ -127,7 +140,7 @@ class EquipmentExperienceServiceTest {
     r.setId(7L);
     r.setOrderNo("wx-0007");
     r.setStatus("处理中");
-    when(repo.findRepairRows(1L, "EQ-TEST")).thenReturn(List.of(r));
+    when(repairHistory.historyByEquipment(1L, 1L, "EQ-TEST")).thenReturn(List.of(r));
     var result = result(service.overview(1L));
     var access = result(result.get("access"));
     assertEquals(true, access.get("repair"));
@@ -141,10 +154,18 @@ class EquipmentExperienceServiceTest {
     var r = new RepairOrder();
     r.setId(7L);
     r.setStatus("处理中");
-    when(repo.findRepairRows(1L, "EQ-TEST")).thenReturn(List.of(r));
+    when(repairHistory.historyByEquipment(1L, 1L, "EQ-TEST")).thenReturn(List.of(r));
     doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN)).when(repair).viewAllowed(r);
     assertEquals(0, result(result(service.overview(1L)).get("counts")).get("repair"));
     assertEquals(0, result(service.events(1L, "", 1, 10, "desc")).get("total"));
+  }
+
+  @Test
+  void repairTimelineDoesNotReadOtherEventSources() {
+    assertEquals(0, result(service.events(1L, "repair", 1, 10, "desc")).get("total"));
+    verify(repairHistory).historyByEquipment(1L, 1L, "EQ-TEST");
+    verifyNoInteractions(maintenance, inspectionLists, anomalies, installedSpares);
+    verify(repo, never()).listSpareEvents(anyLong(), any());
   }
 
   @Test
@@ -153,7 +174,7 @@ class EquipmentExperienceServiceTest {
     r.setId(7L);
     r.setOrderNo("wx-0007");
     r.setStatus("处理中");
-    when(repo.findRepairRows(1L, "EQ-TEST")).thenReturn(List.of(r));
+    when(repairHistory.historyByEquipment(1L, 1L, "EQ-TEST")).thenReturn(List.of(r));
     when(repo.listTaskEvents(1L, 7L, "eam_repair_event", "order_id"))
         .thenAnswer(
             call ->
@@ -206,7 +227,7 @@ class EquipmentExperienceServiceTest {
     var closed = new RepairOrder();
     closed.setId(8L);
     closed.setStatus("已完成");
-    when(repo.findRepairRows(1L, "EQ-TEST")).thenReturn(List.of(r, closed));
+    when(repairHistory.historyByEquipment(1L, 1L, "EQ-TEST")).thenReturn(List.of(r, closed));
     var pm = task("3", "待执行", "");
     when(repo.listMaintenanceIds(1L, 1L)).thenReturn(List.of(pm));
     when(maintenance.tasks()).thenReturn(List.of(pm));

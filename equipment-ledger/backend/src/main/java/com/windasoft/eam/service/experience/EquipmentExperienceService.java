@@ -4,12 +4,14 @@ import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.windasoft.eam.common.experience.ExperienceSupport;
 import com.windasoft.eam.domain.system.PermissionAction;
-import com.windasoft.eam.dto.experience.EquipmentAttentionItem;
 import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
-import com.windasoft.eam.service.equipment.EquipmentInstalledSpareService;
+import com.windasoft.eam.dto.experience.EquipmentAttentionItem;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.repair.RepairOrder;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.experience.EquipmentExperienceRepository;
+import com.windasoft.eam.repository.repair.RepairQueryRepository;
+import com.windasoft.eam.service.equipment.EquipmentInstalledSpareService;
 import com.windasoft.eam.service.inspection.InspectionListService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
@@ -17,11 +19,14 @@ import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.time.*;
 import java.util.*;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
-@org.springframework.stereotype.Service
+@Service
 public class EquipmentExperienceService {
-  final EquipmentExperienceRepository repository;
+  private final EquipmentExperienceRepository repository;
+  private final EquipmentQueryRepository equipmentFacts;
+  private final RepairQueryRepository repairHistory;
   final AuthContext auth;
   final PermissionService permissions;
   final RepairWorkflowService workflow;
@@ -32,6 +37,8 @@ public class EquipmentExperienceService {
 
   public EquipmentExperienceService(
       EquipmentExperienceRepository repository,
+      EquipmentQueryRepository equipmentFacts,
+      RepairQueryRepository repairHistory,
       AuthContext auth,
       PermissionService permissions,
       RepairWorkflowService workflow,
@@ -40,6 +47,8 @@ public class EquipmentExperienceService {
       AnomalyService anomalies,
       EquipmentInstalledSpareService installedSpares) {
     this.repository = repository;
+    this.equipmentFacts = equipmentFacts;
+    this.repairHistory = repairHistory;
     this.auth = auth;
     this.permissions = permissions;
     this.workflow = workflow;
@@ -50,7 +59,7 @@ public class EquipmentExperienceService {
   }
 
   Equipment equipment(long id) {
-    var e = repository.findEquipment(id);
+    var e = equipmentFacts.findFacts(auth.tenantId(), id);
     check(
         e != null
             && Objects.equals(e.getTenantId(), auth.tenantId())
@@ -72,13 +81,16 @@ public class EquipmentExperienceService {
   }
 
   List<RepairOrder> repairRows(Equipment e) {
-    return repository.findRepairRows(auth.tenantId(), e.getEquipmentCode()).stream()
+    // 已关联的维修以设备ID为准，设备改编号后仍可追溯，复用编号也不会串单。
+    return repairHistory
+        .historyByEquipment(auth.tenantId(), e.getId(), e.getEquipmentCode())
+        .stream()
         .filter(
             r -> {
               try {
                 workflow.viewAllowed(r);
                 return true;
-              } catch (org.springframework.web.server.ResponseStatusException denied) {
+              } catch (ResponseStatusException denied) {
                 if (denied.getStatusCode().value() != 403) throw denied;
                 return false;
               }
@@ -304,32 +316,45 @@ public class EquipmentExperienceService {
     check(Set.of("asc", "desc").contains(sort), "事件排序无效");
     var e = equipment(id);
     var out = new ArrayList<Map<String, Object>>();
-    for (var r : repairRows(e))
-      append(out, "repair", r.getId(), r.getOrderNo(), "/repairs/" + r.getId());
-    for (var t : maintenanceRows(id))
-      append(
-          out,
-          "maintenance",
-          ExperienceSupport.id(t.get("id")),
-          text(t, "code"),
-          "/maintenance/task/" + t.get("id"));
-    for (var t : inspectionRows(id))
-      append(
-          out,
-          "inspection",
-          ExperienceSupport.id(t.get("id")),
-          text(t, "code"),
-          "/inspection/task/" + t.get("id"));
-    for (var a : equipmentAnomalies(id)) {
-      var ev = repository.listAnomalyEvents(auth.tenantId(), a.get("id"));
-      for (var v : ev) {
-        v.put("kind", "anomaly");
-        v.put("code", a.get("code"));
-        v.put("url", "/anomalies/" + a.get("id"));
-        out.add(v);
+    // 各事件来源独立授权。指定类型时只查询该来源，避免无关单据触发逐项读取。
+    if (kind.isBlank() || kind.equals("repair")) {
+      for (var r : repairRows(e)) {
+        append(out, "repair", r.getId(), r.getOrderNo(), "/repairs/" + r.getId());
       }
     }
-    out.addAll(repository.listSpareEvents(auth.tenantId(), id));
+    if (kind.isBlank() || kind.equals("maintenance")) {
+      for (var t : maintenanceRows(id)) {
+        append(
+            out,
+            "maintenance",
+            ExperienceSupport.id(t.get("id")),
+            text(t, "code"),
+            "/maintenance/task/" + t.get("id"));
+      }
+    }
+    if (kind.isBlank() || kind.equals("inspection")) {
+      for (var t : inspectionRows(id)) {
+        append(
+            out,
+            "inspection",
+            ExperienceSupport.id(t.get("id")),
+            text(t, "code"),
+            "/inspection/task/" + t.get("id"));
+      }
+    }
+    if (kind.isBlank() || kind.equals("anomaly")) {
+      for (var a : equipmentAnomalies(id)) {
+        for (var event : repository.listAnomalyEvents(auth.tenantId(), a.get("id"))) {
+          event.put("kind", "anomaly");
+          event.put("code", a.get("code"));
+          event.put("url", "/anomalies/" + a.get("id"));
+          out.add(event);
+        }
+      }
+    }
+    if (kind.isBlank() || kind.equals("spare")) {
+      out.addAll(repository.listSpareEvents(auth.tenantId(), id));
+    }
     Comparator<Map<String, Object>> order =
         Comparator.comparing((Map<String, Object> r) -> text(r, "time").replace('T', ' '))
             .thenComparing(r -> text(r, "kind"))

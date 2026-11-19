@@ -19,7 +19,11 @@ public final class ExperienceSupport {
   }
 
   public static String required(Map<String, Object> x, String key, int max) {
-    var s = text(x, key);
+    return required(x.get(key), key, max);
+  }
+
+  public static String required(Object value, String key, int max) {
+    var s = Objects.toString(value, "").trim();
     if (s.isBlank() || s.length() > max)
       throw new com.windasoft.eam.common.LocalizedArgumentException(
           "server.experience.message0005", key, max);

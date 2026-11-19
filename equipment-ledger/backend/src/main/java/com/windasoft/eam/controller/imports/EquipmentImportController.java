@@ -1,7 +1,10 @@
 package com.windasoft.eam.controller.imports;
 
 import com.windasoft.eam.dto.common.ListQuery;
+import com.windasoft.eam.dto.common.PageResult;
 import com.windasoft.eam.dto.imports.ImportBatchView;
+import com.windasoft.eam.dto.imports.ImportPreview;
+import com.windasoft.eam.dto.imports.ImportResultRow;
 import com.windasoft.eam.service.imports.EquipmentImportService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -46,7 +49,7 @@ public class EquipmentImportController {
   }
 
   @GetMapping("/{id}/preview")
-  public Object preview(
+  public ImportPreview preview(
       @PathVariable String id,
       @RequestParam Map<String, String> parameters,
       @RequestParam(defaultValue = "false") boolean errorsOnly) {
@@ -54,7 +57,8 @@ public class EquipmentImportController {
   }
 
   @GetMapping("/{id}/results")
-  public Object results(@PathVariable String id, @RequestParam Map<String, String> parameters) {
+  public PageResult<ImportResultRow> results(
+      @PathVariable String id, @RequestParam Map<String, String> parameters) {
     return service.results(id, ListQuery.from(parameters));
   }
 

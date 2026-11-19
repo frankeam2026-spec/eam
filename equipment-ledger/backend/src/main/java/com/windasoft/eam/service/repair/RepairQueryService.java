@@ -1,12 +1,14 @@
 package com.windasoft.eam.service.repair;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.domain.repair.RepairQueue;
+import com.windasoft.eam.domain.repair.RepairOrderStatus;
 import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
 import com.windasoft.eam.dto.repair.RepairAssistantRequest;
@@ -18,6 +20,7 @@ import com.windasoft.eam.service.business.BusinessValueService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.io.PrintWriter;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
@@ -125,6 +128,24 @@ public class RepairQueryService {
             request.end());
     return assistant.execute(
         query(Map.of(), Map.of(), "all", false), verified, auth.tenantId(), auth.userId());
+  }
+
+  /** 使用维修列表的授权和参与关系；助手只需要一页，不装配扩展字段或统计各队列。 */
+  @Transactional(readOnly = true)
+  public Page<RepairOrder> pageForAssistant(
+      LocalDate from, LocalDate to, String relation, boolean completed,
+      Long equipmentId, String equipmentCode, int page, int size) {
+    permissions.require("repair", PermissionAction.VIEW);
+    var query = ordered(Map.of("relation", relation), Map.of(), false);
+    SFunction<RepairOrder, LocalDateTime> time = completed ? RepairOrder::getCompletedAt : RepairOrder::getReportedAt;
+    query.rows().ge(time, from.atStartOfDay()).lt(time, to.plusDays(1).atStartOfDay());
+    if (completed) {
+      query.rows().eq(RepairOrder::getStatus, RepairOrderStatus.COMPLETED.code());
+    }
+    if (equipmentId != null) {
+      repository.restrictEquipment(query.rows(), equipmentId, equipmentCode);
+    }
+    return repository.page(query, page, size, true);
   }
 
   @Transactional(readOnly = true)

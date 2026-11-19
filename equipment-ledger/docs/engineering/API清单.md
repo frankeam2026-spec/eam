@@ -222,15 +222,40 @@
 | GET | /equipment/imports/template | 下载含稳定字段ID及发布版本的xlsx模板 |
 | POST | /equipment/imports | multipart file上传，返回VALIDATING批次，后台校验 |
 | GET | /equipment/imports/{id} | 查询状态、数量、版本、提示及有效期 |
-| GET | /equipment/imports/{id}/preview | errorsOnly、page、size；数据库分页原始行及错误 |
+| GET | /equipment/imports/{id}/preview | errorsOnly、page、size。返回 `{data,columns,page}`，原始行含 `row`、按字段键存放的 `values` 和 `issues` |
 | GET | /equipment/imports/{id}/report | 下载含原值、错误标色和建议的可重新上传xlsx |
 | POST | /equipment/imports/{id}/confirm | rowVersion、idempotencyKey；后台重新校验并整批事务写入 |
-| GET | /equipment/imports/{id}/results | 当前设备查看范围内分页查询本批新增设备 |
+| GET | /equipment/imports/{id}/results | 当前设备查看范围内分页查询本批新增设备，返回 `{data,page}`，设备 ID 为字符串 |
 
 状态为 VALIDATING / INVALID / READY / IMPORTING / SUCCEEDED / FAILED / EXPIRED。模板、报告先鉴权生成再设置Excel响应类型；校验不模拟保存。相同确认键不同版本或不同批次拒绝，同内容重试返回原批次。
 
 使用方法、迁移、边界及验收脚本见[导入说明](../features/设备台账导入-使用与验收-20261018.md)。
 
+
+### 设备标签、计划候选与时间线
+
+- 标签模板列表、创建、编辑和删除沿用 `/api/v1/label-templates` 和 `{data}`。编辑使用 `rowVersion`，传空布局可切换回自由元素模板。
+- `POST /api/v1/label-templates/{id}/print-data` 返回 `{template,equipment}`，逐台校验设备查看权限，保持请求顺序并去重。
+- `POST /api/v1/label-templates/{id}/pdf` 返回 PDF。维修明细优先按设备 ID 关联，只有缺少设备 ID 的旧工单回退到编号，仍校验维修查看权限。
+- 保养和巡检的设备、人员候选沿用 `{data,page}`，候选 ID 为字符串。适用标准加载完整结果并按标准 ID 去重。
+- 设备概览和事件时间线沿用现有响应。指定事件类型时，只查询对应业务的授权记录。
+
+### 知识助手会话历史
+
+- `GET /api/v1/knowledge/assistant/conversations/{id}` 按页读取本人会话，沿用 `{data,total,equipmentId}`。每条回答按引用顺序返回来源，任一来源在当前权限或发布版本下不可见时遮蔽该回答。
+
+### 设备异常、计划维修、工作台与小卓维修查询
+
+- 异常创建、动作及计划维修创建、修改、动作绑定明确的业务请求；单据详情仍通过 `data` 包装，保留既有字段命名及版本字段。异常关联已有工单时优先匹配设备 ID，仅在旧工单无设备 ID 时按原设备编号匹配。
+- `GET /api/v1/work-center/tasks` 保留原分页及工作台消息字段，`GET /api/v1/home/filter-choices` 保留现有筛选选项。任务负责人、创建人和组织名称在当前租户内批量读取。
+- `GET /api/v1/knowledge/assistant/repair-records` 保留扁平的 `data/total/criteria/dateField` 响应，沿用维修工单查看授权、人员关系和日期筛选，在数据库计数和分页。指定设备时先核对设备查看权限，工单关联按设备 ID 优先匹配。
+- `POST /api/v1/repair-assist` 和 `POST /api/v1/repair-assist/transcribe` 使用明确的草稿与转写响应，保持原字段、引用授权复核及 2 MB 照片、3 MB 音频的限制。
+
+### 标准选择器与管理分析导出
+
+- `GET /api/v1/{maintenance|inspection}/selectors/standards` 沿用 `{data,page}`，保养和点巡检分别返回原有标准与项目字段；分页总数按同一授权和适用设备条件读取。
+- `POST /api/v1/{maintenance|inspection}/selectors/resolve` 沿用 `{equipment,users,standards}`。`POST /defaults` 沿用 `{data}`。每个 ID 列表最多 200 项，接受整数及十进制字符串；默认标准按设备请求顺序合并，适用设备、分类继承及原列表排序规则保持。
+- `POST /api/v1/home/analytics/export` 沿用明细授权与筛选、导出权限校验、50000 条上限、列顺序、UTF-8 BOM 和 CSV 公式防护；数据库只返回导出列，应用逐行写入 CSV 后返回下载。
 
 ## 多语言（2026-10-19）
 

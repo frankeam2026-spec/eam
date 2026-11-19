@@ -2,11 +2,17 @@ package com.windasoft.eam.repository.inspection;
 
 import static com.windasoft.eam.repository.common.SqlListFilters.Kind.*;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.dto.common.*;
+import com.windasoft.eam.dto.inspection.InspectionStandardCandidate;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.repository.common.*;
+import java.sql.Date;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.*;
 import org.springframework.stereotype.Repository;
 
@@ -316,10 +322,48 @@ public class InspectionListRepository {
         query);
   }
 
+  /** 标准从既有关系视图读取项目与附件，沿用同一授权筛选及排序，不再经过通用定义Map装配。 */
+  public List<InspectionStandardCandidate> standardRows(Selection selection, ListQuery query) {
+    return page(selection, query).stream().map(this::standardRow).toList();
+  }
+
+  private InspectionStandardCandidate standardRow(Map<String, Object> row) {
+    try {
+      var content =
+          json.readValue(
+              Objects.toString(row.get("payload")), InspectionStandardCandidate.Content.class);
+      return new InspectionStandardCandidate(
+          row.get("id").toString(),
+          (String) row.get("code"),
+          (String) row.get("name"),
+          Objects.toString(row.get("department_id"), ""),
+          ((Number) row.get("row_version")).intValue(),
+          Objects.toString(row.get("created_at")).replace('T', ' '),
+          content,
+          (String) row.get("query_departmentName"),
+          (String) row.get("query_typeName"),
+          (String) row.get("query_personMode"),
+          row.get("query_startDate") instanceof Date date ? date.toLocalDate() : null,
+          row.get("query_endDate") instanceof Date date ? date.toLocalDate() : null,
+          ((Number) row.get("query_itemCount")).longValue(),
+          ((Number) row.get("query_equipmentCount")).longValue(),
+          ((Number) row.get("query_shiftCount")).longValue(),
+          (String) row.get("query_periodLabel"),
+          row.get("query_nextAt") instanceof Timestamp time
+              ? time.toLocalDateTime()
+              : (LocalDateTime) row.get("query_nextAt"));
+    } catch (JsonProcessingException invalid) {
+      throw new LocalizedArgumentException("server.inspection.message0012");
+    }
+  }
+
   public Set<Long> taskOrganizationIds(Selection selection) {
     var ids = new HashSet<Long>();
     for (var row :
-        lists.distinct(taskPlanDepartment() + " AS plan_department_id", selection.from(), selection.predicate()))
+        lists.distinct(
+            taskPlanDepartment() + " AS plan_department_id",
+            selection.from(),
+            selection.predicate()))
       for (Object value : row.values()) if (value instanceof Number n) ids.add(n.longValue());
     return ids;
   }

@@ -1,6 +1,10 @@
 package com.windasoft.eam.repository.knowledge;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -28,6 +32,28 @@ public class KnowledgeConversationRepository {
   public List<Map<String,Object>> exchanges(long tenant,long conversation,int page,int size){return db.queryForList("SELECT CAST(id AS CHAR) id,question,answer,status FROM eam_ai_exchange WHERE tenant_id=? AND conversation_id=? ORDER BY id DESC LIMIT ? OFFSET ?",tenant,conversation,size,(page-1L)*size);}
   public long exchangeCount(long tenant,long conversation){return db.queryForObject("SELECT COUNT(*) FROM eam_ai_exchange WHERE tenant_id=? AND conversation_id=?",Long.class,tenant,conversation);}
   public List<Long> citations(long tenant,long exchange){return db.queryForList("SELECT chunk_id FROM eam_ai_exchange_citation WHERE tenant_id=? AND exchange_id=? ORDER BY sort_no",Long.class,tenant,exchange);}
+  /** 历史页仅传入已验证归属的问答ID；保留每条回答原有的引用顺序。 */
+  public Map<Long, List<Long>> citations(long tenant, List<Long> exchanges) {
+    if (exchanges.isEmpty()) {
+      return Map.of();
+    }
+    var arguments = new ArrayList<Object>();
+    arguments.add(tenant);
+    arguments.addAll(exchanges);
+    var result = new HashMap<Long, List<Long>>();
+    db.query(
+        "SELECT exchange_id,chunk_id FROM eam_ai_exchange_citation WHERE tenant_id=? AND exchange_id IN ("
+            + String.join(",", Collections.nCopies(exchanges.size(), "?"))
+            + ") ORDER BY exchange_id,sort_no",
+        row -> {
+          result
+              .computeIfAbsent(row.getLong("exchange_id"), ignored -> new ArrayList<>())
+              .add(row.getLong("chunk_id"));
+        },
+        arguments.toArray());
+    return result;
+  }
+
   public Map<String,Object> existing(long tenant,long conversation,String key){
     var rows=db.queryForList("SELECT CAST(id AS CHAR) id,question,answer,status FROM eam_ai_exchange WHERE tenant_id=? AND conversation_id=? AND request_key=?",tenant,conversation,key);
     return rows.isEmpty()?null:rows.getFirst();

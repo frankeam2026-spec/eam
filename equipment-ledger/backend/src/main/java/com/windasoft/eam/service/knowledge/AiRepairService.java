@@ -2,6 +2,9 @@ package com.windasoft.eam.service.knowledge;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.domain.system.PermissionAction;
+import com.windasoft.eam.dto.knowledge.RepairAssistViews.Citation;
+import com.windasoft.eam.dto.knowledge.RepairAssistViews.Draft;
+import com.windasoft.eam.dto.knowledge.RepairAssistViews.Transcript;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.service.repair.RepairDetailService;
 import com.windasoft.eam.service.system.PermissionService;
@@ -23,6 +26,9 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class AiRepairService {
+  public static final int MAX_PHOTO_BYTES = 2_000_000;
+  public static final int MAX_AUDIO_BYTES = 3_000_000;
+
   private final AiGateway gateway;
   private final RepairDetailService workflow;
   private final PermissionService permissions;
@@ -42,7 +48,7 @@ public class AiRepairService {
     this.json = json;
   }
 
-  public Object assist(String mode, Long orderId, String text, byte[] photo) throws Exception {
+  public Draft assist(String mode, Long orderId, String text, byte[] photo) throws Exception {
     if (!Set.of("REPORT", "DIAGNOSE", "RECORD").contains(mode)
         || text == null
         || text.length() > 5000) throw new IllegalArgumentException("辅助请求参数无效");
@@ -83,7 +89,7 @@ public class AiRepairService {
                     "mode", mode, "input", text, "confirmedFacts", facts, "references", sources))));
     boolean vision = photo != null && photo.length > 0;
     if (vision) {
-      if (photo.length > 2_000_000) throw new IllegalArgumentException("照片最大2MB");
+      if (photo.length > MAX_PHOTO_BYTES) throw new IllegalArgumentException("照片最大2MB");
       try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(photo))) {
         var readers = ImageIO.getImageReaders(input);
         if (!readers.hasNext()) throw new IllegalArgumentException("照片须为PNG或JPEG");
@@ -150,27 +156,27 @@ public class AiRepairService {
         || result.path("text").asText().length() > 10000
         || !result.path("missingInfo").isArray()
         || result.path("missingInfo").size() > 20) throw new IllegalStateException("辅助结果格式无效");
-    for (var item : result.path("missingInfo"))
-      if (!item.isTextual() || item.asText().length() > 500)
+    var missingInfo = new ArrayList<String>();
+    for (var item : result.path("missingInfo")) {
+      if (!item.isTextual() || item.asText().length() > 500) {
         throw new IllegalStateException("待补充信息格式无效");
+      }
+      missingInfo.add(item.asText());
+    }
     if (!mode.equals("REPORT")) {
       var current = workflow.context(orderId);
       if (mode.equals("RECORD") && !Boolean.TRUE.equals(current.canProcess()))
         throw new IllegalArgumentException("工单已变更，当前不能继续整理记录");
     }
     if (!sources.isEmpty()) retrieval.recheck(sources, sourceEquipment);
-    return Map.of(
-        "text",
-        result.path("text").asText(),
-        "missingInfo",
-        result.path("missingInfo"),
-        "citations",
-        sources);
+    // 来源在生成完成后已重新核验，响应只返回界面使用的引用字段。
+    return new Draft(result.path("text").asText(), List.copyOf(missingInfo), sources.stream()
+        .map(source -> json.convertValue(source, Citation.class)).toList());
   }
 
-  public Object transcribe(byte[] audio) throws Exception {
+  public Transcript transcribe(byte[] audio) throws Exception {
     permissions.require("repair", PermissionAction.REPORT);
-    if (audio == null || audio.length == 0 || audio.length > 3_000_000)
+    if (audio == null || audio.length == 0 || audio.length > MAX_AUDIO_BYTES)
       throw new IllegalArgumentException("请上传不超过3MB的PCM WAV录音");
     if (audio.length < 12
         || !new String(audio, 0, 4, StandardCharsets.US_ASCII).equals("RIFF")
@@ -215,6 +221,6 @@ public class AiRepairService {
     var result = gateway.post("/chat/completions", body, "AUDIO", seconds);
     String text = result.path("choices").path(0).path("message").path("content").asText();
     if (text.isBlank() || text.length() > 10000) throw new IllegalStateException("语音识别结果无效");
-    return Map.of("text", text);
+    return new Transcript(text);
   }
 }

@@ -10,6 +10,7 @@ import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.common.SqlListFilters;
 import com.windasoft.eam.repository.common.SqlPredicate;
 import com.windasoft.eam.repository.common.SqlScopes;
+import java.util.Collection;
 import java.util.List;
 import java.util.function.Consumer;
 import org.springframework.stereotype.Repository;
@@ -122,6 +123,17 @@ public class EquipmentQueryRepository {
   public Equipment findFacts(long tenant, long id) {
     return equipment.selectOne(new LambdaQueryWrapper<Equipment>()
         .eq(Equipment::getTenantId, tenant).eq(Equipment::getId, id));
+  }
+
+  /** 标签打印复用已加载的设备字段，仍由服务逐一校验每台设备的查看权限。 */
+  public List<Equipment> findFacts(long tenant, Collection<Long> ids) {
+    if (ids.isEmpty()) {
+      return List.of();
+    }
+    return equipment.selectList(
+        new LambdaQueryWrapper<Equipment>()
+            .eq(Equipment::getTenantId, tenant)
+            .in(Equipment::getId, ids));
   }
 
   public Equipment find(long tenant, long id) {

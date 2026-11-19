@@ -2,12 +2,21 @@ package com.windasoft.eam.integration;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.dto.common.ListQuery;
+import com.windasoft.eam.dto.maintenance.MaintenanceStandardRow;
+import com.windasoft.eam.dto.planning.PlanningCandidate.DefaultsRequest;
+import com.windasoft.eam.dto.planning.PlanningCandidate.ResolveRequest;
+import com.windasoft.eam.dto.planning.PlanningCandidate.Standard;
 import com.windasoft.eam.dto.system.PermissionScope;
+import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.common.SqlPredicate;
+import com.windasoft.eam.repository.inspection.InspectionListRepository;
 import com.windasoft.eam.repository.inventory.InventorySelectorRepository;
 import com.windasoft.eam.repository.planning.PlanningSelectorRepository;
+import com.windasoft.eam.service.inspection.InspectionViewAssembler;
 import com.windasoft.eam.service.planning.PlanningSelectorService;
+import com.windasoft.eam.service.system.PermissionService;
 import com.windasoft.eam.service.system.SystemExecution;
 import com.windasoft.eam.support.MaintenanceDefinitionFixture;
 import java.util.*;
@@ -20,6 +29,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Import(MaintenanceDefinitionFixture.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
@@ -37,6 +47,10 @@ class SelectorMySqlIT {
   @Autowired MaintenanceDefinitionFixture definitionStorage;
 
   @Autowired PlanningSelectorService selectors;
+  @Autowired InspectionListRepository inspectionLists;
+  @Autowired InspectionViewAssembler inspectionViews;
+  @Autowired PermissionService permissions;
+  @Autowired ObjectMapper json;
   @Autowired InventorySelectorRepository inventory;
   private static final PermissionScope NONE = new PermissionScope(false, null, Set.of(), false);
   private static final PermissionScope ALL = new PermissionScope(true, null, Set.of(), false);
@@ -101,13 +115,12 @@ class SelectorMySqlIT {
               null,
               "");
       assertEquals(10005, result.page().total());
-      result.data().forEach(row -> assertTrue(ids.add(row.get("id").toString())));
+      result.data().forEach(row -> assertTrue(ids.add(row.id())));
     }
     assertEquals(10005, ids.size());
     var probe = org.mockito.Mockito.spy(db);
     new PlanningSelectorRepository(
-            new com.windasoft.eam.repository.common.JdbcListRepository(probe),
-            new com.fasterxml.jackson.databind.ObjectMapper())
+            new com.windasoft.eam.repository.common.JdbcListRepository(probe))
         .equipment(
             10001,
             query("QA-SELECT-", 1, 20),
@@ -116,19 +129,20 @@ class SelectorMySqlIT {
             "");
     recordSelectorPlans("equipment-selector", probe);
 
-    assertTrue(
+    assertEquals(
+        "",
         planning
             .equipment(10001, query("QA-SELECT-", 1, 1), SqlPredicate.of("1=1"), null, "")
             .data()
             .getFirst()
-            .containsKey("functionLocation"));
+            .functionLocation());
     assertEquals(
         "980010004",
         planning
             .equipment(10001, query("10004", 1, 20), SqlPredicate.of("1=1"), null, "")
             .data()
             .getFirst()
-            .get("id"));
+            .id());
     assertEquals(
         1,
         planning
@@ -223,18 +237,92 @@ class SelectorMySqlIT {
           assertEquals(207, result.page().total());
           assertEquals(20, result.data().size());
           var defaults =
-              selectors.defaults("maintenance", Map.of("equipmentIds", List.of("982000001")));
+              selectors.defaults("maintenance", new DefaultsRequest(List.of("982000001")));
           assertEquals(
               207,
               defaults.stream()
-                  .filter(row -> row.get("code").toString().startsWith("QA-STD-SELECT-"))
+                  .filter(
+                      row ->
+                          ((MaintenanceStandardRow) row)
+                              .detail()
+                              .code()
+                              .startsWith("QA-STD-SELECT-"))
                   .count());
           var resolved =
               selectors.resolve(
                   "maintenance",
-                  Map.of(
-                      "equipmentIds", List.of("982000001"), "standardIds", List.of("982100206")));
-          assertEquals(1, ((List<?>) resolved.get("standards")).size());
+                  new ResolveRequest(List.of("982000001"), null, List.of("982100206")));
+          assertEquals(
+              List.of("982100206"), resolved.standards().stream().map(Standard::id).toList());
+          var wire = json.valueToTree(resolved).at("/standards/0");
+          assertEquals("982100206", wire.path("id").asText());
+          assertEquals("982000001", wire.at("/equipmentIds/0").asText());
+          assertTrue(wire.path("items").isArray());
+          return null;
+        });
+  }
+
+  @Test
+  void inspectionStandardChoicePreservesLegacyWireFieldsAndFiltersTenant() {
+    db.update(
+        """
+        INSERT INTO eam_inspection_standard
+            (id,tenant_id,code,name,department_id,creator_id,enabled,remark,requirement)
+        VALUES
+            (982300001,10001,'QA-INSPECT-CHOICE','点检标准',71003,73001,1,'标准备注','现场检查'),
+            (982300002,10002,'QA-INSPECT-CHOICE-OTHER','其他租户',71003,73001,1,'','')
+        """);
+    db.update(
+        """
+        INSERT INTO eam_inspection_standard_item
+            (tenant_id,standard_id,item_key,sort_no,code,name,content,value_type,lower_bound,
+             upper_bound,required,photo_required,remark)
+        VALUES (10001,982300001,'level',1,'L1','液位','看液位','数值',1.25,9,1,0,'')
+        """);
+    var user = new SystemUser();
+    user.setId(73001L);
+    user.setTenantId(10001L);
+    user.setOrgId(71003L);
+    user.setStatus(1);
+    user.setDeleted(0);
+    SystemExecution.run(
+        user,
+        () -> {
+          var query = query("QA-INSPECT-CHOICE", 1, 20);
+          var scope = permissions.inspection("standards", "查看");
+          var selection =
+              inspectionLists.select(
+                  10001,
+                  73001,
+                  "standards",
+                  scope,
+                  scope,
+                  false,
+                  null,
+                  query,
+                  SqlPredicate.of("1=1"),
+                  null);
+          var legacy =
+              json.valueToTree(
+                  inspectionViews.definition(inspectionLists.page(selection, query).getFirst()));
+          var result = selectors.standards("inspection", query, null, null);
+          assertEquals(1, result.page().total());
+          var actual = json.valueToTree(result.data().getFirst());
+          assertEquals(legacy, actual);
+          assertEquals("1.25000000", actual.at("/items/0/lower").asText());
+          assertEquals("现场检查", actual.path("requirement").asText());
+
+          var resolved =
+              selectors.resolve(
+                  "inspection", new ResolveRequest(null, null, List.of("982300001", "982300002")));
+          assertEquals(1, resolved.standards().size());
+          assertEquals(actual, json.valueToTree(resolved).at("/standards/0"));
+          var denied =
+              assertThrows(
+                  ResponseStatusException.class,
+                  () ->
+                      selectors.defaults("inspection", new DefaultsRequest(List.of("982300002"))));
+          assertEquals(403, denied.getStatusCode().value());
           return null;
         });
   }

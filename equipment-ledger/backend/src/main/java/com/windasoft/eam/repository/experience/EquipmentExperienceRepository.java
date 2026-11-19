@@ -1,9 +1,5 @@
 package com.windasoft.eam.repository.experience;
 
-import com.windasoft.eam.entity.equipment.Equipment;
-import com.windasoft.eam.entity.repair.RepairOrder;
-import com.windasoft.eam.repository.equipment.EquipmentMapper;
-import com.windasoft.eam.repository.repair.RepairOrderMapper;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -11,28 +7,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class EquipmentExperienceRepository {
   private final JdbcTemplate db;
-  private final EquipmentMapper equipment;
-  private final RepairOrderMapper repairs;
 
-  public EquipmentExperienceRepository(
-      JdbcTemplate db,
-      EquipmentMapper equipment,
-      RepairOrderMapper repairs) {
+  public EquipmentExperienceRepository(JdbcTemplate db) {
     this.db = db;
-    this.equipment = equipment;
-    this.repairs = repairs;
-  }
-
-  public Equipment findEquipment(long id) {
-    return equipment.selectById(id);
-  }
-
-  public List<RepairOrder> findRepairRows(long tenant, String code) {
-    return repairs.selectList(
-        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RepairOrder>()
-            .eq(RepairOrder::getTenantId, tenant)
-            .eq(RepairOrder::getEquipmentCode, code)
-            .eq(RepairOrder::getDeleted, 0));
   }
 
   public List<Map<String, Object>> listMaintenanceIds(long tenantId, Object eid) {

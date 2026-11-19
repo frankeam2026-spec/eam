@@ -2,9 +2,18 @@ package com.windasoft.eam.service.knowledge;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.windasoft.eam.domain.system.PermissionAction;
-import com.windasoft.eam.repository.knowledge.*;
-import com.windasoft.eam.service.system.*;
-import java.util.*;
+import com.windasoft.eam.repository.knowledge.KnowledgeConversationRepository;
+import com.windasoft.eam.repository.knowledge.KnowledgeSearchRepository;
+import com.windasoft.eam.service.system.AuthContext;
+import com.windasoft.eam.service.system.PermissionService;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -35,19 +44,77 @@ public class KnowledgeConversationService {
   public Object list(int page,int size){permissions.require("knowledge",PermissionAction.VIEW);return Map.of("data",repository.list(auth.tenantId(),auth.userId(),page,size),"total",repository.count(auth.tenantId(),auth.userId()));}
   public void delete(long id){tx.executeWithoutResult(s->{owner(id,true);repository.delete(auth.tenantId(),auth.userId(),id);});}
   public void bind(long id,long equipment){tx.executeWithoutResult(s->{owner(id,true);equipmentQueries.get(equipment);repository.equipment(auth.tenantId(),auth.userId(),id,equipment);});}
-  private Map<String,Object> view(Map<String,Object> row){
-    long exchange=Long.parseLong(row.get("id").toString());
-    var ids=repository.citations(auth.tenantId(),exchange);
-    var citations=sources.chunks(auth.tenantId(),permissions.scope("knowledge",PermissionAction.VIEW),ids);
-    boolean revoked=citations.size()!=ids.size();
-    var result=new LinkedHashMap<String,Object>();result.put("id",row.get("id"));result.put("question",row.get("question"));result.put("status",row.get("status"));
-    result.put("answer",revoked?"此回答的来源权限或发布版本已改变，请重新提问。":Objects.toString(row.get("answer"),""));
-    result.put("citations",revoked?List.of():citations);result.put("restricted",revoked);
+  private Map<String, Object> view(Map<String, Object> row) {
+    long tenant = auth.tenantId();
+    var ids = repository.citations(tenant, exchangeId(row));
+    var citations = sources.chunks(tenant, permissions.scope("knowledge", PermissionAction.VIEW), ids);
+    return view(row, ids.size(), citations);
+  }
+
+  private static Map<String, Object> view(
+      Map<String, Object> row, int expected, List<Map<String, Object>> citations) {
+    boolean revoked = citations.size() != expected;
+    var result = new LinkedHashMap<String, Object>();
+    result.put("id", row.get("id"));
+    result.put("question", row.get("question"));
+    result.put("status", row.get("status"));
+    result.put(
+        "answer", revoked ? "此回答的来源权限或发布版本已改变，请重新提问。" : Objects.toString(row.get("answer"), ""));
+    result.put("citations", revoked ? List.of() : citations);
+    result.put("restricted", revoked);
     return result;
   }
-  public void authorize(long id){owner(id,false);}
-  public Object history(long id){return history(id,1,50);}
-  public Object history(long id,int page,int size){owner(id,false);var rows=new ArrayList<>(repository.exchanges(auth.tenantId(),id,page,size));Collections.reverse(rows);Long equipment=repository.equipment(auth.tenantId(),auth.userId(),id);if(equipment!=null)equipmentQueries.get(equipment);var result=new LinkedHashMap<String,Object>();result.put("data",rows.stream().map(this::view).toList());result.put("total",repository.exchangeCount(auth.tenantId(),id));result.put("equipmentId",equipment==null?"":Long.toString(equipment));return result;}
+
+  private static long exchangeId(Map<String, Object> row) {
+    return Long.parseLong(row.get("id").toString());
+  }
+
+  public void authorize(long id) {
+    owner(id, false);
+  }
+
+  public Object history(long id) {
+    return history(id, 1, 50);
+  }
+
+  /** 每页批量校验当前发布版本和知识查看权限，某条回答任一引用失效时整条隐藏。 */
+  public Object history(long id, int page, int size) {
+    owner(id, false);
+    long tenant = auth.tenantId();
+    var rows = new ArrayList<>(repository.exchanges(tenant, id, page, size));
+    Collections.reverse(rows);
+    Long equipment = repository.equipment(tenant, auth.userId(), id);
+    if (equipment != null) {
+      equipmentQueries.get(equipment);
+    }
+    var links =
+        repository.citations(
+            tenant, rows.stream().map(KnowledgeConversationService::exchangeId).toList());
+    var chunkIds = links.values().stream().flatMap(List::stream).distinct().toList();
+    var visible = new HashMap<Long, Map<String, Object>>();
+    if (!chunkIds.isEmpty()) {
+      for (var citation : sources.chunks(tenant, permissions.scope("knowledge", PermissionAction.VIEW), chunkIds)) {
+        visible.put(Long.parseLong(citation.get("chunkId").toString()), citation);
+      }
+    }
+    var data =
+        rows.stream()
+            .map(
+                row -> {
+                  var ids = links.getOrDefault(exchangeId(row), List.of());
+                  var citations = ids.stream().map(visible::get).filter(Objects::nonNull).toList();
+                  return view(row, ids.size(), citations);
+                })
+            .toList();
+    return Map.of(
+        "data",
+        data,
+        "total",
+        repository.exchangeCount(tenant, id),
+        "equipmentId",
+        equipment == null ? "" : Long.toString(equipment));
+  }
+
   @SuppressWarnings("unchecked")
   public Object ask(long conversation,String key,String question) throws Exception {
     return ask(conversation,key,question,null);

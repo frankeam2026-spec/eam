@@ -41,13 +41,56 @@ class KnowledgeConversationServiceTest {
     when(repo.existing(10,30,key)).thenReturn(Map.of("question","original","status","SUCCEEDED"));
     assertThrows(org.springframework.web.server.ResponseStatusException.class,()->service.ask(30,key,"other"));verifyNoInteractions(answers);
   }
-  @Test void historyHidesDerivedAnswerAfterSourceRevocation(){
-    var service=service();when(repo.owner(10,20,30,false)).thenReturn(true);
-    when(repo.exchanges(10,30,1,50)).thenReturn(List.of(Map.of("id","40","question","question","answer","sensitive answer","status","SUCCEEDED")));
-    when(repo.citations(10,40)).thenReturn(List.of(99L));
-    var result=(Map<?,?>)service.history(30);var turn=(Map<?,?>)((List<?>)result.get("data")).getFirst();
-    assertEquals(true,turn.get("restricted"));assertFalse(turn.get("answer").toString().contains("sensitive"));
+  @Test
+  void historyHidesDerivedAnswerAfterSourceRevocation() {
+    var service = service();
+    when(repo.owner(10, 20, 30, false)).thenReturn(true);
+    when(repo.exchanges(10, 30, 1, 50))
+        .thenReturn(
+            List.of(
+                Map.of(
+                    "id",
+                    "40",
+                    "question",
+                    "question",
+                    "answer",
+                    "sensitive answer",
+                    "status",
+                    "SUCCEEDED")));
+    when(repo.citations(10, List.of(40L))).thenReturn(Map.of(40L, List.of(99L)));
+    var result = (Map<?, ?>) service.history(30);
+    var turn = (Map<?, ?>) ((List<?>) result.get("data")).getFirst();
+    assertEquals(true, turn.get("restricted"));
+    assertFalse(turn.get("answer").toString().contains("sensitive"));
   }
+
+  @Test
+  void historyLoadsVisibleChunksOnceAndKeepsEachAnswerInSourceOrder() {
+    var service = service();
+    when(repo.owner(10, 20, 30, false)).thenReturn(true);
+    when(repo.exchanges(10, 30, 1, 50))
+        .thenReturn(
+            List.of(
+                Map.of("id", "41", "question", "newer", "answer", "hidden", "status", "SUCCEEDED"),
+                Map.of(
+                    "id", "40", "question", "older", "answer", "visible", "status", "SUCCEEDED")));
+    when(repo.citations(10, List.of(40L, 41L)))
+        .thenReturn(Map.of(40L, List.of(102L, 101L), 41L, List.of(102L, 103L)));
+    when(sources.chunks(
+            eq(10L), any(), argThat(ids -> Set.copyOf(ids).equals(Set.of(101L, 102L, 103L)))))
+        .thenReturn(List.of(Map.of("chunkId", "101"), Map.of("chunkId", "102")));
+
+    var turns = (List<?>) ((Map<?, ?>) service.history(30)).get("data");
+
+    assertEquals(
+        List.of(Map.of("chunkId", "102"), Map.of("chunkId", "101")),
+        ((Map<?, ?>) turns.getFirst()).get("citations"));
+    assertEquals(true, ((Map<?, ?>) turns.getLast()).get("restricted"));
+    assertEquals(List.of(), ((Map<?, ?>) turns.getLast()).get("citations"));
+    verify(sources, times(1)).chunks(eq(10L), any(), anyList());
+    verify(repo, never()).citations(anyLong(), anyLong());
+  }
+
   @Test void failedTurnIsMarkedAndNewRequestCanRetry() throws Exception {
     var service=service();when(repo.owner(10,20,30,true)).thenReturn(true);
     when(answers.ask(eq("question"),anyList(),isNull())).thenThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,"小卓尚未启用"));

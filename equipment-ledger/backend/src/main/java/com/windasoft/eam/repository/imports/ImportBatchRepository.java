@@ -1,9 +1,14 @@
 package com.windasoft.eam.repository.imports;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
-import com.windasoft.eam.dto.imports.*;
+import com.windasoft.eam.dto.imports.ImportColumn;
+import com.windasoft.eam.dto.imports.ImportIssue;
+import com.windasoft.eam.dto.imports.ImportPreview.Column;
+import com.windasoft.eam.dto.imports.ImportWorkbook;
 import java.util.*;
+import org.springframework.jdbc.core.DataClassRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -55,9 +60,10 @@ public class ImportBatchRepository {
         "INSERT INTO eam_import_column(batch_id,field_key,column_no,label) VALUES(?,?,?,?)", args);
   }
 
-  public List<Map<String, Object>> columns(String id) {
-    return db.queryForList(
+  public List<Column> columns(String id) {
+    return db.query(
         "SELECT field_key `key`,label FROM eam_import_column WHERE batch_id=? ORDER BY column_no",
+        DataClassRowMapper.newInstance(Column.class),
         id);
   }
 
@@ -153,23 +159,28 @@ public class ImportBatchRepository {
         id);
   }
 
-  public List<Map<String, Object>> issues(String id, List<Integer> rows) {
+  private static final RowMapper<ImportIssue> ISSUE_ROW =
+      DataClassRowMapper.newInstance(ImportIssue.class);
+
+  public List<ImportIssue> issues(String id, List<Integer> rows) {
     if (rows.isEmpty()) return List.of();
     var args = new ArrayList<Object>();
     args.add(id);
     args.addAll(rows);
-    return db.queryForList(
+    return db.query(
         "SELECT row_no `row`,field_key field,field_label label,raw_value value,reason,suggestion"
             + " FROM eam_import_issue WHERE batch_id=? AND row_no IN ("
             + String.join(",", Collections.nCopies(rows.size(), "?"))
             + ") ORDER BY row_no,id",
+        ISSUE_ROW,
         args.toArray());
   }
 
-  public List<Map<String, Object>> allIssues(String id) {
-    return db.queryForList(
+  public List<ImportIssue> allIssues(String id) {
+    return db.query(
         "SELECT row_no `row`,field_key field,field_label label,raw_value value,reason,suggestion"
             + " FROM eam_import_issue WHERE batch_id=? ORDER BY row_no,id",
+        ISSUE_ROW,
         id);
   }
 
@@ -184,26 +195,24 @@ public class ImportBatchRepository {
         Integer.class,
         id,
         size,
-        (page - 1) * size);
+        ((long) page - 1) * size);
   }
 
-  public List<Map<String, Object>> cells(String id, List<Integer> rows) {
-    if (rows.isEmpty()) return List.of();
+  public record PreviewCell(int rowNo, String fieldKey, String rawValue) {}
+
+  public List<PreviewCell> cells(String id, List<Integer> rows) {
+    if (rows.isEmpty()) {
+      return List.of();
+    }
     var args = new ArrayList<Object>();
     args.add(id);
     args.addAll(rows);
-    return db.queryForList(
+    return db.query(
         "SELECT row_no,field_key,raw_value FROM eam_import_cell WHERE batch_id=? AND row_no IN ("
             + String.join(",", Collections.nCopies(rows.size(), "?"))
             + ")",
+        DataClassRowMapper.newInstance(PreviewCell.class),
         args.toArray());
-  }
-
-  public List<Map<String, Object>> cells(String id) {
-    return db.queryForList(
-        "SELECT row_no,field_key,raw_value,formula_flag FROM eam_import_cell WHERE batch_id=? ORDER"
-            + " BY row_no",
-        id);
   }
 
   public List<String> recover() {

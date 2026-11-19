@@ -1,35 +1,43 @@
 package com.windasoft.eam.service.label;
 
-import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.label.LabelPdfForm;
 import com.windasoft.eam.dto.label.LabelTemplateForm;
 import com.windasoft.eam.entity.equipment.Equipment;
-import com.windasoft.eam.repository.label.LabelTemplateRepository;
+import com.windasoft.eam.repository.repair.RepairQueryRepository;
+import com.windasoft.eam.service.printing.GridPdfService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
-import java.util.*;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class LabelPrintService {
-  private final LabelTemplateRepository repository;
+  private static final int MAX_REPAIR_ROWS = 1000;
+  private final RepairQueryRepository repairs;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
   private final LabelLayoutValidator validator;
   private final LabelTemplateService templates;
-  private final com.windasoft.eam.service.printing.GridPdfService pdf;
+  private final GridPdfService pdf;
 
   public LabelPrintService(
-      LabelTemplateRepository repository,
+      RepairQueryRepository repairs,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json,
       LabelLayoutValidator validator,
       LabelTemplateService templates,
-      com.windasoft.eam.service.printing.GridPdfService pdf) {
-    this.repository = repository;
+      GridPdfService pdf) {
+    this.repairs = repairs;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
@@ -38,30 +46,20 @@ public class LabelPrintService {
     this.pdf = pdf;
   }
 
-  public byte[] pdf(Long id, LabelPdfForm f) throws java.io.IOException {
+  public byte[] pdf(Long id, LabelPdfForm f) throws IOException {
     permissions.require("equipmentTag", PermissionAction.PRINT);
     var t = templates.require(id);
-    List<Map<String, String>> data =
-        f.equipmentIds().stream()
-            .distinct()
-            .map(
-                key -> {
-                  var e = repository.equipment(auth.tenantId(), key);
-                  if (e == null)
-                    throw new com.windasoft.eam.common.LocalizedArgumentException(
-                        "server.common.message0064");
-                  permissions.checkEquipment(e, PermissionAction.VIEW);
-                  return equipmentData(e);
-                })
-            .toList();
+    var equipment = templates.authorizedEquipment(f.equipmentIds());
+    var data = equipment.stream().map(this::equipmentData).toList();
+    var layout = t.getLayoutJson() == null ? null : json.readTree(t.getLayoutJson());
     List<List<Map<String, String>>> details = new ArrayList<>();
-    if (t.getLayoutJson() != null && json.readTree(t.getLayoutJson()).path("repeat").isObject())
-      for (Long key : f.equipmentIds().stream().distinct().toList()) {
-        var e = repository.equipmentById(key);
-        var records = repository.repairs(auth.tenantId(), e.getEquipmentCode());
-        if (records.size() > 1000)
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.common.message0065");
+    if (layout != null && layout.path("repeat").isObject()) {
+      for (var e : equipment) {
+        var records =
+            repairs.historyByEquipment(
+                auth.tenantId(), e.getId(), e.getEquipmentCode(), MAX_REPAIR_ROWS + 1);
+        if (records.size() > MAX_REPAIR_ROWS)
+          throw new LocalizedArgumentException("server.common.message0065");
         details.add(
             records.stream()
                 .filter(
@@ -69,7 +67,10 @@ public class LabelPrintService {
                       try {
                         permissions.checkRepair(r, PermissionAction.VIEW);
                         return true;
-                      } catch (org.springframework.web.server.ResponseStatusException denied) {
+                      } catch (ResponseStatusException denied) {
+                        if (denied.getStatusCode().value() != 403) {
+                          throw denied;
+                        }
                         return false;
                       }
                     })
@@ -90,22 +91,20 @@ public class LabelPrintService {
                             safe(r.getStatus())))
                 .toList());
       }
+    }
     return pdf.render(
         t.getWidthMm().doubleValue(),
         t.getHeightMm().doubleValue(),
-        t.getLayoutJson() == null ? null : json.readTree(t.getLayoutJson()),
+        layout,
         json.readTree(t.getElementsJson()),
         data,
         f.copies(),
         details);
   }
 
-  public byte[] preview(LabelTemplateForm f) throws java.io.IOException {
+  public byte[] preview(LabelTemplateForm f) throws IOException {
     permissions.require("equipmentTag", PermissionAction.VIEW);
-    if (f.layout() != null && !f.layout().isNull())
-      com.windasoft.eam.common.printing.GridValidator.validate(
-          f.layout(), f.widthMm().doubleValue(), f.heightMm().doubleValue());
-    else validator.validateElements(f);
+    validator.validate(f);
     return pdf.render(
         f.widthMm().doubleValue(),
         f.heightMm().doubleValue(),

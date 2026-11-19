@@ -1,8 +1,8 @@
 package com.windasoft.eam.service.experience;
 
-import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
-import com.windasoft.eam.repository.experience.AnalyticsRepository;
+import com.windasoft.eam.domain.system.PermissionAction;
+import com.windasoft.eam.repository.inventory.WarehouseRepository;
 import com.windasoft.eam.service.system.*;
 import java.util.*;
 import org.springframework.http.HttpStatus;
@@ -13,13 +13,13 @@ import org.springframework.web.server.ResponseStatusException;
 public class AnalyticsAccess {
   private final PermissionService permissions;
   private final AuthContext auth;
-  private final AnalyticsRepository repository;
+  private final WarehouseRepository warehouseRepository;
 
   public AnalyticsAccess(
-      PermissionService permissions, AuthContext auth, AnalyticsRepository repository) {
+      PermissionService permissions, AuthContext auth, WarehouseRepository warehouseRepository) {
     this.permissions = permissions;
     this.auth = auth;
-    this.repository = repository;
+    this.warehouseRepository = warehouseRepository;
   }
 
   public boolean available(AnalyticsCatalog.Metric metric) {
@@ -104,16 +104,12 @@ public class AnalyticsAccess {
   }
 
   public List<Long> warehouses(boolean amount) {
-    return repository.warehouses(auth.tenantId()).stream()
-        .filter(
-            w ->
-                permissions.inventoryWarehouseAllowed(
-                        "inventoryQuery", ((Number) w.get("id")).longValue(), PermissionAction.VIEW.code())
-                    && (!amount
-                        || permissions.inventoryWarehouseAllowed(
-                            "inventoryQuery", ((Number) w.get("id")).longValue(), PermissionAction.VIEW_AMOUNT.code())))
-        .map(w -> ((Number) w.get("id")).longValue())
-        .toList();
+    var warehouses = warehouseRepository.scopeRows(auth.tenantId());
+    var allowed = permissions.inventoryWarehouses("inventoryQuery", PermissionAction.VIEW, warehouses);
+    if (amount) {
+      allowed.retainAll(permissions.inventoryWarehouses("inventoryQuery", PermissionAction.VIEW_AMOUNT, warehouses));
+    }
+    return allowed.stream().sorted().toList();
   }
 
   public Set<Long> departments(long id) {

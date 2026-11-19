@@ -5,10 +5,22 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.dto.business.BusinessFilterTerm;
 import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.equipment.EquipmentForm;
 import com.windasoft.eam.dto.equipment.EquipmentQueryParameters;
+import com.windasoft.eam.dto.experience.ExperienceCommands.ChangeAnomaly;
+import com.windasoft.eam.dto.experience.ExperienceCommands.ChangeRepairPlan;
+import com.windasoft.eam.dto.experience.ExperienceCommands.CreateAnomaly;
+import com.windasoft.eam.dto.experience.ExperienceCommands.SaveRepairPlan;
+import com.windasoft.eam.service.experience.AnomalyService;
+import com.windasoft.eam.service.experience.HomeAnalyticsService;
+import com.windasoft.eam.service.experience.WorkCenterService;
+import com.windasoft.eam.service.knowledge.AiRepairQueryService;
+import com.windasoft.eam.dto.label.LabelPdfForm;
+import com.windasoft.eam.dto.label.LabelPrintForm;
+import com.windasoft.eam.dto.label.LabelTemplateForm;
 import com.windasoft.eam.dto.maintenance.MaintenanceTaskCommand;
 import com.windasoft.eam.dto.repair.RepairForm;
 import com.windasoft.eam.dto.system.PermissionScope;
@@ -23,6 +35,7 @@ import com.windasoft.eam.repository.experience.HomeTemplateRepository;
 import com.windasoft.eam.repository.experience.HomeTemplateRoleRepository;
 import com.windasoft.eam.repository.experience.HomeTemplateVersionRepository;
 import com.windasoft.eam.repository.experience.HomeTemplateVersionRoleRepository;
+import com.windasoft.eam.repository.imports.ImportBatchRepository;
 import com.windasoft.eam.repository.inspection.InspectionExecutionStorage;
 import com.windasoft.eam.repository.inspection.InspectionListRepository;
 import com.windasoft.eam.repository.inventory.InventoryListRepository;
@@ -32,6 +45,7 @@ import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
 import com.windasoft.eam.repository.system.UserListRepository;
 import com.windasoft.eam.service.equipment.EquipmentCommandService;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
+import com.windasoft.eam.service.imports.EquipmentImportService;
 import com.windasoft.eam.service.inspection.InspectionGenerationService;
 import com.windasoft.eam.service.inspection.InspectionService;
 import com.windasoft.eam.service.inspection.InspectionTaskService;
@@ -42,6 +56,8 @@ import com.windasoft.eam.service.inventory.InventoryReservationCleanupService;
 import com.windasoft.eam.service.inventory.InventoryService;
 import com.windasoft.eam.service.inventory.OutboundService;
 import com.windasoft.eam.service.inventory.ReceiptService;
+import com.windasoft.eam.service.label.LabelPrintService;
+import com.windasoft.eam.service.label.LabelTemplateService;
 import com.windasoft.eam.service.maintenance.MaintenanceCsvService;
 import com.windasoft.eam.service.maintenance.MaintenanceListService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
@@ -52,11 +68,15 @@ import com.windasoft.eam.service.repair.RepairWorkflowService;
 import com.windasoft.eam.service.system.SystemExecution;
 import com.windasoft.eam.support.RelationalTaskFixtures;
 import com.windasoft.eam.support.SelectQueryLogger;
+import java.io.IOException;
 import java.io.PrintWriter;
+import java.io.UncheckedIOException;
 import java.io.StringWriter;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -71,6 +91,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.mockito.ArgumentMatchers;
@@ -92,6 +114,18 @@ import org.springframework.web.server.ResponseStatusException;
 @EnabledIfEnvironmentVariable(named = "EAM_ENGINEERING_DB_URL", matches = ".+")
 @Transactional
 class EngineeringQueryMySqlIT {
+  @DynamicPropertySource
+  static void pdfFont(DynamicPropertyRegistry properties) throws IOException {
+    var font = Files.createTempFile("eam-label-qa-", ".ttf");
+    font.toFile().deleteOnExit();
+    // PDFBox 自带字体足以渲染回归用的 ASCII 工单号，无需依赖测试机字体配置。
+    try (var input = Loader.class.getResourceAsStream(
+        "/org/apache/pdfbox/resources/ttf/LiberationSans-Regular.ttf")) {
+      Files.copy(Objects.requireNonNull(input), font, StandardCopyOption.REPLACE_EXISTING);
+    }
+    properties.add("eam.print.font-path", font::toString);
+  }
+
   @Autowired InspectionExecutionStorage inspectionExecution;
   @Autowired InspectionGenerationService inspectionGeneration;
 
@@ -151,6 +185,14 @@ class EngineeringQueryMySqlIT {
   @Autowired EquipmentMediaRepository equipmentMedia;
   @Autowired EquipmentWriteRepository equipmentWrites;
   @Autowired ObjectMapper json;
+  @Autowired AnomalyService anomalyCommands;
+  @Autowired WorkCenterService workCenter;
+  @Autowired HomeAnalyticsService homeAnalytics;
+  @Autowired AiRepairQueryService assistantRepairs;
+  @Autowired EquipmentImportService equipmentImports;
+  @Autowired ImportBatchRepository importBatches;
+  @Autowired LabelTemplateService labelTemplates;
+  @Autowired LabelPrintService labelPrinting;
   @Autowired InventoryFlowService inventoryFlows;
 
   @MockitoSpyBean OutboundRepository outboundRepository;
@@ -991,7 +1033,8 @@ class EngineeringQueryMySqlIT {
             assertEquals(after, stockQuantity(materialId));
             var allocationId =
                 db.queryForObject(
-                    "SELECT id FROM inv_issue_allocation WHERE tenant_id=10001 AND issue_id=? ORDER BY id LIMIT 1",
+                    "SELECT id FROM inv_issue_allocation WHERE tenant_id=10001 AND issue_id=? ORDER"
+                        + " BY id LIMIT 1",
                     Long.class,
                     id);
             var allocation = inventoryUsage.loadAllocation(10001, allocationId).getFirst();
@@ -1000,10 +1043,10 @@ class EngineeringQueryMySqlIT {
             assertEquals(0, inventoryUsage.usedAmount(10001, allocationId).signum());
             db.update(
                 """
-                INSERT INTO inv_usage
-                    (id,tenant_id,allocation_id,material_id,quantity,kind,actor_name,confirmation_key,cost_amount)
-                VALUES(?,10001,?,?,1,'使用','测试',?,?)
-                """,
+INSERT INTO inv_usage
+    (id,tenant_id,allocation_id,material_id,quantity,kind,actor_name,confirmation_key,cost_amount)
+VALUES(?,10001,?,?,1,'使用','测试',?,?)
+""",
                 allocationId,
                 allocationId,
                 allocation.materialId(),
@@ -1453,6 +1496,336 @@ class EngineeringQueryMySqlIT {
   }
 
   @Test
+  void anomalyAndRepairPlanCommandsKeepVersionAndDeviceIdentity() throws Exception {
+    db.update(
+        """
+INSERT INTO eam_equipment
+    (id,tenant_id,equipment_code,name,category,company,department,company_org_id,department_org_id)
+VALUES(992100001,10001,'QA-EXPERIENCE-NEW','计划设备','','','',71002,71003)
+""");
+    db.update(
+        """
+        INSERT INTO eam_repair_order
+            (id,tenant_id,order_no,equipment_code,equipment_name,department,department_org_id,
+              fault_type,severity,description,reporter,status,reported_at,equipment_id)
+        VALUES(992100011,10001,'QA-EXPERIENCE-ID','QA-EXPERIENCE-OLD','计划设备','',71003,
+              '','一般','','','待派工',NOW(),992100001),
+              (992100012,10001,'QA-EXPERIENCE-WRONG','QA-EXPERIENCE-NEW','其他设备','',71003,
+              '','一般','','','待派工',NOW(),992100002),
+              (992100013,10001,'QA-EXPERIENCE-LEGACY','QA-EXPERIENCE-NEW','计划设备','',71003,
+              '','一般','','','待派工',NOW(),NULL)
+        """);
+    var form =
+        json.readValue(
+            """
+            {"equipmentId":"992100001","description":"发现异常","severity":"一般"}
+            """,
+            CreateAnomaly.class);
+    assertThrows(
+        IOException.class,
+        () ->
+            json.readValue(
+                """
+                {"action":"resolve","rowVersion":0.9}
+                """,
+                ChangeAnomaly.class));
+
+    SystemExecution.run(
+        engineeringUser(),
+        () -> {
+          var anomaly = anomalyCommands.create(form);
+          long id = Long.parseLong(anomaly.id());
+          db.update(
+              """
+              INSERT INTO eam_anomaly_attachment
+                  (tenant_id,anomaly_id,sort_no,file_id,name_snapshot,size_bytes)
+              VALUES(10001,?,1,'legacy-file','原附件',28)
+              """,
+              id);
+          assertThrows(
+              IllegalArgumentException.class,
+              () ->
+                  anomalyCommands.action(
+                      id, new ChangeAnomaly("link", 0L, null, 992100012L, null, null, null)));
+          var linked =
+              anomalyCommands.action(
+                  id, new ChangeAnomaly("link", 0L, null, 992100011L, null, null, null));
+          var wire = json.valueToTree(linked);
+          assertEquals("992100011", wire.path("repair_id").textValue());
+          assertEquals(wire.path("rowVersion"), wire.path("row_version"));
+          assertEquals("992100001", wire.path("equipment_id").textValue());
+          assertEquals("原附件", wire.at("/attachments/0/name").asText());
+          assertEquals(28, wire.at("/attachments/0/size").asInt());
+          assertTrue(wire.at("/attachments/0/contentType").isNull());
+          assertEquals(
+              "/api/v1/anomalies/" + id + "/files/legacy-file",
+              wire.at("/attachments/0/url").asText());
+
+          var pending = anomalyCommands.create(form);
+          long faultType = activeBase("FAULT_TYPE");
+          var plan =
+              anomalyCommands.savePlan(
+                  null,
+                  new SaveRepairPlan(
+                      992100001L,
+                      "维修计划",
+                      faultType,
+                      "一般",
+                      "2099-08-01T09:00:00",
+                      73001L,
+                      null,
+                      List.of(Long.valueOf(pending.id()))));
+          long planId = Long.parseLong(plan.id());
+          assertEquals(List.of(pending.id()), plan.anomalyIds());
+          assertEquals("草稿", plan.status());
+          assertEquals(LocalDateTime.of(2099, 8, 1, 9, 0), LocalDateTime.parse(plan.plannedAt()));
+          var saved =
+              anomalyCommands.savePlan(
+                  planId,
+                  new SaveRepairPlan(
+                      992100001L,
+                      "更新计划",
+                      faultType,
+                      "一般",
+                      "2099-08-01T09:00:00",
+                      73001L,
+                      (long) plan.rowVersion(),
+                      List.of(Long.valueOf(pending.id()))));
+          var conflict =
+              assertThrows(
+                  ResponseStatusException.class,
+                  () ->
+                      anomalyCommands.planAction(
+                          planId, new ChangeRepairPlan("cancel", (long) plan.rowVersion(), "原因")));
+          assertEquals(409, conflict.getStatusCode().value());
+          var cancelled =
+              anomalyCommands.planAction(
+                  planId, new ChangeRepairPlan("cancel", (long) saved.rowVersion(), "原因"));
+          assertEquals("已取消", cancelled.status());
+          assertNull(anomalyCommands.detail(Long.parseLong(pending.id())).planId());
+          var today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
+          var records =
+              assistantRepairs.query(
+                  new AiRepairQueryService.Criteria(
+                      today.minusDays(1), today, "", false, 992100001L),
+                  1,
+                  20);
+          assertEquals(
+              Set.of("QA-EXPERIENCE-ID", "QA-EXPERIENCE-LEGACY"),
+              Set.copyOf(records.data().stream().map(row -> row.orderNo()).toList()));
+          assertEquals(2, records.total());
+          db.update(
+              "UPDATE eam_repair_order SET reporter_user_id=73001 WHERE tenant_id=10001 AND"
+                  + " id=992100011");
+          var queue = workCenter.queue("created", "repair", "QA-EXPERIENCE-ID", 1, 20, "", "", "");
+          assertEquals(1, queue.total());
+          var row = json.valueToTree(queue).at("/data/0");
+          assertEquals("QA-EXPERIENCE-ID", row.path("orderNo").asText());
+          assertEquals(row.path("id"), row.path("orderId"));
+          assertEquals(1, row.path("isRead").asInt());
+          assertTrue(
+              workCenter.filterChoices(false).companies().stream()
+                  .anyMatch(company -> company.id().equals("71002")));
+          var catalog = json.valueToTree(homeAnalytics.catalog());
+          assertTrue(catalog.path("organizations").findValuesAsText("id").contains("71002"));
+          return null;
+        });
+  }
+
+  @Test
+  void analyticsRepairExportMatchesDrillDownScopeOrderAndCsvFormat() {
+    db.update(
+        """
+INSERT INTO eam_repair_order
+    (id,tenant_id,order_no,equipment_code,equipment_name,department,department_org_id,
+     fault_type,severity,description,reporter,reporter_user_id,status,reported_at)
+VALUES
+    (992100021,10001,'QA-CSV-1','CSV','普通设备','',71003,'','一般','','',73001,'待派工','2026-08-11 08:00:00'),
+    (992100022,10001,'QA-CSV-2','CSV',' =1,"设备"','',71003,'','一般','','',73001,'待派工','2026-08-11 08:00:00'),
+    (992100023,10001,'QA-CSV-HIDDEN','CSV','无权设备','',71003,'','一般','','',73002,'待派工','2026-08-11 09:00:00')
+""");
+    var input =
+        Map.<String, Object>of(
+            "widget", Map.of("id", "csv", "metric", "repair_trend", "scope", "personal"),
+            "context",
+                Map.of(
+                    "period", Map.of("preset", "custom", "from", "2026-08-11", "to", "2026-08-11")),
+            "filter", Map.of("key", "2026-08", "series", "reported"));
+    SystemExecution.run(
+        engineeringUser(),
+        () -> {
+          var details = json.valueToTree(homeAnalytics.details(input));
+          assertEquals(2, details.path("total").asInt());
+          assertEquals(
+              List.of("QA-CSV-1", "QA-CSV-2"), details.path("data").findValuesAsText("code"));
+          var csv = new String(homeAnalytics.export(input), StandardCharsets.UTF_8);
+          var lines = csv.lines().toList();
+          assertEquals(3, lines.size());
+          assertEquals("\ufeff编号,设备,部门,负责人,状态,计划或报修时间,提交时间,验收时间", lines.getFirst());
+          assertTrue(lines.get(1).startsWith("\"QA-CSV-1\",\"普通设备\","));
+          assertTrue(lines.get(2).startsWith("\"QA-CSV-2\",\"' =1,\"\"设备\"\"\","));
+          assertTrue(lines.get(2).endsWith(",\"\",\"\""));
+          return null;
+        });
+  }
+
+  @Test
+  void importPreviewKeepsRowOrderFiltersAndBatchOwnership() {
+    String batch = "e1a09787-44c1-4fc7-b3c6-757834818103";
+    importBatches.create(batch, 10001, 73001, "fixture.xlsx", 16, "0".repeat(64));
+    db.update(
+        "UPDATE eam_import_batch SET total_rows=2,error_rows=1,state='INVALID' WHERE id=?", batch);
+    db.update(
+        "INSERT INTO eam_import_column(batch_id,field_key,column_no,label) VALUES(?,'name',0,'名称')",
+        batch);
+    db.update(
+        "INSERT INTO eam_equipment_import_row(batch_id,row_no) VALUES(?,3),(?,7)", batch, batch);
+    db.update(
+        "INSERT INTO eam_import_cell(batch_id,row_no,field_key,raw_value) VALUES(?,7,'name','原始值')",
+        batch);
+    db.update(
+        "INSERT INTO eam_import_issue VALUES(992070001,?,7,'name','名称','原始值','无效','请修正')", batch);
+    SystemExecution.run(
+        engineeringUser(),
+        () -> {
+          var all = equipmentImports.preview(batch, ListQuery.from(Map.of("size", "1")), false);
+          assertEquals(2, all.page().total());
+          assertEquals(3, all.data().getFirst().row());
+          assertTrue(all.data().getFirst().values().isEmpty());
+          var errors = equipmentImports.preview(batch, ListQuery.from(Map.of()), true);
+          var wire = json.valueToTree(errors);
+          assertEquals(1, wire.at("/page/total").asInt());
+          assertEquals("原始值", wire.at("/data/0/values/name").asText());
+          assertEquals("请修正", wire.at("/data/0/issues/0/suggestion").asText());
+          assertEquals("name", wire.at("/columns/0/key").asText());
+          assertTrue(
+              equipmentImports
+                  .preview(
+                      batch,
+                      ListQuery.from(
+                          Map.of("page", String.valueOf(Integer.MAX_VALUE), "size", "100")),
+                      false)
+                  .data()
+                  .isEmpty());
+          return null;
+        });
+    var other = engineeringUser();
+    other.setTenantId(10002L);
+    assertThrows(
+        RuntimeException.class,
+        () ->
+            SystemExecution.run(
+                other, () -> equipmentImports.preview(batch, ListQuery.from(Map.of()), false)));
+  }
+
+  @Test
+  void labelsPreserveSelectionOrderAndCanClearGridLayout() throws Exception {
+    db.update(
+        """
+INSERT INTO eam_equipment
+    (id,tenant_id,equipment_code,name,category,company,department,company_org_id,department_org_id)
+VALUES(992080001,10001,'QA-LABEL-A','甲','','','',71002,71003),
+      (992080002,10001,'QA-LABEL-B','乙','','','',71002,71003),
+      (992080003,10002,'QA-LABEL-C','丙','','','',71002,71003)
+""");
+    var dimensions = new BigDecimal("50");
+    var grid =
+        json.readTree(
+            """
+{"version":1,"columns":[30],"rows":[10],"margin":{"left":0,"right":0,"top":0,"bottom":0},
+ "repeatHeader":0,"cells":[]}
+""");
+    SystemExecution.run(
+        engineeringUser(),
+        () -> {
+          var original =
+              labelTemplates.create(
+                  new LabelTemplateForm(
+                      "标签隔离测试", dimensions, dimensions, "", json.createArrayNode(), grid, null));
+          long id = Long.parseLong(original.id());
+          var updated =
+              labelTemplates.update(
+                  id,
+                  new LabelTemplateForm(
+                      "标签隔离测试",
+                      dimensions,
+                      dimensions,
+                      "",
+                      json.createArrayNode(),
+                      null,
+                      original.rowVersion()));
+          assertNull(updated.layout());
+          assertEquals(original.rowVersion() + 1, updated.rowVersion());
+          var print =
+              labelTemplates.printData(
+                  id, new LabelPrintForm(List.of(992080002L, 992080001L, 992080002L)));
+          assertEquals(
+              List.of("QA-LABEL-B", "QA-LABEL-A"),
+              print.equipment().stream().map(row -> row.code()).toList());
+          assertThrows(
+              LocalizedArgumentException.class,
+              () -> labelTemplates.printData(id, new LabelPrintForm(List.of(992080003L))));
+          return null;
+        });
+  }
+
+  @Test
+  void labelPdfFollowsEquipmentIdAcrossCodeChanges() {
+    db.update(
+        """
+INSERT INTO eam_equipment
+    (id,tenant_id,equipment_code,name,category,company,department,company_org_id,department_org_id)
+VALUES(992090001,10001,'QA-LABEL-NEW','Machine A','','','',71002,71003)
+""");
+    db.update(
+        """
+INSERT INTO eam_repair_order
+    (id,tenant_id,order_no,equipment_code,equipment_name,department,fault_type,severity,
+     description,reporter,status,reported_at,equipment_id)
+VALUES(992090011,10001,'QA-OLD-HISTORY','QA-LABEL-OLD','Machine A','','','一般','','','已完成',NOW(),992090001),
+      (992090012,10001,'QA-LEGACY-HISTORY','QA-LABEL-NEW','Machine A','','','一般','','','已完成',NOW(),NULL),
+      (992090013,10001,'QA-OTHER-MACHINE','QA-LABEL-NEW','Machine B','','','一般','','','已完成',NOW(),992090002)
+""");
+    SystemExecution.run(
+        engineeringUser(),
+        () -> {
+          try {
+            var layout =
+                json.readTree(
+                    """
+{"version":1,"columns":[85],"rows":[10],"margin":{"left":0,"right":0,"top":0,"bottom":0},
+ "repeatHeader":0,"repeat":{"startRow":0,"endRow":0,"source":"repairs"},
+ "cells":[{"row":0,"col":0,"rowSpan":1,"colSpan":1,"kind":"text","fontSize":10,
+           "content":"{repair_orderNo}","align":"left","vertical":"middle","overflow":"wrap",
+           "color":"#000000","background":"#ffffff"}]}
+""");
+            var saved =
+                labelTemplates.create(
+                    new LabelTemplateForm(
+                        "维修标签隔离测试",
+                        new BigDecimal("100"),
+                        new BigDecimal("50"),
+                        "",
+                        json.createArrayNode(),
+                        layout,
+                        null));
+            var bytes =
+                labelPrinting.pdf(
+                    Long.valueOf(saved.id()), new LabelPdfForm(List.of(992090001L), 1));
+            try (var doc = Loader.loadPDF(bytes)) {
+              var contents = new PDFTextStripper().getText(doc);
+              assertTrue(contents.contains("QA-OLD-HISTORY"));
+              assertTrue(contents.contains("QA-LEGACY-HISTORY"));
+              assertFalse(contents.contains("QA-OTHER-MACHINE"));
+            }
+          } catch (IOException e) {
+            throw new UncheckedIOException(e);
+          }
+          return null;
+        });
+  }
+
+  @Test
   void masterWritesKeepAuditNullsAndVersions() {
     db.update(
         """
@@ -1482,10 +1855,10 @@ class EngineeringQueryMySqlIT {
           var events =
               db.queryForList(
                   """
-          SELECT JSON_UNQUOTE(JSON_EXTRACT(details_json,'$.after.categoryId')) category_id,
-                 JSON_TYPE(JSON_EXTRACT(details_json,'$.after.referencePrice')) price_type
-          FROM inv_master_event WHERE tenant_id=10001 AND resource_id=? ORDER BY id
-          """,
+                  SELECT JSON_UNQUOTE(JSON_EXTRACT(details_json,'$.after.categoryId')) category_id,
+                         JSON_TYPE(JSON_EXTRACT(details_json,'$.after.referencePrice')) price_type
+                  FROM inv_master_event WHERE tenant_id=10001 AND resource_id=? ORDER BY id
+                  """,
                   materialId);
           assertEquals("994030001", events.getFirst().get("category_id"));
           assertEquals("STRING", events.getFirst().get("price_type"));
@@ -1513,7 +1886,8 @@ class EngineeringQueryMySqlIT {
           assertEquals(
               1L,
               db.queryForObject(
-                  "SELECT COUNT(*) FROM inv_bin WHERE tenant_id=10001 AND warehouse_id=? AND code='DEFAULT'",
+                  "SELECT COUNT(*) FROM inv_bin WHERE tenant_id=10001 AND warehouse_id=? AND"
+                      + " code='DEFAULT'",
                   Long.class,
                   warehouseId));
           var updated =
@@ -1541,11 +1915,11 @@ class EngineeringQueryMySqlIT {
     warehouseFixtures();
     db.update(
         """
-        INSERT INTO inv_requisition
-            (id,tenant_id,code,company_id,warehouse_id,task_kind,task_id,task_code,
-             applicant_id,applicant_name,status)
-        VALUES(994020001,10001,'QA-CLEANUP',71002,890000001,'维修',994020000,'QA-MISSING',73001,'测试','已预留')
-        """);
+INSERT INTO inv_requisition
+    (id,tenant_id,code,company_id,warehouse_id,task_kind,task_id,task_code,
+     applicant_id,applicant_name,status)
+VALUES(994020001,10001,'QA-CLEANUP',71002,890000001,'维修',994020000,'QA-MISSING',73001,'测试','已预留')
+""");
     db.update(
         """
         INSERT INTO inv_balance
@@ -1554,10 +1928,10 @@ class EngineeringQueryMySqlIT {
         """);
     db.update(
         """
-        INSERT INTO inv_reservation
-            (id,tenant_id,requisition_id,requisition_line_id,balance_id,quantity,remaining_quantity)
-        VALUES(994020003,10001,994020001,994020009,994020002,3,3)
-        """);
+INSERT INTO inv_reservation
+    (id,tenant_id,requisition_id,requisition_line_id,balance_id,quantity,remaining_quantity)
+VALUES(994020003,10001,994020001,994020009,994020002,3,3)
+""");
     db.update(
         """
         INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)
@@ -1579,7 +1953,8 @@ class EngineeringQueryMySqlIT {
     assertEquals(
         1,
         db.queryForObject(
-            "SELECT row_version FROM inv_balance WHERE id=994020002 AND quantity=10 AND reserved_quantity=0",
+            "SELECT row_version FROM inv_balance WHERE id=994020002 AND quantity=10 AND"
+                + " reserved_quantity=0",
             Integer.class));
     assertEquals(
         0,
@@ -1620,10 +1995,10 @@ class EngineeringQueryMySqlIT {
     var grantId =
         db.queryForObject(
             """
-        SELECT p.id FROM eam_sys_role_menu_permission p
-        JOIN eam_sys_role r ON r.id=p.role_id AND r.tenant_id=p.tenant_id
-        WHERE p.tenant_id=10001 AND r.code='SYS_ADMIN' AND p.menu_key='inventoryQuery'
-        """,
+            SELECT p.id FROM eam_sys_role_menu_permission p
+            JOIN eam_sys_role r ON r.id=p.role_id AND r.tenant_id=p.tenant_id
+            WHERE p.tenant_id=10001 AND r.code='SYS_ADMIN' AND p.menu_key='inventoryQuery'
+            """,
             Long.class);
     for (String table :
         List.of("eam_role_menu_action", "eam_role_menu_scope", "eam_role_menu_target"))
@@ -1658,7 +2033,8 @@ class EngineeringQueryMySqlIT {
           assertTrue(baseline > 0);
           for (long id = 994010100; id < 994010120; id++) {
             db.update(
-                "INSERT INTO inv_warehouse(id,tenant_id,company_id,code,name) VALUES(?,10001,71006,?,?)",
+                "INSERT INTO inv_warehouse(id,tenant_id,company_id,code,name)"
+                    + " VALUES(?,10001,71006,?,?)",
                 id,
                 "QA-EXTRA-" + id,
                 "其他公司仓库");

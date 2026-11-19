@@ -1,14 +1,23 @@
 package com.windasoft.eam.service.label;
 
-import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.label.LabelPrintForm;
 import com.windasoft.eam.dto.label.LabelTemplateForm;
+import com.windasoft.eam.dto.label.LabelTemplateView;
+import com.windasoft.eam.dto.label.LabelTemplateView.EquipmentFields;
+import com.windasoft.eam.dto.label.LabelTemplateView.PrintData;
+import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.label.LabelTemplate;
+import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.repository.label.LabelTemplateRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
-import java.util.*;
+import java.util.List;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -18,26 +27,29 @@ public class LabelTemplateService {
   private final PermissionService permissions;
   private final ObjectMapper json;
   private final LabelLayoutValidator validator;
+  private final EquipmentQueryRepository equipment;
 
   public LabelTemplateService(
       LabelTemplateRepository repository,
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json,
-      LabelLayoutValidator validator) {
+      LabelLayoutValidator validator,
+      EquipmentQueryRepository equipment) {
     this.repository = repository;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
     this.validator = validator;
+    this.equipment = equipment;
   }
 
-  public Map<String, Object> list() {
+  public List<LabelTemplateView> list() {
     permissions.require("equipmentTag", PermissionAction.VIEW);
-    return Map.of("data", repository.list(auth.tenantId()).stream().map(this::view).toList());
+    return repository.list(auth.tenantId()).stream().map(this::view).toList();
   }
 
-  public Map<String, Object> create(LabelTemplateForm f) {
+  public LabelTemplateView create(LabelTemplateForm f) {
     permissions.require("equipmentTag", PermissionAction.CREATE);
     var row = new LabelTemplate();
     row.setTenantId(auth.tenantId());
@@ -45,71 +57,72 @@ public class LabelTemplateService {
     row.setRowVersion(0);
     assign(row, f);
     repository.insert(row);
-    return Map.of("data", view(require(row.getId())));
+    return view(require(row.getId()));
   }
 
-  public Map<String, Object> update(Long id, LabelTemplateForm f) {
+  public LabelTemplateView update(Long id, LabelTemplateForm f) {
     permissions.require("equipmentTag", PermissionAction.EDIT);
     var row = require(id);
     assign(row, f);
-    if (f.rowVersion() == null)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0066");
+    if (f.rowVersion() == null) throw new LocalizedArgumentException("server.common.message0066");
     row.setRowVersion(f.rowVersion());
     if (repository.update(row) != 1)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0067");
-    return Map.of("data", view(require(id)));
+      throw new LocalizedArgumentException("server.common.message0067");
+    return view(require(id));
   }
 
-  public Map<String, Object> delete(Long id) {
+  public void delete(Long id) {
     permissions.require("equipmentTag", PermissionAction.DELETE);
     require(id);
-    repository.delete(id);
-    return Map.of("data", true);
+    repository.delete(auth.tenantId(), id);
   }
 
-  public Map<String, Object> printData(Long id, LabelPrintForm f) {
+  public PrintData printData(Long id, LabelPrintForm form) {
     permissions.require("equipmentTag", PermissionAction.PRINT);
     var template = require(id);
     var rows =
-        f.equipmentIds().stream()
-            .distinct()
+        authorizedEquipment(form.equipmentIds()).stream()
             .map(
-                key -> {
-                  var e = repository.equipment(auth.tenantId(), key);
-                  if (e == null)
-                    throw new com.windasoft.eam.common.LocalizedArgumentException(
-                        "server.common.message0064");
-                  permissions.checkEquipment(e, PermissionAction.VIEW);
-                  return Map.of(
-                      "name",
-                      safe(e.getName()),
-                      "code",
-                      safe(e.getEquipmentCode()),
-                      "owner",
-                      safe(e.getOwnerName()),
-                      "department",
-                      safe(e.getDepartment()),
-                      "model",
-                      safe(e.getModel()));
-                })
+                row ->
+                    new EquipmentFields(
+                        safe(row.getName()),
+                        safe(row.getEquipmentCode()),
+                        safe(row.getOwnerName()),
+                        safe(row.getDepartment()),
+                        safe(row.getModel())))
             .toList();
-    return Map.of("template", view(template), "equipment", rows);
+    return new PrintData(view(template), rows);
+  }
+
+  /** 设备批量读取后按请求顺序逐一授权；重复设备仍只打印一次。 */
+  List<Equipment> authorizedEquipment(List<Long> requestedIds) {
+    var ids = requestedIds.stream().distinct().toList();
+    var byId =
+        equipment.findFacts(auth.tenantId(), ids).stream()
+            .collect(Collectors.toMap(Equipment::getId, Function.identity()));
+    return ids.stream()
+        .map(
+            id -> {
+              var row = byId.get(id);
+              if (row == null) {
+                throw new LocalizedArgumentException("server.common.message0064");
+              }
+              permissions.checkEquipment(row, PermissionAction.VIEW);
+              return row;
+            })
+        .toList();
   }
 
   public LabelTemplate require(Long id) {
     var row = repository.find(auth.tenantId(), id);
-    if (row == null)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0068");
+    if (row == null) throw new LocalizedArgumentException("server.common.message0068");
     return row;
   }
 
   private void assign(LabelTemplate row, LabelTemplateForm f) {
-    if (f.layout() != null && !f.layout().isNull())
-      com.windasoft.eam.common.printing.GridValidator.validate(
-          f.layout(), f.widthMm().doubleValue(), f.heightMm().doubleValue());
-    else validator.validateElements(f);
+    validator.validate(f);
     if (repository.nameCount(auth.tenantId(), f.name().trim(), row.getId()) > 0)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0069");
+      throw new LocalizedArgumentException("server.common.message0069");
     row.setName(f.name().trim());
     row.setWidthMm(f.widthMm());
     row.setHeightMm(f.heightMm());
@@ -118,20 +131,19 @@ public class LabelTemplateService {
     row.setLayoutJson(f.layout() == null || f.layout().isNull() ? null : f.layout().toString());
   }
 
-  private Map<String, Object> view(LabelTemplate row) {
+  private LabelTemplateView view(LabelTemplate row) {
     try {
-      var result = new LinkedHashMap<String, Object>();
-      result.put("id", String.valueOf(row.getId()));
-      result.put("name", row.getName());
-      result.put("widthMm", row.getWidthMm());
-      result.put("heightMm", row.getHeightMm());
-      result.put("remark", safe(row.getRemark()));
-      result.put("elements", json.readTree(row.getElementsJson()));
-      result.put("layout", row.getLayoutJson() == null ? null : json.readTree(row.getLayoutJson()));
-      result.put("rowVersion", row.getRowVersion());
-      result.put("updatedAt", row.getUpdatedAt() == null ? "" : row.getUpdatedAt().toString());
-      return result;
-    } catch (Exception e) {
+      return new LabelTemplateView(
+          String.valueOf(row.getId()),
+          row.getName(),
+          row.getWidthMm(),
+          row.getHeightMm(),
+          safe(row.getRemark()),
+          json.readTree(row.getElementsJson()),
+          row.getLayoutJson() == null ? null : json.readTree(row.getLayoutJson()),
+          row.getRowVersion(),
+          row.getUpdatedAt() == null ? "" : row.getUpdatedAt().toString());
+    } catch (JsonProcessingException e) {
       throw new IllegalStateException("模板内容读取失败", e);
     }
   }

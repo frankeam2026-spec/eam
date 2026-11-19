@@ -1,5 +1,12 @@
 package com.windasoft.eam.controller.experience;
 
+import com.windasoft.eam.dto.common.DataResponse;
+import com.windasoft.eam.dto.experience.ExperienceDetails.Anomaly;
+import com.windasoft.eam.dto.experience.ExperienceDetails.RepairPlan;
+import com.windasoft.eam.dto.experience.ExperienceCommands.ChangeAnomaly;
+import com.windasoft.eam.dto.experience.ExperienceCommands.ChangeRepairPlan;
+import com.windasoft.eam.dto.experience.ExperienceCommands.CreateAnomaly;
+import com.windasoft.eam.dto.experience.ExperienceCommands.SaveRepairPlan;
 import com.windasoft.eam.service.experience.AnomalyService;
 import com.windasoft.eam.service.experience.ExperienceExportService;
 import com.windasoft.eam.service.experience.MaterialCustodyService;
@@ -46,18 +53,18 @@ public class ExperienceController {
   }
 
   @GetMapping("/anomalies/{id}")
-  public Object detail(@PathVariable long id) {
-    return Map.of("data", anomalies.detail(id));
+  public DataResponse<Anomaly> detail(@PathVariable long id) {
+    return new DataResponse<>(anomalies.detail(id));
   }
 
   @PostMapping("/anomalies")
-  public Object create(@RequestBody Map<String, Object> b) {
-    return Map.of("data", anomalies.create(b));
+  public DataResponse<Anomaly> create(@RequestBody CreateAnomaly b) {
+    return new DataResponse<>(anomalies.create(b));
   }
 
   @PostMapping("/anomalies/{id}/actions")
-  public Object action(@PathVariable long id, @RequestBody Map<String, Object> b) {
-    return Map.of("data", anomalies.action(id, b));
+  public DataResponse<Anomaly> action(@PathVariable long id, @RequestBody ChangeAnomaly b) {
+    return new DataResponse<>(anomalies.action(id, b));
   }
 
   @PostMapping("/anomalies/backfill")
@@ -80,23 +87,23 @@ public class ExperienceController {
   }
 
   @GetMapping("/repair-plans/{id}")
-  public Object plan(@PathVariable long id) {
-    return Map.of("data", anomalies.planDetail(id));
+  public DataResponse<RepairPlan> plan(@PathVariable long id) {
+    return new DataResponse<>(anomalies.planDetail(id));
   }
 
   @PostMapping("/repair-plans")
-  public Object createPlan(@RequestBody Map<String, Object> b) {
-    return Map.of("data", anomalies.savePlan(null, b));
+  public DataResponse<RepairPlan> createPlan(@RequestBody SaveRepairPlan b) {
+    return new DataResponse<>(anomalies.savePlan(null, b));
   }
 
   @PutMapping("/repair-plans/{id}")
-  public Object savePlan(@PathVariable long id, @RequestBody Map<String, Object> b) {
-    return Map.of("data", anomalies.savePlan(id, b));
+  public DataResponse<RepairPlan> savePlan(@PathVariable long id, @RequestBody SaveRepairPlan b) {
+    return new DataResponse<>(anomalies.savePlan(id, b));
   }
 
   @PostMapping("/repair-plans/{id}/actions")
-  public Object planAction(@PathVariable long id, @RequestBody Map<String, Object> b) {
-    return Map.of("data", anomalies.planAction(id, b));
+  public DataResponse<RepairPlan> planAction(@PathVariable long id, @RequestBody ChangeRepairPlan b) {
+    return new DataResponse<>(anomalies.planAction(id, b));
   }
 
   @GetMapping("/material-custody")

@@ -5,6 +5,9 @@ import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.SuccessResponse;
+import com.windasoft.eam.dto.experience.WorkTaskPage;
+import com.windasoft.eam.dto.experience.WorkTaskPage.Choice;
+import com.windasoft.eam.dto.experience.WorkTaskPage.ScopeChoices;
 import com.windasoft.eam.dto.system.WorkInboxViews;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.experience.HomePreferenceRepository;
@@ -141,6 +144,17 @@ public class WorkCenterService {
       List<Map<String, Object>> values,
       String module,
       boolean team) {
+    var owners = new HashSet<Long>();
+    var taskIds = new HashSet<Long>();
+    for (var task : values) {
+      String owner = text(task, "ownerId");
+      if (!owner.isBlank()) {
+        owners.add(id(owner));
+      }
+      taskIds.add(id(task.get("id")));
+    }
+    var names = repository.userNames(auth.tenantId(), owners);
+    var creators = repository.taskCreators(auth.tenantId(), taskIds, module.equals("maintenance"));
     for (var t : values) {
       String owner = text(t, "ownerId");
       var v = new LinkedHashMap<String, Object>();
@@ -149,16 +163,9 @@ public class WorkCenterService {
       v.put("code", t.get("code"));
       v.put("name", text(t, "equipmentName"));
       v.put("status", t.get("status"));
-      var ownerRows =
-          owner.isBlank()
-              ? List.<Map<String, Object>>of()
-              : repository.findUserName(auth.tenantId(), id(owner));
-      v.put("owner", ownerRows.isEmpty() ? "" : ownerRows.getFirst().get("display_name"));
+      v.put("owner", owner.isBlank() ? "" : Objects.toString(names.get(id(owner)), ""));
       v.put("ownerId", owner);
-      var origin = repository.findTaskCreator(auth.tenantId(), id(t.get("id")), module);
-      v.put(
-          "creatorId",
-          origin.isEmpty() ? "" : Objects.toString(origin.getFirst().get("creator_id"), ""));
+      v.put("creatorId", Objects.toString(creators.get(id(t.get("id"))), ""));
       if (!team
           && !owner.equals(Long.toString(auth.userId()))
           && !text(v, "creatorId").equals(Long.toString(auth.userId()))
@@ -178,7 +185,7 @@ public class WorkCenterService {
         && l.stream().anyMatch(v -> v.toString().equals(Long.toString(id)));
   }
 
-  public Object queue(
+  public WorkTaskPage queue(
       String state,
       String module,
       String search,
@@ -222,38 +229,45 @@ public class WorkCenterService {
         filtered.stream()
             .skip((long) (Math.max(1, page) - 1) * Math.min(100, Math.max(1, size)))
             .limit(Math.min(100, Math.max(1, size)))
-            .map(
-                r -> {
-                  var v = new LinkedHashMap<>(r);
-                  v.put("orderId", r.get("id"));
-                  v.put("orderNo", r.get("code"));
-                  v.put("equipmentName", r.get("name"));
-                  v.put("kind", r.get("status"));
-                  v.put("title", r.get("name"));
-                  v.put("todo", 0);
-                  v.put("done", 0);
-                  v.put("isRead", 1);
-                  return v;
-                })
+            .map(row -> new WorkTaskPage.Row(
+                string(row, "id"), string(row, "module"), string(row, "code"), string(row, "name"),
+                string(row, "status"), string(row, "owner"), string(row, "ownerId"),
+                string(row, "creatorId"), string(row, "time"), string(row, "due"),
+                string(row, "departmentId"), string(row, "companyId"), string(row, "url")))
             .toList();
-    return Map.of("data", values, "total", filtered.size(), "moduleCounts", counts);
+    return new WorkTaskPage(values, filtered.size(), counts);
   }
 
-  public Object filterChoices(boolean team) {
+  private static String string(Map<String, Object> row, String field) {
+    return Objects.toString(row.get(field), null);
+  }
+
+  public ScopeChoices filterChoices(boolean team) {
     if (team) permissions.require("workspace", PermissionAction.VIEW_TEAM_WORK);
     var values = tasks(team);
-    var companies = new TreeMap<String, Map<String, Object>>();
-    var departments = new TreeMap<String, Map<String, Object>>();
-    for (var row : values)
-      for (var key : List.of("companyId", "departmentId")) {
-        String value = text(row, key);
-        if (value.isBlank()) continue;
-        var units = repository.findOrganizationName(auth.tenantId(), id(value));
-        if (!units.isEmpty())
-          (key.equals("companyId") ? companies : departments)
-              .put(value, Map.of("id", value, "name", units.getFirst().get("name")));
+    var companyIds = new TreeSet<String>();
+    var departmentIds = new TreeSet<String>();
+    for (var task : values) {
+      String company = text(task, "companyId");
+      String department = text(task, "departmentId");
+      if (!company.isBlank()) {
+        companyIds.add(company);
       }
-    return Map.of("companies", companies.values(), "departments", departments.values());
+      if (!department.isBlank()) {
+        departmentIds.add(department);
+      }
+    }
+    var orgIds = new HashSet<Long>();
+    companyIds.forEach(value -> orgIds.add(id(value)));
+    departmentIds.forEach(value -> orgIds.add(id(value)));
+    var names = repository.organizationNames(auth.tenantId(), orgIds);
+    return new ScopeChoices(organizationChoices(companyIds, names),
+        organizationChoices(departmentIds, names));
+  }
+
+  private List<Choice> organizationChoices(Set<String> ids, Map<Long, String> names) {
+    return ids.stream().filter(value -> names.containsKey(id(value)))
+        .map(value -> new Choice(value, names.get(id(value)))).toList();
   }
 
   public Object block(Map<String, Object> layout) {
@@ -436,8 +450,8 @@ public class WorkCenterService {
       }
       if (url.matches("/anomalies/[0-9]+")) {
         long key = Long.parseLong(url.substring(url.lastIndexOf('/') + 1));
-        var t = (Map<String, Object>) anomalies.detail(key);
-        return Map.of("id", url, "name", text(t, "code"), "url", url);
+        var anomaly = anomalies.detail(key);
+        return Map.of("id", url, "name", anomaly.code(), "url", url);
       }
     } catch (IllegalArgumentException ignored) {
       return null;
