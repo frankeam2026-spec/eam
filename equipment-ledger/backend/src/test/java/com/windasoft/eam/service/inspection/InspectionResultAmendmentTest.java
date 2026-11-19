@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
@@ -53,7 +54,7 @@ class InspectionResultAmendmentTest {
         "review":{"decision":"accept","reviewerId":"30"},"attachments":[]}
         """);
     when(repository.loadTask(1L, 7L, true)).thenReturn(List.of(row));
-    when(access.access(row, "查看")).thenReturn(true);
+    when(access.access(row, PermissionAction.VIEW)).thenReturn(true);
     when(access.canAmendResult(row)).thenReturn(true);
     service =
         new InspectionTaskService(
@@ -121,7 +122,7 @@ class InspectionResultAmendmentTest {
 
   @Test void amendmentRequiresItsOwnPermissionAndDataScopeOnlyForDailyTerminalTasks() {
     var permissions = mock(PermissionService.class);
-    when(permissions.inspection("daily", "修改结果"))
+    when(permissions.inspection("daily", PermissionAction.AMEND_RESULT))
         .thenReturn(new PermissionScope(false, null, Set.of(21L), false));
     var policy = new InspectionTaskAccessService(json, auth, permissions);
     row.put("department_id", 21L);
@@ -140,7 +141,7 @@ class InspectionResultAmendmentTest {
     row.put("tenant_id", 2L);
     assertFalse(policy.canAmendResult(row));
     row.put("tenant_id", 1L);
-    when(permissions.inspection("daily", "修改结果"))
+    when(permissions.inspection("daily", PermissionAction.AMEND_RESULT))
         .thenThrow(new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN));
     assertFalse(policy.canAmendResult(row));
     verify(permissions, never()).inspection(anyString(), eq("执行"));

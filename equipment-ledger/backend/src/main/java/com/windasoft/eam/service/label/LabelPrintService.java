@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.label;
 
 import com.fasterxml.jackson.databind.*;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.label.LabelPdfForm;
 import com.windasoft.eam.dto.label.LabelTemplateForm;
 import com.windasoft.eam.entity.equipment.Equipment;
@@ -38,7 +39,7 @@ public class LabelPrintService {
   }
 
   public byte[] pdf(Long id, LabelPdfForm f) throws java.io.IOException {
-    permissions.require("equipmentTag", "打印");
+    permissions.require("equipmentTag", PermissionAction.PRINT);
     var t = templates.require(id);
     List<Map<String, String>> data =
         f.equipmentIds().stream()
@@ -49,7 +50,7 @@ public class LabelPrintService {
                   if (e == null)
                     throw new com.windasoft.eam.common.LocalizedArgumentException(
                         "server.common.message0064");
-                  permissions.checkEquipment(e, "查看");
+                  permissions.checkEquipment(e, PermissionAction.VIEW);
                   return equipmentData(e);
                 })
             .toList();
@@ -66,7 +67,7 @@ public class LabelPrintService {
                 .filter(
                     r -> {
                       try {
-                        permissions.checkRepair(r, "查看");
+                        permissions.checkRepair(r, PermissionAction.VIEW);
                         return true;
                       } catch (org.springframework.web.server.ResponseStatusException denied) {
                         return false;
@@ -100,7 +101,7 @@ public class LabelPrintService {
   }
 
   public byte[] preview(LabelTemplateForm f) throws java.io.IOException {
-    permissions.require("equipmentTag", "查看");
+    permissions.require("equipmentTag", PermissionAction.VIEW);
     if (f.layout() != null && !f.layout().isNull())
       com.windasoft.eam.common.printing.GridValidator.validate(
           f.layout(), f.widthMm().doubleValue(), f.heightMm().doubleValue());

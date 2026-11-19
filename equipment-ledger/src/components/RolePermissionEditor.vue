@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
 import { enumLabel } from '../i18n';import { tr } from '../i18n';
 
 import AppIcon from './common/AppIcon.vue';
@@ -100,14 +101,14 @@ function setGrant(key: string, next: MenuGrant) {
 }
 function toggleAction(key: string, action: string) {
   const current = grant(key);
-  if (action === '查看' && current.actions.includes(action)) {
+  if (action === PermissionAction.VIEW && current.actions.includes(action)) {
     setGrant(key, { actions: [], dataScopes: [], orgIds: [] });
     return;
   }
   const actions = current.actions.includes(action)
     ? current.actions.filter((item) => item !== action)
     : [...current.actions, action];
-  if (actions.length && !actions.includes('查看')) actions.unshift('查看');
+  if (actions.length && !actions.includes(PermissionAction.VIEW)) actions.unshift(PermissionAction.VIEW);
   setGrant(key, {
     ...current,
     actions,

@@ -87,6 +87,36 @@ class SystemUserQueryMySqlIT {
   }
 
   @Test
+  void statusLabelsMatchFilterKeywordAndExport() {
+    long enabled = IdWorker.getId();
+    long disabled = IdWorker.getId();
+    String prefix = "activation-" + enabled;
+    db.update(
+        """
+        INSERT INTO eam_sys_user(id,tenant_id,account,display_name,org_id,status)
+        VALUES(?,10001,?,'状态测试',71003,1),(?,10001,?,'状态测试',71003,0)
+        """,
+        enabled,
+        prefix + "-on",
+        disabled,
+        prefix + "-off");
+
+    for (var expected : Map.of("启用", enabled, "停用", disabled).entrySet()) {
+      String label = expected.getKey();
+      var statusFilter =
+          ListQuery.from(Map.of("q", prefix, "filters", "{\"status\":\"" + label + "\"}"));
+      var statusKeyword =
+          ListQuery.from(Map.of("q", label, "filters", "{\"account\":\"" + prefix + "\"}"));
+      var selected = users.query(statusFilter).data();
+      assertEquals(1, selected.size());
+      assertEquals(expected.getValue().toString(), selected.getFirst().id());
+      assertEquals(label, selected.getFirst().status());
+      assertEquals(selected, users.query(statusKeyword).data());
+      assertEquals(selected, users.export(statusFilter));
+    }
+  }
+
+  @Test
   void hiddenRoleNamesStayHiddenWithoutChangingTheExistingIdsContract() {
     when(permissions.allowed("role", "查看")).thenReturn(false);
     var rows = users.query(ListQuery.from(Map.of("size", "100"))).data();

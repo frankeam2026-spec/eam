@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
 import { tr } from '../i18n';
 import { computed, onMounted, onBeforeUnmount, nextTick, inject, ref, watch, type Ref } from 'vue';
 import {
@@ -320,7 +321,7 @@ async function edit(id?: string, version?: string) {
   try {
     if (id) {
       form.value = (await workflowApi.detail(id, version)).data;
-      readonly.value = !!version || !auth.can('workflow', '编辑');
+      readonly.value = !!version || !auth.can('workflow', PermissionAction.EDIT);
     } else {
       form.value = {
         id: null,
@@ -672,10 +673,10 @@ watch(
 onMounted(async () => {
   try {
     companies.value = (await workflowApi.companies()).data;
-    if (auth.can('workflow', '编辑'))
-      editCompanies.value = (await workflowApi.companies('编辑')).data;
-    if (auth.can('workflow', '发布'))
-      settingCompanies.value = (await workflowApi.companies('发布')).data;
+    if (auth.can('workflow', PermissionAction.EDIT))
+      editCompanies.value = (await workflowApi.companies(PermissionAction.EDIT)).data;
+    if (auth.can('workflow', PermissionAction.PUBLISH))
+      settingCompanies.value = (await workflowApi.companies(PermissionAction.PUBLISH)).data;
     await load();
   } catch (e) {
     message(e);
@@ -711,11 +712,11 @@ onMounted(async () => {
             load();
           "
           >{{ tr('workflow.ui.027') }}</ElButton
-        ><ElButton v-if="auth.can('workflow', '编辑')" type="primary" @click="edit()">{{
+        ><ElButton v-if="auth.can('workflow', PermissionAction.EDIT)" type="primary" @click="edit()">{{
           tr('workflow.ui.028')
         }}</ElButton>
         <ElButton
-          v-if="auth.can('workflow', '发布')"
+          v-if="auth.can('workflow', PermissionAction.PUBLISH)"
           @click="
             settingCompany = settingCompanies.some((c) => c.id === company)
               ? company
@@ -756,7 +757,7 @@ onMounted(async () => {
           ><template #default="s"
             ><ElButton link @click="edit(s.row.id)">{{ tr('workflow.ui.035') }}</ElButton
             ><ElButton
-              v-if="s.row.active && auth.can('workflow', '停用')"
+              v-if="s.row.active && auth.can('workflow', PermissionAction.DISABLE)"
               link
               type="danger"
               @click="workflowApi.disable(s.row.id, s.row.rowVersion).then(load).catch(message)"
@@ -886,13 +887,13 @@ onMounted(async () => {
               <AppFormField :label="tr('workflow.advanced.002')"
                 ><ElInput
                   v-model="node.script.outputKey"
-                  :disabled="!auth.can('workflow', '脚本配置')"
+                  :disabled="!auth.can('workflow', PermissionAction.CONFIGURE_SCRIPT)"
                   maxlength="80"
               /></AppFormField>
               <AppFormField :label="tr('workflow.advanced.003')"
                 ><ElSelect
                   v-model="node.script.outputType"
-                  :disabled="!auth.can('workflow', '脚本配置')"
+                  :disabled="!auth.can('workflow', PermissionAction.CONFIGURE_SCRIPT)"
                   ><ElOption :label="tr('workflow.advanced.004')" value="NUMBER" /><ElOption
                     :label="tr('workflow.advanced.005')"
                     value="TEXT" /><ElOption
@@ -907,7 +908,7 @@ onMounted(async () => {
                 ></AppFormField
               >
               <ElButton
-                :disabled="!auth.can('workflow', '脚本试算')"
+                :disabled="!auth.can('workflow', PermissionAction.TRIAL_SCRIPT)"
                 @click="
                   trialOpen = true;
                   trace = [];
@@ -1059,7 +1060,7 @@ onMounted(async () => {
           tr('workflow.ui.059')
         }}</ElButton
         ><ElButton
-          v-if="!readonly && auth.can('workflow', '发布')"
+          v-if="!readonly && auth.can('workflow', PermissionAction.PUBLISH)"
           type="primary"
           :loading="busy"
           @click="publish"
@@ -1135,7 +1136,7 @@ onMounted(async () => {
               v-for="v in baseVariables.filter((v) => v.available)"
               :key="v.key"
               text
-              :disabled="scriptBusy || readonly || !auth.can('workflow', '脚本配置')"
+              :disabled="scriptBusy || readonly || !auth.can('workflow', PermissionAction.CONFIGURE_SCRIPT)"
               @click="
                 scriptEditor?.insert(
                   v.key.startsWith('lines.')
@@ -1149,7 +1150,7 @@ onMounted(async () => {
           <WorkflowScriptEditor
             ref="scriptEditor"
             v-model="node.script.source"
-            :readonly="scriptBusy || readonly || !auth.can('workflow', '脚本配置')"
+            :readonly="scriptBusy || readonly || !auth.can('workflow', PermissionAction.CONFIGURE_SCRIPT)"
           />
           <p class="expression-preview">{{ tr('workflow.advanced.012') }}</p>
         </ElTabPane>
@@ -1168,7 +1169,7 @@ onMounted(async () => {
       </div>
       <template #footer
         ><ElButton
-          :disabled="!form?.companyId || !auth.can('workflow', '脚本试算')"
+          :disabled="!form?.companyId || !auth.can('workflow', PermissionAction.TRIAL_SCRIPT)"
           :loading="scriptBusy"
           @click="scriptTrial"
           >{{ tr('workflow.advanced.023') }}</ElButton

@@ -17,6 +17,7 @@ import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.domain.maintenance.MaintenanceCalculationMode;
 import com.windasoft.eam.domain.maintenance.MaintenanceReviewMode;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.maintenance.MaintenanceExecutionResult;
 import com.windasoft.eam.entity.maintenance.MaintenanceTask;
 import com.windasoft.eam.repository.common.TaskSourceRelationsRepository;
@@ -295,7 +296,7 @@ public class MaintenanceGenerationService {
     try {
       allowed =
           permissions
-              .maintenance("plans", "编辑")
+              .maintenance("plans", PermissionAction.EDIT)
               .matches(null, plan.getDepartmentId(), plan.getCreatorId(), auth.userId());
     } catch (ResponseStatusException denied) {
       allowed = false;

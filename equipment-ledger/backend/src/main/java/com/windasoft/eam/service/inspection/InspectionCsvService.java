@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.inspection;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.common.ActivationStatus;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.service.business.*;
 import java.io.PrintWriter;
@@ -169,7 +170,9 @@ public class InspectionCsvService {
                                         && row.get("customFieldLabels") instanceof Map<?, ?> extra
                                     ? extra.get(key.substring(7))
                                     : key.equals("enabled")
-                                        ? (Boolean.TRUE.equals(row.get(key)) ? "启用" : "停用")
+                                        ? ActivationStatus.fromEnabled(
+                                                Boolean.TRUE.equals(row.get(key)))
+                                            .label()
                                         : key.equals("status")
                                             ? com.windasoft.eam.common.SystemEnumLabels.display(
                                                 "status", row.get(key))

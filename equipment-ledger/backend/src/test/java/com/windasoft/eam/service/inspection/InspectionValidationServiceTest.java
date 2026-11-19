@@ -3,6 +3,7 @@ package com.windasoft.eam.service.inspection;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
@@ -87,7 +88,7 @@ class InspectionValidationServiceTest {
   @Test
   void equipmentValidationRejectsObjectsOutsidePermissionScope() {
     when(auth.userId()).thenReturn(99L);
-    when(permissions.inspection("daily-plans", "新增"))
+    when(permissions.inspection("daily-plans", PermissionAction.CREATE))
         .thenReturn(new PermissionScope(false, null, Set.of(), false));
     var equipment =
         Map.<String, Object>of(
@@ -97,6 +98,6 @@ class InspectionValidationServiceTest {
 
     assertThrows(
         ResponseStatusException.class,
-        () -> service().checkEquipment(equipment, "daily-plans", "新增"));
+        () -> service().checkEquipment(equipment, "daily-plans", PermissionAction.CREATE));
   }
 }

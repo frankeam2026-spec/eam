@@ -1,4 +1,5 @@
 import { tr } from './i18n';
+import { PermissionAction } from './permissionActions';
 export type DataScope =
   | 'all'
   | 'company'
@@ -14,8 +15,8 @@ export type MenuGrants = Record<string, MenuGrant>;
 export type PermissionMenu = { key: string; name: string; actions: string[]; scopes: DataScope[] };
 
 export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
-  {get name(){return tr('ai.settings');},menus:[{key:'aiSetting',get name(){return tr('ai.settings');},actions:['查看','编辑'],scopes:['all']}]},
-  {get name(){return tr('knowledge.menu');},menus:[{key:'knowledge',get name(){return tr('knowledge.menu');},actions:['查看','编辑','发布','停用'],scopes:['all','company','companyTree','companies']}]},
+  {get name(){return tr('ai.settings');},menus:[{key:'aiSetting',get name(){return tr('ai.settings');},actions:[PermissionAction.VIEW,PermissionAction.EDIT],scopes:['all']}]},
+  {get name(){return tr('knowledge.menu');},menus:[{key:'knowledge',get name(){return tr('knowledge.menu');},actions:[PermissionAction.VIEW,PermissionAction.EDIT,PermissionAction.PUBLISH,PermissionAction.DISABLE],scopes:['all','company','companyTree','companies']}]},
   {
     get name() {
       return tr('ui.common.label1');
@@ -26,7 +27,7 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.common.label1');
         },
-        actions: ['查看', '团队工作查看'],
+        actions: [PermissionAction.VIEW, PermissionAction.VIEW_TEAM_WORK],
         scopes: ['all'],
       },
     ],
@@ -41,7 +42,14 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0002');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导入', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.IMPORT,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'department',
@@ -53,13 +61,20 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
           'companies',
         ],
       },
-      // { key: 'category', get name(){return tr('ui.equipment.text1082');}, actions: ['查看','新增','编辑','删除'], scopes: ['all'] },
+      // { key: 'category', get name(){return tr('ui.equipment.text1082');}, actions: [PermissionAction.VIEW,PermissionAction.CREATE,PermissionAction.EDIT,PermissionAction.DELETE], scopes: ['all'] },
       {
         key: 'equipmentTag',
         get name() {
           return tr('ui.equipment.text0003');
         },
-        actions: ['查看', '新增', '编辑', '删除', '打印', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.PRINT,
+          PermissionAction.EXPORT,
+        ],
         scopes: ['all'],
       },
     ],
@@ -74,7 +89,15 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0005');
         },
-        actions: ['查看', '新增', '消除', '报修', '安排维修', '作废', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.RESOLVE_ANOMALY,
+          PermissionAction.REPORT,
+          PermissionAction.SCHEDULE_REPAIR,
+          PermissionAction.VOID,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'company',
@@ -91,7 +114,15 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0209');
         },
-        actions: ['查看', '新增', '编辑', '启用', '生成工单', '取消', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.ENABLE,
+          PermissionAction.GENERATE_REPAIR_ORDER,
+          PermissionAction.CANCEL,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'company',
@@ -108,7 +139,7 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0025');
         },
-        actions: ['查看', '登记暂存', '导出'],
+        actions: [PermissionAction.VIEW, PermissionAction.RECORD_CUSTODY, PermissionAction.EXPORT],
         scopes: [
           'all',
           'company',
@@ -125,7 +156,17 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0006');
         },
-        actions: ['查看', '报修', '编辑', '派工', '处理', '验收', '撤回', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.REPORT,
+          PermissionAction.EDIT,
+          PermissionAction.DISPATCH,
+          PermissionAction.PROCESS,
+          PermissionAction.ACCEPT,
+          PermissionAction.WITHDRAW,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'company',
@@ -149,7 +190,13 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0008');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: ['all'],
       },
       {
@@ -157,7 +204,13 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0009');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'company',
@@ -174,7 +227,13 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0010');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'company',
@@ -191,7 +250,14 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0011');
         },
-        actions: ['查看', '编辑', '执行', '验收', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.EDIT,
+          PermissionAction.EXECUTE,
+          PermissionAction.ACCEPT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'company',
@@ -215,7 +281,13 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0325');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: ['all'],
       },
       {
@@ -223,7 +295,13 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0013');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'company',
@@ -240,7 +318,13 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0014');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'company',
@@ -257,7 +341,16 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0015');
         },
-        actions: ['查看', '执行', '修改结果', '审核', '转派', '免检', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.EXECUTE,
+          PermissionAction.AMEND_RESULT,
+          PermissionAction.REVIEW,
+          PermissionAction.TRANSFER,
+          PermissionAction.EXEMPT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'company',
@@ -274,7 +367,13 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0016');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'company',
@@ -291,7 +390,14 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0017');
         },
-        actions: ['查看', '执行', '审核', '转派', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.EXECUTE,
+          PermissionAction.REVIEW,
+          PermissionAction.TRANSFER,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'company',
@@ -315,7 +421,16 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0019');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导入', '导出', '查看金额', '编辑参考价'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.IMPORT,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT,
+          PermissionAction.EDIT_REFERENCE_PRICE,
+        ],
         scopes: ['all'],
       },
       {
@@ -323,7 +438,13 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.common.label3');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
@@ -331,7 +452,15 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0021');
         },
-        actions: ['查看', '新增', '编辑', '删除', '入库', '导出', '查看金额'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.STOCK_IN,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT,
+        ],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
@@ -340,17 +469,17 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
           return tr('ui.equipment.text0023');
         },
         actions: [
-          '查看',
-          '新增直接出库',
-          '编辑草稿',
-          '删除草稿',
-          '预留',
-          '释放预留',
-          '确认出库',
-          '关闭剩余需求',
-          '导出',
-          '打印',
-          '查看金额',
+          PermissionAction.VIEW,
+          PermissionAction.CREATE_DIRECT_OUTBOUND,
+          PermissionAction.EDIT_DRAFT,
+          PermissionAction.DELETE_DRAFT,
+          PermissionAction.RESERVE,
+          PermissionAction.RELEASE_RESERVATION,
+          PermissionAction.CONFIRM_ISSUE,
+          PermissionAction.CLOSE_REMAINDER,
+          PermissionAction.EXPORT,
+          PermissionAction.PRINT,
+          PermissionAction.VIEW_AMOUNT,
         ],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
@@ -359,7 +488,14 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0022');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导出', '查看金额'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT,
+        ],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
@@ -367,7 +503,15 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0026');
         },
-        actions: ['查看', '新增', '编辑', '删除', '入库', '导出', '查看金额'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.STOCK_IN,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT,
+        ],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
@@ -375,7 +519,16 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0027');
         },
-        actions: ['查看', '新增', '编辑', '删除', '出库', '入库', '导出', '查看金额'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.STOCK_OUT,
+          PermissionAction.STOCK_IN,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT,
+        ],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
@@ -383,7 +536,16 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0028');
         },
-        actions: ['查看', '新增', '编辑', '删除', '出库', '入库', '导出', '查看金额'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.STOCK_OUT,
+          PermissionAction.STOCK_IN,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT,
+        ],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
@@ -391,7 +553,16 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0029');
         },
-        actions: ['查看', '新增', '编辑', '删除', '入库', '导入', '导出', '查看金额'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.STOCK_IN,
+          PermissionAction.IMPORT,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT,
+        ],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
@@ -399,7 +570,15 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0030');
         },
-        actions: ['查看', '新增', '编辑', '删除', '冲销', '导出', '查看金额'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.REVERSE,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT,
+        ],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
       {
@@ -407,7 +586,12 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0024');
         },
-        actions: ['查看', '导出', '冻结', '查看金额'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.EXPORT,
+          PermissionAction.FREEZE,
+          PermissionAction.VIEW_AMOUNT,
+        ],
         scopes: ['all', 'company', 'companyTree', 'companies', 'warehouse'],
       },
     ],
@@ -422,7 +606,12 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0035');
         },
-        actions: ['查看', '新增', '编辑', '删除'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+        ],
         scopes: ['all', 'company', 'companyTree', 'companies'],
       },
       {
@@ -430,7 +619,7 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0032');
         },
-        actions: ['查看', '编辑', '发布'],
+        actions: [PermissionAction.VIEW, PermissionAction.EDIT, PermissionAction.PUBLISH],
         scopes: ['all'],
       },
       {
@@ -438,7 +627,7 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0033');
         },
-        actions: ['查看'],
+        actions: [PermissionAction.VIEW],
         scopes: ['all'],
       },
       {
@@ -446,19 +635,25 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('language.manager.menu');
         },
-        actions: ['查看'],
+        actions: [PermissionAction.VIEW],
         scopes: ['all'],
       },
-      {key:'workflow',name:'审批流程',actions:['查看','编辑','发布','停用','脚本配置','脚本发布','脚本试算'],scopes:['all','company','companyTree','companies']},
-      {key:'notificationPolicy',get name(){return tr('notify.policies');},actions:['查看','编辑'],scopes:['all']},
-      {key:'notificationChannel',get name(){return tr('notify.channels');},actions:['查看','编辑'],scopes:['all']},
-      {key:'notificationDelivery',get name(){return tr('notify.deliveries');},actions:['查看','重试'],scopes:['all']},
+      {key:'workflow',name:'审批流程',actions:[PermissionAction.VIEW,PermissionAction.EDIT,PermissionAction.PUBLISH,PermissionAction.DISABLE,PermissionAction.CONFIGURE_SCRIPT,PermissionAction.PUBLISH_SCRIPT,PermissionAction.TRIAL_SCRIPT],scopes:['all','company','companyTree','companies']},
+      {key:'notificationPolicy',get name(){return tr('notify.policies');},actions:[PermissionAction.VIEW,PermissionAction.EDIT],scopes:['all']},
+      {key:'notificationChannel',get name(){return tr('notify.channels');},actions:[PermissionAction.VIEW,PermissionAction.EDIT],scopes:['all']},
+      {key:'notificationDelivery',get name(){return tr('notify.deliveries');},actions:[PermissionAction.VIEW,PermissionAction.RETRY],scopes:['all']},
       {
         key: 'homeTemplate',
         get name() {
           return tr('ui.equipment.text0034');
         },
-        actions: ['查看', '新增', '编辑', '发布', '停用'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.PUBLISH,
+          PermissionAction.DISABLE,
+        ],
         scopes: ['all'],
       },
       {
@@ -466,7 +661,12 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0036');
         },
-        actions: ['查看', '新增', '编辑', '删除'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+        ],
         scopes: [
           'all',
           'company',
@@ -482,7 +682,16 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0037');
         },
-        actions: ['查看', '新增', '编辑', '停用', '分配角色', '删除', '导入', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DISABLE,
+          PermissionAction.ASSIGN_ROLE,
+          PermissionAction.DELETE,
+          PermissionAction.IMPORT,
+          PermissionAction.EXPORT,
+        ],
         scopes: [
           'all',
           'company',
@@ -498,7 +707,14 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0038');
         },
-        actions: ['查看', '新增', '编辑', '授权', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.AUTHORIZE,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: ['all'],
       },
       {
@@ -506,7 +722,13 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0039');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT,
+        ],
         scopes: ['all'],
       },
       {
@@ -514,7 +736,14 @@ export const permissionGroups: { name: string; menus: PermissionMenu[] }[] = [
         get name() {
           return tr('ui.equipment.text0040');
         },
-        actions: ['查看', '新增', '编辑', '删除', '导入', '导出'],
+        actions: [
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.IMPORT,
+          PermissionAction.EXPORT,
+        ],
         scopes: ['all'],
       },
     ],
@@ -548,15 +777,15 @@ export function scopeLabel(scope: DataScope, menuKey: string): string {
 }
 
 const oldAction: Record<string, string> = {
-  view: '查看',
-  create: '新增',
-  edit: '编辑',
-  delete: '删除',
-  disable: '停用',
-  dispatch: '派工',
-  process: '处理',
-  accept: '验收',
-  export: '导出',
+  view: PermissionAction.VIEW,
+  create: PermissionAction.CREATE,
+  edit: PermissionAction.EDIT,
+  delete: PermissionAction.DELETE,
+  disable: PermissionAction.DISABLE,
+  dispatch: PermissionAction.DISPATCH,
+  process: PermissionAction.PROCESS,
+  accept: PermissionAction.ACCEPT,
+  export: PermissionAction.EXPORT,
 };
 const oldScope: Record<string, DataScope> = {
   全部数据: 'all',
@@ -621,9 +850,9 @@ export function normalizeMenuGrants(
     if (!menuByKey[key]) continue;
     const action =
       key === 'repair' && rawAction === 'create'
-        ? '报修'
+        ? PermissionAction.REPORT
         : key === 'requisition' && rawAction === 'create'
-          ? '申请'
+          ? PermissionAction.APPLY
           : oldAction[rawAction] || rawAction;
     if (!menuByKey[key].actions.includes(action)) continue;
     const scope = oldScope[legacyScope] || defaultScope(key);

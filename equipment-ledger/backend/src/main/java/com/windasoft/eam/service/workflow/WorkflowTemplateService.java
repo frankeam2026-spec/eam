@@ -3,6 +3,7 @@ package com.windasoft.eam.service.workflow;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.workflow.WorkflowExpression;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.workflow.WorkflowDefinition;
 import com.windasoft.eam.dto.workflow.WorkflowTemplateViews;
@@ -84,7 +85,7 @@ public class WorkflowTemplateService {
   public TemplatePage list(String q, Long company, int page, int size) {
     validatePage(q, page, size);
     return repository.list(
-        auth.tenantId(), permissions.scope("workflow", "查看"), q, company, page, size);
+        auth.tenantId(), permissions.scope("workflow", PermissionAction.VIEW), q, company, page, size);
   }
 
   /** 复用现有分页/查询长度校验，保留工作流20/50/100边界；不能静默改变非法请求。 */
@@ -102,43 +103,47 @@ public class WorkflowTemplateService {
     }
   }
 
-  public List<Company> companies(String action) {
-    if (!Set.of("查看", "编辑", "发布", "停用").contains(action))
-      throw new IllegalArgumentException("操作无效");
+  public List<Company> companies(String code) {
+    var action = code == null || code.isEmpty()
+        ? PermissionAction.VIEW
+        : PermissionAction.findByCode(code)
+            .filter(Set.of(PermissionAction.VIEW, PermissionAction.EDIT,
+                PermissionAction.PUBLISH, PermissionAction.DISABLE)::contains)
+            .orElseThrow(() -> new IllegalArgumentException("操作无效"));
     return repository.companies(auth.tenantId(), permissions.scope("workflow", action));
   }
 
   public Collection<WorkflowExpression.Variable> variables(String business) {
-    permissions.require("workflow", "查看");
+    permissions.require("workflow", PermissionAction.VIEW);
     return variables.catalog(business).values();
   }
 
   public Setting approvalSetting(long company) {
-    check(company, "查看");
+    check(company, PermissionAction.VIEW);
     return bindings.approvalSetting(auth.tenantId(), company);
   }
 
   @Transactional
   public Setting approvalSetting(long company, boolean required, long version) {
-    check(company, "发布");
+    check(company, PermissionAction.PUBLISH);
     bindings.approvalSetting(auth.tenantId(), company, required, version);
     return bindings.approvalSetting(auth.tenantId(), company);
   }
 
   public WorkflowExpression.Expr parse(String expression) {
-    permissions.require("workflow", "查看");
+    permissions.require("workflow", PermissionAction.VIEW);
     return WorkflowExpression.parse(expression, variables.catalog("requisition"));
   }
 
   public WorkflowExpression.Expr parse(String expression, WorkflowDefinition definition) {
     if (definition == null) return parse(expression);
-    check(Long.parseLong(definition.companyId()), "查看");
+    check(Long.parseLong(definition.companyId()), PermissionAction.VIEW);
     return WorkflowExpression.parse(expression, variables.catalog(definition));
   }
 
   public ScriptResult scriptTrial(
       long company, WorkflowDefinition.Script script, Map<String, Object> values) {
-    check(company, "脚本试算");
+    check(company, PermissionAction.TRIAL_SCRIPT);
     Object value = scriptRunner.execute(script, values);
     return new ScriptResult(
         value instanceof Boolean b
@@ -149,7 +154,7 @@ public class WorkflowTemplateService {
 
   public ChoicePage choices(long company, String kind, String q, int page, int size) {
     validatePage(q, page, size);
-    check(company, "查看");
+    check(company, PermissionAction.VIEW);
     Set<Long> orgs = new HashSet<>(permissions.companyDepartments(company));
     orgs.add(company);
     orgs.removeIf(id -> !Objects.equals(permissions.companyOfOrganization(id), company));
@@ -157,7 +162,7 @@ public class WorkflowTemplateService {
   }
 
   public ChoicePage resolve(long company, String kind, List<Long> ids) {
-    check(company, "查看");
+    check(company, PermissionAction.VIEW);
     if (ids == null || ids.isEmpty() || ids.size() > 100)
       throw new IllegalArgumentException("一次可解析1至100个关联对象");
     Set<Long> orgs = new HashSet<>(permissions.companyDepartments(company));
@@ -168,7 +173,7 @@ public class WorkflowTemplateService {
 
   public WorkflowDefinition detail(long id, Long version) {
     var t = templates.find(auth.tenantId(), id, false);
-    check(t.getCompanyId(), "查看");
+    check(t.getCompanyId(), PermissionAction.VIEW);
     return repository.definition(auth.tenantId(), id, version);
   }
 
@@ -186,16 +191,16 @@ public class WorkflowTemplateService {
         .toList();
   }
 
-  public void check(long company, String action) {
+  public void check(long company, PermissionAction action) {
     if (!repository.companyExists(auth.tenantId(), company)
-        || !permissions.companyAllowed("workflow", action, company))
+        || !permissions.companyAllowed("workflow", action.code(), company))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无此公司流程管理权限");
   }
 
   @Transactional
   public WorkflowDefinition save(WorkflowDefinition d) {
     long company = Long.parseLong(d.companyId());
-    check(company, "编辑");
+    check(company, PermissionAction.EDIT);
     WorkflowDefinition previous = null;
     if (d.id() != null) {
       var t = templates.find(auth.tenantId(), Long.parseLong(d.id()), true);
@@ -215,7 +220,7 @@ public class WorkflowTemplateService {
           .filter(Objects::nonNull)
           .filter(n -> n.script() != null)
           .forEach(n -> newScripts.put(n.key(), n.script()));
-    if (!oldScripts.equals(newScripts)) check(company, "脚本配置");
+    if (!oldScripts.equals(newScripts)) check(company, PermissionAction.CONFIGURE_SCRIPT);
     var expressions = validator.validate(d, false);
     actors.validate(auth.tenantId(), d);
     expressions.values().forEach(e -> validateReferences(company, e));
@@ -252,7 +257,7 @@ public class WorkflowTemplateService {
   @Transactional
   public WorkflowDefinition publish(long id, long rowVersion) {
     var t = templates.find(auth.tenantId(), id, true);
-    check(t.getCompanyId(), "发布");
+    check(t.getCompanyId(), PermissionAction.PUBLISH);
     if (t.getRowVersion() != rowVersion) throw new IllegalArgumentException("模板已变更，请刷新");
     var d = repository.definition(auth.tenantId(), id, null);
     validator
@@ -261,7 +266,7 @@ public class WorkflowTemplateService {
         .forEach(e -> validateReferences(Long.parseLong(d.companyId()), e));
     actors.validate(auth.tenantId(), d);
     if (d.nodes().stream().anyMatch(n -> n.type().equals("SCRIPT"))) {
-      check(Long.parseLong(d.companyId()), "脚本发布");
+      check(Long.parseLong(d.companyId()), PermissionAction.PUBLISH_SCRIPT);
       for (var n : d.nodes()) if (n.script() != null) scriptRunner.validate(n.script());
     }
     // 发布时检查各审批节点有候选人；进入节点时再次解析并保存人员快照，避免沿用过期角色成员。
@@ -302,17 +307,17 @@ public class WorkflowTemplateService {
   @Transactional
   public void disable(long id, long rowVersion) {
     var t = templates.find(auth.tenantId(), id, true);
-    check(t.getCompanyId(), "停用");
+    check(t.getCompanyId(), PermissionAction.DISABLE);
     if (t.getRowVersion() != rowVersion) throw new IllegalArgumentException("模板已变更，请刷新");
     bindings.disableTemplate(auth.tenantId(), id);
   }
 
   public List<WorkflowTrialStep> simulate(
       WorkflowDefinition definition, Map<String, Object> values) {
-    check(Long.parseLong(definition.companyId()), "编辑");
+    check(Long.parseLong(definition.companyId()), PermissionAction.EDIT);
     validator.validate(definition);
     if (definition.nodes().stream().anyMatch(n -> n.script() != null))
-      check(Long.parseLong(definition.companyId()), "脚本试算");
+      check(Long.parseLong(definition.companyId()), PermissionAction.TRIAL_SCRIPT);
     var transaction = new TransactionTemplate(transactions);
     transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     return transaction.execute(

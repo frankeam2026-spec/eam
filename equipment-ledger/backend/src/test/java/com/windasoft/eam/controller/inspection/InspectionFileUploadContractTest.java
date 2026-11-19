@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.ApiExceptionHandler;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.inspection.InspectionFileRepository;
 import com.windasoft.eam.service.inspection.InspectionFileService;
 import com.windasoft.eam.service.inspection.InspectionListService;
@@ -37,7 +38,7 @@ class InspectionFileUploadContractTest {
     var caller = mock(AuthContext.class);
     when(caller.tenantId()).thenReturn(7L);
     when(caller.userId()).thenReturn(13L);
-    when(permissions.anyInspection("查看")).thenReturn(true);
+    when(permissions.anyInspection(PermissionAction.VIEW)).thenReturn(true);
     var repository = new InspectionFileRepository(mock(JdbcTemplate.class), directory.toString());
     var service =
         new InspectionFileService(
@@ -77,7 +78,7 @@ class InspectionFileUploadContractTest {
 
   @Test
   void deniedUploadDoesNotCreateAFile() throws Exception {
-    when(permissions.anyInspection("查看")).thenReturn(false);
+    when(permissions.anyInspection(PermissionAction.VIEW)).thenReturn(false);
     mvc.perform(
             multipart("/api/v1/inspection/files")
                 .file(new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[] {1})))

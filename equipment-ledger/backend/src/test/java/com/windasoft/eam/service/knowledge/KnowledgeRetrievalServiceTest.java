@@ -2,6 +2,7 @@ package com.windasoft.eam.service.knowledge;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.knowledge.KnowledgeSearchRepository;
 import com.windasoft.eam.service.system.*;
@@ -16,7 +17,7 @@ class KnowledgeRetrievalServiceTest {
   final PermissionService permissions=mock(PermissionService.class);
   KnowledgeRetrievalService service(){
     when(auth.tenantId()).thenReturn(10L);when(embeddings.model()).thenReturn("model");
-    when(permissions.scope("knowledge","查看")).thenReturn(new PermissionScope(false,20L,Set.of(),false,Set.of(20L)));
+    when(permissions.scope("knowledge",PermissionAction.VIEW)).thenReturn(new PermissionScope(false,20L,Set.of(),false,Set.of(20L)));
     return new KnowledgeRetrievalService(repository,embeddings,vectors,auth,permissions);
   }
   @Test void noAuthorizedVersionsNeverSendsQuestionToCloud() throws Exception {

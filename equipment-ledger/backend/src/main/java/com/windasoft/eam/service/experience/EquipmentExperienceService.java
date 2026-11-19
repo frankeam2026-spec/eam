@@ -3,6 +3,7 @@ package com.windasoft.eam.service.experience;
 import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.windasoft.eam.common.experience.ExperienceSupport;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.experience.EquipmentAttentionItem;
 import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
 import com.windasoft.eam.service.equipment.EquipmentInstalledSpareService;
@@ -55,7 +56,7 @@ public class EquipmentExperienceService {
             && Objects.equals(e.getTenantId(), auth.tenantId())
             && !Integer.valueOf(1).equals(e.getDeleted()),
         "设备不存在");
-    permissions.checkEquipment(e, "查看");
+    permissions.checkEquipment(e, PermissionAction.VIEW);
     return e;
   }
 
@@ -180,13 +181,13 @@ public class EquipmentExperienceService {
             .toList();
     var access =
         Map.of(
-            "repair", permissions.allowed("repair", "查看") || !repairs.isEmpty(),
-            "maintenance", permissions.allowed("maintenanceTask", "查看") || !pm.isEmpty(),
+            "repair", permissions.allowed("repair", PermissionAction.VIEW) || !repairs.isEmpty(),
+            "maintenance", permissions.allowed("maintenanceTask", PermissionAction.VIEW) || !pm.isEmpty(),
             "inspection",
-                permissions.allowed("inspectionDailyTask", "查看")
-                    || permissions.allowed("inspectionPeriodicTask", "查看")
+                permissions.allowed("inspectionDailyTask", PermissionAction.VIEW)
+                    || permissions.allowed("inspectionPeriodicTask", PermissionAction.VIEW)
                     || !inspections.isEmpty(),
-            "anomaly", permissions.allowed("anomaly", "查看") || !allIssues.isEmpty());
+            "anomaly", permissions.allowed("anomaly", PermissionAction.VIEW) || !allIssues.isEmpty());
     return new AttentionData(tasks, issues, access);
   }
 

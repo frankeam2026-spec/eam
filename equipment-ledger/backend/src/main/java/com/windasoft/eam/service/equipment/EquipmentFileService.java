@@ -2,6 +2,7 @@ package com.windasoft.eam.service.equipment;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.equipment.EquipmentDownload;
 import com.windasoft.eam.dto.equipment.EquipmentUpload;
 import com.windasoft.eam.dto.equipment.EquipmentFileUploadResult;
@@ -91,7 +92,7 @@ public class EquipmentFileService {
   }
 
   public EquipmentFileUploadResult upload(EquipmentUpload upload) throws Exception {
-    if (!permissions.allowed("equipment", "新增") && !permissions.allowed("equipment", "编辑"))
+    if (!permissions.allowed("equipment", PermissionAction.CREATE) && !permissions.allowed("equipment", PermissionAction.EDIT))
       throw new com.windasoft.eam.common.LocalizedStatusException(
           HttpStatus.FORBIDDEN, "server.equipment.message0035");
     require(

@@ -2,6 +2,7 @@ package com.windasoft.eam.service.experience;
 
 import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.experience.AnalyticsRepository;
 import com.windasoft.eam.service.system.*;
 import java.math.*;
@@ -40,7 +41,7 @@ public class HomeAnalyticsService {
   }
 
   public boolean teamAllowed() {
-    return permissions.allowed("workspace", "团队工作查看");
+    return permissions.allowed("workspace", PermissionAction.VIEW_TEAM_WORK);
   }
 
   public List<AnalyticsCatalog.Metric> metrics() {
@@ -55,7 +56,7 @@ public class HomeAnalyticsService {
   }
 
   public Map<String, Object> catalog() {
-    if (!permissions.menuActions().getOrDefault("workspace", Set.of()).contains("查看"))
+    if (!permissions.menuActions().getOrDefault("workspace", Set.of()).contains(PermissionAction.VIEW.code()))
       AnalyticsAccess.deny();
     var companies = new HashSet<Long>();
     var departments = new HashSet<Long>();
@@ -68,13 +69,13 @@ public class HomeAnalyticsService {
             "inspectionPeriodicTask",
             "anomaly",
             "equipment")) {
-      if (!permissions.menuActions().getOrDefault(menu, Set.of()).contains("查看")) continue;
+      if (!permissions.menuActions().getOrDefault(menu, Set.of()).contains(PermissionAction.VIEW.code())) continue;
       var scope = access.scope(menu);
       all |= scope.all();
       companies.addAll(scope.companyIds());
       departments.addAll(scope.departmentIds());
     }
-    if (permissions.allowed("inventoryQuery", "查看")) {
+    if (permissions.allowed("inventoryQuery", PermissionAction.VIEW)) {
       var allowed = access.warehouses(false);
       repository.warehouses(auth.tenantId()).stream()
           .filter(w -> allowed.contains(((Number) w.get("id")).longValue()))
@@ -110,7 +111,7 @@ public class HomeAnalyticsService {
         "organizations",
         orgs,
         "teamAllowed",
-        permissions.allowed("workspace", "团队工作查看"),
+        permissions.allowed("workspace", PermissionAction.VIEW_TEAM_WORK),
         "timezone",
         AnalyticsPeriod.ZONE.toString());
   }

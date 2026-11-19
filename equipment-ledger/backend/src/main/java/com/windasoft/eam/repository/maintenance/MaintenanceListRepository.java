@@ -183,7 +183,7 @@ public class MaintenanceListRepository {
       fields.put("remark", f("JSON_UNQUOTE(JSON_EXTRACT(t.payload,'$.remark'))", TEXT));
       fields.put(
           "enabledLabel",
-          f("CASE WHEN JSON_EXTRACT(t.payload,'$.enabled')=TRUE THEN '启用' ELSE '停用' END", CHOICE));
+          f(SqlListFilters.activationLabel("JSON_EXTRACT(t.payload,'$.enabled')=TRUE"), CHOICE));
       fields.put("itemCount", f("JSON_LENGTH(t.payload,'$.items')", NUMBER));
       fields.put(
           "equipmentCount",

@@ -1,4 +1,6 @@
-<script setup lang="ts">import { tr, enumLabel } from '../i18n';
+<script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
+import { tr, enumLabel } from '../i18n';
 
 import { ElTableColumn } from 'element-plus';
 import AppBusinessTable from './common/AppBusinessTable.vue';
@@ -130,7 +132,7 @@ type TableColumnRow3 = NonNullable<ReturnType<typeof tableColumnRows3>>[number];
     <div v-if="data.requests.length" class="requests">
       <span v-for="r in data.requests" :key="r.id"
         ><ElButton
-          v-if="auth.can('inventoryRequisition', '查看')"
+          v-if="auth.can('inventoryRequisition', PermissionAction.VIEW)"
           link
           type="primary"
           @click="router.push({ name: 'inventory-requisition-detail', params: { id: r.id } })"

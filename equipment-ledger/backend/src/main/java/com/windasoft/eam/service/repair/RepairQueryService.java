@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.domain.repair.RepairQueue;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
 import com.windasoft.eam.dto.repair.RepairAssistantRequest;
 import com.windasoft.eam.entity.repair.RepairOrder;
@@ -103,7 +104,7 @@ public class RepairQueryService {
   }
 
   public void requireExport() {
-    permissions.require("repair", "导出");
+    permissions.require("repair", PermissionAction.EXPORT);
   }
 
   public record Result(Page<RepairOrder> page, Map<String, Long> counts) {}
@@ -111,7 +112,7 @@ public class RepairQueryService {
   /** 与维修列表共用授权过滤；模型计划重新校验，不能借内部调用绕过字段白名单。 */
   @Transactional(readOnly = true)
   public Map<String, Object> queryAssistant(RepairAssistantRequest request) {
-    permissions.require("repair", "查看");
+    permissions.require("repair", PermissionAction.VIEW);
     var plan = AiBusinessPlan.parse(json.valueToTree(request.plan()));
     var verified =
         new RepairAssistantRequest(
@@ -141,7 +142,7 @@ public class RepairQueryService {
 
   @Transactional(readOnly = true)
   public void export(Map<String, String> params, PrintWriter writer) {
-    permissions.require("repair", "导出");
+    permissions.require("repair", PermissionAction.EXPORT);
     var filters = filters(params);
     var query = ordered(params, filters, true);
     List<String> columns = exportColumns(params);
@@ -174,7 +175,7 @@ public class RepairQueryService {
   }
 
   public void validateExport(Map<String, String> params) {
-    permissions.require("repair", "导出");
+    permissions.require("repair", PermissionAction.EXPORT);
     ordered(params, filters(params), true);
     exportColumns(params);
   }
@@ -306,7 +307,7 @@ public class RepairQueryService {
   /** 查询按用户数据范围过滤；导出需要叠加独立的导出权限范围。 */
   private void scope(LambdaQueryWrapper<RepairOrder> query, Boolean export) {
     permissions.filterRepair(query);
-    if (export) permissions.filterRepair(query, "导出");
+    if (export) permissions.filterRepair(query, PermissionAction.EXPORT.code());
   }
 
   /** 单条业务返回前完成查询装配；转换器不执行数据库访问，null分类也代表已读取。 */

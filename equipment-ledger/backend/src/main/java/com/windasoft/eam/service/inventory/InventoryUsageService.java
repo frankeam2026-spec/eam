@@ -5,6 +5,7 @@ import static com.windasoft.eam.service.inventory.InventoryService.*;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.inventory.InventoryMoney;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.inventory.InventoryUsageRepository;
 import com.windasoft.eam.service.inspection.InspectionTaskService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
@@ -61,7 +62,7 @@ public class InventoryUsageService {
       require(
           order != null && order.getTenantId() == auth.tenantId() && order.getDeleted() == 0,
           com.windasoft.eam.common.MessageContext.text("server.repair.message0012"));
-      permissions.checkRepair(order, "查看");
+      permissions.checkRepair(order, PermissionAction.VIEW);
       if (write)
         require(
             Objects.equals(order.getAssigneeUserId(), auth.userId())

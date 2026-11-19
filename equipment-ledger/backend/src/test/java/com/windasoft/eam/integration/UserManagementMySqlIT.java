@@ -2,14 +2,20 @@ package com.windasoft.eam.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
+import com.windasoft.eam.dto.system.MenuGrantForm;
+import com.windasoft.eam.dto.system.RoleForm;
 import com.windasoft.eam.repository.system.AuthenticationRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
+import com.windasoft.eam.service.system.RoleManagementService;
 import com.windasoft.eam.service.system.UserManagementService;
 import com.windasoft.eam.dto.system.UserStatusForm;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +24,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.annotation.Transactional;
 
 /** 仅连接隔离的工程测试库，验证真实 MySQL 事务回滚。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
@@ -43,7 +50,29 @@ class UserManagementMySqlIT {
   @MockitoBean PermissionService permissions;
   @MockitoBean AuthenticationRepository sessions;
   @Autowired UserManagementService users;
+  @Autowired RoleManagementService roles;
   @Autowired JdbcTemplate db;
+
+  @Test
+  @Transactional
+  void roleSavesExistingActionCodesAndRequiresView() {
+    when(auth.tenantId()).thenReturn(10001L);
+    var code = "QA-TYPED-PERMISSION";
+    var withoutView = new RoleForm(code, "权限编码验证", "", 1,
+        Map.of("workspace", new MenuGrantForm(List.of("团队工作查看"), List.of("all"), List.of())));
+    assertThrows(IllegalArgumentException.class, () -> roles.createRole(withoutView));
+    var form = new RoleForm(code, "权限编码验证", "", 1,
+        Map.of("workspace", new MenuGrantForm(List.of("查看", "团队工作查看"), List.of("all"), List.of())));
+    var created = roles.createRole(form);
+    var roleId = Long.parseLong(created.id());
+    var loaded = roles.roles().stream().filter(role -> role.id().equals(created.id())).findFirst().orElseThrow();
+    assertEquals(List.of("查看", "团队工作查看"), loaded.menuPermissions().get("workspace").actions());
+    var edit = new RoleForm(code, "更新权限编码验证", "", 1,
+        Map.of("workspace", new MenuGrantForm(List.of("查看"), List.of("all"), List.of())));
+    assertEquals(List.of("查看"), roles.updateRole(roleId, edit).menuPermissions().get("workspace").actions());
+    assertTrue(roles.roles().stream().anyMatch(role -> role.id().equals(created.id())
+        && role.menuPermissions().get("workspace").actions().equals(List.of("查看"))));
+  }
 
   @Test
   void statusUpdateRollsBackWhenSessionRevocationFails() {

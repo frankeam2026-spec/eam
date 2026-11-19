@@ -3,6 +3,8 @@ package com.windasoft.eam.service.system;
 import com.windasoft.eam.common.FieldValidationException;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.domain.common.ActivationStatus;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.UserBatchForm;
 import com.windasoft.eam.dto.system.UserEmailProfile;
 import com.windasoft.eam.dto.system.UserForm;
@@ -100,7 +102,8 @@ public class UserManagementService {
       VersionGuard.updated(
           systemUsers.updateEmail(auth.tenantId(), id, f.email().trim(), f.emailVersion()));
     }
-    if (f.password() != null && !f.password().isBlank() || x.getStatus() == 0) revokeSessions(id);
+    if (f.password() != null && !f.password().isBlank()
+        || x.getStatus() == ActivationStatus.DISABLED.code()) revokeSessions(id);
     roleRepository.deleteUserRoles(auth.tenantId(), id);
     saveRoleLinks(id, f.roleIds());
     return userView(x);
@@ -109,14 +112,14 @@ public class UserManagementService {
   @Transactional
   public UserView userStatus(Long id, UserStatusForm body) {
     var x = requireUser(id);
-    permissions.checkUser("user", "停用", x);
+    permissions.checkUser("user", PermissionAction.DISABLE.code(), x);
     if (body == null || body.status() == null)
       throw new LocalizedArgumentException("server.system.message0037");
     int status = body.status();
     requireStatusChangeAllowed(id, status);
     x.setStatus(status);
     systemUsers.updateStatus(x);
-    if (status == 0) revokeSessions(id);
+    if (status == ActivationStatus.DISABLED.code()) revokeSessions(id);
     return userView(x);
   }
 
@@ -130,7 +133,7 @@ public class UserManagementService {
     if ("department".equals(f.operation())) {
       if (f.orgId() == null) throw new LocalizedArgumentException("ui.equipment.text0315");
       requireUserOrganization(f.orgId());
-      if (requireOrg(f.orgId()).getStatus() != 1)
+      if (!ActivationStatus.isEnabled(requireOrg(f.orgId()).getStatus()))
         throw new LocalizedArgumentException("server.system.message0040");
     } else if (f.password() == null || f.password().length() < 6 || f.password().length() > 72)
       throw new LocalizedArgumentException("ui.equipment.text1179");
@@ -184,13 +187,13 @@ public class UserManagementService {
     x.setPhone(f.phone() == null ? "" : f.phone().trim());
     if (f.email() != null) x.setEmail(f.email().trim());
     x.setOrgId(f.orgId());
-    int status = f.status() == null ? 1 : f.status();
+    int status = f.status() == null ? ActivationStatus.ENABLED.code() : f.status();
     requireLegalStatus(status);
     x.setStatus(status);
   }
 
   private void requireLegalStatus(int status) {
-    if (status != 0 && status != 1) {
+    if (status != ActivationStatus.DISABLED.code() && status != ActivationStatus.ENABLED.code()) {
       throw new LocalizedArgumentException("server.system.message0037");
     }
   }
@@ -198,7 +201,7 @@ public class UserManagementService {
   /** 编辑和单独停用沿用同一条自停用禁令，不能通过修改入口绕过。 */
   private void requireStatusChangeAllowed(Long id, int status) {
     requireLegalStatus(status);
-    if (id.equals(auth.userId()) && status == 0) {
+    if (id.equals(auth.userId()) && status == ActivationStatus.DISABLED.code()) {
       throw new LocalizedArgumentException("server.system.message0038");
     }
   }
@@ -237,7 +240,8 @@ public class UserManagementService {
 
   private void requireUserOrganization(Long id) {
     var org = requireOrg(id);
-    if (org.getStatus() != 1) throw new LocalizedArgumentException("server.system.message0043");
+    if (!ActivationStatus.isEnabled(org.getStatus()))
+      throw new LocalizedArgumentException("server.system.message0043");
   }
 
   private void checkAccount(String account, Long id) {
@@ -274,7 +278,7 @@ public class UserManagementService {
         x.getPhone() == null ? "" : x.getPhone(),
         String.valueOf(x.getOrgId()),
         ids,
-        x.getStatus() == 1 ? "启用" : "停用",
+        ActivationStatus.fromFlag(x.getStatus()).label(),
         Objects.toString(emailProfile.email(), Objects.toString(x.getEmail(), "")),
         emailProfile.version());
   }

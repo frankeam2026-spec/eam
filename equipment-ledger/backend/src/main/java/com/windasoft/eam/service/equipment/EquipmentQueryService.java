@@ -9,6 +9,7 @@ import com.google.zxing.MultiFormatWriter;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.MessageContext;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.common.PageResult;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery;
@@ -130,7 +131,7 @@ public class EquipmentQueryService {
             request,
             q -> {
               permissions.filterEquipment(q);
-              if (exporting) permissions.filterEquipment(q, "导出");
+              if (exporting) permissions.filterEquipment(q, PermissionAction.EXPORT.code());
             },
             prepared.extensions(),
             prepared.order());
@@ -182,7 +183,7 @@ public class EquipmentQueryService {
 
   @Transactional(readOnly = true)
   public void export(EquipmentListQuery request, List<String> columns, PrintWriter writer) {
-    permissions.require("equipment", "导出");
+    permissions.require("equipment", PermissionAction.EXPORT);
     var fields = customQueries.fields("equipment");
     var labels = new HashMap<>(EXPORT_FIELDS);
     EXPORT_FIELDS
@@ -231,13 +232,13 @@ public class EquipmentQueryService {
 
   public EquipmentView get(long id) {
     var e = require(id);
-    permissions.checkEquipment(e, "查看");
+    permissions.checkEquipment(e, PermissionAction.VIEW);
     return view(e);
   }
 
   public byte[] qrCode(long id) throws Exception {
     var equipment = require(id);
-    permissions.checkEquipment(equipment, "查看");
+    permissions.checkEquipment(equipment, PermissionAction.VIEW);
     var matrix =
         new MultiFormatWriter()
             .encode(
@@ -252,7 +253,7 @@ public class EquipmentQueryService {
   }
 
   public List<EquipmentNavigationNode> navigationTree() {
-    permissions.require("equipment", "查看");
+    permissions.require("equipment", PermissionAction.VIEW);
     var visible = new HashSet<Long>();
     for (var e : repository.visibleOrganizations(auth.tenantId(), permissions::filterEquipment)) {
       if (e.getCompanyOrgId() != null) visible.add(e.getCompanyOrgId());
@@ -278,10 +279,17 @@ public class EquipmentQueryService {
         .toList();
   }
 
+  /** 两个编辑选择器沿用原 HTTP 默认值，并只接受新增、编辑两个动作。 */
+  private static PermissionAction equipmentEditAction(String code) {
+    if (code == null || code.isEmpty()) return PermissionAction.EDIT;
+    return PermissionAction.findByCode(code)
+        .filter(action -> action == PermissionAction.CREATE || action == PermissionAction.EDIT)
+        .orElseThrow(() -> new LocalizedArgumentException("server.equipment.message0029"));
+  }
+
   public PageResult<EquipmentOptions.Employee> ownerCandidates(String action, ListQuery query) {
-    if (!List.of("新增", "编辑").contains(action))
-      throw new LocalizedArgumentException("server.equipment.message0029");
-    permissions.require("equipment", action);
+    var permission = equipmentEditAction(action);
+    permissions.require("equipment", permission);
     var page = users.ownerCandidates(auth.tenantId(), query);
     return new PageResult<>(
         page.getRecords().stream()
@@ -296,16 +304,15 @@ public class EquipmentQueryService {
   }
 
   public EquipmentOptions batchOptions(String action) {
-    if (!List.of("新增", "编辑").contains(action))
-      throw new LocalizedArgumentException("server.equipment.message0029");
-    permissions.require("equipment", action);
+    var permission = equipmentEditAction(action);
+    permissions.require("equipment", permission);
     var allOrgs = organizations.organizations(auth.tenantId(), true);
     var selectable =
         allOrgs.stream()
             .filter(
                 o ->
                     "部门".equals(o.getOrgType())
-                        && permissions.equipmentDepartmentAllowed(o.getId(), action))
+                        && permissions.equipmentDepartmentAllowed(o.getId(), permission.code()))
             .map(OrgUnit::getId)
             .collect(Collectors.toSet());
     var visible = new HashSet<Long>(selectable);
@@ -343,7 +350,7 @@ public class EquipmentQueryService {
   @Transactional(readOnly = true)
   public EquipmentHistoryView history(long id) {
     var equipment = require(id);
-    permissions.checkEquipment(equipment, "查看");
+    permissions.checkEquipment(equipment, PermissionAction.VIEW);
     return historyQueries.history(equipment, view(equipment));
   }
 

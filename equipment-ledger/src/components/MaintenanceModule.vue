@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
 import ReminderPolicyField from './common/ReminderPolicyField.vue';
 import { isDepartmentCustomColumn } from '../businessConfig';
 import DepartmentValuesText from './common/DepartmentValuesText.vue';
@@ -1062,7 +1063,7 @@ function reset() {
   page.value = 1;
 }
 async function exportRows() {
-  if (!can('导出')) return;
+  if (!can(PermissionAction.EXPORT)) return;
   const exportFields: [string, string][] = [
     ...(baseFields.value as [string, string][]),
     ...extensionExportColumns.value.map((c) => [c.key, c.label] as [string, string]),
@@ -1284,10 +1285,10 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       <div class="task-list-content">
         <AppListToolbar class="maintenance-toolbar">
           <div>
-            <ElButton v-if="kind !== 'tasks' && can('新增')" type="primary" @click="open()"
+            <ElButton v-if="kind !== 'tasks' && can(PermissionAction.CREATE)" type="primary" @click="open()"
               ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}</ElButton
             ><ElDropdown
-              v-if="kind === 'tasks' && (can('删除') || can('编辑') || can('验收'))"
+              v-if="kind === 'tasks' && (can(PermissionAction.DELETE) || can(PermissionAction.EDIT) || can(PermissionAction.ACCEPT))"
               :disabled="!selected.length || busy"
               @command="openTaskBatch"
             >
@@ -1297,9 +1298,9 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               /></ElButton>
               <template #dropdown
                 ><ElDropdownMenu>
-                  <ElDropdownItem v-if="can('删除')" command="delete">{{ tr('ui.equipment.text0146') }}</ElDropdownItem>
-                  <ElDropdownItem v-if="can('编辑')" command="postpone">{{ tr('ui.equipment.text0762') }}</ElDropdownItem>
-                  <ElDropdownItem v-if="can('验收')" command="accept">{{ tr('ui.equipment.text0763') }}</ElDropdownItem>
+                  <ElDropdownItem v-if="can(PermissionAction.DELETE)" command="delete">{{ tr('ui.equipment.text0146') }}</ElDropdownItem>
+                  <ElDropdownItem v-if="can(PermissionAction.EDIT)" command="postpone">{{ tr('ui.equipment.text0762') }}</ElDropdownItem>
+                  <ElDropdownItem v-if="can(PermissionAction.ACCEPT)" command="accept">{{ tr('ui.equipment.text0763') }}</ElDropdownItem>
                 </ElDropdownMenu></template
               >
             </ElDropdown>
@@ -1424,7 +1425,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     v-else-if="
                       key === 'planName' &&
                       (row as MaintenanceTask).planId &&
-                      auth.can('maintenancePlan', '查看')
+                      auth.can('maintenancePlan', PermissionAction.VIEW)
                     "
                     type="primary"
                     link
@@ -1464,7 +1465,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     ></template
                   ><template v-else
                     ><ElButton
-                      v-if="can('编辑')"
+                      v-if="can(PermissionAction.EDIT)"
                       class="text-action"
                       @click="open(row as MaintenanceDefinition)"
                       type="primary"
@@ -1472,7 +1473,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     >
                       {{ tr('ui.equipment.text0207') }}</ElButton
                     ><ElButton
-                      v-if="can('删除') && !(row as MaintenanceDefinition).system"
+                      v-if="can(PermissionAction.DELETE) && !(row as MaintenanceDefinition).system"
                       class="text-action danger"
                       @click="remove(row as MaintenanceDefinition)"
                       type="danger"
@@ -1497,7 +1498,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               :total="listTotal"
             /><ListToolbarIcons
               mode="footer"
-              :can-export="can('导出')"
+              :can-export="can(PermissionAction.EXPORT)"
               :filter-open="filterOpen"
               :columns-open="columnsOpen"
               @toggle-columns="columnsOpen = !columnsOpen"

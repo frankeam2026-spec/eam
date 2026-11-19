@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.knowledge;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
 import com.windasoft.eam.service.system.PermissionService;
@@ -50,8 +51,8 @@ public class AiEquipmentQueryService {
   public Map<String, Object> query(
       List<AiQuestionRouter.Filter> filters, Long equipmentId, int page, int size)
       throws Exception {
-    permissions.require("knowledge", "查看");
-    permissions.require("equipment", "查看");
+    permissions.require("knowledge", PermissionAction.VIEW);
+    permissions.require("equipment", PermissionAction.VIEW);
     if (page < 1
         || page > 10_000_000
         || !Set.of(20, 50, 100).contains(size)

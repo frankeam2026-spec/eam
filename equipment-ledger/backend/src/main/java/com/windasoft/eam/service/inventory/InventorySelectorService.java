@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.inventory;
 
 import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.common.PageResult;
 import com.windasoft.eam.dto.inventory.InventorySelectorRow.Task;
@@ -45,7 +46,7 @@ public class InventorySelectorService {
   }
 
   private long warehouseCompany(long warehouse) {
-    permissions.checkInventoryWarehouse("inventoryOutbound", warehouse, "查看");
+    permissions.checkInventoryWarehouse("inventoryOutbound", warehouse, PermissionAction.VIEW.code());
     return ((Number) masters.row("warehouses", warehouse, false).get("company_id")).longValue();
   }
 
@@ -56,20 +57,20 @@ public class InventorySelectorService {
       throw new LocalizedArgumentException("server.inventory.message0018");
     Long company = null;
     if (mode.equals("outbound")) {
-      permissions.require("inventoryOutbound", "查看");
+      permissions.require("inventoryOutbound", PermissionAction.VIEW);
       if (warehouse == null) return new PageResult<>(List.of(), q.page(), q.size(), 0);
       company = warehouseCompany(warehouse);
     }
     boolean personal =
-        mode.equals("requisition") && !permissions.allowed("inventoryRequisition", "新增");
+        mode.equals("requisition") && !permissions.allowed("inventoryRequisition", PermissionAction.CREATE);
     return repository.tasks(
         auth.tenantId(),
         auth.userId(),
         q,
-        scope(() -> permissions.repair("查看")),
-        scope(() -> permissions.maintenance("tasks", "查看")),
-        scope(() -> permissions.inspection("daily", "查看")),
-        scope(() -> permissions.inspection("periodic", "查看")),
+        scope(() -> permissions.repair(PermissionAction.VIEW.code())),
+        scope(() -> permissions.maintenance("tasks", PermissionAction.VIEW)),
+        scope(() -> permissions.inspection("daily", PermissionAction.VIEW)),
+        scope(() -> permissions.inspection("periodic", PermissionAction.VIEW)),
         personal,
         company,
         kind,

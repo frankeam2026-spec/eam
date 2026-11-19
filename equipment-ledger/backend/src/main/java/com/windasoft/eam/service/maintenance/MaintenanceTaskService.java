@@ -15,6 +15,7 @@ import com.windasoft.eam.domain.maintenance.MaintenanceCalculationMode;
 import com.windasoft.eam.domain.maintenance.MaintenanceReviewMode;
 import com.windasoft.eam.domain.maintenance.MaintenanceTaskAction;
 import com.windasoft.eam.domain.maintenance.MaintenanceTaskStatus;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.maintenance.MaintenanceBatchAcceptance;
 import com.windasoft.eam.dto.maintenance.MaintenanceCustomFields;
 import com.windasoft.eam.dto.maintenance.MaintenanceExecutionResult;
@@ -113,7 +114,7 @@ public class MaintenanceTaskService {
     experienceInventoryMutex.enter();
     long tenant = auth.tenantId();
     var r = taskRaw(tenant, id, true);
-    if (!taskAccess(r, "查看")) {
+    if (!taskAccess(r, PermissionAction.VIEW)) {
       deny();
     }
     checkVersion(r.rowVersion(), command.rowVersion());
@@ -252,7 +253,7 @@ public class MaintenanceTaskService {
       require(
           state.equals(MaintenanceTaskStatus.PENDING_ACCEPTANCE.code()),
           MessageContext.text("server.maintenance.message0058"));
-      if (!reviewers.contains(user) || !taskAccess(r, "验收")) {
+      if (!reviewers.contains(user) || !taskAccess(r, PermissionAction.ACCEPT)) {
         deny();
       }
       var decision = AcceptanceDecision.parse(accept.decision());
@@ -298,7 +299,7 @@ public class MaintenanceTaskService {
       journal.notify(tenant, id, List.of(user), "保养待处理", text(facts.getEquipmentName()), true);
     } else if (operation == MaintenanceTaskAction.TRANSFER) {
       var transfer = (MaintenanceTaskCommand.Transfer) command;
-      if (!taskAccess(r, "编辑")) {
+      if (!taskAccess(r, PermissionAction.EDIT)) {
         deny();
       }
       require(
@@ -317,7 +318,7 @@ public class MaintenanceTaskService {
       journal.closeTodos(tenant, id);
       journal.notify(tenant, id, participantOwners, "保养待执行", text(facts.getEquipmentName()), true);
     } else if (operation == MaintenanceTaskAction.VOID) {
-      if (!taskAccess(r, "删除")) {
+      if (!taskAccess(r, PermissionAction.DELETE)) {
         deny();
       }
       require(
@@ -406,7 +407,7 @@ public class MaintenanceTaskService {
     for (var value : sorted) {
       long id = value.id();
       var task = taskRaw(tenant, id, true);
-      if (!taskAccess(task, "删除")) {
+      if (!taskAccess(task, PermissionAction.DELETE)) {
         deny();
       }
       checkVersion(task.rowVersion(), value.rowVersion());
@@ -449,7 +450,7 @@ public class MaintenanceTaskService {
     for (var value : sorted) {
       long id = value.id();
       var task = taskRaw(tenant, id, true);
-      if (!taskAccess(task, "编辑")) {
+      if (!taskAccess(task, PermissionAction.EDIT)) {
         deny();
       }
       checkVersion(task.rowVersion(), value.rowVersion());
@@ -494,7 +495,7 @@ public class MaintenanceTaskService {
     return r.getFirst();
   }
 
-  boolean taskAccess(MaintenanceTaskData row, String action) {
+  boolean taskAccess(MaintenanceTaskData row, PermissionAction action) {
     return taskAccess.allowed(row, action);
   }
 
@@ -505,7 +506,7 @@ public class MaintenanceTaskService {
   @Transactional(readOnly = true)
   public MaintenanceTaskView task(long id) {
     var r = taskRaw(auth.tenantId(), id, false);
-    if (!taskAccess(r, "查看")) {
+    if (!taskAccess(r, PermissionAction.VIEW)) {
       deny();
     }
     var v = taskView(r);

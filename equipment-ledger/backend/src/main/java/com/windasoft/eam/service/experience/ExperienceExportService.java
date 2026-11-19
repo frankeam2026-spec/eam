@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.experience;
 
 import com.windasoft.eam.common.experience.ExperienceSupport;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.service.system.PermissionService;
 import java.io.*;
 import java.util.*;
@@ -25,7 +26,7 @@ public class ExperienceExportService {
         kind.equals("anomalies")
             ? "anomaly"
             : kind.equals("repair-plans") ? "repairPlan" : "materialCustody";
-    permissions.require(menu, "导出");
+    permissions.require(menu, PermissionAction.EXPORT);
   }
 
   public void write(String kind, String q, String filters, boolean personal, Writer output)

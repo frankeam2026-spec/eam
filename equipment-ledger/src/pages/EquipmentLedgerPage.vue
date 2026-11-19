@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
 import { isDepartmentCustomColumn } from '../businessConfig';
 import DepartmentValuesText from '../components/common/DepartmentValuesText.vue';
 import { tr, enumLabel } from '../i18n';
@@ -104,7 +105,7 @@ const router = useRouter();
 
 const route = useRoute();
 const importOpen = computed(
-  () => route.query.import === '1' && can('equipment', '导入') && can('equipment', '新增'),
+  () => route.query.import === '1' && can('equipment', PermissionAction.IMPORT) && can('equipment', PermissionAction.CREATE),
 );
 function openImport() {
   void router.replace({ query: { ...route.query, import: '1' } });
@@ -201,7 +202,7 @@ async function submitBatch() {
   }
 }
 
-function can(menu: string, action = '查看') {
+function can(menu: string, action: string = PermissionAction.VIEW) {
   return grantedActions.value[menu]?.includes(action) === true;
 }
 
@@ -901,14 +902,14 @@ const {
     />
     <AppListToolbar class="toolbar">
       <div class="toolbar-left">
-        <ElButton type="primary" v-if="can('equipment', '新增')" @click="create">
+        <ElButton type="primary" v-if="can('equipment', PermissionAction.CREATE)" @click="create">
           <span class="plus"> <AppIcon name="Plus" /> </span>{{ tr('ui.equipment.text0149') }}</ElButton
         >
-        <ElButton v-if="can('equipment', '导入') && can('equipment', '新增')" @click="openImport"
+        <ElButton v-if="can('equipment', PermissionAction.IMPORT) && can('equipment', PermissionAction.CREATE)" @click="openImport"
           ><AppIcon name="Upload" />{{ tr('ui.equipment.text1196') }}</ElButton
         >
         <ElDropdown
-          v-if="can('equipment', '编辑') || can('equipment', '删除')"
+          v-if="can('equipment', PermissionAction.EDIT) || can('equipment', PermissionAction.DELETE)"
           trigger="click"
           :disabled="!selected.length || listLoading || !!listError"
           @command="openBatch"
@@ -921,7 +922,7 @@ const {
             ><ElDropdownMenu>
               <template v-for="(label, operation) in batchLabels" :key="operation">
                 <ElDropdownItem
-                  v-if="can('equipment', operation === 'delete' ? '删除' : '编辑')"
+                  v-if="can('equipment', operation === 'delete' ? PermissionAction.DELETE : PermissionAction.EDIT)"
                   :command="operation"
                   :class="{ 'danger-text': operation === 'delete' }"
                   >{{ label }}</ElDropdownItem
@@ -1053,15 +1054,15 @@ const {
               :min-width="156"
               :resizable="false"
               ><template #default="{ row }">
-                <ElButton type="primary" link v-if="can('equipment', '编辑')" @click="edit(row)">
+                <ElButton type="primary" link v-if="can('equipment', PermissionAction.EDIT)" @click="edit(row)">
                   {{ tr('ui.equipment.text0207') }}
                 </ElButton>
-                <ElButton type="primary" link v-if="can('equipment', '新增')" @click="clone(row)">
+                <ElButton type="primary" link v-if="can('equipment', PermissionAction.CREATE)" @click="clone(row)">
                   {{ tr('ui.equipment.text0270') }}</ElButton
                 >
 
                 <ElDropdown
-                  v-if="can('equipment', '删除')"
+                  v-if="can('equipment', PermissionAction.DELETE)"
                   trigger="click"
                   placement="bottom-end"
                   popper-class="eam-dropdown"
@@ -1070,8 +1071,8 @@ const {
                     <AppIcon name="More" /></ElButton
                   ><template #dropdown>
                     <ElDropdownMenu>
-                      <!-- <ElDropdownItem v-if="can('equipment', '新增')" command="clone">复制</ElDropdownItem> -->
-                      <ElDropdownItem v-if="can('equipment', '删除')" command="delete"
+                      <!-- <ElDropdownItem v-if="can('equipment', PermissionAction.CREATE)" command="clone">复制</ElDropdownItem> -->
+                      <ElDropdownItem v-if="can('equipment', PermissionAction.DELETE)" command="delete"
                         >{{ tr('ui.equipment.text0146') }}</ElDropdownItem
                       >
                     </ElDropdownMenu>
@@ -1092,7 +1093,7 @@ const {
                 </div>
                 <b>{{ hasAppliedFilters ? tr('ui.equipment.text1675') : tr('ui.equipment.text0701') }}</b
                 ><span>{{
-                  hasAppliedFilters ? tr('ui.equipment.text1676') : can('equipment', '新增') ? tr('ui.equipment.text1677') : tr('equipment.list.emptyAuthorized')
+                  hasAppliedFilters ? tr('ui.equipment.text1676') : can('equipment', PermissionAction.CREATE) ? tr('ui.equipment.text1677') : tr('equipment.list.emptyAuthorized')
                 }}</span
                 ><ElButton type="primary" link v-if="appliedQuery.keyword.trim() || equipmentAdvanced.length" @click="reset"
                   >{{ tr('equipment.list.clearQuery') }}</ElButton
@@ -1116,7 +1117,7 @@ const {
           <AppPagination v-if="!listError" v-model:page="page" v-model:page-size="pageSize" :total="serverTotal" :page-sizes="EQUIPMENT_PAGE_SIZES" />
           <ListToolbarIcons
             mode="footer"
-            :can-export="can('equipment', '导出')"
+            :can-export="can('equipment', PermissionAction.EXPORT)"
             :columns-open="showColumns"
             @toggle-columns="showColumns = !showColumns"
             @export="exportCsv"
@@ -1217,7 +1218,7 @@ const {
     v-model:open="drawer"
     :is-new="isNew"
     :dirty="equipmentDetailsDirty"
-    :can-view-archive="can('equipment', '查看')"
+    :can-view-archive="can('equipment', PermissionAction.VIEW)"
     :busy="equipmentSaving || equipmentUploading"
     @relation-busy="equipmentRelationSaving = $event"
     @relation-dirty="equipmentRelationDirty = $event"

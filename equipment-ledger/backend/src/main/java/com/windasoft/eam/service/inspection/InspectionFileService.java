@@ -4,6 +4,7 @@ import static com.windasoft.eam.common.inspection.InspectionSupport.deny;
 import static com.windasoft.eam.common.inspection.InspectionSupport.number;
 import static com.windasoft.eam.common.inspection.InspectionSupport.require;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.inspection.InspectionDownload;
 import com.windasoft.eam.dto.inspection.InspectionFileUploadResult;
 import com.windasoft.eam.dto.inspection.InspectionUpload;
@@ -36,7 +37,7 @@ public class InspectionFileService {
 
   /** 文件与元数据登记成功后返回业务结果；登记失败仍清理文件，data响应包装由Controller负责。 */
   public InspectionFileUploadResult upload(InspectionUpload file) throws Exception {
-    require(permissions.anyInspection("查看"), "没有点巡检访问权限");
+    require(permissions.anyInspection(PermissionAction.VIEW), "没有点巡检访问权限");
     require(!file.empty() && file.size() <= 20L * 1024 * 1024, "请选择不超过20MB的附件");
     String name = Objects.toString(file.name(), "附件");
     name = Path.of(name).getFileName().toString();

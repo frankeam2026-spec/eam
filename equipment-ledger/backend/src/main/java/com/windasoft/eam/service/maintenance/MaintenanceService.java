@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.NotificationMessages;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.maintenance.MaintenanceCategoryOption;
 import com.windasoft.eam.dto.maintenance.MaintenanceChoices;
@@ -118,7 +119,7 @@ public class MaintenanceService {
     if (kind.equals("types")) {
       return types.list("[]", false).stream().map(this::legacyType).toList();
     }
-    permissions.require(PermissionService.maintenanceMenu(kind), "查看");
+    permissions.require(PermissionService.maintenanceMenu(kind), PermissionAction.VIEW);
     return definitionBatches(kind);
   }
 
@@ -140,7 +141,7 @@ public class MaintenanceService {
   @Transactional(readOnly = true)
   public List<Map<String, Object>> exportRows(String kind) {
     require(kind.equals("types"), MessageContext.text("server.maintenance.message0019"));
-    permissions.require(PermissionService.maintenanceMenu(kind), "导出");
+    permissions.require(PermissionService.maintenanceMenu(kind), PermissionAction.EXPORT);
     return readDefinitions(kind);
   }
 
@@ -200,12 +201,12 @@ public class MaintenanceService {
 
   public MaintenanceChoices choices(boolean paged) {
     require(
-        permissions.anyMaintenance("查看"), MessageContext.text("server.maintenance.message0047"));
+        permissions.anyMaintenance(PermissionAction.VIEW), MessageContext.text("server.maintenance.message0047"));
     var equipmentScopes = new ArrayList<PermissionScope>();
     if (!paged) {
       for (String kind : List.of("standards", "plans", "tasks")) {
-        if (permissions.allowed(PermissionService.maintenanceMenu(kind), "查看")) {
-          equipmentScopes.add(permissions.maintenance(kind, "查看"));
+        if (permissions.allowed(PermissionService.maintenanceMenu(kind), PermissionAction.VIEW)) {
+          equipmentScopes.add(permissions.maintenance(kind, PermissionAction.VIEW));
         }
       }
     }
@@ -232,10 +233,10 @@ public class MaintenanceService {
     boolean allStocks = false;
     var stockCompanies = new HashSet<Long>();
     for (String kind : List.of("standards", "plans", "tasks")) {
-      if (!permissions.allowed(PermissionService.maintenanceMenu(kind), "查看")) {
+      if (!permissions.allowed(PermissionService.maintenanceMenu(kind), PermissionAction.VIEW)) {
         continue;
       }
-      var scope = permissions.maintenance(kind, "查看");
+      var scope = permissions.maintenance(kind, PermissionAction.VIEW);
       stockCompanies.addAll(scope.companyIds());
       if (scope.all()) {
         allStocks = true;

@@ -1,6 +1,7 @@
 package com.windasoft.eam.repository.common;
 
 import com.fasterxml.jackson.databind.*;
+import com.windasoft.eam.domain.common.ActivationStatus;
 import com.windasoft.eam.dto.common.ListQuery;
 import java.math.BigDecimal;
 import java.time.*;
@@ -19,6 +20,17 @@ public final class SqlListFilters {
   }
 
   public record Field(String expression, Kind kind) {}
+
+  /** 条件来自仓储固定表达式；状态筛选、排序和导出使用同一套历史文本值。 */
+  public static String activationLabel(String enabledPredicate) {
+    return "CASE WHEN "
+        + enabledPredicate
+        + " THEN '"
+        + ActivationStatus.ENABLED.label()
+        + "' ELSE '"
+        + ActivationStatus.DISABLED.label()
+        + "' END";
+  }
 
   public static String like(String value) {
     return "%"

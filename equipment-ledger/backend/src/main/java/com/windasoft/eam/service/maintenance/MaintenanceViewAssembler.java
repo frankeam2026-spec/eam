@@ -2,6 +2,7 @@ package com.windasoft.eam.service.maintenance;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.domain.maintenance.MaintenanceTaskStatus;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.maintenance.MaintenanceExecutionResult;
 import com.windasoft.eam.dto.maintenance.MaintenanceOrganizationOption;
 import com.windasoft.eam.dto.maintenance.MaintenanceTaskData;
@@ -131,16 +132,16 @@ public class MaintenanceViewAssembler {
         MaintenanceTaskStatus.PENDING_ACCEPTANCE.code().equals(row.status())
             && snapshot.getReviewers() != null
             && snapshot.getReviewers().contains(auth.userId())
-            && access.allowed(row, "验收"));
+            && access.allowed(row, PermissionAction.ACCEPT));
     view.setCanDelete(
-        access.allowed(row, "删除")
+        access.allowed(row, PermissionAction.DELETE)
             && Set.of(
                     MaintenanceTaskStatus.PENDING.code(),
                     MaintenanceTaskStatus.CANCELLED.code(),
                     MaintenanceTaskStatus.EXPIRED_CANCELLED.code())
                 .contains(row.status()));
     view.setCanPostpone(
-        access.allowed(row, "编辑")
+        access.allowed(row, PermissionAction.EDIT)
             && row.expiresDate() != null
             && Set.of(
                     MaintenanceTaskStatus.PENDING.code(),

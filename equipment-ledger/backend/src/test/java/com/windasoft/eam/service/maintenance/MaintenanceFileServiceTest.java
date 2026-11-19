@@ -9,6 +9,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.maintenance.MaintenanceUpload;
 import com.windasoft.eam.entity.maintenance.MaintenanceFile;
 import com.windasoft.eam.repository.maintenance.MaintenanceFileMapper;
@@ -30,7 +31,7 @@ class MaintenanceFileServiceTest {
     var failure = new IllegalStateException("登记失败");
     doThrow(failure).when(mapper).insert(any(MaintenanceFile.class));
     var permissions = mock(PermissionService.class);
-    when(permissions.anyMaintenance("查看")).thenReturn(true);
+    when(permissions.anyMaintenance(PermissionAction.VIEW)).thenReturn(true);
     var repository = new MaintenanceFileRepository(mapper);
     var service =
         new MaintenanceFileService(

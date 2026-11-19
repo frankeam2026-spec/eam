@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.common.inventory.InventoryMoney;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.inventory.InventoryBalanceRepository;
 import com.windasoft.eam.repository.inventory.InventoryReservationRepository;
 import com.windasoft.eam.repository.inventory.InventoryTransactionRepository;
@@ -143,19 +144,19 @@ public class OutboundService {
     return result;
   }
 
-  private Map<String, Object> row(long id, boolean lock, String action) {
+  private Map<String, Object> row(long id, boolean lock, PermissionAction action) {
     var rows = repository.loadIssue(auth.tenantId(), id, lock);
     require(
         rows.size() == 1,
         com.windasoft.eam.common.MessageContext.text("server.printing.message0003"));
     var r = rows.getFirst();
     boolean ownRead =
-        action.equals("查看")
+        action == PermissionAction.VIEW
             && text(r, "source_kind").equals("直接出库")
             && !text(r, "status").equals("草稿")
             && repository.countOtherRecipients(auth.tenantId(), id, auth.userId()) == 0
             && repository.countOwnRecipient(auth.tenantId(), id, auth.userId()) > 0;
-    if (!ownRead) permissions.checkInventoryWarehouse(MENU, id(r.get("warehouse_id")), action);
+    if (!ownRead) permissions.checkInventoryWarehouse(MENU, id(r.get("warehouse_id")), action.code());
     return r;
   }
 
@@ -180,11 +181,11 @@ public class OutboundService {
   }
 
   public Object materials(String q, int page, int size, long warehouseId) {
-    permissions.require(MENU, "查看");
+    permissions.require(MENU, PermissionAction.VIEW);
     require(
         q.length() <= 200 && page >= 1 && size >= 1 && size <= 100,
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0032"));
-    permissions.checkInventoryWarehouse(MENU, warehouseId, "查看");
+    permissions.checkInventoryWarehouse(MENU, warehouseId, PermissionAction.VIEW.code());
     String match = "%" + q.trim() + "%";
     Long total = repository.countMaterials(auth.tenantId(), match);
     var data =
@@ -218,7 +219,7 @@ public class OutboundService {
   }
 
   public Object choices(boolean paged) {
-    permissions.require(MENU, "查看");
+    permissions.require(MENU, PermissionAction.VIEW);
     var allowedWarehouses = permissions.inventoryWarehouses(MENU, VIEW);
     var warehouses =
         repository.listWarehouses(auth.tenantId()).stream()
@@ -282,12 +283,12 @@ public class OutboundService {
     long warehouse = id(body.get("warehouseId"));
     var w = masters.row("warehouses", warehouse, true);
     permissions.checkInventoryWarehouse(
-        MENU, warehouse, direct ? (issueId == null ? "新增直接出库" : "编辑草稿") : "确认出库");
+        MENU, warehouse, direct ? (issueId == null ? PermissionAction.CREATE_DIRECT_OUTBOUND.code() : PermissionAction.EDIT_DRAFT.code()) : PermissionAction.CONFIRM_ISSUE.code());
     require(
         flag(w.get("enabled")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0035"));
     Map<String, Object> previous =
-        issueId == null ? null : row(issueId, true, direct ? "编辑草稿" : "确认出库");
+        issueId == null ? null : row(issueId, true, direct ? PermissionAction.EDIT_DRAFT : PermissionAction.CONFIRM_ISSUE);
     if (previous != null) {
       require(
           text(previous, "status").equals("草稿"),
@@ -342,7 +343,7 @@ public class OutboundService {
             source.size() == 1,
             com.windasoft.eam.common.MessageContext.text("server.inventory.message0042"));
         var r = source.getFirst();
-        requests.outboundRequest(id(r.get("request_id")), true, "确认出库");
+        requests.outboundRequest(id(r.get("request_id")), true, PermissionAction.CONFIRM_ISSUE);
         require(
             id(r.get("company_id")) == company && id(r.get("warehouse_id")) == warehouse,
             com.windasoft.eam.common.MessageContext.text("server.inventory.message0043"));
@@ -471,7 +472,7 @@ public class OutboundService {
       require(
           seen.add(reqId),
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0052"));
-      var r = requests.outboundRequest(reqId, false, "确认出库");
+      var r = requests.outboundRequest(reqId, false, PermissionAction.CONFIRM_ISSUE);
       if (warehouse == 0) warehouse = id(r.get("warehouse_id"));
       require(
           warehouse == id(r.get("warehouse_id")),
@@ -502,13 +503,13 @@ public class OutboundService {
   }
 
   public Object stock(long warehouse, long material, long reqLine) {
-    permissions.checkInventoryWarehouse(MENU, warehouse, "确认出库");
+    permissions.checkInventoryWarehouse(MENU, warehouse, PermissionAction.CONFIRM_ISSUE.code());
     if (reqLine != 0) {
       var owner = repository.findLineRequest(auth.tenantId(), reqLine);
       require(
           owner.size() == 1,
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0042"));
-      var req = requests.outboundRequest(id(owner.getFirst().get("requisition_id")), false, "确认出库");
+      var req = requests.outboundRequest(id(owner.getFirst().get("requisition_id")), false, PermissionAction.CONFIRM_ISSUE);
       require(
           id(req.get("warehouse_id")) == warehouse,
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0054"));
@@ -542,7 +543,7 @@ public class OutboundService {
 
   @SuppressWarnings("unchecked")
   private Map<String, Object> plan(long issueId, Map<String, Object> body, boolean lock) {
-    var r = row(issueId, lock, "确认出库");
+    var r = row(issueId, lock, PermissionAction.CONFIRM_ISSUE);
     require(
         text(r, "status").equals("草稿"),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0055"));
@@ -577,7 +578,7 @@ public class OutboundService {
           reqLine = id(l.get("requisition_line_id")),
           material = id(l.get("material_id"));
       if (reqId != 0) {
-        var req = requests.outboundRequest(reqId, lock, "确认出库");
+        var req = requests.outboundRequest(reqId, lock, PermissionAction.CONFIRM_ISSUE);
         requestVersions.put(reqId, req.get("row_version"));
         var original = repository.lockRequestQuantity(auth.tenantId(), reqLine, lock);
         require(
@@ -786,8 +787,8 @@ public class OutboundService {
 
   public Object preview(long id, Map<String, Object> body) {
     var result = plan(id, body, false);
-    var r = row(id, false, "确认出库");
-    if (!permissions.inventoryWarehouseAllowed(MENU, id(r.get("warehouse_id")), "查看金额"))
+    var r = row(id, false, PermissionAction.CONFIRM_ISSUE);
+    if (!permissions.inventoryWarehouseAllowed(MENU, id(r.get("warehouse_id")), PermissionAction.VIEW_AMOUNT.code()))
       InventoryMoney.hide(result);
     return result;
   }
@@ -796,7 +797,7 @@ public class OutboundService {
   @SuppressWarnings("unchecked")
   public Object confirm(long issueId, Map<String, Object> body) {
     mutex.enter();
-    var r = row(issueId, true, "确认出库");
+    var r = row(issueId, true, PermissionAction.CONFIRM_ISSUE);
     String key = text(body, "confirmationKey");
     require(
         key.matches("[a-zA-Z0-9-]{16,64}"),
@@ -900,7 +901,7 @@ public class OutboundService {
   @Transactional
   public void delete(long id, Map<String, Object> body) {
     mutex.enter();
-    var r = row(id, true, "删除草稿");
+    var r = row(id, true, PermissionAction.DELETE_DRAFT);
     require(
         text(r, "status").equals("草稿"),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0074"));
@@ -923,7 +924,7 @@ public class OutboundService {
           groups.size() == 1,
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0075"));
       var g = groups.getFirst();
-      permissions.checkInventoryWarehouse(MENU, id(g.get("warehouse_id")), "查看");
+      permissions.checkInventoryWarehouse(MENU, id(g.get("warehouse_id")), PermissionAction.VIEW.code());
       var result = masters.view(g);
       result.put("id", reference);
       result.put("sourceKind", "历史合并");
@@ -956,12 +957,12 @@ public class OutboundService {
                   g.get("actor_name"),
                   "createdAt",
                   g.get("created_at"))));
-      if (!permissions.inventoryWarehouseAllowed(MENU, id(g.get("warehouse_id")), "查看金额"))
+      if (!permissions.inventoryWarehouseAllowed(MENU, id(g.get("warehouse_id")), PermissionAction.VIEW_AMOUNT.code()))
         InventoryMoney.hide(result);
       return result;
     }
     long issueId = id(reference);
-    var r = row(issueId, false, "查看");
+    var r = row(issueId, false, PermissionAction.VIEW);
     var v = masters.view(r);
     v.remove("payload");
     v.remove("confirmationKey");
@@ -983,7 +984,7 @@ public class OutboundService {
     v.put(
         "events",
         repository.listEvents(auth.tenantId(), issueId).stream().map(masters::view).toList());
-    if (!permissions.inventoryWarehouseAllowed(MENU, id(r.get("warehouse_id")), "查看金额"))
+    if (!permissions.inventoryWarehouseAllowed(MENU, id(r.get("warehouse_id")), PermissionAction.VIEW_AMOUNT.code()))
       InventoryMoney.hide(v);
     custom.attach("inventory_outbound", v);
     return v;
@@ -1006,7 +1007,7 @@ public class OutboundService {
 
   @SuppressWarnings("unchecked")
   private Map<String, Object> legacyForm(long requestId, Map<String, Object> body) {
-    var req = requests.outboundRequest(requestId, false, "确认出库");
+    var req = requests.outboundRequest(requestId, false, PermissionAction.CONFIRM_ISSUE);
     VersionGuard.checkPayload((Number) req.get("row_version"), body);
     var f = (Map<String, Object>) fromRequests(Map.of("ids", List.of(Long.toString(requestId))));
     var sums = new TreeMap<Long, BigDecimal>();
@@ -1092,9 +1093,9 @@ public class OutboundService {
 
   public Map<String, Object> legacyPreview(long requestId, Map<String, Object> body) {
     var p = transientPlan(legacyForm(requestId, body));
-    p.put("rowVersion", requests.outboundRequest(requestId, false, "确认出库").get("row_version"));
+    p.put("rowVersion", requests.outboundRequest(requestId, false, PermissionAction.CONFIRM_ISSUE).get("row_version"));
     if (!permissions.inventoryWarehouseAllowed(
-        MENU, id(requests.outboundRequest(requestId, false, "确认出库").get("warehouse_id")), "查看金额"))
+        MENU, id(requests.outboundRequest(requestId, false, PermissionAction.CONFIRM_ISSUE).get("warehouse_id")), PermissionAction.VIEW_AMOUNT.code()))
       InventoryMoney.hide(p);
     return p;
   }
@@ -1106,7 +1107,7 @@ public class OutboundService {
     String key = text(body, "confirmationKey");
     var found = repository.findConfirmedIssue(auth.tenantId(), key);
     if (!found.isEmpty()) {
-      row(id(found.getFirst().get("id")), false, "确认出库");
+      row(id(found.getFirst().get("id")), false, PermissionAction.CONFIRM_ISSUE);
       require(
           id(found.getFirst().get("requisition_id")) == requestId
               || repository.countIssueRequest(
@@ -1131,7 +1132,7 @@ public class OutboundService {
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0082"));
     var created = (Map<String, Object>) save(null, f);
     long issue = id(created.get("id"));
-    var raw = row(issue, true, "确认出库");
+    var raw = row(issue, true, PermissionAction.CONFIRM_ISSUE);
     var data = headerData(raw);
     data.put("legacyFingerprint", p.get("fingerprint"));
     repository.updatePayload(encode(data), auth.tenantId(), issue);
@@ -1153,7 +1154,7 @@ public class OutboundService {
   public Object legacyMergedPreview(Map<String, Object> body) {
     var f = (Map<String, Object>) fromRequests(body);
     var p = transientPlan(f);
-    if (!permissions.inventoryWarehouseAllowed(MENU, id(f.get("warehouseId")), "查看金额"))
+    if (!permissions.inventoryWarehouseAllowed(MENU, id(f.get("warehouseId")), PermissionAction.VIEW_AMOUNT.code()))
       InventoryMoney.hide(p);
     return Map.of("form", f, "preview", p, "ids", body.get("ids"));
   }
@@ -1166,7 +1167,7 @@ public class OutboundService {
     var prior = repository.findIssueByKey(auth.tenantId(), key);
     if (!prior.isEmpty()) {
       var old = prior.getFirst();
-      row(id(old.get("id")), false, "确认出库");
+      row(id(old.get("id")), false, PermissionAction.CONFIRM_ISSUE);
       require(
           text(headerData(old), "legacyFingerprint").equals(text(body, "fingerprint")),
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0083"));
@@ -1182,7 +1183,7 @@ public class OutboundService {
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0085"));
     var created = (Map<String, Object>) save(null, f);
     long issue = id(created.get("id"));
-    var stored = headerData(row(issue, true, "确认出库"));
+    var stored = headerData(row(issue, true, PermissionAction.CONFIRM_ISSUE));
     stored.put("legacyFingerprint", p.get("fingerprint"));
     repository.storePreviewPayload(encode(stored), auth.tenantId(), issue);
     var current = plan(issue, Map.of("rowVersion", created.get("rowVersion")), true);

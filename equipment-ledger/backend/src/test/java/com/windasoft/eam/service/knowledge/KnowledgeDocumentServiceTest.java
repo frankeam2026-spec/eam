@@ -3,6 +3,7 @@ package com.windasoft.eam.service.knowledge;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.knowledge.KnowledgeDocument;
 import com.windasoft.eam.entity.system.OrgUnit;
@@ -51,7 +52,7 @@ class KnowledgeDocumentServiceTest {
 
   void grant() {
     when(auth.tenantId()).thenReturn(10L);
-    when(permissions.scope("knowledge", "编辑"))
+    when(permissions.scope("knowledge", PermissionAction.EDIT))
         .thenReturn(new PermissionScope(false, 20L, Set.of(), false, Set.of(20L)));
     var org = new OrgUnit();
     org.setStatus(1);
@@ -82,9 +83,9 @@ class KnowledgeDocumentServiceTest {
     var document = new KnowledgeDocument();
     document.setCompanyId(20L);
     when(repository.document(10, 99)).thenReturn(document);
-    when(permissions.scope("knowledge", "查看"))
+    when(permissions.scope("knowledge", PermissionAction.VIEW))
         .thenReturn(new PermissionScope(false, 20L, Set.of(), false, Set.of(20L)));
-    when(permissions.scope("knowledge", "编辑"))
+    when(permissions.scope("knowledge", PermissionAction.EDIT))
         .thenThrow(
             new org.springframework.web.server.ResponseStatusException(
                 org.springframework.http.HttpStatus.FORBIDDEN));

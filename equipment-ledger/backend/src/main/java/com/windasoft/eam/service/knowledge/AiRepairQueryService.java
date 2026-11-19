@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.knowledge;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
 import com.windasoft.eam.service.repair.RepairQueryService;
 import com.windasoft.eam.service.system.PermissionService;
@@ -42,14 +43,14 @@ public class AiRepairQueryService {
     if(!question.matches("(?s).*(维修|报修|工单).*(记录|明细|清单|列表|工单).*"))return null;
     if(question.matches("(?s).*(排行|排名|统计|趋势|分布|执行率|故障率|工作量).*"))return null;
     if(question.matches("(?s).*(怎么|如何|怎样|填写|录入|编写|流程|步骤|手册|SOP).*"))return null;
-    if(!permissions.allowed("repair","查看"))return Map.of("answer","你没有维修工单查看权限，请联系管理员。","citations",List.of());
+    if(!permissions.allowed("repair",PermissionAction.VIEW))return Map.of("answer","你没有维修工单查看权限，请联系管理员。","citations",List.of());
     var criteria=interpret(question,LocalDate.now(ZoneId.of("Asia/Shanghai")),equipmentId);
     if(criteria==null)return Map.of("answer","请明确维修记录的查询条件。目前可查最近一个月、最近30天、最近7天、本月或上个月；也可指定我负责、我发起或已完成。公司、人员等其他条件请在维修工单列表筛选。","citations",List.of());
     var data=query(criteria,1,20);
     return Map.of("answer","已查询系统维修工单，时间口径和结果见下表。历史会话请重新查询最新记录。","citations",List.of(),"repairRecords",data);
   }
   public Object query(Criteria criteria,int page,int size) throws Exception {
-    permissions.require("knowledge","查看");permissions.require("repair","查看");
+    permissions.require("knowledge",PermissionAction.VIEW);permissions.require("repair",PermissionAction.VIEW);
     if(criteria.from()==null||criteria.to()==null||criteria.from().isAfter(criteria.to())||criteria.from().isBefore(criteria.to().minusYears(2))||criteria.to().isAfter(LocalDate.now(ZoneId.of("Asia/Shanghai")))||page<1||page>10_000_000||!Set.of(20,50,100).contains(size)||!Set.of("","owned","created").contains(criteria.relation()))throw new IllegalArgumentException("维修记录查询条件无效");
     String dateField=criteria.completed()?"completedAt":"reportedAt";
     var filters=new ArrayList<Map<String,Object>>();

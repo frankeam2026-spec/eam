@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.knowledge;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.DataResponse;
 import com.windasoft.eam.dto.knowledge.KnowledgeViews;
 import com.windasoft.eam.entity.knowledge.KnowledgeDocument;
@@ -80,17 +81,17 @@ public class KnowledgeDocumentService {
   }
 
   public KnowledgeViews.Documents list(String q, int page, int size) {
-    return documents.list(auth.tenantId(), permissions.scope("knowledge", "查看"), q, page, size);
+    return documents.list(auth.tenantId(), permissions.scope("knowledge", PermissionAction.VIEW), q, page, size);
   }
 
-  private KnowledgeDocument document(long id, String action, String missing) {
+  private KnowledgeDocument document(long id, PermissionAction action, String missing) {
     var d = documents.document(auth.tenantId(), id);
     if (d == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, missing);
     company(d.getCompanyId(), action);
     return d;
   }
 
-  private void company(long id, String action) {
+  private void company(long id, PermissionAction action) {
     var scope = permissions.scope("knowledge", action);
     if (!scope.all() && !scope.companyIds().contains(id))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该公司知识资料");
@@ -99,7 +100,7 @@ public class KnowledgeDocumentService {
   }
 
   public KnowledgeViews.Versions versions(long id, int page, int size) {
-    document(id, "编辑", "资料不存在");
+    document(id, PermissionAction.EDIT, "资料不存在");
     return versions.list(auth.tenantId(), id, page, size);
   }
 
@@ -107,7 +108,7 @@ public class KnowledgeDocumentService {
   public KnowledgeViews.RowVersion retryParse(long id, long expected) {
     return transaction.execute(
         s -> {
-          document(id, "编辑", "资料不存在");
+          document(id, PermissionAction.EDIT, "资料不存在");
           if (!documents.advance(auth.tenantId(), id, expected))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "资料已变更，请刷新");
           var v = versions.latest(auth.tenantId(), id);
@@ -121,14 +122,14 @@ public class KnowledgeDocumentService {
   public DataResponse<List<KnowledgeViews.Company>> companies() {
     return new DataResponse<>(
         organizations
-            .knowledgeCompanies(auth.tenantId(), permissions.scope("knowledge", "编辑"))
+            .knowledgeCompanies(auth.tenantId(), permissions.scope("knowledge", PermissionAction.EDIT))
             .stream()
             .map(o -> new KnowledgeViews.Company(o.getId().toString(), o.getName()))
             .toList());
   }
 
   public KnowledgeViews.Applicability applicability(long id) {
-    var d = document(id, "编辑", "资料不存在");
+    var d = document(id, PermissionAction.EDIT, "资料不存在");
     return new KnowledgeViews.Applicability(
         Boolean.TRUE.equals(d.getAppliesToAll()),
         equipment.list(auth.tenantId(), id).stream()
@@ -146,7 +147,7 @@ public class KnowledgeDocumentService {
         || (all && !selected.isEmpty())) throw new IllegalArgumentException("请选择通用资料或指定适用设备");
     return transaction.execute(
         s -> {
-          var d = document(id, "编辑", "文档不存在");
+          var d = document(id, PermissionAction.EDIT, "文档不存在");
           for (long eq : selected) {
             var device = equipmentQueries.get(eq);
             if (!Objects.equals(d.getCompanyId().toString(), device.companyOrgId()))
@@ -160,7 +161,7 @@ public class KnowledgeDocumentService {
   }
 
   public Path original(long id, long version) {
-    document(id, "查看", "资料不存在");
+    document(id, PermissionAction.VIEW, "资料不存在");
     String key = versions.publishedFile(auth.tenantId(), id, version);
     if (key == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "资料版本已停用或替换");
     if (!key.matches("[0-9a-f-]{36}\\.pdf")) throw new IllegalStateException("资料文件标识无效");
@@ -185,8 +186,8 @@ public class KnowledgeDocumentService {
   }
 
   public DataResponse<List<KnowledgeViews.Page>> pages(long id) {
-    var d = document(id, "查看", "知识文档不存在");
-    company(d.getCompanyId(), "编辑");
+    var d = document(id, PermissionAction.VIEW, "知识文档不存在");
+    company(d.getCompanyId(), PermissionAction.EDIT);
     return new DataResponse<>(pages.pages(auth.tenantId(), id));
   }
 
@@ -206,7 +207,7 @@ public class KnowledgeDocumentService {
   public DataResponse<KnowledgeViews.Uploaded> upload(
       long company, String title, byte[] bytes, String type) throws Exception {
     if (!Set.of("MANUAL", "SOP").contains(type)) throw new IllegalArgumentException("资料类型无效");
-    company(company, "编辑");
+    company(company, PermissionAction.EDIT);
     title = title == null ? "" : title.strip();
     if (title.isBlank() || title.length() > 200)
       throw new IllegalArgumentException("文档名称须为1至200个字符");
@@ -222,7 +223,7 @@ public class KnowledgeDocumentService {
     try {
       transaction.executeWithoutResult(
           s -> {
-            company(company, "编辑");
+            company(company, PermissionAction.EDIT);
             var d = new KnowledgeDocument();
             d.setId(id);
             d.setTenantId(auth.tenantId());
@@ -257,7 +258,7 @@ public class KnowledgeDocumentService {
 
   /** 持有文档锁再分配内容版本；新文件失败补偿不删除旧版本或已发布文件。 */
   public KnowledgeViews.Replaced replace(long id, long expected, byte[] bytes) throws Exception {
-    var doc = document(id, "编辑", "文档不存在");
+    var doc = document(id, PermissionAction.EDIT, "文档不存在");
     pdf(bytes);
     long version = IdWorker.getId();
     String key = UUID.randomUUID() + ".pdf",
@@ -269,7 +270,7 @@ public class KnowledgeDocumentService {
     try {
       transaction.executeWithoutResult(
           s -> {
-            company(doc.getCompanyId(), "编辑");
+            company(doc.getCompanyId(), PermissionAction.EDIT);
             var locked = documents.document(auth.tenantId(), id, true);
             if (locked == null || locked.getRowVersion() != expected)
               throw new IllegalStateException("文档已变更，请刷新");
@@ -299,7 +300,7 @@ public class KnowledgeDocumentService {
   }
 
   public KnowledgeViews.StatusVersion disable(long id, long expected) {
-    document(id, "停用", "文档不存在");
+    document(id, PermissionAction.DISABLE, "文档不存在");
     if (!documents.disable(auth.tenantId(), id, expected))
       throw new ResponseStatusException(HttpStatus.CONFLICT, "文档已变更，请刷新");
     return new KnowledgeViews.StatusVersion("DISABLED", expected + 1);
@@ -309,14 +310,14 @@ public class KnowledgeDocumentService {
   public void parseVersion(KnowledgeVersion row, String token) throws Exception {
     long tenant = row.getTenantId(), version = row.getId(), id = row.getDocumentId();
     if (auth.tenantId() != tenant) throw new IllegalStateException("解析任务租户不符");
-    var d = document(id, "编辑", "文档不存在");
+    var d = document(id, PermissionAction.EDIT, "文档不存在");
     String key = row.getFileKey();
     if (!key.matches("[0-9a-f-]{36}\\.pdf")) throw new IllegalArgumentException("文档文件标识无效");
     var file = root.resolve(Long.toString(tenant)).resolve(key);
     if (Files.size(file) > MAX_PDF_BYTES) throw new IllegalArgumentException("文档大小超限");
     var parsed =
         parser.parse(Files.readAllBytes(file), () -> versions.heartbeat(tenant, version, token));
-    company(d.getCompanyId(), "编辑");
+    company(d.getCompanyId(), PermissionAction.EDIT);
     writer.commitAttempt(tenant, version, parsed, token);
   }
 }

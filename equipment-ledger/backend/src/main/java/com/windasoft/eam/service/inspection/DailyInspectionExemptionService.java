@@ -7,6 +7,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.domain.inspection.InspectionTaskAction;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.service.inventory.InventoryMutex;
 import com.windasoft.eam.service.system.AuthContext;
@@ -49,10 +50,10 @@ public class DailyInspectionExemptionService {
     // Acquire the shared task lock before plan/task row locks, matching task submission lock order.
     taskMutex.enter();
     var plan = projects.raw("daily-plans", auth.tenantId(), planId, true);
-    if (!projects.scoped(plan, "查看")) deny();
+    if (!projects.scoped(plan, PermissionAction.VIEW)) deny();
     VersionGuard.checkPayload((Number) plan.get("row_version"), body);
 
-    var scope = permissions.inspection("daily", "免检");
+    var scope = permissions.inspection("daily", PermissionAction.EXEMPT);
     Long department = nullable(plan.get("department_id"));
     if (!scope.matches(
         permissions.companyOfOrganization(department), department, null, auth.userId())) deny();

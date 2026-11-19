@@ -4,6 +4,7 @@ import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.windasoft.eam.common.*;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.service.system.*;
 import java.time.*;
@@ -250,7 +251,7 @@ public class DailyArrangementService {
   }
 
   public List<Map<String, Object>> teams() {
-    var scope = permissions.inspection("daily-plans", "查看");
+    var scope = permissions.inspection("daily-plans", PermissionAction.VIEW);
     return repository.teams(auth.tenantId()).stream()
         .filter(
             t ->
@@ -274,9 +275,9 @@ public class DailyArrangementService {
 
   @Transactional
   public Map<String, Object> createTeam(Map<String, Object> body) {
-    permissions.require("inspectionDailyPlan", "新增");
+    permissions.require("inspectionDailyPlan", PermissionAction.CREATE);
     long department = number(body.get("departmentId"));
-    var scope = permissions.inspection("daily-plans", "新增");
+    var scope = permissions.inspection("daily-plans", PermissionAction.CREATE);
     if (department <= 0
         || !scope.matches(
             permissions.companyOfOrganization(department),
@@ -306,7 +307,7 @@ public class DailyArrangementService {
   public Map<String, Object> updateTeam(long id, Map<String, Object> body) {
     var row = repository.lockTeam(auth.tenantId(), id);
     if (row.isEmpty()) deny();
-    var scope = permissions.inspection("daily-plans", "编辑");
+    var scope = permissions.inspection("daily-plans", PermissionAction.EDIT);
     if (!scope.matches(
         permissions.companyOfOrganization(nullable(row.get("department_id"))),
         nullable(row.get("department_id")),

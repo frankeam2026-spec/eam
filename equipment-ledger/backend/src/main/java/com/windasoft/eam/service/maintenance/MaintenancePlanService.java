@@ -14,6 +14,7 @@ import com.windasoft.eam.domain.maintenance.MaintenanceCalculationMode;
 import com.windasoft.eam.domain.maintenance.MaintenanceDefinitionLimits;
 import com.windasoft.eam.domain.maintenance.MaintenancePersonRole;
 import com.windasoft.eam.domain.maintenance.MaintenanceReviewMode;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.maintenance.MaintenanceCustomFields;
 import com.windasoft.eam.dto.maintenance.MaintenancePlanDetail;
 import com.windasoft.eam.dto.maintenance.MaintenancePlanRequest;
@@ -87,7 +88,7 @@ public class MaintenancePlanService {
       throw missing();
     }
     if (!permissions
-        .maintenance(KIND, "查看")
+        .maintenance(KIND, PermissionAction.VIEW)
         .matches(
             null,
             nullableId(view.getDepartmentId()),
@@ -111,7 +112,7 @@ public class MaintenancePlanService {
   @Transactional
   public MaintenancePlanDetail save(Long id, MaintenancePlanRequest request) {
     long tenant = auth.tenantId();
-    String action = id == null ? "新增" : "编辑";
+    var action = id == null ? PermissionAction.CREATE : PermissionAction.EDIT;
     permissions.require(PermissionService.maintenanceMenu(KIND), action);
     var old = id == null ? null : plans.find(tenant, id, true);
     if (id != null && old == null) {
@@ -371,9 +372,9 @@ public class MaintenancePlanService {
     if (row == null) {
       throw missing();
     }
-    permissions.require(PermissionService.maintenanceMenu(KIND), "删除");
+    permissions.require(PermissionService.maintenanceMenu(KIND), PermissionAction.DELETE);
     if (!permissions
-        .maintenance(KIND, "删除")
+        .maintenance(KIND, PermissionAction.DELETE)
         .matches(null, row.getDepartmentId(), row.getCreatorId(), auth.userId())) {
       deny();
     }

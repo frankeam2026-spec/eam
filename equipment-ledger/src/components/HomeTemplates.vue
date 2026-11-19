@@ -1,4 +1,6 @@
-<script setup lang="ts">import { tr } from '../i18n';
+<script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
+import { tr } from '../i18n';
 
 import { ElButton, ElForm } from 'element-plus';
 
@@ -157,7 +159,7 @@ onMounted(load);
     <aside class="template-library">
       <header>
         <strong>{{ tr('ui.equipment.text0034') }}</strong
-        ><ElButton v-if="auth.can('homeTemplate', '新增')" @click="create()" type="primary"
+        ><ElButton v-if="auth.can('homeTemplate', PermissionAction.CREATE)" @click="create()" type="primary"
           ><AppIcon name="Plus" />{{ tr('ui.equipment.text0149') }}
         </ElButton>
       </header>
@@ -194,9 +196,9 @@ onMounted(load);
           </div>
           <div>
             <ElButton @click="preview = !preview">{{ preview ? tr('ui.equipment.text0268') : tr('ui.equipment.text0269') }}</ElButton
-            ><ElButton v-if="auth.can('homeTemplate', '新增')" @click="create(true)"> {{ tr('ui.equipment.text0270') }}</ElButton
+            ><ElButton v-if="auth.can('homeTemplate', PermissionAction.CREATE)" @click="create(true)"> {{ tr('ui.equipment.text0270') }}</ElButton
             ><ElButton
-              v-if="auth.can('homeTemplate', '停用') && current.id"
+              v-if="auth.can('homeTemplate', PermissionAction.DISABLE) && current.id"
               class=""
               @click="disable"
             >
@@ -234,13 +236,13 @@ onMounted(load);
           :preview="preview"
           :busy="busy"
           :legacy-catalog="catalog"
-          :team-allowed="auth.can('workspace', '团队工作查看')"
+          :team-allowed="auth.can('workspace', PermissionAction.VIEW_TEAM_WORK)"
         />
       </div>
       <AppFormFooter
         ><ElButton :disabled="busy" @click="cancel">{{ tr('ui.equipment.text0157') }}</ElButton
         ><ElButton
-          v-if="auth.can('homeTemplate', current.id ? '编辑' : '新增')"
+          v-if="auth.can('homeTemplate', current.id ? PermissionAction.EDIT : PermissionAction.CREATE)"
           class=""
           :disabled="busy"
           @click="save"
@@ -248,7 +250,7 @@ onMounted(load);
         >
           {{ tr('ui.equipment.text0275') }}</ElButton
         ><ElButton
-          v-if="auth.can('homeTemplate', '发布') && current.id"
+          v-if="auth.can('homeTemplate', PermissionAction.PUBLISH) && current.id"
           class=""
           :disabled="busy"
           @click="publish"

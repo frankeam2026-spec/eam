@@ -14,6 +14,7 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.service.inventory.RequisitionService;
 import com.windasoft.eam.service.system.AuthContext;
@@ -89,7 +90,7 @@ class RequisitionDraftMySqlIT {
     user.setId(ACTOR);
     user.setDisplayName("draft tester");
     when(auth.user()).thenReturn(user);
-    when(permissions.allowed("inventoryRequisition", "新增")).thenReturn(true);
+    when(permissions.allowed("inventoryRequisition", PermissionAction.CREATE)).thenReturn(true);
     when(permissions.companyOfOrganization(71003L)).thenReturn(71002L);
     when(workflow.history("requisition", 0)).thenReturn(List.of());
     when(workflow.history(eq("requisition"), anyLong())).thenReturn(List.of());
@@ -277,7 +278,7 @@ class RequisitionDraftMySqlIT {
             .value());
     doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN))
         .when(permissions)
-        .checkRepair(any(), eq("查看"));
+        .checkRepair(any(), eq(PermissionAction.VIEW));
     assertEquals(
         403,
         assertThrows(ResponseStatusException.class, () -> save(null, form()))

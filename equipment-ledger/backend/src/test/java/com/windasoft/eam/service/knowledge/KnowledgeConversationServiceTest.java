@@ -2,6 +2,7 @@ package com.windasoft.eam.service.knowledge;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.knowledge.*;
 import com.windasoft.eam.service.system.*;
@@ -22,7 +23,7 @@ class KnowledgeConversationServiceTest {
     when(repo.equipment(anyLong(),anyLong(),anyLong())).thenReturn(null);
     when(repo.existing(anyLong(),anyLong(),anyString())).thenReturn(null);
     when(auth.tenantId()).thenReturn(10L);when(auth.userId()).thenReturn(20L);
-    when(permissions.scope("knowledge","查看")).thenReturn(new PermissionScope(true,null,Set.of(),false));
+    when(permissions.scope("knowledge",PermissionAction.VIEW)).thenReturn(new PermissionScope(true,null,Set.of(),false));
     when(tx.execute(any())).thenAnswer(i->((TransactionCallback<?>)i.getArgument(0)).doInTransaction(mock(TransactionStatus.class)));
     return new KnowledgeConversationService(repo,sources,answers,auth,permissions,tx);
   }

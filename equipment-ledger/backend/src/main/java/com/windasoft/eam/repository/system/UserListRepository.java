@@ -4,6 +4,7 @@ import static com.windasoft.eam.repository.common.SqlListFilters.Kind.CHOICE;
 import static com.windasoft.eam.repository.common.SqlListFilters.Kind.TEXT;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.common.ActivationStatus;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.system.UserQueryRow;
 import com.windasoft.eam.repository.common.JdbcListRepository;
@@ -51,8 +52,8 @@ public class UserListRepository {
     fields.put("employeeNo", new SqlListFilters.Field("t.employee_no", TEXT));
     fields.put("department", new SqlListFilters.Field("o.name", TEXT));
     fields.put("roles", new SqlListFilters.Field(roles, TEXT));
-    fields.put(
-        "status", new SqlListFilters.Field("CASE WHEN t.status=1 THEN '启用' ELSE '停用' END", CHOICE));
+    String status = SqlListFilters.activationLabel("t.status=" + ActivationStatus.ENABLED.code());
+    fields.put("status", new SqlListFilters.Field(status, CHOICE));
     var predicate = SqlPredicate.of("t.tenant_id=? AND t.deleted=0", tenant);
     if (!all) predicate = predicate.and(SqlScopes.in("t.org_id", visibleOrganizations));
     if (selectedOrganizations != null)
@@ -64,7 +65,9 @@ public class UserListRepository {
               SqlListFilters.contains(
                   "CONCAT_WS(' ',t.account,t.display_name,t.employee_no,t.phone,o.name,"
                       + roles
-                      + ",CASE WHEN t.status=1 THEN '启用' ELSE '停用' END)",
+                      + ","
+                      + status
+                      + ")",
                   query.keyword()));
     return new Selection(from, predicate, SqlListFilters.order(query, fields, "t.id"), roles);
   }

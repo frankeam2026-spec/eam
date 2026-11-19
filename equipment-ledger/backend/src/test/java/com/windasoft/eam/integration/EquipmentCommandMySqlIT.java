@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.FieldValidationException;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.equipment.EquipmentForm;
 import com.windasoft.eam.dto.equipment.EquipmentView;
 import com.windasoft.eam.entity.system.SystemUser;
@@ -209,7 +210,7 @@ class EquipmentCommandMySqlIT {
             .value());
     doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN))
         .when(permissions)
-        .checkEquipment(any(), eq("编辑"));
+        .checkEquipment(any(), eq(PermissionAction.EDIT));
     assertEquals(
         403,
         assertThrows(

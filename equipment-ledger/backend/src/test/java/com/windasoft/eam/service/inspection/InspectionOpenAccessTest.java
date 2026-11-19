@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.service.system.*;
 import java.util.*;
@@ -18,7 +19,7 @@ class InspectionOpenAccessTest {
     when(auth.tenantId()).thenReturn(10001L);
     when(auth.userId()).thenReturn(11L);
     var permissions = mock(PermissionService.class);
-    when(permissions.inspection("daily", "执行"))
+    when(permissions.inspection("daily", PermissionAction.EXECUTE))
         .thenReturn(new PermissionScope(false, null, Set.of(21L), false));
     var access = new InspectionTaskAccessService(new ObjectMapper(), auth, permissions);
     var row =
@@ -47,7 +48,7 @@ class InspectionOpenAccessTest {
     row.put("snapshot", "{\"personMode\":\"指定负责人\",\"owners\":[]}");
     assertFalse(access.execute(row));
     row.put("snapshot", "{\"personMode\":\"现场直接点检\",\"owners\":[]}");
-    when(permissions.inspection("daily", "执行"))
+    when(permissions.inspection("daily", PermissionAction.EXECUTE))
         .thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN));
     assertFalse(access.execute(row));
   }

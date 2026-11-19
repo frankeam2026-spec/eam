@@ -18,6 +18,7 @@ import com.windasoft.eam.domain.repair.RepairMethod;
 import com.windasoft.eam.domain.repair.RepairNoticeKind;
 import com.windasoft.eam.domain.repair.RepairOrderStatus;
 import com.windasoft.eam.domain.repair.RepairWorkflowAction;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.repair.RepairInboxView;
 import com.windasoft.eam.dto.repair.RepairReadViews;
 import com.windasoft.eam.dto.repair.RepairWorkflowCommand;
@@ -140,7 +141,7 @@ public class RepairWorkflowService {
   }
 
   public List<RepairReadViews.DispatchUser> userChoices() {
-    if (!permissions.allowed("repair", "派工") && !permissions.allowed("repair", "处理")) {
+    if (!permissions.allowed("repair", PermissionAction.DISPATCH) && !permissions.allowed("repair", PermissionAction.PROCESS)) {
       if (orders.assignedOrderCount(auth.tenantId(), auth.userId()) == 0) deny();
     }
     return flow.users(auth.tenantId());
@@ -189,10 +190,10 @@ public class RepairWorkflowService {
     switch (RepairWorkflowAction.parse(action)) {
       case DISPATCH, TRANSFER -> {
         if (action.equals("dispatch")) {
-          permissions.checkRepair(row, "派工");
+          permissions.checkRepair(row, PermissionAction.DISPATCH);
           state(row, RepairOrderStatus.PENDING_DISPATCH.code());
         } else {
-          if (!isOwner(row)) permissions.checkRepair(row, "派工");
+          if (!isOwner(row)) permissions.checkRepair(row, PermissionAction.DISPATCH);
           state(
               row,
               RepairOrderStatus.PROCESSING.code(),
@@ -524,7 +525,7 @@ public class RepairWorkflowService {
   }
 
   public List<RepairReadViews.Stock> inventory() {
-    permissions.require("inventory", "查看");
+    permissions.require("inventory", PermissionAction.VIEW);
     return stocks.stocks(auth.tenantId(), permissions.companyOfUser()).stream()
         .map(RepairWorkflowService::stockView)
         .toList();

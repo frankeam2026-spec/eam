@@ -2,6 +2,7 @@ package com.windasoft.eam.service.imports;
 
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.*;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.business.BusinessChoices.ReferenceOption;
 import com.windasoft.eam.dto.equipment.EquipmentForm;
 import com.windasoft.eam.dto.imports.*;
@@ -90,20 +91,20 @@ public class EquipmentImportValidation {
   }
 
   public Context context() {
-    permissions.require("equipment", "导入");
-    permissions.require("equipment", "新增");
+    permissions.require("equipment", PermissionAction.IMPORT);
+    permissions.require("equipment", PermissionAction.CREATE);
     var c = new Context();
     c.tenant = auth.tenantId();
     c.actor = auth.userId();
-    c.create = permissions.equipment("新增");
-    c.imports = permissions.equipment("导入");
+    c.create = permissions.equipment(PermissionAction.CREATE);
+    c.imports = permissions.equipment(PermissionAction.IMPORT);
     try {
-      c.view = permissions.equipment("查看");
+      c.view = permissions.equipment(PermissionAction.VIEW);
     } catch (Exception e) {
       c.view = new PermissionScope(false, null, Set.of(), false);
     }
     try {
-      c.edit = permissions.equipment("编辑");
+      c.edit = permissions.equipment(PermissionAction.EDIT);
     } catch (Exception e) {
       c.edit = new PermissionScope(false, null, Set.of(), false);
     }

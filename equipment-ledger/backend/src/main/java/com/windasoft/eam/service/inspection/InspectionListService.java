@@ -2,6 +2,7 @@ package com.windasoft.eam.service.inspection;
 
 import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.common.SqlPredicate;
@@ -43,13 +44,13 @@ public class InspectionListService {
     this.values = values;
   }
 
-  private PermissionScope scope(String kind, String action) {
+  private PermissionScope scope(String kind, PermissionAction action) {
     try {
       return permissions.inspection(kind, action);
     } catch (ResponseStatusException e) {
       if (e.getStatusCode().value() == 403
           && (kind.endsWith("tasks") || Set.of("daily", "periodic").contains(kind))
-          && Set.of("查看", "审核").contains(action))
+          && Set.of(PermissionAction.VIEW, PermissionAction.REVIEW).contains(action))
         return new PermissionScope(false, null, Set.of(), false);
       throw e;
     }
@@ -61,15 +62,15 @@ public class InspectionListService {
 
   public com.windasoft.eam.repository.common.AssistantReadSource assistantSource(String kind){
     if(!Set.of("daily-tasks","periodic-tasks","daily-plans","periodic-plans").contains(kind))throw new IllegalArgumentException("点巡检查询对象无效");
-    permissions.require(kind.startsWith("daily")?(kind.endsWith("tasks")?"inspectionDailyTask":"inspectionDailyPlan"):(kind.endsWith("tasks")?"inspectionPeriodicTask":"inspectionPeriodicPlan"),"查看");
-    String permission=permissionKind(kind);var read=scope(permission,"查看");
-    return repository.assistantSource(repository.select(auth.tenantId(),auth.userId(),kind,read,kind.endsWith("tasks")?scope(permission,"审核"):read,false,null,ListQuery.from(Map.of()),SqlPredicate.of("1=1"),null));
+    permissions.require(kind.startsWith("daily")?(kind.endsWith("tasks")?"inspectionDailyTask":"inspectionDailyPlan"):(kind.endsWith("tasks")?"inspectionPeriodicTask":"inspectionPeriodicPlan"),PermissionAction.VIEW);
+    String permission=permissionKind(kind);var read=scope(permission,PermissionAction.VIEW);
+    return repository.assistantSource(repository.select(auth.tenantId(),auth.userId(),kind,read,kind.endsWith("tasks")?scope(permission,PermissionAction.REVIEW):read,false,null,ListQuery.from(Map.of()),SqlPredicate.of("1=1"),null));
   }
 
   @Transactional(readOnly = true)
   public Map<String, Object> context(String kind) {
     String permissionKind = permissionKind(kind);
-    var scope = scope(permissionKind, "查看");
+    var scope = scope(permissionKind, PermissionAction.VIEW);
     var organizations = metadata.listOrganizations(auth.tenantId());
     var byId = new HashMap<Long, Map<String, Object>>();
     var keep = new HashSet<Long>();
@@ -88,7 +89,7 @@ public class InspectionListService {
               auth.userId(),
               kind,
               scope,
-              scope(permissionKind, "审核"),
+              scope(permissionKind, PermissionAction.REVIEW),
               false,
               null,
               q,
@@ -118,7 +119,7 @@ public class InspectionListService {
         List.of("daily-tasks", "periodic-tasks", "standards", "daily-plans", "periodic-plans")) {
       try {
         String permissionKind = permissionKind(kind);
-        var scope = scope(permissionKind, "查看");
+        var scope = scope(permissionKind, PermissionAction.VIEW);
         var selected =
             repository.select(
                 auth.tenantId(),
@@ -151,7 +152,7 @@ public class InspectionListService {
   public PageResult<Map<String, Object>> query(
       String kind, ListQuery query, boolean export, Set<Long> selectedIds) {
     String permissionKind = permissionKind(kind), object = BusinessObjects.inspection(kind);
-    var scope = scope(permissionKind, export ? "导出" : "查看");
+    var scope = scope(permissionKind, export ? PermissionAction.EXPORT : PermissionAction.VIEW);
     Set<Long> organizations = null;
     if (!query.organization().isBlank()) {
       try {
@@ -163,7 +164,7 @@ public class InspectionListService {
             "server.inspection.message0015");
       }
     }
-    var review = kind.endsWith("tasks") ? scope(permissionKind, "审核") : scope;
+    var review = kind.endsWith("tasks") ? scope(permissionKind, PermissionAction.REVIEW) : scope;
     var selected =
         repository.select(
             auth.tenantId(),
@@ -182,7 +183,7 @@ public class InspectionListService {
               auth.tenantId(),
               auth.userId(),
               kind,
-              scope(permissionKind, "查看"),
+              scope(permissionKind, PermissionAction.VIEW),
               review,
               false,
               organizations,
@@ -206,7 +207,7 @@ public class InspectionListService {
   @Transactional(readOnly = true)
   public PageResult<Map<String, Object>> deviceTasks(
       String equipmentId, String code, int page, int size) {
-    var scope = permissions.inspection("daily", "执行");
+    var scope = permissions.inspection("daily", PermissionAction.EXECUTE);
     var query =
         ListQuery.from(
             Map.of(

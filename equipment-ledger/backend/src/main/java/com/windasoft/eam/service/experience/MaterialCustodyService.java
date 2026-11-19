@@ -5,6 +5,7 @@ import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.experience.ExperienceSupport;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.experience.MaterialCustodyRepository;
 import com.windasoft.eam.service.inventory.InventoryMutex;
 import com.windasoft.eam.service.system.AuthContext;
@@ -72,7 +73,7 @@ public class MaterialCustodyService {
                 "remark"));
     page = Math.max(1, page);
     size = Math.min(100, Math.max(1, size));
-    if (!personal) permissions.require("materialCustody", "查看");
+    if (!personal) permissions.require("materialCustody", PermissionAction.VIEW);
     var rows =
         repository.listRemaining(auth.tenantId()).stream()
             .filter(condition)

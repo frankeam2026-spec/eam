@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.knowledge;
 
 import com.fasterxml.jackson.databind.*;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.knowledge.AiBusinessCatalog;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
 import com.windasoft.eam.dto.knowledge.AiQueryLimits;
@@ -65,7 +66,7 @@ public class AiBusinessQueryService {
     var result = new LinkedHashMap<String, Object>();
     AiBusinessCatalog.ALL.forEach(
         (key, value) -> {
-          if (permissions.allowed(value.menu(), "查看")) result.put(key, value);
+          if (permissions.allowed(value.menu(), PermissionAction.VIEW)) result.put(key, value);
         });
     return result;
   }
@@ -90,13 +91,13 @@ public class AiBusinessQueryService {
 
   @Transactional(readOnly = true)
   public Map<String, Object> query(JsonNode input, Long equipmentId, int page, int size) {
-    permissions.require("knowledge", "查看");
+    permissions.require("knowledge", PermissionAction.VIEW);
     if (!AiQueryLimits.acceptsPage(page, size)) {
       throw new IllegalArgumentException("查询分页无效");
     }
     var plan = AiBusinessPlan.parse(input);
     var domain = AiBusinessCatalog.ALL.get(plan.domain());
-    permissions.require(domain.menu(), "查看");
+    permissions.require(domain.menu(), PermissionAction.VIEW);
     var now = LocalDateTime.now(ZoneId.of("Asia/Shanghai")).withNano(0);
     LocalDate[] bounds;
     Map<String, Object> executed;

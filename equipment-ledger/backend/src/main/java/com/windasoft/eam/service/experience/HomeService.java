@@ -7,6 +7,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.SuccessResponse;
 import com.windasoft.eam.dto.experience.HomeContracts.LayoutForm;
 import com.windasoft.eam.dto.experience.HomeContracts.PresetRole;
@@ -101,8 +102,8 @@ public class HomeService {
   }
 
   public void access() {
-    if (!permissions.menuActions().getOrDefault("workspace", Set.of()).contains("查看"))
-      permissions.require("workspace", "查看");
+    if (!permissions.menuActions().getOrDefault("workspace", Set.of()).contains(PermissionAction.VIEW.code()))
+      permissions.require("workspace", PermissionAction.VIEW);
   }
 
   public Map<String, Object> normalize(Map<String, Object> payload) {
@@ -121,7 +122,7 @@ public class HomeService {
       check(Set.of(5, 10, 20).contains(limit), "展示数量无效");
       String scope = text(b, "scope");
       check(Set.of("", "personal", "team").contains(scope), "区块范围无效");
-      if (scope.equals("team")) permissions.require("workspace", "团队工作查看");
+      if (scope.equals("team")) permissions.require("workspace", PermissionAction.VIEW_TEAM_WORK);
       var value = new LinkedHashMap<String, Object>();
       value.put("id", key);
       value.put("type", type);
@@ -320,7 +321,7 @@ public class HomeService {
 
   @Transactional
   public List<TemplateView> templates() {
-    permissions.require("homeTemplate", "查看");
+    permissions.require("homeTemplate", PermissionAction.VIEW);
     seed();
     var rows = templates.list(auth.tenantId());
     var related =
@@ -369,7 +370,7 @@ public class HomeService {
   /** 模板主体、角色和画布更新同一事务；编辑必须显式匹配锁定版本，不能把缺失版本当0。 */
   @Transactional
   public TemplateView save(Long id, TemplateForm form) {
-    permissions.require("homeTemplate", id == null ? "新增" : "编辑");
+    permissions.require("homeTemplate", id == null ? PermissionAction.CREATE : PermissionAction.EDIT);
     var layout = normalize(canvas(form.getDraft()));
     String name = Objects.toString(form.getName(), "").trim();
     if (name.isBlank() || name.length() > 100)
@@ -402,16 +403,16 @@ public class HomeService {
 
   public Map<String, Object> normalizeOverview(Map<String, Object> value) {
     var available = new HashSet<>(OverviewLayoutSchema.LEGACY);
-    if (!permissions.allowed("workspace", "团队工作查看")) available.remove("load");
+    if (!permissions.allowed("workspace", PermissionAction.VIEW_TEAM_WORK)) available.remove("load");
     analytics.metrics().forEach(m -> available.add("analytics:" + m.id()));
     return OverviewLayoutSchema.normalize(
-        value, available, permissions.allowed("workspace", "团队工作查看"), this::normalize);
+        value, available, permissions.allowed("workspace", PermissionAction.VIEW_TEAM_WORK), this::normalize);
   }
 
   /** 发布版本与其角色快照冻结，后续草稿变化不能影响已经发布的访问范围。 */
   @Transactional
   public TemplateView publish(long id, Version form) {
-    permissions.require("homeTemplate", "发布");
+    permissions.require("homeTemplate", PermissionAction.PUBLISH);
     var row = raw(id, true);
     if (!Objects.equals(row.getRowVersion(), form.rowVersion())) conflict();
     var links = templateRoles.find(auth.tenantId(), List.of(id));
@@ -431,7 +432,7 @@ public class HomeService {
 
   @Transactional
   public SuccessResponse disable(long id, Version form) {
-    permissions.require("homeTemplate", "停用");
+    permissions.require("homeTemplate", PermissionAction.DISABLE);
     var row = raw(id, true);
     if (!Objects.equals(row.getRowVersion(), form.rowVersion())) conflict();
     templates.disable(auth.tenantId(), id);
@@ -444,7 +445,7 @@ public class HomeService {
     var links =
         versionRoles.published(auth.tenantId()).stream()
             .collect(Collectors.groupingBy(HomeTemplateVersionRole::getTemplateId));
-    boolean team = permissions.allowed("workspace", "团队工作查看");
+    boolean team = permissions.allowed("workspace", PermissionAction.VIEW_TEAM_WORK);
     var out = new ArrayList<Selected>();
     for (var row : templates.published(auth.tenantId())) {
       if (links.getOrDefault(row.id(), List.of()).stream()
@@ -542,7 +543,7 @@ public class HomeService {
   }
 
   public List<RoleChoice> roleChoices() {
-    permissions.require("homeTemplate", "查看");
+    permissions.require("homeTemplate", PermissionAction.VIEW);
     return roles.homeRoleChoices(auth.tenantId()).stream()
         .map(row -> new RoleChoice(String.valueOf(row.getId()), row.getName()))
         .toList();

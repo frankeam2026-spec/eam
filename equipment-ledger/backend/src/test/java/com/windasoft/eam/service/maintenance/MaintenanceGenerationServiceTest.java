@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.maintenance.MaintenancePlan;
@@ -137,7 +138,7 @@ class MaintenanceGenerationServiceTest {
     plan.setDepartmentId(71003L);
     plan.setCreatorId(70002L);
     when(plans.find(10001L, 10L, false)).thenReturn(plan);
-    when(permissions.maintenance("plans", "编辑"))
+    when(permissions.maintenance("plans", PermissionAction.EDIT))
         .thenReturn(new PermissionScope(false, null, Set.of(71004L), false));
     var service =
         new MaintenanceGenerationService(
@@ -161,7 +162,7 @@ class MaintenanceGenerationServiceTest {
             .value());
     verify(plans, never()).lockForGeneration(anyLong(), any());
     verifyNoInteractions(repo, schedules);
-    when(permissions.maintenance("plans", "编辑"))
+    when(permissions.maintenance("plans", PermissionAction.EDIT))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     when(repo.planRowsForGeneration(10001L, 10L)).thenReturn(List.of());
     assertEquals(0, service.generatePlan(10L));

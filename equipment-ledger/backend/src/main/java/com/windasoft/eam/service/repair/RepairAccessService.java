@@ -1,5 +1,6 @@
 package com.windasoft.eam.service.repair;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.repair.RepairCandidateRepository;
 import com.windasoft.eam.repository.repair.RepairInboxRepository;
@@ -37,6 +38,6 @@ public class RepairAccessService {
         || inboxes.hasInbox(auth.tenantId(), auth.userId(), row.getId()) > 0) {
       return;
     }
-    permissions.checkRepair(row, "查看");
+    permissions.checkRepair(row, PermissionAction.VIEW);
   }
 }

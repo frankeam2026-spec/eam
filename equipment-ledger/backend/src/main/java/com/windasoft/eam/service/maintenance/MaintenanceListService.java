@@ -2,6 +2,7 @@ package com.windasoft.eam.service.maintenance;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
@@ -56,12 +57,12 @@ public class MaintenanceListService {
     this.json = json;
   }
 
-  private PermissionScope scope(String kind, String action) {
+  private PermissionScope scope(String kind, PermissionAction action) {
     try {
       return permissions.maintenance(kind, action);
     } catch (ResponseStatusException error) {
       if (kind.equals("tasks")
-          && action.equals("查看")
+          && action == PermissionAction.VIEW
           && error.getStatusCode() == HttpStatus.FORBIDDEN) {
         return new PermissionScope(false, null, Set.of(), false);
       }
@@ -71,7 +72,7 @@ public class MaintenanceListService {
 
   @Transactional(readOnly = true)
   public MaintenanceListContext context(String kind) {
-    var scope = scope(kind, "查看");
+    var scope = scope(kind, PermissionAction.VIEW);
     var organizations =
         metadata.organizations(auth.tenantId(), true).stream()
             .map(row -> views.organization(row, false))
@@ -120,7 +121,7 @@ public class MaintenanceListService {
   public boolean hasFile(String id) {
     for (String kind : List.of("tasks", "standards", "plans")) {
       try {
-        var scope = scope(kind, "查看");
+        var scope = scope(kind, PermissionAction.VIEW);
         var selected =
             repository.select(
                 auth.tenantId(),
@@ -163,13 +164,13 @@ public class MaintenanceListService {
             request.start(),
             request.end());
     String kind = verified.kind();
-    permissions.require(PermissionService.maintenanceMenu(kind), "查看");
+    permissions.require(PermissionService.maintenanceMenu(kind), PermissionAction.VIEW);
     var selected =
         repository.select(
             auth.tenantId(),
             auth.userId(),
             kind,
-            scope(kind, "查看"),
+            scope(kind, PermissionAction.VIEW),
             false,
             null,
             ListQuery.from(Map.of()),
@@ -188,7 +189,7 @@ public class MaintenanceListService {
   }
 
   public Access access(String kind, ListQuery query, boolean export) {
-    var scope = scope(kind, export ? "导出" : "查看");
+    var scope = scope(kind, export ? PermissionAction.EXPORT : PermissionAction.VIEW);
     Set<Long> organizations = null;
     if (!query.organization().isBlank()) {
       try {
@@ -200,7 +201,7 @@ public class MaintenanceListService {
             "server.inspection.message0015");
       }
     }
-    return new Access(scope, export ? scope(kind, "查看") : null, organizations);
+    return new Access(scope, export ? scope(kind, PermissionAction.VIEW) : null, organizations);
   }
 
   public PageResult<Map<String, Object>> query(String kind, ListQuery query, boolean export) {
@@ -322,7 +323,7 @@ public class MaintenanceListService {
     if (kind.equals("tasks") && query.queue().equals("待我验收")) {
       PermissionScope acceptance;
       try {
-        acceptance = permissions.maintenance("验收");
+        acceptance = permissions.maintenance(PermissionAction.ACCEPT);
       } catch (ResponseStatusException denied) {
         if (denied.getStatusCode().value() != 403) {
           throw denied;

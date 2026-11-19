@@ -1,5 +1,6 @@
 package com.windasoft.eam.service.imports;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.dto.imports.*;
 import com.windasoft.eam.entity.equipment.Equipment;
@@ -82,8 +83,8 @@ public class EquipmentImportService {
   }
 
   private void access() {
-    permissions.require("equipment", "导入");
-    permissions.require("equipment", "新增");
+    permissions.require("equipment", PermissionAction.IMPORT);
+    permissions.require("equipment", PermissionAction.CREATE);
   }
 
   private Path file(String id) {
@@ -325,7 +326,7 @@ public class EquipmentImportService {
 
   public Map<String, Object> results(String id, ListQuery query) {
     var batch = owned(id);
-    permissions.require("equipment", "查看");
+    permissions.require("equipment", PermissionAction.VIEW);
     if (!"SUCCEEDED".equals(batch.get("state")))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.imports.message0015");
     var result =

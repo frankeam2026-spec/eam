@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.windasoft.eam.domain.inspection.InspectionTaskAction;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.service.system.*;
 import java.time.*;
 import java.util.*;
@@ -35,8 +36,8 @@ public class InspectionTaskAccessService {
         || text(s, "personMode").equals("任何人可点检");
   }
 
-  public boolean access(Map<String, Object> row, String action) {
-    if (action.equals("查看") && participant(row)) return true;
+  public boolean access(Map<String, Object> row, PermissionAction action) {
+    if (action == PermissionAction.VIEW && participant(row)) return true;
     try {
       return permissions
           .inspection(text(row, "kind"), action)
@@ -77,14 +78,14 @@ public class InspectionTaskAccessService {
 
   public boolean canDelete(Map<String, Object> row) {
     if (!InspectionTaskStatus.allows(InspectionTaskAction.DELETE, text(row, "status"))
-        || !access(row, "删除")) return false;
+        || !access(row, PermissionAction.DELETE)) return false;
     if (!text(row, "kind").equals("daily")) return true;
     return unexecutedDailyTask(row);
   }
 
   public boolean canExempt(Map<String, Object> row, Map<String, Object> result) {
     return text(row, "kind").equals("daily")
-        && access(row, "免检")
+        && access(row, PermissionAction.EXEMPT)
         && unexecutedDailyTask(row, result);
   }
 
@@ -92,7 +93,7 @@ public class InspectionTaskAccessService {
     return number(row.get("tenant_id")) == auth.tenantId()
         && text(row, "kind").equals("daily")
         && InspectionTaskStatus.allows(InspectionTaskAction.AMEND_RESULT, text(row, "status"))
-        && access(row, "修改结果");
+        && access(row, PermissionAction.AMEND_RESULT);
   }
 
   boolean unexecutedDailyTask(Map<String, Object> row) {
@@ -110,7 +111,7 @@ public class InspectionTaskAccessService {
 
   public boolean review(Map<String, Object> row) {
     return ids(decode(row.get("snapshot")).get("reviewers")).contains(auth.userId())
-        || access(row, "审核");
+        || access(row, PermissionAction.REVIEW);
   }
 
   private boolean openScope(Map<String, Object> row) {
@@ -118,7 +119,7 @@ public class InspectionTaskAccessService {
       return false;
     try {
       return permissions
-          .inspection("daily", "执行")
+          .inspection("daily", PermissionAction.EXECUTE)
           .matches(
               nullable(row.get("company_id")),
               nullable(row.get("department_id")),

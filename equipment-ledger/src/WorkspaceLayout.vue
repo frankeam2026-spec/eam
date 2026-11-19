@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from './permissionActions';
 import { tr } from './i18n';
 
 import { canUseBaseTab } from './utils/baseDataAccess';
@@ -79,7 +80,7 @@ const router = useRouter();
 
 const route = useRoute();
 
-function can(menu: string, action = '查看') {
+function can(menu: string, action: string = PermissionAction.VIEW) {
   return grantedActions.value[menu]?.includes(action) === true;
 }
 

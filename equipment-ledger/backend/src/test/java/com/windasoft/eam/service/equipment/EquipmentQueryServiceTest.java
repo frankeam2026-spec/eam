@@ -17,6 +17,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.equipment.EquipmentOwnerView;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.equipment.EquipmentOwner;
@@ -90,7 +91,7 @@ class EquipmentQueryServiceTest {
     when(repository.find(10001L, 3L)).thenReturn(equipment);
     doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "denied"))
         .when(permissions)
-        .checkEquipment(equipment, "查看");
+        .checkEquipment(equipment, PermissionAction.VIEW);
     assertThrows(ResponseStatusException.class, () -> service.get(3L));
     verify(ownerRepository, never()).list(anyLong(), anyLong());
     verifyNoInteractions(relations);
@@ -123,7 +124,7 @@ class EquipmentQueryServiceTest {
     assertEquals("1.00", view.relatedSpares().getFirst().get("quantity"));
     InOrder order = inOrder(repository, permissions, ownerRepository);
     order.verify(repository).find(10001L, 3L);
-    order.verify(permissions).checkEquipment(equipment, "查看");
+    order.verify(permissions).checkEquipment(equipment, PermissionAction.VIEW);
     order.verify(ownerRepository).list(10001L, 3L);
   }
 
@@ -144,7 +145,7 @@ class EquipmentQueryServiceTest {
     var result = service.history(3L);
 
     assertEquals(expected, result);
-    verify(permissions).checkEquipment(equipment, "查看");
+    verify(permissions).checkEquipment(equipment, PermissionAction.VIEW);
     verify(historyQueries).history(eq(equipment), any(com.windasoft.eam.dto.equipment.EquipmentView.class));
   }
 
@@ -158,7 +159,7 @@ class EquipmentQueryServiceTest {
   void deniedNavigationDoesNotReadDatabase() {
     doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN))
         .when(permissions)
-        .require("equipment", "查看");
+        .require("equipment", PermissionAction.VIEW);
     assertThrows(ResponseStatusException.class, () -> service.navigationTree());
     verifyNoInteractions(repository);
   }
@@ -171,6 +172,6 @@ class EquipmentQueryServiceTest {
     when(repository.find(10001L, 3L)).thenReturn(equipment);
     byte[] png = service.qrCode(3L);
     assertArrayEquals(new byte[] {(byte) 137, 80, 78, 71}, Arrays.copyOf(png, 4));
-    verify(permissions).checkEquipment(equipment, "查看");
+    verify(permissions).checkEquipment(equipment, PermissionAction.VIEW);
   }
 }

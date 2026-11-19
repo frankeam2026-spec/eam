@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.repair;
 
 import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.repair.RepairDownload;
 import com.windasoft.eam.dto.repair.RepairFileView;
 import com.windasoft.eam.dto.repair.RepairUpload;
@@ -43,9 +44,9 @@ public class RepairFileService {
 
   /** 附件上传只生成文件标识；附件是否属于某张工单，在后续保存报修或维修记录时建立关联。 不允许仅凭上传返回的 URL 绕过工单权限下载文件。 */
   public RepairFileView upload(RepairUpload file) throws IOException {
-    if (!permissions.allowed("repair", "报修")
-        && !permissions.allowed("repair", "处理")
-        && !permissions.allowed("repair", "验收")) permissions.require("repair", "查看");
+    if (!permissions.allowed("repair", PermissionAction.REPORT)
+        && !permissions.allowed("repair", PermissionAction.PROCESS)
+        && !permissions.allowed("repair", PermissionAction.ACCEPT)) permissions.require("repair", PermissionAction.VIEW);
     if (file.empty()) throw new LocalizedArgumentException("server.repair.message0047");
     if (file.size() > 20L * 1024 * 1024)
       throw new LocalizedArgumentException("server.repair.message0048");

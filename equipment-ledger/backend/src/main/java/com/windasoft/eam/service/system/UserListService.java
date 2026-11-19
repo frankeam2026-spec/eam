@@ -1,5 +1,6 @@
 package com.windasoft.eam.service.system;
 
+import com.windasoft.eam.domain.common.ActivationStatus;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.common.PageResult;
 import com.windasoft.eam.dto.system.PermissionScope;
@@ -110,7 +111,7 @@ public class UserListService {
                         links.getOrDefault(row.id(), List.of()).stream()
                             .map(link -> link.getRoleId().toString())
                             .toList(),
-                        row.status() == 1 ? "启用" : "停用",
+                        ActivationStatus.fromFlag(row.status()).label(),
                         row.department(),
                         row.roles(),
                         row.email(),

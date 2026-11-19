@@ -4,6 +4,7 @@ import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.system.*;
 import java.time.*;
@@ -43,7 +44,7 @@ public class InspectionProjectService {
     return r.getFirst();
   }
 
-  boolean scoped(Map<String, Object> row, String action) {
+  boolean scoped(Map<String, Object> row, PermissionAction action) {
     try {
       return permissions
           .inspection(text(row, "kind"), action)
@@ -74,7 +75,7 @@ public class InspectionProjectService {
     var seen = new HashSet<String>();
     for (var ref : rows(detail.get("projectRefs"))) {
       var st = raw("standards", tenant, number(ref.get("standardId")), false);
-      if (checkAccess && !scoped(st, "查看")) deny();
+      if (checkAccess && !scoped(st, PermissionAction.VIEW)) deny();
       var item =
           rows(decode(st.get("payload")).get("items")).stream()
               .filter(i -> text(i, "id").equals(text(ref, "itemId")))

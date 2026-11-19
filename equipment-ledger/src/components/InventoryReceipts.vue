@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
 import { isDepartmentCustomColumn } from '../businessConfig';
 import DepartmentValuesText from './common/DepartmentValuesText.vue';
 import { enumLabel } from '../i18n';
@@ -87,7 +88,7 @@ const hasBatch = computed(() =>
 );
 const readOnly = computed(
   () =>
-    form.value.status !== '草稿' || !auth.can('inventoryReceipt', form.value.id ? '编辑' : '新增'),
+    form.value.status !== '草稿' || !auth.can('inventoryReceipt', form.value.id ? PermissionAction.EDIT : PermissionAction.CREATE),
 );
 const guard = useUnsavedChanges(
   () => form.value,
@@ -408,7 +409,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
     <template v-if="!editing">
       <AppListToolbar class="toolbar">
         <ElButton
-          v-if="auth.can('inventoryReceipt', '入库')"
+          v-if="auth.can('inventoryReceipt', PermissionAction.STOCK_IN)"
           type="primary"
           @click="router.push({ name: 'inventory-receipt-detail', params: { id: 'new' } })"
           ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}</ElButton
@@ -528,7 +529,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
             mode="footer"
             :filter-open="filterOpen"
             :columns-open="columnsOpen"
-            :can-export="auth.can('inventoryReceipt', '导出')"
+            :can-export="auth.can('inventoryReceipt', PermissionAction.EXPORT)"
             :export-busy="exportBusy"
             @toggle-columns="columnsOpen = !columnsOpen"
             @export="exportRows"
@@ -759,14 +760,14 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
           >{{ tr('ui.equipment.text0275') }}</ElButton
         ><ElButton
           v-if="
-            !error && !loading && form.status === '草稿' && auth.can('inventoryReceipt', '入库')
+            !error && !loading && form.status === '草稿' && auth.can('inventoryReceipt', PermissionAction.STOCK_IN)
           "
           type="primary"
           :disabled="busy || !form.id || guard.dirty.value"
           @click="confirm"
           >{{ tr('ui.equipment.text0618') }}</ElButton
         ><ElButton
-          v-if="form.id && form.status === '草稿' && auth.can('inventoryReceipt', '删除')"
+          v-if="form.id && form.status === '草稿' && auth.can('inventoryReceipt', PermissionAction.DELETE)"
           type="danger"
           plain
           :disabled="busy"

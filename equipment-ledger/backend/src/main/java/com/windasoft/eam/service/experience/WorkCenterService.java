@@ -3,6 +3,7 @@ package com.windasoft.eam.service.experience;
 import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.SuccessResponse;
 import com.windasoft.eam.dto.system.WorkInboxViews;
 import com.windasoft.eam.entity.repair.RepairOrder;
@@ -71,7 +72,7 @@ public class WorkCenterService {
         .filter(
             t ->
                 switch (t) {
-                  case "load" -> permissions.allowed("workspace", "团队工作查看");
+                  case "load" -> permissions.allowed("workspace", PermissionAction.VIEW_TEAM_WORK);
                   case "inventory" ->
                       actions.keySet().stream().anyMatch(k -> k.startsWith("inventory"));
                   case "anomalies" ->
@@ -108,7 +109,7 @@ public class WorkCenterService {
               w.eq(RepairOrder::getReporterUserId, auth.userId())
                   .or()
                   .eq(RepairOrder::getAssigneeUserId, auth.userId()));
-    else if (permissions.allowed("repair", "查看")) permissions.filterRepair(q);
+    else if (permissions.allowed("repair", PermissionAction.VIEW)) permissions.filterRepair(q);
     else q.eq(RepairOrder::getId, -1);
     for (var r : repository.findRepairs(q)) {
       if (!accessible(() -> workflow.viewAllowed(r))) continue;
@@ -188,7 +189,7 @@ public class WorkCenterService {
       String departmentId) {
     check(Set.of("active", "created", "team", "today").contains(state), "未知工作队列");
     boolean team = state.equals("team");
-    if (team) permissions.require("workspace", "团队工作查看");
+    if (team) permissions.require("workspace", PermissionAction.VIEW_TEAM_WORK);
     var source =
         tasks(team).stream()
             .filter(
@@ -239,7 +240,7 @@ public class WorkCenterService {
   }
 
   public Object filterChoices(boolean team) {
-    if (team) permissions.require("workspace", "团队工作查看");
+    if (team) permissions.require("workspace", PermissionAction.VIEW_TEAM_WORK);
     var values = tasks(team);
     var companies = new TreeMap<String, Map<String, Object>>();
     var departments = new TreeMap<String, Map<String, Object>>();
@@ -259,7 +260,7 @@ public class WorkCenterService {
     var config = rows(layout.get("blocks")).getFirst();
     String type = text(config, "type"), module = text(config, "module");
     boolean team = text(config, "scope").equals("team");
-    if (team) permissions.require("workspace", "团队工作查看");
+    if (team) permissions.require("workspace", PermissionAction.VIEW_TEAM_WORK);
     int limit = (int) id(config.get("limit"));
     if (type.equals("todo") || type.equals("inventory")) {
       var data =
@@ -345,7 +346,7 @@ public class WorkCenterService {
       return Map.of("counts", counts, "total", taskRows.size(), "data", List.of());
     }
     if (type.equals("load")) {
-      permissions.require("workspace", "团队工作查看");
+      permissions.require("workspace", PermissionAction.VIEW_TEAM_WORK);
       var counts = new LinkedHashMap<String, Integer>();
       var names = new LinkedHashMap<String, String>();
       for (var t : taskRows)
@@ -410,7 +411,7 @@ public class WorkCenterService {
             new String[] {"org", "组织架构", "/organization"},
             new String[] {"user", "用户管理", "/users"},
             new String[] {"role", "角色权限", "/roles"})) {
-      if (permissions.menuActions().getOrDefault(entry[0], Set.of()).contains("查看"))
+      if (permissions.menuActions().getOrDefault(entry[0], Set.of()).contains(PermissionAction.VIEW.code()))
         values.add(Map.of("name", entry[1], "url", entry[2], "id", entry[0]));
     }
     return values;

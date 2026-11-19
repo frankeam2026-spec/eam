@@ -3,6 +3,7 @@ package com.windasoft.eam.service.knowledge;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.knowledge.*;
 import com.windasoft.eam.scheduler.experience.RepairPlanScheduler;
@@ -143,7 +144,7 @@ class AiPlatformMySqlIT {
 
   @Test
   void uploadParseIndexPublishAndRevokeRunsThroughRealStorage() throws Exception {
-    when(permissions.scope(anyString(), anyString()))
+    when(permissions.scope(anyString(), any(PermissionAction.class)))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     db.update(
         "INSERT IGNORE INTO eam_org_unit(id,tenant_id,name,code,org_type,status,deleted)"
@@ -182,7 +183,7 @@ class AiPlatformMySqlIT {
     documents.bind(document, 0, true, List.of());
     indexing.index(document, 1);
     indexing.publish(document, 1);
-    var allowed = permissions.scope("knowledge", "查看");
+    var allowed = permissions.scope("knowledge", PermissionAction.VIEW);
     assertEquals(List.of(version), search.versions(990112, allowed, "it-manual"));
     long chunk =
         db.queryForObject(
@@ -199,7 +200,7 @@ class AiPlatformMySqlIT {
 
   @Test
   void failedParsingCanRetryWithVersionCheckAndAtomicRollback() throws Exception {
-    when(permissions.scope(anyString(), anyString()))
+    when(permissions.scope(anyString(), any(PermissionAction.class)))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     db.update(
         "INSERT IGNORE INTO eam_org_unit(id,tenant_id,name,code,org_type,status,deleted)"

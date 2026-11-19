@@ -1,5 +1,6 @@
 package com.windasoft.eam.service.equipment;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.*;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantResult;
@@ -36,18 +37,18 @@ public class EquipmentAssistantQueryService {
     var equipment = equipmentRepository.find(auth.tenantId(), id);
     if (equipment == null)
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0064");
-    permissions.checkEquipment(equipment, "查看");
+    permissions.checkEquipment(equipment, PermissionAction.VIEW);
   }
 
   public EquipmentAssistantResult query(EquipmentAssistantQuery query) {
-    permissions.require("equipment", "查看");
+    permissions.require("equipment", PermissionAction.VIEW);
     validateAssistant(query);
     if (query.equipmentId() != null) {
       requireVisibleEquipment(query.equipmentId());
     }
     var now = java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai")).withNano(0);
     var range = assistantRange(query, now.toLocalDate());
-    var scope = Objects.requireNonNull(permissions.equipment("查看"));
+    var scope = Objects.requireNonNull(permissions.equipment(PermissionAction.VIEW));
     var ambiguous =
         assistantRepository.ambiguousName(auth.tenantId(), auth.userId(), scope, query, now, range);
     if (ambiguous.isPresent()) {

@@ -9,6 +9,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.inspection.InspectionUpload;
 import com.windasoft.eam.repository.inspection.InspectionFileRepository;
 import com.windasoft.eam.service.system.AuthContext;
@@ -32,7 +33,7 @@ class InspectionFileServiceTest {
 
     var repository = new InspectionFileRepository(db, temp.toString());
     var permissions = mock(PermissionService.class);
-    when(permissions.anyInspection("查看")).thenReturn(true);
+    when(permissions.anyInspection(PermissionAction.VIEW)).thenReturn(true);
     var service =
         new InspectionFileService(
             mock(AuthContext.class), permissions, repository, mock(InspectionListService.class));

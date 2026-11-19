@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.PageResult;
 import com.windasoft.eam.dto.inspection.InspectionDeviceOption;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
@@ -93,8 +94,8 @@ class InspectionDeviceOptionContractTest {
     assertEquals(0, body.path("page").path("total").asLong());
     assertEquals(1, body.path("page").path("number").asInt());
     assertEquals(200, body.path("page").path("size").asInt());
-    verify(permissions).require("inspectionDailyTask", "查看");
-    verify(permissions).require("inspectionDailyTask", "执行");
+    verify(permissions).require("inspectionDailyTask", PermissionAction.VIEW);
+    verify(permissions).require("inspectionDailyTask", PermissionAction.EXECUTE);
     verifyNoInteractions(equipment);
   }
 

@@ -15,6 +15,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.repository.basedata.BaseItemRepository;
 import com.windasoft.eam.repository.equipment.EquipmentBomRepository;
@@ -80,7 +81,7 @@ class EquipmentRelationsCommandTest {
     var service = commands(4);
     doThrow(new IllegalArgumentException("denied"))
         .when(permissions)
-        .checkEquipment(any(), eq("编辑"));
+        .checkEquipment(any(), eq(PermissionAction.EDIT));
     assertThrows(
         IllegalArgumentException.class,
         () -> service.updateRelations(901L, json.createArrayNode(), 4, true));
@@ -97,7 +98,7 @@ class EquipmentRelationsCommandTest {
     ordered.verify(writes).find(10001L, 901L);
     ordered.verify(relations).enter(java.util.List.of(71001L));
     ordered.verify(writes).find(10001L, 901L);
-    ordered.verify(permissions).checkEquipment(any(), eq("编辑"));
+    ordered.verify(permissions).checkEquipment(any(), eq(PermissionAction.EDIT));
     ordered.verify(writes).advanceVersion(10001L, 901L, 4, 73001L);
     ordered.verify(relations).saveBom(any(), same(rows));
     verify(writes, never()).update(any());

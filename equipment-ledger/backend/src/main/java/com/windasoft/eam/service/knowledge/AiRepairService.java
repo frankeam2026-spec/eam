@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.knowledge;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.service.repair.RepairDetailService;
 import com.windasoft.eam.service.system.PermissionService;
@@ -48,7 +49,7 @@ public class AiRepairService {
     var facts = new LinkedHashMap<String, Object>();
     var sources = List.<Map<String, Object>>of();
     Long sourceEquipment = null;
-    if (mode.equals("REPORT")) permissions.require("repair", "报修");
+    if (mode.equals("REPORT")) permissions.require("repair", PermissionAction.REPORT);
     else {
       if (orderId == null) throw new IllegalArgumentException("请指定维修工单");
       var detail = workflow.context(orderId);
@@ -168,7 +169,7 @@ public class AiRepairService {
   }
 
   public Object transcribe(byte[] audio) throws Exception {
-    permissions.require("repair", "报修");
+    permissions.require("repair", PermissionAction.REPORT);
     if (audio == null || audio.length == 0 || audio.length > 3_000_000)
       throw new IllegalArgumentException("请上传不超过3MB的PCM WAV录音");
     if (audio.length < 12

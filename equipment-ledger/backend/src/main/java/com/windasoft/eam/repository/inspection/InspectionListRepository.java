@@ -135,7 +135,7 @@ public class InspectionListRepository {
       fields.put("name", f("t.name", TEXT));
       fields.put(
           "enabled",
-          f("CASE WHEN JSON_EXTRACT(t.payload,'$.enabled')=TRUE THEN '启用' ELSE '停用' END", CHOICE));
+          f(SqlListFilters.activationLabel("JSON_EXTRACT(t.payload,'$.enabled')=TRUE"), CHOICE));
       for (String key : List.of("typeName", "personMode", "remark"))
         fields.put(key, f(j(source, key), TEXT));
       for (String key : List.of("startDate", "endDate"))

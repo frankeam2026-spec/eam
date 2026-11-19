@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.windasoft.eam.common.ExactIntegerDeserializer;
 import com.windasoft.eam.common.ExactLongDeserializer;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.knowledge.AiCallView;
 import com.windasoft.eam.dto.knowledge.AiCallsView;
 import com.windasoft.eam.dto.knowledge.AiSettingsView;
@@ -133,7 +134,7 @@ public class AiGateway {
 
   /** 配置与预算固定投影；密钥只输出存在标志，禁止将持久化实体或密文返回客户端。 */
   public AiSettingsView settings() {
-    permissions.require("aiSetting", "查看");
+    permissions.require("aiSetting", PermissionAction.VIEW);
     var c = configuration.settings(auth.tenantId(), false);
     var u = usages.usage(auth.tenantId(), month(), false);
     return new AiSettingsView(
@@ -187,7 +188,7 @@ public class AiGateway {
   }
 
   public void save(Settings c) {
-    permissions.require("aiSetting", "编辑");
+    permissions.require("aiSetting", PermissionAction.EDIT);
     validate(c);
     for (var price :
         List.of(
@@ -240,7 +241,7 @@ public class AiGateway {
   }
 
   public AiCallsView calls(int page, int size) {
-    permissions.require("aiSetting", "查看");
+    permissions.require("aiSetting", PermissionAction.VIEW);
     if (page < 1 || !Set.of(20, 50, 100).contains(size))
       throw new IllegalArgumentException("分页参数无效");
     var rows = calls.page(auth.tenantId(), page, size);
@@ -275,7 +276,7 @@ public class AiGateway {
       throw new IllegalArgumentException("录音时长无效");
     if (!Set.of("CHAT", "EMBEDDING", "VISION", "AUDIO").contains(purpose))
       throw new IllegalArgumentException("调用用途无效");
-    permissions.require("knowledge", "查看");
+    permissions.require("knowledge", PermissionAction.VIEW);
     long tenant = auth.tenantId(),
         user = auth.userId(),
         id = IdWorker.getId(),

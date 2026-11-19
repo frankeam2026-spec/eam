@@ -19,6 +19,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
 import com.windasoft.eam.repository.inventory.InventoryBalanceRepository;
@@ -125,7 +126,7 @@ class RequisitionChoicesTest {
 
   @Test
   void requestWarehousesDoNotDependOnInventoryQueryView() {
-    when(permissions.allowed("inventoryRequisition", "新增")).thenReturn(true);
+    when(permissions.allowed("inventoryRequisition", PermissionAction.CREATE)).thenReturn(true);
     when(permissions.inventoryWarehouseAllowed("inventoryRequisition", 100L, "新增"))
         .thenReturn(true);
     var result = choices();
@@ -136,7 +137,7 @@ class RequisitionChoicesTest {
 
   @Test
   void noAuthorizedWarehouseKeepsTaskForClearEmptyFeedback() {
-    when(permissions.allowed("inventoryRequisition", "新增")).thenReturn(true);
+    when(permissions.allowed("inventoryRequisition", PermissionAction.CREATE)).thenReturn(true);
     var result = choices();
     assertEquals(List.of(), result.get("warehouses"));
     assertEquals(1, ((List<?>) result.get("tasks")).size());
@@ -154,7 +155,7 @@ class RequisitionChoicesTest {
 
   @Test
   void legacyRepairWithoutDepartmentUsesExplicitEquipmentCompany() {
-    when(permissions.allowed("inventoryRequisition", "新增")).thenReturn(true);
+    when(permissions.allowed("inventoryRequisition", PermissionAction.CREATE)).thenReturn(true);
     when(permissions.inventoryWarehouseAllowed("inventoryRequisition", 100L, "新增"))
         .thenReturn(true);
     when(permissions.companyOfOrganization((Long) null)).thenReturn(null);

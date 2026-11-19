@@ -24,6 +24,11 @@ import org.springframework.web.server.ResponseStatusException;
 /** 统一权限入口：综合角色动作授权、组织数据范围和业务参与资格，服务端操作必须再次校验。 */
 @Service
 public class PermissionService {
+  private static final Set<String> REPAIR_REPORTER_ACTIONS =
+      PermissionAction.codes(
+          PermissionAction.ACCEPT, PermissionAction.REPORT, PermissionAction.EDIT,
+          PermissionAction.WITHDRAW, PermissionAction.DISPATCH);
+
   private final AuthorizationRepository repository;
   private final AuthContext auth;
   private final WarehouseRepository warehouseRepository;
@@ -77,27 +82,27 @@ public class PermissionService {
             .toList();
     Map<String, Set<String>> result = new LinkedHashMap<>();
     if (repository.approvalParticipation(auth.tenantId(), auth.userId())) {
-      result.put("inventoryRequisition", new HashSet<>(Set.of("查看")));
-      result.put("workspace", new HashSet<>(Set.of("查看")));
+      result.put("inventoryRequisition", new HashSet<>(Set.of(PermissionAction.VIEW.code())));
+      result.put("workspace", new HashSet<>(Set.of(PermissionAction.VIEW.code())));
     }
     if (repository.personalRepairAccess(auth.tenantId(), auth.userId())) {
-      result.put("repair", new HashSet<>(Set.of("查看")));
-      result.put("workspace", new HashSet<>(Set.of("查看")));
+      result.put("repair", new HashSet<>(Set.of(PermissionAction.VIEW.code())));
+      result.put("workspace", new HashSet<>(Set.of(PermissionAction.VIEW.code())));
     }
     if (repository.maintenanceParticipation(auth.tenantId(), auth.userId()) > 0) {
-      result.computeIfAbsent("maintenanceTask", k -> new HashSet<>()).add("查看");
-      result.computeIfAbsent("workspace", k -> new HashSet<>()).add("查看");
+      result.computeIfAbsent("maintenanceTask", k -> new HashSet<>()).add(PermissionAction.VIEW.code());
+      result.computeIfAbsent("workspace", k -> new HashSet<>()).add(PermissionAction.VIEW.code());
     }
     if (repository.inspectionParticipation(auth.tenantId(), auth.userId(), null) > 0) {
       for (String taskKind : List.of("daily", "periodic")) {
         if (repository.inspectionParticipation(auth.tenantId(), auth.userId(), taskKind) > 0)
-          result.computeIfAbsent(inspectionMenu(taskKind), k -> new HashSet<>()).add("查看");
+          result.computeIfAbsent(inspectionMenu(taskKind), k -> new HashSet<>()).add(PermissionAction.VIEW.code());
       }
-      result.computeIfAbsent("workspace", k -> new HashSet<>()).add("查看");
+      result.computeIfAbsent("workspace", k -> new HashSet<>()).add(PermissionAction.VIEW.code());
     }
     if (repository.repairPlanParticipation(auth.tenantId(), auth.userId()) > 0) {
-      result.computeIfAbsent("repairPlan", k -> new HashSet<>()).add("查看");
-      result.computeIfAbsent("workspace", k -> new HashSet<>()).add("查看");
+      result.computeIfAbsent("repairPlan", k -> new HashSet<>()).add(PermissionAction.VIEW.code());
+      result.computeIfAbsent("workspace", k -> new HashSet<>()).add(PermissionAction.VIEW.code());
     }
     if (roleIds.isEmpty()) return result;
     var activeRoles = repository.activeRoles(auth.tenantId(), roleIds);
@@ -118,7 +123,7 @@ public class PermissionService {
           if (parts.length != 2) continue;
           legacyMenus
               .computeIfAbsent(parts[0], k -> new HashSet<>())
-              .add(legacyActionName(parts[1]));
+              .add(PermissionAction.fromLegacyCode(parts[1]));
         }
         expandLegacyMenus(legacyMenus);
         legacyMenus.forEach(
@@ -131,31 +136,170 @@ public class PermissionService {
   private static final Map<String, Set<String>> CHILD_ACTIONS =
       Map.ofEntries(
           Map.entry(
-              "inventoryMaterial", Set.of("查看", "新增", "编辑", "删除", "导入", "导出", "查看金额", "编辑参考价")),
-          Map.entry("inventoryWarehouse", Set.of("查看", "新增", "编辑", "删除", "导出")),
-          Map.entry("inventoryReceipt", Set.of("查看", "新增", "编辑", "删除", "入库", "导出", "查看金额")),
+              "inventoryMaterial", PermissionAction.codes(
+                  PermissionAction.VIEW,
+                  PermissionAction.CREATE,
+                  PermissionAction.EDIT,
+                  PermissionAction.DELETE,
+                  PermissionAction.IMPORT,
+                  PermissionAction.EXPORT,
+                  PermissionAction.VIEW_AMOUNT,
+                  PermissionAction.EDIT_REFERENCE_PRICE)),
+          Map.entry("inventoryWarehouse", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.EXPORT)),
+          Map.entry("inventoryReceipt", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.STOCK_IN,
+              PermissionAction.EXPORT,
+              PermissionAction.VIEW_AMOUNT)),
           Map.entry(
               "inventoryOutbound",
-              Set.of("查看", "新增直接出库", "编辑草稿", "删除草稿", "预留", "释放预留", "确认出库", "关闭剩余需求", "导出", "查看金额")),
-          Map.entry("inventoryRequisition", Set.of("查看", "新增", "编辑", "删除", "出库", "导出", "查看金额")),
-          Map.entry("inventoryReturn", Set.of("查看", "新增", "编辑", "删除", "入库", "导出", "查看金额")),
-          Map.entry("inventoryTransfer", Set.of("查看", "新增", "编辑", "删除", "出库", "入库", "导出", "查看金额")),
-          Map.entry("inventoryCount", Set.of("查看", "新增", "编辑", "删除", "出库", "入库", "导出", "查看金额")),
-          Map.entry("inventoryOpening", Set.of("查看", "新增", "编辑", "删除", "入库", "导入", "导出", "查看金额")),
-          Map.entry("inventoryReversal", Set.of("查看", "新增", "编辑", "删除", "冲销", "导出", "查看金额")),
-          Map.entry("inventoryQuery", Set.of("查看", "导出", "冻结", "查看金额")),
-          Map.entry("location", Set.of("查看", "新增", "编辑", "删除", "导出")),
-          Map.entry("maintenanceType", Set.of("查看", "新增", "编辑", "删除", "导出")),
-          Map.entry("maintenanceStandard", Set.of("查看", "新增", "编辑", "删除", "导出")),
-          Map.entry("maintenancePlan", Set.of("查看", "新增", "编辑", "删除", "导出")),
-          Map.entry("maintenanceTask", Set.of("查看", "编辑", "执行", "验收", "删除", "导出")),
-          Map.entry("inspectionType", Set.of("查看", "新增", "编辑", "删除", "导出")),
-          Map.entry("inspectionStandard", Set.of("查看", "新增", "编辑", "删除", "导出")),
-          Map.entry("inspectionDailyPlan", Set.of("查看", "新增", "编辑", "删除", "导出")),
-          Map.entry("inspectionPeriodicPlan", Set.of("查看", "新增", "编辑", "删除", "导出")),
+              PermissionAction.codes(
+                  PermissionAction.VIEW,
+                  PermissionAction.CREATE_DIRECT_OUTBOUND,
+                  PermissionAction.EDIT_DRAFT,
+                  PermissionAction.DELETE_DRAFT,
+                  PermissionAction.RESERVE,
+                  PermissionAction.RELEASE_RESERVATION,
+                  PermissionAction.CONFIRM_ISSUE,
+                  PermissionAction.CLOSE_REMAINDER,
+                  PermissionAction.EXPORT,
+                  PermissionAction.VIEW_AMOUNT)),
+          Map.entry("inventoryRequisition", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.STOCK_OUT,
+              PermissionAction.EXPORT,
+              PermissionAction.VIEW_AMOUNT)),
+          Map.entry("inventoryReturn", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.STOCK_IN,
+              PermissionAction.EXPORT,
+              PermissionAction.VIEW_AMOUNT)),
+          Map.entry("inventoryTransfer", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.STOCK_OUT,
+              PermissionAction.STOCK_IN,
+              PermissionAction.EXPORT,
+              PermissionAction.VIEW_AMOUNT)),
+          Map.entry("inventoryCount", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.STOCK_OUT,
+              PermissionAction.STOCK_IN,
+              PermissionAction.EXPORT,
+              PermissionAction.VIEW_AMOUNT)),
+          Map.entry("inventoryOpening", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.STOCK_IN,
+              PermissionAction.IMPORT,
+              PermissionAction.EXPORT,
+              PermissionAction.VIEW_AMOUNT)),
+          Map.entry("inventoryReversal", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.REVERSE,
+              PermissionAction.EXPORT,
+              PermissionAction.VIEW_AMOUNT)),
+          Map.entry("inventoryQuery", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.EXPORT,
+              PermissionAction.FREEZE,
+              PermissionAction.VIEW_AMOUNT)),
+          Map.entry("location", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.EXPORT)),
+          Map.entry("maintenanceType", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.EXPORT)),
+          Map.entry("maintenanceStandard", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.EXPORT)),
+          Map.entry("maintenancePlan", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.EXPORT)),
+          Map.entry("maintenanceTask", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.EDIT,
+              PermissionAction.EXECUTE,
+              PermissionAction.ACCEPT,
+              PermissionAction.DELETE,
+              PermissionAction.EXPORT)),
+          Map.entry("inspectionType", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.EXPORT)),
+          Map.entry("inspectionStandard", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.EXPORT)),
+          Map.entry("inspectionDailyPlan", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.EXPORT)),
+          Map.entry("inspectionPeriodicPlan", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.EXPORT)),
           Map.entry(
-              "inspectionDailyTask", Set.of("查看", "执行", "修改结果", "审核", "转派", "免检", "删除", "导出")),
-          Map.entry("inspectionPeriodicTask", Set.of("查看", "执行", "审核", "转派", "删除", "导出")));
+              "inspectionDailyTask", PermissionAction.codes(
+                  PermissionAction.VIEW,
+                  PermissionAction.EXECUTE,
+                  PermissionAction.AMEND_RESULT,
+                  PermissionAction.REVIEW,
+                  PermissionAction.TRANSFER,
+                  PermissionAction.EXEMPT,
+                  PermissionAction.DELETE,
+                  PermissionAction.EXPORT)),
+          Map.entry("inspectionPeriodicTask", PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.EXECUTE,
+              PermissionAction.REVIEW,
+              PermissionAction.TRANSFER,
+              PermissionAction.DELETE,
+              PermissionAction.EXPORT)));
 
   public static Set<String> legacyTargets(String parent) {
     var result = new HashSet<String>();
@@ -188,7 +332,7 @@ public class PermissionService {
 
   public boolean canMaintenanceAccept(long userId, Long department) {
     try {
-      var grants = scopesFor(userId, "maintenanceTask", "验收");
+      var grants = scopesFor(userId, "maintenanceTask", PermissionAction.ACCEPT.code());
       var u = repository.activeUser(auth.tenantId(), userId);
       if (u == null) return false;
       var s = scopeFor(u.getOrgId(), grants);
@@ -196,6 +340,10 @@ public class PermissionService {
     } catch (ResponseStatusException e) {
       return false;
     }
+  }
+
+  public PermissionScope maintenance(PermissionAction action) {
+    return maintenance(action.code());
   }
 
   public PermissionScope maintenance(String action) {
@@ -224,17 +372,33 @@ public class PermissionService {
     };
   }
 
+  public PermissionScope maintenance(String kind, PermissionAction action) {
+    return maintenance(kind, action.code());
+  }
+
   public PermissionScope maintenance(String kind, String action) {
     return scope(maintenanceMenu(kind), action);
+  }
+
+  public PermissionScope inspection(String kind, PermissionAction action) {
+    return inspection(kind, action.code());
   }
 
   public PermissionScope inspection(String kind, String action) {
     return scope(inspectionMenu(kind), action);
   }
 
+  public boolean anyMaintenance(PermissionAction action) {
+    return anyMaintenance(action.code());
+  }
+
   public boolean anyMaintenance(String action) {
     return List.of("types", "standards", "plans", "tasks").stream()
         .anyMatch(k -> allowed(maintenanceMenu(k), action));
+  }
+
+  public boolean anyInspection(PermissionAction action) {
+    return anyInspection(action.code());
   }
 
   public boolean anyInspection(String action) {
@@ -245,8 +409,8 @@ public class PermissionService {
 
   public boolean maintenanceEquipmentVisible(Long company, Long department, Long owner) {
     for (String kind : List.of("standards", "plans", "tasks")) {
-      if (allowed(maintenanceMenu(kind), "查看")
-          && maintenance(kind, "查看").matches(company, department, owner, auth.userId()))
+      if (allowed(maintenanceMenu(kind), PermissionAction.VIEW)
+          && maintenance(kind, PermissionAction.VIEW).matches(company, department, owner, auth.userId()))
         return true;
     }
     return false;
@@ -254,10 +418,14 @@ public class PermissionService {
 
   public boolean inspectionEquipmentVisible(Long company, Long department, Long owner) {
     for (String kind : List.of("standards", "daily-plans", "periodic-plans", "daily", "periodic")) {
-      if (allowed(inspectionMenu(kind), "查看")
-          && inspection(kind, "查看").matches(company, department, owner, auth.userId())) return true;
+      if (allowed(inspectionMenu(kind), PermissionAction.VIEW)
+          && inspection(kind, PermissionAction.VIEW).matches(company, department, owner, auth.userId())) return true;
     }
     return false;
+  }
+
+  public PermissionScope equipment(PermissionAction action) {
+    return equipment(action.code());
   }
 
   public PermissionScope equipment(String action) {
@@ -269,7 +437,7 @@ public class PermissionService {
   }
 
   public void filterEquipment(LambdaQueryWrapper<Equipment> query) {
-    filterEquipment(query, "查看");
+    filterEquipment(query, PermissionAction.VIEW.code());
   }
 
   public void filterEquipment(LambdaQueryWrapper<Equipment> query, String action) {
@@ -278,7 +446,7 @@ public class PermissionService {
   }
 
   public void filterRepair(LambdaQueryWrapper<RepairOrder> query) {
-    filterRepair(query, "查看");
+    filterRepair(query, PermissionAction.VIEW.code());
   }
 
   public void filterRepair(LambdaQueryWrapper<RepairOrder> query, String action) {
@@ -286,10 +454,10 @@ public class PermissionService {
     try {
       scope = repair(action);
     } catch (ResponseStatusException denied) {
-      if (!"查看".equals(action)) throw denied;
+      if (!PermissionAction.VIEW.code().equals(action)) throw denied;
       scope = new PermissionScope(false, null, Set.of(), true);
     }
-    if ("查看".equals(action))
+    if (PermissionAction.VIEW.code().equals(action))
       scope =
           new PermissionScope(
               scope.all(), scope.companyId(), scope.departmentIds(), true, scope.companyIds());
@@ -299,11 +467,15 @@ public class PermissionService {
   public void filterRepairAcceptance(LambdaQueryWrapper<RepairOrder> query) {
     PermissionScope scope;
     try {
-      scope = repair("验收");
+      scope = repair(PermissionAction.ACCEPT.code());
     } catch (ResponseStatusException denied) {
       scope = new PermissionScope(false, null, Set.of(), false);
     }
     AuthorizationQueryPredicates.acceptance(query, scope, auth.userId());
+  }
+
+  public void checkEquipment(Equipment e, PermissionAction action) {
+    checkEquipment(e, action.code());
   }
 
   public void checkEquipment(Equipment e, String action) {
@@ -333,10 +505,15 @@ public class PermissionService {
     if (!equipmentDepartmentAllowed(departmentId, action)) deny();
   }
 
+  public void checkRepair(RepairOrder r, PermissionAction action) {
+    checkRepair(r, action.code());
+  }
+
   public void checkRepair(RepairOrder r, String action) {
     if (!Objects.equals(r.getTenantId(), auth.tenantId())) deny();
-    if ("验收".equals(action) && Objects.equals(r.getReporterUserId(), auth.userId())) return;
-    if (Set.of("查看", "处理").contains(action) && Objects.equals(r.getAssigneeUserId(), auth.userId()))
+    if (PermissionAction.ACCEPT.code().equals(action)
+        && Objects.equals(r.getReporterUserId(), auth.userId())) return;
+    if ((PermissionAction.VIEW.code().equals(action) || PermissionAction.PROCESS.code().equals(action)) && Objects.equals(r.getAssigneeUserId(), auth.userId()))
       return;
     var scope = repair(action);
     if (!Objects.equals(r.getTenantId(), auth.tenantId())
@@ -346,15 +523,16 @@ public class PermissionService {
   }
 
   private boolean repairOwnerMatches(RepairOrder r, String action) {
-    if (Objects.equals("处理", action)) return Objects.equals(r.getAssigneeUserId(), auth.userId());
-    if (Set.of("验收", "报修", "编辑", "撤回", "派工").contains(action))
+    if (PermissionAction.PROCESS.code().equals(action))
+      return Objects.equals(r.getAssigneeUserId(), auth.userId());
+    if (REPAIR_REPORTER_ACTIONS.contains(action))
       return Objects.equals(r.getReporterUserId(), auth.userId());
     return Objects.equals(r.getReporterUserId(), auth.userId())
         || Objects.equals(r.getAssigneeUserId(), auth.userId());
   }
 
   public List<OrgUnit> visibleOrganizations(List<OrgUnit> rows) {
-    var scope = scope("org", "查看");
+    var scope = scope("org", PermissionAction.VIEW);
     if (scope.all()) return rows;
     Map<Long, OrgUnit> byId = new HashMap<>();
     for (var row : rows) byId.put(row.getId(), row);
@@ -374,7 +552,7 @@ public class PermissionService {
   }
 
   public List<SystemUser> visibleUsers(List<SystemUser> rows) {
-    var scope = scope("user", "查看");
+    var scope = scope("user", PermissionAction.VIEW);
     return rows.stream().filter(row -> allowedUser(scope, row)).toList();
   }
 
@@ -424,6 +602,14 @@ public class PermissionService {
 
   public Long userIdByName(String name) {
     return organizationScopes.userIdByName(name);
+  }
+
+  public PermissionScope scope(String menu, PermissionAction action) {
+    return scope(menu, action.code());
+  }
+
+  public PermissionScope scope(PermissionMenu menu, PermissionAction action) {
+    return scope(menu.code(), action.code());
   }
 
   public PermissionScope scope(String menu, String action) {
@@ -501,10 +687,10 @@ public class PermissionService {
       else if (!"PER_MENU".equals(role.getDataScope())) {
         var legacy = new LinkedHashSet<>(role.getLegacyActions());
         if (legacy.contains(menu + "." + action)
-            || legacy.contains(menu + "." + legacyAction(action))
+            || legacy.contains(menu + "." + PermissionAction.toLegacyCode(action))
             || (CHILD_ACTIONS.getOrDefault(menu, Set.of()).contains(action)
                 && (legacy.contains(legacyParent(menu) + "." + action)
-                    || legacy.contains(legacyParent(menu) + "." + legacyAction(action)))))
+                    || legacy.contains(legacyParent(menu) + "." + PermissionAction.toLegacyCode(action)))))
           matches.add(
               new Grant(
                   Set.of(action),
@@ -522,7 +708,7 @@ public class PermissionService {
         || !Integer.valueOf(1).equals(user.getStatus())) return false;
     if (Objects.equals(user.getId(), row.getReporterUserId())) return true;
     try {
-      var values = scopesFor(user.getId(), "repair", "验收");
+      var values = scopesFor(user.getId(), "repair", PermissionAction.ACCEPT.code());
       return scopeFor(user.getOrgId(), values)
           .matches(
               companyOfOrganization(row.getDepartmentOrgId()), row.getDepartmentOrgId(),
@@ -536,7 +722,7 @@ public class PermissionService {
     if (!Objects.equals(user.getTenantId(), auth.tenantId())
         || !Integer.valueOf(1).equals(user.getStatus())) return false;
     try {
-      var values = scopesFor(user.getId(), "inventory", "出库");
+      var values = scopesFor(user.getId(), "inventory", PermissionAction.STOCK_OUT.code());
       var scope = scopeFor(user.getOrgId(), values);
       return scope.all() || scope.companyIds().contains(companyId);
     } catch (ResponseStatusException denied) {
@@ -640,36 +826,6 @@ public class PermissionService {
       case "指定部门" -> "selected";
       case "本人" -> "owner";
       default -> "department";
-    };
-  }
-
-  private String legacyAction(String action) {
-    return switch (action) {
-      case "查看" -> "view";
-      case "新增", "报修", "申请" -> "create";
-      case "编辑" -> "edit";
-      case "删除" -> "delete";
-      case "停用" -> "disable";
-      case "派工" -> "dispatch";
-      case "处理" -> "process";
-      case "验收" -> "accept";
-      case "导出" -> "export";
-      default -> action;
-    };
-  }
-
-  private String legacyActionName(String action) {
-    return switch (action) {
-      case "view" -> "查看";
-      case "create" -> "新增";
-      case "edit" -> "编辑";
-      case "delete" -> "删除";
-      case "disable" -> "停用";
-      case "dispatch" -> "派工";
-      case "process" -> "处理";
-      case "accept" -> "验收";
-      case "export" -> "导出";
-      default -> action;
     };
   }
 

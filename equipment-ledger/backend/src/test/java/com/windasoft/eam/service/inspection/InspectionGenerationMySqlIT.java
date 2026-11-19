@@ -18,6 +18,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.inspection.InspectionGenerationTarget;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
@@ -398,7 +399,7 @@ class InspectionGenerationMySqlIT {
   @Test
   void previewRejectsAnotherCreatorsPlanEvenWhenRequestedEquipmentIsOwned() throws Exception {
     fixture(true, 1, 1);
-    when(permissions.inspection("daily-plans", "编辑"))
+    when(permissions.inspection("daily-plans", PermissionAction.EDIT))
         .thenReturn(new PermissionScope(false, null, Set.of(), true));
     var body = previewDraft();
     var previewService = previewService(TENANT);
@@ -411,7 +412,7 @@ class InspectionGenerationMySqlIT {
   @Test
   void previewCannotResolvePlanFromAnotherTenant() throws Exception {
     fixture(true, 1, 1);
-    when(permissions.inspection("daily-plans", "编辑"))
+    when(permissions.inspection("daily-plans", PermissionAction.EDIT))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     var body = previewDraft();
     var previewService = previewService(TENANT + 1);
@@ -424,7 +425,7 @@ class InspectionGenerationMySqlIT {
   @Test
   void permittedDraftPreviewIsReadOnlyAndDoesNotAdvanceSavedPlan() throws Exception {
     fixture(true, 1, 1);
-    when(permissions.inspection("daily-plans", "编辑"))
+    when(permissions.inspection("daily-plans", PermissionAction.EDIT))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     var body = previewDraft();
     String before = json.writeValueAsString(body);
@@ -469,8 +470,8 @@ class InspectionGenerationMySqlIT {
     var actualProjects = new InspectionProjectService(repository, json, caller, permissions);
     when(projects.raw("daily-plans", tenant, PLAN, false))
         .thenAnswer(call -> actualProjects.raw("daily-plans", tenant, PLAN, false));
-    when(projects.scoped(anyMap(), eq("编辑")))
-        .thenAnswer(call -> actualProjects.scoped(call.getArgument(0), "编辑"));
+    when(projects.scoped(anyMap(), eq(PermissionAction.EDIT)))
+        .thenAnswer(call -> actualProjects.scoped(call.getArgument(0), PermissionAction.EDIT));
     when(projects.equipment(tenant, 1L)).thenReturn(Map.of("id", 1L, "owner_user_id", USER));
     return new DailyInspectionPlanService(
         caller,
@@ -549,7 +550,7 @@ class InspectionGenerationMySqlIT {
     candidate(firstId + 1, "SEL-B", null, ORGANIZATION, false);
     candidate(firstId + 2, "SEL-C", null, null, false);
     candidate(firstId + 3, "SEL-D", USER, ORGANIZATION, true);
-    when(permissions.inspection("daily", "执行"))
+    when(permissions.inspection("daily", PermissionAction.EXECUTE))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     var service = deviceCandidateService(TENANT);
     var tx = new TransactionTemplate(transactions);
@@ -573,7 +574,7 @@ class InspectionGenerationMySqlIT {
     assertEquals("候选设备", page.path("data").get(0).path("name").asText());
     var second = json.valueToTree(service.dailyDeviceOptions("", 2, 2));
     assertEquals(Long.toString(firstId + 2), second.path("data").get(0).path("id").asText());
-    when(permissions.inspection("daily", "执行"))
+    when(permissions.inspection("daily", PermissionAction.EXECUTE))
         .thenReturn(new PermissionScope(false, null, Set.of(ORGANIZATION), true));
     assertEquals(
         2,
@@ -581,7 +582,7 @@ class InspectionGenerationMySqlIT {
             .path("page")
             .path("total")
             .asLong());
-    when(permissions.inspection("daily", "执行"))
+    when(permissions.inspection("daily", PermissionAction.EXECUTE))
         .thenReturn(new PermissionScope(false, null, Set.of(), false));
     assertEquals(
         0,
@@ -589,7 +590,7 @@ class InspectionGenerationMySqlIT {
             .path("page")
             .path("total")
             .asLong());
-    when(permissions.inspection("daily", "执行"))
+    when(permissions.inspection("daily", PermissionAction.EXECUTE))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     assertEquals(
         0,
@@ -604,7 +605,7 @@ class InspectionGenerationMySqlIT {
     notificationUser();
     candidate(9007199254740993L, "REF-100%_X", USER, null, false);
     candidate(9007199254740994L, "REF-100ABX", USER, null, false);
-    when(permissions.inspection("daily", "执行"))
+    when(permissions.inspection("daily", PermissionAction.EXECUTE))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     var result =
         json.valueToTree(deviceCandidateService(TENANT).dailyDeviceOptions("100%_", 0, 1000));

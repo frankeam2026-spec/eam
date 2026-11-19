@@ -3,6 +3,7 @@ package com.windasoft.eam.service.inspection;
 import static com.windasoft.eam.common.inspection.InspectionSupport.*;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -40,7 +41,7 @@ public class InspectionValidationService {
     return type;
   }
 
-  void checkEquipment(Map<String, Object> row, String kind, String action) {
+  void checkEquipment(Map<String, Object> row, String kind, PermissionAction action) {
     var scope = permissions.inspection(kind, action);
     if (!scope.matches(
         nullable(row.get("company_org_id")),

@@ -1,4 +1,6 @@
-<script setup lang="ts">import { enumLabel } from '../i18n';
+<script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
+import { enumLabel } from '../i18n';
 import { tr } from '../i18n';
 
 import DialogChoiceInput from './common/DialogChoiceInput.vue';
@@ -109,7 +111,7 @@ function selectRequest(id: string, checked: boolean) {
 const readOnly = computed(
   () =>
     form.value.status !== '草稿' ||
-    (!auth.can('inventoryRequisition', form.value.id ? '编辑' : '新增') && !form.value.taskId) ||
+    (!auth.can('inventoryRequisition', form.value.id ? PermissionAction.EDIT : PermissionAction.CREATE) && !form.value.taskId) ||
     (!!form.value.id && form.value.applicantId !== auth.user?.id),
 );
 const taskValue = computed({
@@ -169,12 +171,12 @@ const warehouseHint = computed(() => {
 });
 const canReserve = computed(
   () =>
-    auth.can('inventoryOutbound', '预留') &&
+    auth.can('inventoryOutbound', PermissionAction.RESERVE) &&
     ['待预留', '部分预留', '部分发料'].includes(form.value.status),
 );
 const canRelease = computed(
   () =>
-    auth.can('inventoryOutbound', '释放预留') &&
+    auth.can('inventoryOutbound', PermissionAction.RELEASE_RESERVATION) &&
     ['待预留', '部分预留', '已预留', '部分发料'].includes(form.value.status) &&
     !!form.value.reservations?.length,
 );
@@ -188,11 +190,11 @@ const canCancel = computed(
     !!form.value.id &&
     ['草稿', '待预留', '部分预留', '已预留'].includes(form.value.status) &&
     form.value.lines.every((line) => Number(line.issuedQuantity || 0) === 0) &&
-    (form.value.applicantId === auth.user?.id || auth.can('inventoryOutbound', '关闭剩余需求')),
+    (form.value.applicantId === auth.user?.id || auth.can('inventoryOutbound', PermissionAction.CLOSE_REMAINDER)),
 );
 const canIssue = computed(
   () =>
-    auth.can('inventoryOutbound', '确认出库') &&
+    auth.can('inventoryOutbound', PermissionAction.CONFIRM_ISSUE) &&
     ['待预留', '部分预留', '已预留', '部分发料'].includes(form.value.status),
 );
 function openIssue() {
@@ -206,7 +208,7 @@ const canCloseRemaining = computed(
   () =>
     !!form.value.id &&
     ['待预留', '部分预留', '已预留', '部分发料'].includes(form.value.status) &&
-    (form.value.applicantId === auth.user?.id || auth.can('inventoryOutbound', '关闭剩余需求')),
+    (form.value.applicantId === auth.user?.id || auth.can('inventoryOutbound', PermissionAction.CLOSE_REMAINDER)),
 );
 async function closeRemaining() {
   try {
@@ -560,7 +562,7 @@ type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
         :active="pendingOnly ? 'pending' : 'requests'"
         :items="[
           { key: 'requests', label: '领料申请' },
-          ...(auth.can('inventoryOutbound', '确认出库')
+          ...(auth.can('inventoryOutbound', PermissionAction.CONFIRM_ISSUE)
             ? [{ key: 'pending', label: '待出库' }]
             : []),
         ]"
@@ -575,7 +577,7 @@ type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
       />
       <AppListToolbar class="toolbar">
         <ElButton
-          v-if="pendingOnly && auth.can('inventoryOutbound', '确认出库')"
+          v-if="pendingOnly && auth.can('inventoryOutbound', PermissionAction.CONFIRM_ISSUE)"
           type="primary"
           :disabled="!selectedRequests.length"
           :loading="mergedBusy"
@@ -583,7 +585,7 @@ type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
           >{{ selectedRequests.length > 1 ? tr('ui.equipment.text0546') : tr('ui.equipment.text0504') }}</ElButton
         >
         <ElButton
-          v-if="!pendingOnly && auth.can('inventoryRequisition', '新增')"
+          v-if="!pendingOnly && auth.can('inventoryRequisition', PermissionAction.CREATE)"
           type="primary"
           @click="router.push({ name: 'inventory-requisition-detail', params: { id: 'new' } })"
           ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}</ElButton
@@ -650,7 +652,7 @@ type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
               ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
               ><template #default="{ row: row, $index: tableRowIndex }">
                 <ElButton
-                  v-if="pendingOnly && auth.can('inventoryOutbound', '确认出库')"
+                  v-if="pendingOnly && auth.can('inventoryOutbound', PermissionAction.CONFIRM_ISSUE)"
                   link
                   type="primary"
                   :disabled="mergedBusy"
@@ -684,7 +686,7 @@ type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
             mode="footer"
             :filter-open="filterOpen"
             :columns-open="columnsOpen"
-            :can-export="auth.can('inventoryRequisition', '导出')"
+            :can-export="auth.can('inventoryRequisition', PermissionAction.EXPORT)"
             :export-busy="exportBusy"
             @toggle-columns="columnsOpen = !columnsOpen"
             @export="exportRows"
@@ -926,7 +928,7 @@ type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
               ></AppBusinessTable
             >
           </div>
-          <p v-if="auth.can('inventoryRequisition', '查看金额')" class="issue-total">
+          <p v-if="auth.can('inventoryRequisition', PermissionAction.VIEW_AMOUNT)" class="issue-total">
             {{ tr('ui.equipment.text0659') }} {{ formatNumber(issue.totalAmount) }}
           </p>
         </div>
@@ -959,7 +961,7 @@ type TableColumnRow5 = NonNullable<ReturnType<typeof tableColumnRows5>>[number];
           ><ElButton v-if="canIssue" type="primary" :disabled="busy" @click="openIssue"
             >{{ tr('ui.equipment.text0504') }}</ElButton
           ><ElButton
-            v-if="form.id && form.status === '草稿' && auth.can('inventoryRequisition', '删除')"
+            v-if="form.id && form.status === '草稿' && auth.can('inventoryRequisition', PermissionAction.DELETE)"
             type="danger"
             plain
             :disabled="busy"

@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.knowledge;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.knowledge.KnowledgeViews;
 import com.windasoft.eam.entity.knowledge.KnowledgeCaseSource;
 import com.windasoft.eam.entity.knowledge.KnowledgeDocument;
@@ -63,7 +64,7 @@ public class KnowledgeRepairCaseService {
         || order.getCompanyOrgId() == null
         || order.getEquipmentId() == null)
       throw new IllegalArgumentException("仅可从所属公司和设备明确的已验收工单建立案例");
-    var scope = permissions.scope("knowledge", "编辑");
+    var scope = permissions.scope("knowledge", PermissionAction.EDIT);
     if (!scope.all() && !scope.companyIds().contains(order.getCompanyOrgId()))
       throw new IllegalArgumentException("无权维护此公司知识库");
     return order;

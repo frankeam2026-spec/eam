@@ -1,3 +1,4 @@
+import { PermissionAction } from '../permissionActions';
 import { tr } from '../i18n';
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
@@ -15,7 +16,7 @@ export const useAuthStore = defineStore('auth', () => {
   const currentDepartment = computed(() => user.value?.department || '');
   let pending: Promise<void> | undefined;
 
-  function can(menu: string, action = '查看') {
+  function can(menu: string, action: string = PermissionAction.VIEW) {
     return grantedActions.value[menu]?.includes(action) === true;
   }
   function expire() {

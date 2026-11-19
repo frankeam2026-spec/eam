@@ -11,6 +11,7 @@ import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.common.inventory.InventoryMoney;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.entity.inventory.InventoryBin;
 import com.windasoft.eam.entity.inventory.Material;
 import com.windasoft.eam.entity.inventory.Warehouse;
@@ -112,7 +113,7 @@ public class InventoryService {
     return rows.getFirst();
   }
 
-  void company(long companyId, String action) {
+  void company(long companyId, PermissionAction action) {
     require(
         repository.countCompany(auth.tenantId(), companyId) == 1,
         MessageContext.text("server.inventory.message0188"));
@@ -121,13 +122,13 @@ public class InventoryService {
       throw new LocalizedStatusException(HttpStatus.FORBIDDEN, "server.inventory.message0025");
   }
 
-  void access(String kind, Map<String, Object> row, String action) {
+  void access(String kind, Map<String, Object> row, PermissionAction action) {
     permissions.require(menu(kind), action);
     if (kind.equals("warehouses"))
-      permissions.checkInventoryWarehouse("inventoryWarehouse", id(row.get("id")), action);
+      permissions.checkInventoryWarehouse("inventoryWarehouse", id(row.get("id")), action.code());
     if (kind.equals("bins"))
       permissions.checkInventoryWarehouse(
-          "inventoryWarehouse", id(row.get("warehouse_id")), action);
+          "inventoryWarehouse", id(row.get("warehouse_id")), action.code());
   }
 
 
@@ -179,7 +180,7 @@ public class InventoryService {
     var actions = permissions.menuActions();
     require(
         actions.entrySet().stream()
-            .anyMatch(e -> e.getKey().startsWith("inventory") && e.getValue().contains("查看")),
+            .anyMatch(e -> e.getKey().startsWith("inventory") && e.getValue().contains(PermissionAction.VIEW.code())),
         MessageContext.text("server.inventory.message0189"));
     var companies = new ArrayList<Map<String, Object>>();
     for (var record : repository.listCompanies(auth.tenantId())) {
@@ -194,10 +195,10 @@ public class InventoryService {
                             && !e.getKey().equals("inventoryMaterial"))
                 .anyMatch(
                     e ->
-                        e.getValue().contains("查看")
-                            && permissions.companyAllowed(e.getKey(), "查看", company));
-        if (!visible && permissions.allowed("inventoryWarehouse", "新增"))
-          visible = permissions.companyAllowed("inventoryWarehouse", "新增", company);
+                        e.getValue().contains(PermissionAction.VIEW.code())
+                            && permissions.companyAllowed(e.getKey(), PermissionAction.VIEW.code(), company));
+        if (!visible && permissions.allowed("inventoryWarehouse", PermissionAction.CREATE))
+          visible = permissions.companyAllowed("inventoryWarehouse", PermissionAction.CREATE.code(), company);
         if (!visible) {
           visible =
               repository.listCompanyWarehouseIds(auth.tenantId(), company).stream()
@@ -207,11 +208,11 @@ public class InventoryService {
                               .filter(
                                   e ->
                                       e.getKey().startsWith("inventory")
-                                          && e.getValue().contains("查看"))
+                                          && e.getValue().contains(PermissionAction.VIEW.code()))
                               .anyMatch(
                                   e ->
                                       permissions.inventoryWarehouseAllowed(
-                                          e.getKey(), id(w.get("id")), "查看")));
+                                          e.getKey(), id(w.get("id")), PermissionAction.VIEW.code())));
         }
         if (!visible) continue;
         companies.add(view(record));
@@ -247,7 +248,7 @@ public class InventoryService {
   public Map<String, Object> stockChoices(boolean includeMaterials) {
     var visibleWarehouses = visibleWarehouses();
     var result = new LinkedHashMap<String, Object>(choices(visibleWarehouses));
-    boolean showPrices = includeMaterials && permissions.allowed("inventoryMaterial", "查看金额");
+    boolean showPrices = includeMaterials && permissions.allowed("inventoryMaterial", PermissionAction.VIEW_AMOUNT);
     result.put(
         "materials",
         includeMaterials
@@ -293,7 +294,7 @@ public class InventoryService {
   public Map<String, Object> save(String kind, Long recordId, Map<String, Object> body) {
     repository.validateKind(kind);
     mutex.enter();
-    String action = recordId == null ? "新增" : "编辑";
+    var action = recordId == null ? PermissionAction.CREATE : PermissionAction.EDIT;
     permissions.require(menu(kind), action);
     Map<String, Object> previous = recordId == null ? null : row(kind, recordId, true);
     if (previous != null) {
@@ -316,7 +317,7 @@ public class InventoryService {
     ObjectNode after;
     if (kind.equals("materials")) {
       String priceInput = text(body, "referencePrice");
-      if (!permissions.allowed("inventoryMaterial", "编辑参考价")) {
+      if (!permissions.allowed("inventoryMaterial", PermissionAction.EDIT_REFERENCE_PRICE)) {
         require(
             priceInput.isBlank()
                 || (previous != null
@@ -477,7 +478,7 @@ public class InventoryService {
     }
     if (kind.equals("warehouses")) ensureDefaultBin(target);
     var output = view(row(kind, target, false));
-    if (kind.equals("materials") && !permissions.allowed("inventoryMaterial", "查看金额"))
+    if (kind.equals("materials") && !permissions.allowed("inventoryMaterial", PermissionAction.VIEW_AMOUNT))
       InventoryMoney.hide(output);
     return output;
   }

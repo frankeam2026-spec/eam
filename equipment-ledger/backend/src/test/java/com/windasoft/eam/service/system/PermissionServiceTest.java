@@ -7,6 +7,8 @@ import static org.mockito.Mockito.*;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
+import com.windasoft.eam.domain.system.PermissionMenu;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.system.OrgUnit;
@@ -153,6 +155,49 @@ class PermissionServiceTest {
     assertTrue(scope.matches(null, 40L, null, 10L));
     assertTrue(scope.matches(null, 99L, 10L, 10L));
     assertFalse(scope.matches(null, 99L, 11L, 10L));
+  }
+
+  @Test
+  void typedPermissionsPreserveLegacyAliasesAndDenyUnassignedActions() {
+    var repository = mock(AuthorizationRepository.class);
+    var link = new UserRoleLink();
+    link.setRoleId(1L);
+    var legacy = new SystemRole();
+    legacy.setId(1L);
+    legacy.setDataScope("本部门");
+    legacy.setLegacyActions(List.of("repair.view", "repair.create"));
+    when(repository.userRoles(10001L, 10L)).thenReturn(List.of(link));
+    when(repository.activeRoles(10001L, List.of(1L))).thenReturn(List.of(legacy));
+    var service =
+        new PermissionService(auth, mock(WarehouseRepository.class), repository,
+            new OrganizationScopeService(auth, repository));
+    assertEquals(service.scope("repair", "查看"), service.scope(PermissionMenu.REPAIR, PermissionAction.VIEW));
+    assertEquals(service.scope("repair", "报修"), service.scope("repair", PermissionAction.REPORT));
+    assertTrue(service.scope("repair", PermissionAction.VIEW).matches(null, 30L, null, 10L));
+    assertFalse(service.scope("repair", PermissionAction.VIEW).matches(null, 40L, null, 10L));
+    assertFalse(service.allowed("repair", PermissionAction.EXPORT));
+  }
+
+  @Test
+  void participationKeepsItsViewGrantsWithoutAddingOtherActions() {
+    var repository = mock(AuthorizationRepository.class);
+    when(repository.userRoles(10001L, 10L)).thenReturn(List.of());
+    when(repository.approvalParticipation(10001L, 10L)).thenReturn(true);
+    when(repository.personalRepairAccess(10001L, 10L)).thenReturn(true);
+    when(repository.maintenanceParticipation(10001L, 10L)).thenReturn(1);
+    when(repository.inspectionParticipation(10001L, 10L, null)).thenReturn(1);
+    when(repository.inspectionParticipation(10001L, 10L, "daily")).thenReturn(1);
+    when(repository.repairPlanParticipation(10001L, 10L)).thenReturn(1);
+    var permissions =
+        new PermissionService(auth, mock(WarehouseRepository.class), repository,
+            new OrganizationScopeService(auth, repository));
+    var actions = permissions.menuActions();
+    assertEquals(
+        Set.of("inventoryRequisition", "repair", "workspace", "maintenanceTask",
+            "inspectionDailyTask", "repairPlan"),
+        actions.keySet());
+    actions.values().forEach(value -> assertEquals(Set.of("查看"), value));
+    assertFalse(permissions.allowed("workspace", PermissionAction.VIEW_TEAM_WORK));
   }
 
   @Test

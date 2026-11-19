@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
 import com.windasoft.eam.service.repair.RepairQueryService;
@@ -24,7 +25,7 @@ class AiRepairQueryServiceTest {
     assertEquals(LocalDate.of(2026,9,1),previous.from());assertEquals(LocalDate.of(2026,9,30),previous.to());assertEquals("owned",previous.relation());assertTrue(previous.completed());
   }
   @Test void unsupportedFiltersAreNotSilentlyDropped() throws Exception {
-    when(permissions.allowed("repair","查看")).thenReturn(true);
+    when(permissions.allowed("repair",PermissionAction.VIEW)).thenReturn(true);
     assertNotNull(service().tryAnswer("张三最近一个月的维修记录",null));verifyNoInteractions(repairs);
     assertNull(service().tryAnswer("如何填写维修记录",null));
     assertNull(service().tryAnswer("本月维修记录统计",null));
@@ -39,7 +40,7 @@ class AiRepairQueryServiceTest {
     var result=(Map<?,?>)service().query(new AiRepairQueryService.Criteria(LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).minusMonths(1),LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")),"owned",false,null),1,20);
     var arguments=ArgumentCaptor.forClass(Map.class);verify(repairs).list(arguments.capture());
     assertEquals("20",arguments.getValue().get("size"));assertEquals("owned",arguments.getValue().get("relation"));assertTrue(Objects.toString(arguments.getValue().get("advanced")).contains("reportedAt"));
-    verify(permissions).require("repair","查看");verify(permissions).require("knowledge","查看");
+    verify(permissions).require("repair",PermissionAction.VIEW);verify(permissions).require("knowledge",PermissionAction.VIEW);
     var record=(Map<?,?>)((List<?>)result.get("data")).getFirst();assertEquals("9007199254740993",record.get("id"));assertFalse(record.containsKey("customFields"));
   }
 }

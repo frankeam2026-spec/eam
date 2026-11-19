@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.domain.inspection.InspectionTaskAction;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.service.inventory.InventoryMutex;
@@ -42,8 +43,8 @@ class DailyInspectionExemptionServiceTest {
             "department_id", 3L,
             "row_version", 4L);
     when(projects.raw("daily-plans", 7L, 99L, true)).thenReturn(plan);
-    when(projects.scoped(plan, "查看")).thenReturn(true);
-    when(permissions.inspection("daily", "免检"))
+    when(projects.scoped(plan, PermissionAction.VIEW)).thenReturn(true);
+    when(permissions.inspection("daily", PermissionAction.EXEMPT))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     when(permissions.companyOfOrganization(3L)).thenReturn(2L);
 

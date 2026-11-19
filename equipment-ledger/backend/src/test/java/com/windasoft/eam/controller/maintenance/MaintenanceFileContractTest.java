@@ -17,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.ApiExceptionHandler;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.maintenance.MaintenanceUpload;
 import com.windasoft.eam.entity.maintenance.MaintenanceFile;
 import com.windasoft.eam.repository.maintenance.MaintenanceFileRepository;
@@ -54,7 +55,7 @@ class MaintenanceFileContractTest {
   void setup() {
     when(auth.tenantId()).thenReturn(71L);
     when(auth.userId()).thenReturn(73L);
-    when(permissions.anyMaintenance("查看")).thenReturn(true);
+    when(permissions.anyMaintenance(PermissionAction.VIEW)).thenReturn(true);
     storage = new MaintenanceFileStorage(directory.toString());
     service = new MaintenanceFileService(auth, permissions, repository, storage, lists);
   }

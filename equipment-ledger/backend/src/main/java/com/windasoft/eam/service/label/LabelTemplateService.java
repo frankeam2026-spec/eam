@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.label;
 
 import com.fasterxml.jackson.databind.*;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.label.LabelPrintForm;
 import com.windasoft.eam.dto.label.LabelTemplateForm;
 import com.windasoft.eam.entity.label.LabelTemplate;
@@ -32,12 +33,12 @@ public class LabelTemplateService {
   }
 
   public Map<String, Object> list() {
-    permissions.require("equipmentTag", "查看");
+    permissions.require("equipmentTag", PermissionAction.VIEW);
     return Map.of("data", repository.list(auth.tenantId()).stream().map(this::view).toList());
   }
 
   public Map<String, Object> create(LabelTemplateForm f) {
-    permissions.require("equipmentTag", "新增");
+    permissions.require("equipmentTag", PermissionAction.CREATE);
     var row = new LabelTemplate();
     row.setTenantId(auth.tenantId());
     row.setDeleted(0);
@@ -48,7 +49,7 @@ public class LabelTemplateService {
   }
 
   public Map<String, Object> update(Long id, LabelTemplateForm f) {
-    permissions.require("equipmentTag", "编辑");
+    permissions.require("equipmentTag", PermissionAction.EDIT);
     var row = require(id);
     assign(row, f);
     if (f.rowVersion() == null)
@@ -60,14 +61,14 @@ public class LabelTemplateService {
   }
 
   public Map<String, Object> delete(Long id) {
-    permissions.require("equipmentTag", "删除");
+    permissions.require("equipmentTag", PermissionAction.DELETE);
     require(id);
     repository.delete(id);
     return Map.of("data", true);
   }
 
   public Map<String, Object> printData(Long id, LabelPrintForm f) {
-    permissions.require("equipmentTag", "打印");
+    permissions.require("equipmentTag", PermissionAction.PRINT);
     var template = require(id);
     var rows =
         f.equipmentIds().stream()
@@ -78,7 +79,7 @@ public class LabelTemplateService {
                   if (e == null)
                     throw new com.windasoft.eam.common.LocalizedArgumentException(
                         "server.common.message0064");
-                  permissions.checkEquipment(e, "查看");
+                  permissions.checkEquipment(e, PermissionAction.VIEW);
                   return Map.of(
                       "name",
                       safe(e.getName()),

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.workflow.WorkflowExpression;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
 import com.windasoft.eam.dto.repair.RepairAssistantRequest;
 import com.windasoft.eam.dto.repair.RepairForm;
@@ -121,7 +122,7 @@ class RepairApprovalMySqlIT {
               u.setDisplayName("approval tester");
               return u;
             });
-    when(permissions.scope(eq("workflow"), anyString()))
+    when(permissions.scope(eq("workflow"), any(PermissionAction.class)))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     when(permissions.companyAllowed(eq("workflow"), anyString(), anyLong())).thenReturn(true);
     when(permissions.companyOfOrganization(any()))
@@ -347,7 +348,7 @@ class RepairApprovalMySqlIT {
     actor = 73001L;
     doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN))
         .when(permissions)
-        .checkRepair(any(), eq("编辑"));
+        .checkRepair(any(), eq(PermissionAction.EDIT));
     orders.update(id, form(), repairs.find(10001, id).getRowVersion());
     verify(permissions, atLeastOnce()).checkRepair(any(), eq("报修"));
     assertEquals(
@@ -583,7 +584,7 @@ class RepairApprovalMySqlIT {
     assertEquals(1, ((Number) repairQueries.queryAssistant(request).get("value")).intValue());
     doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN))
         .when(permissions)
-        .require("repair", "查看");
+        .require("repair", PermissionAction.VIEW);
     assertThrows(ResponseStatusException.class, () -> repairQueries.queryAssistant(request));
   }
 

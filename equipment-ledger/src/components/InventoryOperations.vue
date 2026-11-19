@@ -1,4 +1,6 @@
-<script setup lang="ts">import { enumLabel } from '../i18n';
+<script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
+import { enumLabel } from '../i18n';
 import { tr } from '../i18n';
 
 import { onUnmounted } from 'vue';
@@ -99,9 +101,9 @@ const fields: Record<string, string> = {
 };
 const columns = ref(Object.keys(fields));
 const readonly = computed(
-  () => form.value.status !== '草稿' || !auth.can(menu.value, form.value.id ? '编辑' : '新增'),
+  () => form.value.status !== '草稿' || !auth.can(menu.value, form.value.id ? PermissionAction.EDIT : PermissionAction.CREATE),
 );
-const canMoney = computed(() => auth.can(menu.value, '查看金额'));
+const canMoney = computed(() => auth.can(menu.value, PermissionAction.VIEW_AMOUNT));
 const guard = useUnsavedChanges(
   () => form.value,
   () => editing.value && !readonly.value,
@@ -467,7 +469,7 @@ type TableColumnRow3 = NonNullable<ReturnType<typeof tableColumnRows3>>[number];
     <template v-if="!editing">
       <AppListToolbar class="toolbar">
         <ElButton
-          v-if="auth.can(menu, '新增')"
+          v-if="auth.can(menu, PermissionAction.CREATE)"
           type="primary"
           @click="router.push({ name: 'inventory-operation-detail', params: { kind, id: 'new' } })"
           ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}</ElButton
@@ -564,7 +566,7 @@ type TableColumnRow3 = NonNullable<ReturnType<typeof tableColumnRows3>>[number];
             mode="footer"
             :filter-open="filterOpen"
             :columns-open="columnsOpen"
-            :can-export="auth.can(menu, '导出')"
+            :can-export="auth.can(menu, PermissionAction.EXPORT)"
             :export-busy="exportBusy"
             @toggle-columns="columnsOpen = !columnsOpen"
             @export="exportRows"
@@ -850,7 +852,7 @@ type TableColumnRow3 = NonNullable<ReturnType<typeof tableColumnRows3>>[number];
             kind === 'counts' && !form.id ? tr('ui.equipment.text0534') : tr('ui.equipment.text0275')
           }}</ElButton
           ><ElButton
-            v-if="form.id && form.status === '草稿' && auth.can(menu, '删除')"
+            v-if="form.id && form.status === '草稿' && auth.can(menu, PermissionAction.DELETE)"
             :disabled="busy"
             @click="remove"
             >{{ tr('ui.equipment.text0146') }}</ElButton
@@ -861,7 +863,7 @@ type TableColumnRow3 = NonNullable<ReturnType<typeof tableColumnRows3>>[number];
             @click="confirm()"
             >{{ kind === 'transfers' ? tr('ui.equipment.text0535') : tr('ui.equipment.text0494') }}</ElButton
           ><ElButton
-            v-if="form.status === '在途' && auth.can(menu, '入库')"
+            v-if="form.status === '在途' && auth.can(menu, PermissionAction.STOCK_IN)"
             type="primary"
             :disabled="busy"
             @click="confirm(true)"

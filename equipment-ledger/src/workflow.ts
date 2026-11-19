@@ -1,3 +1,4 @@
+import { PermissionAction } from './permissionActions';
 import { request } from './api';
 import type { SelectorPage, SelectorRow } from './selectors';
 export type WorkflowBranch = {
@@ -129,7 +130,7 @@ export const workflowApi = {
           size: String(size),
         }),
     ),
-  companies: (action = '查看') =>
+  companies: (action: string = PermissionAction.VIEW) =>
     request<{ data: SelectorRow[] }>(
       '/workflow/templates/companies?' + new URLSearchParams({ action }),
     ),

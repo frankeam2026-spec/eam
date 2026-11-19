@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.maintenance.MaintenanceTypeRequest;
 import com.windasoft.eam.dto.maintenance.MaintenanceTypeView;
 import com.windasoft.eam.entity.maintenance.MaintenanceType;
@@ -57,8 +58,8 @@ public class MaintenanceTypeService {
 
   @Transactional(readOnly = true)
   public List<MaintenanceTypeView> list(String conditions, boolean export) {
-    if (export) permissions.require(PermissionService.maintenanceMenu(KIND), "导出");
-    permissions.require(PermissionService.maintenanceMenu(KIND), "查看");
+    if (export) permissions.require(PermissionService.maintenanceMenu(KIND), PermissionAction.EXPORT);
+    permissions.require(PermissionService.maintenanceMenu(KIND), PermissionAction.VIEW);
     // 类型没有自定义字段；沿用原校验：普通条件不参与过滤，自定义字段条件拒绝。
     filters.predicate(null, conditions, "t");
     return types.list(auth.tenantId()).stream().map(this::view).toList();
@@ -66,7 +67,7 @@ public class MaintenanceTypeService {
 
   @Transactional(readOnly = true)
   public MaintenanceTypeView get(long id) {
-    permissions.require(PermissionService.maintenanceMenu(KIND), "查看");
+    permissions.require(PermissionService.maintenanceMenu(KIND), PermissionAction.VIEW);
     return view(required(id, false));
   }
 
@@ -80,7 +81,7 @@ public class MaintenanceTypeService {
   /** 锁定原类型后复核版本；周期被计划引用时不能修改。系统标志只继承数据库值。 */
   @Transactional
   public MaintenanceTypeView save(Long id, MaintenanceTypeRequest request) {
-    permissions.require(PermissionService.maintenanceMenu(KIND), id == null ? "新增" : "编辑");
+    permissions.require(PermissionService.maintenanceMenu(KIND), id == null ? PermissionAction.CREATE : PermissionAction.EDIT);
     var old = id == null ? null : required(id, true);
     if (old != null) {
       require(request.rowVersion() != null, MessageContext.text("server.common.message0018"));
@@ -130,7 +131,7 @@ public class MaintenanceTypeService {
   @Transactional
   public void delete(long id) {
     var row = required(id, true);
-    permissions.require(PermissionService.maintenanceMenu(KIND), "删除");
+    permissions.require(PermissionService.maintenanceMenu(KIND), PermissionAction.DELETE);
     require(
         !Boolean.TRUE.equals(row.getSystemFlag()),
         MessageContext.text("server.maintenance.message0041"));

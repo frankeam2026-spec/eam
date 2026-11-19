@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.inventory.InventoryMoney;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.entity.inventory.Warehouse;
 import com.windasoft.eam.repository.inventory.InventoryListRepository;
@@ -126,10 +127,10 @@ public class InventoryListService {
   private Listing selectMasters(
       String kind, String q, String filters, int page, int size, boolean export) {
     String menu = InventoryService.menu(kind);
-    permissions.require(menu, export ? "导出" : "查看");
-    permissions.require(menu, "查看");
+    permissions.require(menu, export ? PermissionAction.EXPORT : PermissionAction.VIEW);
+    permissions.require(menu, PermissionAction.VIEW);
     var query = query(q, filters, "[]", page, size);
-    boolean money = !kind.equals("materials") || permissions.allowed(menu, "查看金额");
+    boolean money = !kind.equals("materials") || permissions.allowed(menu, PermissionAction.VIEW_AMOUNT);
     var selected =
         repository.masters(
             auth.tenantId(),
@@ -159,8 +160,8 @@ public class InventoryListService {
   private Listing selectReceipts(
       String q, String filters, String conditions, int page, int size, boolean export) {
     String menu = "inventoryReceipt";
-    permissions.require(menu, export ? "导出" : "查看");
-    permissions.require(menu, "查看");
+    permissions.require(menu, export ? PermissionAction.EXPORT : PermissionAction.VIEW);
+    permissions.require(menu, PermissionAction.VIEW);
     var query = query(q, filters, conditions, page, size);
     var candidates = warehouseRows();
     var selected =
@@ -212,15 +213,15 @@ public class InventoryListService {
   private Listing selectOutbounds(
       String q, String filters, String conditions, int page, int size, boolean export) {
     String menu = "inventoryOutbound";
-    permissions.require(menu, export ? "导出" : "查看");
-    permissions.require(menu, "查看");
+    permissions.require(menu, export ? PermissionAction.EXPORT : PermissionAction.VIEW);
+    permissions.require(menu, PermissionAction.VIEW);
     var query = query(q, filters, conditions, page, size);
     var candidates = warehouseRows();
     var allowed = warehouses(candidates, menu, export);
     var moneyWarehouses = permissions.inventoryWarehouses(menu, VIEW_AMOUNT, candidates);
-    boolean money = permissions.allowed(menu, "查看金额");
+    boolean money = permissions.allowed(menu, PermissionAction.VIEW_AMOUNT);
     if (usesMoney(filters, conditions)) {
-      permissions.require(menu, "查看金额");
+      permissions.require(menu, PermissionAction.VIEW_AMOUNT);
       allowed.retainAll(moneyWarehouses);
     }
     var selected =
@@ -272,12 +273,12 @@ public class InventoryListService {
     Set<Long> allowed;
     String menu = pending ? "inventoryOutbound" : "inventoryRequisition";
     if (pending) {
-      permissions.require(menu, export ? "导出" : "查看");
+      permissions.require(menu, export ? PermissionAction.EXPORT : PermissionAction.VIEW);
       allowed = warehouses(candidates, menu, export);
     } else {
       allowed = warehouses(candidates, "inventoryRequisition", false);
       allowed.addAll(warehouses(candidates, "inventoryOutbound", false));
-      if (export) permissions.require(menu, "导出");
+      if (export) permissions.require(menu, PermissionAction.EXPORT);
     }
     var query = query(q, filters, conditions, page, size);
     var selected =
@@ -309,7 +310,7 @@ public class InventoryListService {
     if (!InventoryFlowService.NAMES.containsKey(kind))
       throw new LocalizedArgumentException("server.inventory.message0022");
     String menu = InventoryFlowService.menu(kind);
-    permissions.require(menu, export ? "导出" : "查看");
+    permissions.require(menu, export ? PermissionAction.EXPORT : PermissionAction.VIEW);
     var query = query(q, filters, "[]", page, size);
     var candidates = warehouseRows();
     var selected =

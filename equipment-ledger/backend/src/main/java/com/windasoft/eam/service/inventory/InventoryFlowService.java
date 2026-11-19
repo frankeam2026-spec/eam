@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.common.inventory.InventoryMoney;
 import com.windasoft.eam.domain.inventory.InventoryReversalSourceKind;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.inventory.InventoryBalanceRepository;
 import com.windasoft.eam.repository.inventory.InventoryOperationRepository;
 import com.windasoft.eam.repository.inventory.InventoryTransactionRepository;
@@ -132,7 +133,7 @@ public class InventoryFlowService {
     return rows.getFirst();
   }
 
-  private Map<String, Object> operation(String kind, long doc, boolean locked, String action) {
+  private Map<String, Object> operation(String kind, long doc, boolean locked, PermissionAction action) {
     require(
         NAMES.containsKey(kind),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0022"));
@@ -140,23 +141,23 @@ public class InventoryFlowService {
     // Personal return requests expose only their own document; receipt and all other operations
     // keep warehouse permission checks.
     if (kind.equals("returns")
-        && action.equals("查看")
+        && action == PermissionAction.VIEW
         && id(payload(row).get("surplusRequestedBy")) == auth.userId()) return row;
     permissions.require(menu(kind), action);
     long source = id(row.get("warehouse_id"));
     if (kind.equals("transfers") && row.get("target_warehouse_id") != null) {
       long target = id(row.get("target_warehouse_id"));
-      if (action.equals("查看")) {
-        if (!permissions.inventoryWarehouseAllowed(menu(kind), target, action))
-          permissions.checkInventoryWarehouse(menu(kind), source, action);
+      if (action == PermissionAction.VIEW) {
+        if (!permissions.inventoryWarehouseAllowed(menu(kind), target, action.code()))
+          permissions.checkInventoryWarehouse(menu(kind), source, action.code());
       } else
         permissions.checkInventoryWarehouse(
-            menu(kind), action.equals("入库") ? target : source, action);
-    } else permissions.checkInventoryWarehouse(menu(kind), source, action);
+            menu(kind), action == PermissionAction.STOCK_IN ? target : source, action.code());
+    } else permissions.checkInventoryWarehouse(menu(kind), source, action.code());
     return row;
   }
 
-  private Map<String, Object> checkWarehouse(long warehouse, String action) {
+  private Map<String, Object> checkWarehouse(long warehouse, PermissionAction action) {
     var w = masters.row("warehouses", warehouse, false);
     return w;
   }
@@ -193,7 +194,7 @@ public class InventoryFlowService {
   }
 
   public Map<String, Object> detail(String kind, long doc) {
-    var raw = operation(kind, doc, false, "查看");
+    var raw = operation(kind, doc, false, PermissionAction.VIEW);
     var value = masters.view(raw);
     value.remove("payload");
     value.put("form", payload(raw));
@@ -213,7 +214,7 @@ public class InventoryFlowService {
         line.put("currentQuantity", Objects.toString(b.get("quantity")));
       }
     }
-    if (!permissions.inventoryWarehouseAllowed(menu(kind), id(raw.get("warehouse_id")), "查看金额"))
+    if (!permissions.inventoryWarehouseAllowed(menu(kind), id(raw.get("warehouse_id")), PermissionAction.VIEW_AMOUNT.code()))
       InventoryMoney.hide(value);
     return value;
   }
@@ -227,7 +228,7 @@ public class InventoryFlowService {
   @Transactional(readOnly = true)
   public Map<String, Object> choices(String kind) {
     String menu = menu(kind);
-    permissions.require(menu, "查看");
+    permissions.require(menu, PermissionAction.VIEW);
     require(
         NAMES.containsKey(kind),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0022"));
@@ -264,7 +265,7 @@ public class InventoryFlowService {
     var legacy = repository.listLegacyStock(tenant);
     boolean unassigned =
         legacy.stream().anyMatch(row -> id(row.get("company_id")) == 0)
-            && permissions.scope("inventoryOpening", "查看").all();
+            && permissions.scope("inventoryOpening", PermissionAction.VIEW).all();
     result.put(
         "legacy",
         legacy.stream()
@@ -275,7 +276,7 @@ public class InventoryFlowService {
                 })
             .map(masters::view)
             .toList());
-    if (!permissions.allowed(menu, "查看金额")) InventoryMoney.hide(result);
+    if (!permissions.allowed(menu, PermissionAction.VIEW_AMOUNT)) InventoryMoney.hide(result);
     return result;
   }
 
@@ -285,8 +286,8 @@ public class InventoryFlowService {
     require(
         NAMES.containsKey(kind),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0022"));
-    permissions.require(menu(kind), doc == null ? "新增" : "编辑");
-    var previous = doc == null ? null : operation(kind, doc, true, "编辑");
+    permissions.require(menu(kind), doc == null ? PermissionAction.CREATE : PermissionAction.EDIT);
+    var previous = doc == null ? null : operation(kind, doc, true, PermissionAction.EDIT);
     if (previous != null) {
       require(
           text(previous, "status").equals("草稿"),
@@ -294,8 +295,8 @@ public class InventoryFlowService {
       VersionGuard.checkPayload((Number) previous.get("row_version"), body);
     }
     long warehouseId = id(body.get("warehouseId"));
-    permissions.checkInventoryWarehouse(menu(kind), warehouseId, doc == null ? "新增" : "编辑");
-    var w = checkWarehouse(warehouseId, "新增");
+    permissions.checkInventoryWarehouse(menu(kind), warehouseId, doc == null ? PermissionAction.CREATE.code() : PermissionAction.EDIT.code());
+    var w = checkWarehouse(warehouseId, PermissionAction.CREATE);
     require(
         flag(w.get("enabled")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0035"));
@@ -325,7 +326,7 @@ public class InventoryFlowService {
                 && ((BigDecimal) b.get("quantity")).signum() > 0,
             com.windasoft.eam.common.MessageContext.text("server.inventory.message0094"));
         permissions.checkInventoryWarehouse(
-            "inventoryOpening", id(b.get("warehouse_id")), doc == null ? "新增" : "编辑");
+            "inventoryOpening", id(b.get("warehouse_id")), doc == null ? PermissionAction.CREATE.code() : PermissionAction.EDIT.code());
         require(
             text(line, "batchCode").length() <= 64,
             com.windasoft.eam.common.MessageContext.text("server.inventory.message0095"));
@@ -434,7 +435,7 @@ public class InventoryFlowService {
             com.windasoft.eam.common.MessageContext.text("server.inventory.message0106"));
         if (source.get("target_warehouse_id") != null)
           permissions.checkInventoryWarehouse(
-              menu(kind), id(source.get("target_warehouse_id")), "查看");
+              menu(kind), id(source.get("target_warehouse_id")), PermissionAction.VIEW.code());
       }
       require(
           !text(body, "remark").isBlank(),
@@ -457,7 +458,7 @@ public class InventoryFlowService {
               duplicates.add(allocationId),
               com.windasoft.eam.common.MessageContext.text("server.inventory.message0108"));
           var a = issueAllocation(allocationId, false);
-          permissions.checkInventoryWarehouse(menu(kind), id(a.get("warehouse_id")), "查看");
+          permissions.checkInventoryWarehouse(menu(kind), id(a.get("warehouse_id")), PermissionAction.VIEW.code());
           require(
               id(a.get("company_id")) == id(w.get("company_id")),
               com.windasoft.eam.common.MessageContext.text("server.inventory.message0109"));
@@ -524,8 +525,8 @@ public class InventoryFlowService {
     Long target = null;
     if (kind.equals("transfers")) {
       target = id(body.get("targetWarehouseId"));
-      permissions.checkInventoryWarehouse(menu(kind), target, "查看");
-      var tw = checkWarehouse(target, "新增");
+      permissions.checkInventoryWarehouse(menu(kind), target, PermissionAction.VIEW.code());
+      var tw = checkWarehouse(target, PermissionAction.CREATE);
       require(
           target != warehouseId
               && id(tw.get("company_id")) == id(w.get("company_id"))
@@ -615,8 +616,8 @@ public class InventoryFlowService {
     event(doc, "returns", "申请退料");
     for (var u : repository.listActiveUsers(auth.tenantId())) {
       long recipient = id(u.get("id"));
-      if (permissions.inventoryWarehouseUser(recipient, "inventoryReturn", warehouse, "查看")
-          && permissions.inventoryWarehouseUser(recipient, "inventoryReturn", warehouse, "入库"))
+      if (permissions.inventoryWarehouseUser(recipient, "inventoryReturn", warehouse, PermissionAction.VIEW.code())
+          && permissions.inventoryWarehouseUser(recipient, "inventoryReturn", warehouse, PermissionAction.STOCK_IN.code()))
         repository.insertReturnTodo(
             IdWorker.getId(), auth.tenantId(), recipient, doc, code + " · 余料退回");
     }
@@ -640,7 +641,7 @@ public class InventoryFlowService {
   }
 
   private long targetBalance(long warehouse, long bin, long material, long batch, String state) {
-    var w = checkWarehouse(warehouse, "入库");
+    var w = checkWarehouse(warehouse, PermissionAction.STOCK_IN);
     require(
         flag(w.get("enabled")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0122"));
@@ -813,8 +814,8 @@ public class InventoryFlowService {
             doc,
             true,
             kind.equals("reversals")
-                ? "冲销"
-                : kind.equals("returns") || kind.equals("openings") || receive ? "入库" : "出库");
+                ? PermissionAction.REVERSE
+                : kind.equals("returns") || kind.equals("openings") || receive ? PermissionAction.STOCK_IN : PermissionAction.STOCK_OUT);
     if (text(raw, "status").equals("已完成")) return detail(kind, doc);
     if (kind.equals("transfers") && !receive && text(raw, "status").equals("在途"))
       return detail(kind, doc);
@@ -826,7 +827,7 @@ public class InventoryFlowService {
     long warehouse = id(raw.get("warehouse_id"));
     if (!receive)
       require(
-          flag(checkWarehouse(warehouse, "出库").get("enabled")),
+          flag(checkWarehouse(warehouse, PermissionAction.STOCK_OUT).get("enabled")),
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0035"));
     if (receive) {
       require(
@@ -933,7 +934,7 @@ public class InventoryFlowService {
                     .toPlainString());
             if (difference.signum() < 0) take(doc, b, difference.negate(), null, "盘亏", false);
             if (difference.signum() > 0) {
-              permissions.checkInventoryWarehouse("inventoryCount", warehouse, "入库");
+              permissions.checkInventoryWarehouse("inventoryCount", warehouse, PermissionAction.STOCK_IN.code());
               var price = decimal(l.get("unitCost"), true);
               var amount = price.multiply(difference).setScale(2, RoundingMode.HALF_UP);
               add(
@@ -1003,11 +1004,11 @@ public class InventoryFlowService {
                 .map(v -> id(v.get("id")))
                 .filter(
                     u ->
-                        permissions.inventoryWarehouseUser(u, "inventoryTransfer", target, "入库")
+                        permissions.inventoryWarehouseUser(u, "inventoryTransfer", target, PermissionAction.STOCK_IN.code())
                             && permissions.inventoryWarehouseUser(
-                                u, "inventoryTransfer", target, "查看"))
+                                u, "inventoryTransfer", target, PermissionAction.VIEW.code()))
                 .toList();
-        Object manager = checkWarehouse(target, "入库").get("manager_id");
+        Object manager = checkWarehouse(target, PermissionAction.STOCK_IN).get("manager_id");
         if (manager != null && recipients.contains(id(manager))) recipients = List.of(id(manager));
         for (long user : recipients)
           repository.insertTransferTodo(
@@ -1058,7 +1059,7 @@ public class InventoryFlowService {
       var b = balance(id(line.get("balanceId")), true);
       VersionGuard.checkPayload(
           (Number) b.get("row_version"), Map.of("rowVersion", line.get("balanceVersion")));
-      permissions.checkInventoryWarehouse("inventoryOpening", id(b.get("warehouse_id")), "入库");
+      permissions.checkInventoryWarehouse("inventoryOpening", id(b.get("warehouse_id")), PermissionAction.STOCK_IN.code());
       require(
           id(b.get("material_id")) == material && id(b.get("batch_id")) == 0,
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0145"));
@@ -1133,7 +1134,7 @@ public class InventoryFlowService {
             && ((BigDecimal) layer.get("remaining_cost")).compareTo(amount) == 0,
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0148"));
     var b = balance(id(layer.get("balance_id")), true);
-    permissions.checkInventoryWarehouse("inventoryReversal", id(b.get("warehouse_id")), "冲销");
+    permissions.checkInventoryWarehouse("inventoryReversal", id(b.get("warehouse_id")), PermissionAction.REVERSE.code());
     require(
         ((BigDecimal) b.get("quantity"))
                 .subtract((BigDecimal) b.get("reserved_quantity"))
@@ -1159,9 +1160,9 @@ public class InventoryFlowService {
   private void restore(long doc, Map<String, Object> a) {
     var layer = one(repository.loadMovementLayer(auth.tenantId(), a.get("cost_layer_id")));
     var b = balance(id(a.get("balance_id")), true);
-    permissions.checkInventoryWarehouse("inventoryReversal", id(b.get("warehouse_id")), "冲销");
+    permissions.checkInventoryWarehouse("inventoryReversal", id(b.get("warehouse_id")), PermissionAction.REVERSE.code());
     require(
-        flag(checkWarehouse(id(b.get("warehouse_id")), "冲销").get("enabled")),
+        flag(checkWarehouse(id(b.get("warehouse_id")), PermissionAction.REVERSE).get("enabled")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0150"));
     add(
         doc,
@@ -1260,7 +1261,7 @@ public class InventoryFlowService {
   @Transactional
   public void delete(String kind, long doc, Map<String, Object> body) {
     mutex.enter();
-    var r = operation(kind, doc, true, "删除");
+    var r = operation(kind, doc, true, PermissionAction.DELETE);
     require(
         text(r, "status").equals("草稿"),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0156"));
@@ -1276,10 +1277,10 @@ public class InventoryFlowService {
   @Transactional
   public Object freeze(long balanceId, Map<String, Object> body) {
     mutex.enter();
-    permissions.require("inventoryQuery", "冻结");
-    permissions.checkInventoryWarehouse("inventoryQuery", balanceIdWarehouse(balanceId), "冻结");
+    permissions.require("inventoryQuery", PermissionAction.FREEZE);
+    permissions.checkInventoryWarehouse("inventoryQuery", balanceIdWarehouse(balanceId), PermissionAction.FREEZE.code());
     var b = balance(balanceId, true);
-    checkWarehouse(id(b.get("warehouse_id")), "冻结");
+    checkWarehouse(id(b.get("warehouse_id")), PermissionAction.FREEZE);
     VersionGuard.checkPayload((Number) b.get("row_version"), body);
     String target = text(body, "stockStatus");
     require(

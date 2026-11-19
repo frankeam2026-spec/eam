@@ -3,6 +3,7 @@ package com.windasoft.eam.service.equipment;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.equipment.EquipmentBatchForm;
 import com.windasoft.eam.dto.equipment.EquipmentForm;
 import com.windasoft.eam.dto.equipment.EquipmentOwnerSnapshot;
@@ -92,7 +93,7 @@ public class EquipmentCommandService {
     var e = fromForm(form);
     setAccessFields(e, form);
     inputValidation.validateEntity(e);
-    permissions.checkEquipment(e, "新增");
+    permissions.checkEquipment(e, PermissionAction.CREATE);
     String code = has(form.code()) ? form.code().trim() : codes.nextCode();
     codes.assertAvailable(code, null);
     e.setEquipmentCode(code);
@@ -176,13 +177,13 @@ public class EquipmentCommandService {
         java.util.Arrays.asList(
             old.getCompanyOrgId(), permissions.companyOfOrganization(form.departmentOrgId())));
     old = require(id);
-    permissions.checkEquipment(old, "编辑");
+    permissions.checkEquipment(old, PermissionAction.EDIT);
     VersionGuard.check(old.getRowVersion(), rowVersion);
     var e = fromForm(form);
     e.setId(id);
     setAccessFields(e, form, old);
     inputValidation.validateEntity(e);
-    permissions.checkEquipment(e, "编辑");
+    permissions.checkEquipment(e, PermissionAction.EDIT);
     relations.checkMove(old, e);
     String code = has(form.code()) ? form.code().trim() : old.getEquipmentCode();
     codes.assertAvailable(code, id);
@@ -210,7 +211,7 @@ public class EquipmentCommandService {
     var parent = require(id);
     relations.enter(java.util.Collections.singletonList(parent.getCompanyOrgId()));
     parent = require(id);
-    permissions.checkEquipment(parent, "编辑");
+    permissions.checkEquipment(parent, PermissionAction.EDIT);
     VersionGuard.check(parent.getRowVersion(), rowVersion);
     VersionGuard.updated(repository.advanceVersion(auth.tenantId(), id, rowVersion, auth.userId()));
     if (children) {
@@ -226,7 +227,7 @@ public class EquipmentCommandService {
     var e = require(id);
     relations.enter(java.util.Collections.singletonList(e.getCompanyOrgId()));
     e = require(id);
-    permissions.checkEquipment(e, "删除");
+    permissions.checkEquipment(e, PermissionAction.DELETE);
     relations.checkDelete(id);
     relations.cleanup(id);
     if (repository.delete(id) != 1) {
@@ -248,7 +249,7 @@ public class EquipmentCommandService {
     relations.enter(targets.stream().map(Equipment::getCompanyOrgId).toList());
     targets = ids.stream().map(this::require).toList();
     for (var e : targets) {
-      permissions.checkEquipment(e, operation == EquipmentBatchOperation.DELETE ? "删除" : "编辑");
+      permissions.checkEquipment(e, operation == EquipmentBatchOperation.DELETE ? PermissionAction.DELETE : PermissionAction.EDIT);
     }
     String value = form.value() == null ? "" : form.value().trim();
     if (operation != EquipmentBatchOperation.DELETE && operation != EquipmentBatchOperation.OWNER && value.isEmpty()) {
@@ -291,7 +292,7 @@ public class EquipmentCommandService {
             throw new com.windasoft.eam.common.LocalizedArgumentException(
                 "server.equipment.message0042");
           }
-          permissions.checkEquipmentDepartment(dept.getId(), "编辑");
+          permissions.checkEquipmentDepartment(dept.getId(), PermissionAction.EDIT.code());
           var company = organizations.organization(permissions.companyOfOrganization(dept.getId()));
           var original = require(e.getId());
           var moved = new Equipment();
@@ -320,7 +321,7 @@ public class EquipmentCommandService {
           e.setEquipmentStatus(value);
         }
       }
-      permissions.checkEquipment(e, "编辑");
+      permissions.checkEquipment(e, PermissionAction.EDIT);
       e.setUpdatedBy(auth.userId());
       if (repository.update(e) != 1) {
         throw new com.windasoft.eam.common.LocalizedArgumentException(
@@ -491,7 +492,7 @@ public class EquipmentCommandService {
     e.setDepartmentPath(organizationPath(department.getId()));
     if (previous == null
         || !java.util.Objects.equals(previous.getDepartmentOrgId(), department.getId())) {
-      permissions.checkEquipmentDepartment(department.getId(), previous == null ? "新增" : "编辑");
+      permissions.checkEquipmentDepartment(department.getId(), previous == null ? PermissionAction.CREATE.code() : PermissionAction.EDIT.code());
     }
     var selectedOwners =
         f.ownerIds() != null

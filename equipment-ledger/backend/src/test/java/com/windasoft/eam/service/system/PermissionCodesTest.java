@@ -31,4 +31,14 @@ class PermissionCodesTest {
             .collect(Collectors.toSet());
     assertEquals(PermissionAction.values().length, codes.size());
   }
+
+  @Test
+  void legacyCreateAliasKeepsItsOriginalInterpretation() {
+    assertEquals("新增", PermissionAction.fromLegacyCode("create"));
+    assertEquals("create", PermissionAction.toLegacyCode("新增"));
+    assertEquals("create", PermissionAction.toLegacyCode("报修"));
+    assertEquals("create", PermissionAction.toLegacyCode("申请"));
+    assertEquals("团队工作查看", PermissionAction.fromLegacyCode("团队工作查看"));
+    assertEquals("团队工作查看", PermissionAction.toLegacyCode("团队工作查看"));
+  }
 }

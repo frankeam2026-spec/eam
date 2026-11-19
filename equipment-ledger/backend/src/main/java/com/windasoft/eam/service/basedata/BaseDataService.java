@@ -2,6 +2,8 @@ package com.windasoft.eam.service.basedata;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.domain.common.ActivationStatus;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.basedata.BaseItemForm;
 import com.windasoft.eam.dto.basedata.BaseItemStatusForm;
 import com.windasoft.eam.dto.basedata.BaseItemView;
@@ -47,20 +49,20 @@ public class BaseDataService {
 
   public List<BaseItemView> list(String resource, Long companyId) {
     var type = BaseDataType.fromResource(resource);
-    if (!permissions.allowed(type.menu(), "查看")
-        && !(type == BaseDataType.CATEGORY && permissions.allowed("base", "查看"))
-        && !permissions.allowed("equipment", "查看")
+    if (!permissions.allowed(type.menu(), PermissionAction.VIEW)
+        && !(type == BaseDataType.CATEGORY && permissions.allowed("base", PermissionAction.VIEW))
+        && !permissions.allowed("equipment", PermissionAction.VIEW)
         && !((type == BaseDataType.MATERIAL_CATEGORY || type == BaseDataType.UNIT)
             && permissions.menuActions().entrySet().stream()
                 .anyMatch(e -> e.getKey().startsWith("inventory") && !e.getValue().isEmpty()))
         && !((type == BaseDataType.FAULT_TYPE || type == BaseDataType.FAULT_CAUSE)
-            && permissions.allowed("repair", "查看"))) permissions.require(type.menu(), "查看");
+            && permissions.allowed("repair", PermissionAction.VIEW))) permissions.require(type.menu(), PermissionAction.VIEW);
     var rows = items.list(auth.tenantId(), type.code(), companyId);
     return rows.stream().map(BaseDataService::view).toList();
   }
 
   public BaseItemView create(String resource, BaseItemForm f) {
-    requireDataAccess(resource, "新增");
+    requireDataAccess(resource, PermissionAction.CREATE);
     BaseDataType type = BaseDataType.fromResource(resource);
     f = withCode(type, f);
     validateReservedResult(type, f);
@@ -77,7 +79,7 @@ public class BaseDataService {
   /** 先锁基础项再同步物料名称，保持原锁顺序；同一事务中同步物料版本并保存字典。 物料按关联ID同步，历史仅有名称的记录不在这里猜测归属，失败须一起回滚。 */
   @Transactional
   public BaseItemView update(String resource, Long id, BaseItemForm f) {
-    requireDataAccess(resource, "编辑");
+    requireDataAccess(resource, PermissionAction.EDIT);
     BaseDataType type = BaseDataType.fromResource(resource);
     var old = requireLocked(type.code(), id);
     protectFixed(old);
@@ -99,7 +101,7 @@ public class BaseDataService {
     old.setName(f.name().trim());
     old.setParentId(f.parentId());
     old.setDecimalPrecision(f.precision() == null ? 0 : f.precision());
-    old.setStatus(f.status() == null ? 1 : f.status());
+    old.setStatus(f.status() == null ? ActivationStatus.ENABLED.code() : f.status());
     old.setSortNo(f.sortNo() == null ? 0 : f.sortNo());
     items.update(old);
     return view(old);
@@ -107,7 +109,7 @@ public class BaseDataService {
 
   @Transactional
   public BaseItemView status(String resource, Long id, BaseItemStatusForm body) {
-    requireDataAccess(resource, "编辑");
+    requireDataAccess(resource, PermissionAction.EDIT);
     var item = requireLocked(BaseDataType.fromResource(resource).code(), id);
     protectFixed(item);
     item.setStatus(body.status());
@@ -118,7 +120,7 @@ public class BaseDataService {
   /** 删除保留READ_COMMITTED及基础项行锁，引用检查包含真实ID和原历史名称回退，不能仅查新关联。 */
   @Transactional(isolation = Isolation.READ_COMMITTED)
   public void delete(String resource, Long id) {
-    requireDataAccess(resource, "删除");
+    requireDataAccess(resource, PermissionAction.DELETE);
     BaseDataType type = BaseDataType.fromResource(resource);
     var item = requireLocked(type.code(), id);
     protectFixed(item);
@@ -142,8 +144,8 @@ public class BaseDataService {
   }
 
   public List<OrganizationView> companies() {
-    if (!permissions.allowed("location", "查看") && !permissions.allowed("base", "查看"))
-      permissions.require("equipment", "查看");
+    if (!permissions.allowed("location", PermissionAction.VIEW) && !permissions.allowed("base", PermissionAction.VIEW))
+      permissions.require("equipment", PermissionAction.VIEW);
     var rows = organizations.companies(auth.tenantId());
     return rows.stream()
         .map(
@@ -155,7 +157,7 @@ public class BaseDataService {
                     x.getDisplayType() == null ? x.getOrgType() : x.getDisplayType(),
                     x.getParentId() == null ? "" : String.valueOf(x.getParentId()),
                     x.getManager() == null ? "" : x.getManager(),
-                    x.getStatus() == 1 ? "启用" : "停用"))
+                    ActivationStatus.fromFlag(x.getStatus()).label()))
         .toList();
   }
 
@@ -170,11 +172,11 @@ public class BaseDataService {
     if (type != BaseDataType.LOCATION) return;
     if (companyId == null) throw new LocalizedArgumentException("server.common.message0040");
     var company = organizations.company(auth.tenantId(), companyId);
-    if (company == null || company.getStatus() != 1)
+    if (company == null || !ActivationStatus.isEnabled(company.getStatus()))
       throw new LocalizedArgumentException("server.common.message0041");
   }
 
-  private void requireDataAccess(String resource, String action) {
+  private void requireDataAccess(String resource, PermissionAction action) {
     var type = BaseDataType.fromResource(resource);
     if (type == BaseDataType.CATEGORY && permissions.allowed("base", action)) return;
     permissions.require(type.menu(), action);
@@ -232,7 +234,7 @@ public class BaseDataService {
     x.setName(f.name().trim());
     x.setParentId(f.parentId());
     x.setDecimalPrecision(f.precision() == null ? 0 : f.precision());
-    x.setStatus(f.status() == null ? 1 : f.status());
+    x.setStatus(f.status() == null ? ActivationStatus.ENABLED.code() : f.status());
     x.setSortNo(f.sortNo() == null ? 0 : f.sortNo());
     x.setDeleted(0);
     return x;
@@ -247,7 +249,7 @@ public class BaseDataService {
         x.getName(),
         x.getParentId() == null ? "" : String.valueOf(x.getParentId()),
         x.getDecimalPrecision() == null ? 0 : x.getDecimalPrecision(),
-        x.getStatus() != null && x.getStatus() == 1 ? "启用" : "停用",
+        ActivationStatus.fromFlag(x.getStatus()).label(),
         x.getSortNo() == null ? 0 : x.getSortNo());
   }
 }

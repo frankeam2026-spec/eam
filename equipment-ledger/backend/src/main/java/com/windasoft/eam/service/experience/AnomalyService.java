@@ -9,6 +9,7 @@ import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.experience.ExperienceSupport;
 import com.windasoft.eam.domain.experience.AnomalyAction;
 import com.windasoft.eam.domain.experience.AnomalyStatus;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.repair.RepairForm;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.event.experience.ExperienceEvents;
@@ -89,7 +90,7 @@ public class AnomalyService {
     return e;
   }
 
-  boolean scope(String menu, String action, Equipment e, Long owner) {
+  boolean scope(String menu, PermissionAction action, Equipment e, Long owner) {
     try {
       return permissions
           .scope(menu, action)
@@ -107,7 +108,7 @@ public class AnomalyService {
 
   public boolean canView(Map<String, Object> r) {
     var e = eq(id(r.get("equipment_id")));
-    if (scope("anomaly", "查看", e, id(r.get("discovered_by")))) return true;
+    if (scope("anomaly", PermissionAction.VIEW, e, id(r.get("discovered_by")))) return true;
     if (r.get("source_task_id") != null) {
       try {
         source(text(r, "source_kind"), id(r.get("source_task_id")));
@@ -127,7 +128,7 @@ public class AnomalyService {
     return false;
   }
 
-  void checkAction(Map<String, Object> r, String action) {
+  void checkAction(Map<String, Object> r, PermissionAction action) {
     permissions.require("anomaly", action);
     if (!scope("anomaly", action, eq(id(r.get("equipment_id"))), id(r.get("discovered_by"))))
       throw new LocalizedStatusException(HttpStatus.FORBIDDEN, "server.experience.message0019");
@@ -309,7 +310,10 @@ public class AnomalyService {
     v.put("events", events("anomaly", id));
     v.put(
         "actions",
-        List.of("消除", "报修", "安排维修", "作废").stream()
+        List.of(
+                PermissionAction.RESOLVE_ANOMALY, PermissionAction.REPORT,
+                PermissionAction.SCHEDULE_REPAIR, PermissionAction.VOID)
+            .stream()
             .filter(
                 a ->
                     scope(
@@ -317,6 +321,7 @@ public class AnomalyService {
                         a,
                         eq(ExperienceSupport.id(r.get("equipment_id"))),
                         ExperienceSupport.id(r.get("discovered_by"))))
+            .map(PermissionAction::code)
             .toList());
     return v;
   }
@@ -356,7 +361,7 @@ public class AnomalyService {
     var a = raw(aid, false);
     check(
         canView(a)
-            || scope("anomaly", "报修", eq(id(a.get("equipment_id"))), id(a.get("discovered_by"))),
+            || scope("anomaly", PermissionAction.REPORT, eq(id(a.get("equipment_id"))), id(a.get("discovered_by"))),
         "来源异常不可访问");
     check(
         rows(decode(json, a.get("attachments"))).stream().anyMatch(f -> fid.equals(text(f, "id"))),
@@ -373,14 +378,14 @@ public class AnomalyService {
     List<Map<String, Object>> files = List.of();
     if (kind.isBlank() || kind.equals("人工")) {
       kind = "人工";
-      check(scope("anomaly", "新增", e, auth.userId()), "没有新增异常权限");
-      permissions.checkEquipment(e, "查看");
+      check(scope("anomaly", PermissionAction.CREATE, e, auth.userId()), "没有新增异常权限");
+      permissions.checkEquipment(e, PermissionAction.VIEW);
       taskId = 0;
       itemId = "";
     } else {
       var s = source(kind, taskId);
       boolean participates = Boolean.TRUE.equals(s.get("canExecute"));
-      check(participates || scope("anomaly", "新增", e, auth.userId()), "仅任务执行人或有权限者能登记异常");
+      check(participates || scope("anomaly", PermissionAction.CREATE, e, auth.userId()), "仅任务执行人或有权限者能登记异常");
       var items = rows(s.get("items"));
       final String sourceKey = itemId;
       var item =
@@ -435,11 +440,11 @@ public class AnomalyService {
     String action = required(b, "action", 30);
     // 请求动作受控解析，但权限范围和业务状态校验仍由现有流程独立决定。
     var operation = AnomalyAction.parse(action);
-    String grant =
+    PermissionAction grant =
         switch (operation) {
-          case RESOLVE -> "消除";
-          case REPORT, LINK -> "报修";
-          case VOID -> "作废";
+          case RESOLVE -> PermissionAction.RESOLVE_ANOMALY;
+          case REPORT, LINK -> PermissionAction.REPORT;
+          case VOID -> PermissionAction.VOID;
           default -> throw new LocalizedArgumentException("server.experience.message0022");
         };
     checkAction(r, grant);
@@ -621,7 +626,7 @@ public class AnomalyService {
 
   @Transactional
   public Object backfill() {
-    permissions.require("anomaly", "新增");
+    permissions.require("anomaly", PermissionAction.CREATE);
     for (var t : maintenance.tasks()) capture("保养", id(t.get("id")), true);
     for (var t : inspectionLists.tasks()) capture("点巡检", id(t.get("id")), true);
     return Map.of("success", true);
@@ -633,9 +638,9 @@ public class AnomalyService {
     return r.getFirst();
   }
 
-  void planAccess(Map<String, Object> r, String action) {
+  void planAccess(Map<String, Object> r, PermissionAction action) {
     check(
-        action.equals("查看")
+        action == PermissionAction.VIEW
                 && (id(r.get("owner_id")) == auth.userId()
                     || id(r.get("creator_id")) == auth.userId())
             || scope("repairPlan", action, eq(id(r.get("equipment_id"))), id(r.get("creator_id"))),
@@ -660,7 +665,7 @@ public class AnomalyService {
                 "planned_at",
                 "severity"));
 
-    if (!permissions.allowed("repairPlan", "查看"))
+    if (!permissions.allowed("repairPlan", PermissionAction.VIEW))
       check(
           repository.countPersonalPlans(auth.tenantId(), auth.userId(), auth.userId()) > 0,
           "没有查看维修计划权限");
@@ -672,7 +677,7 @@ public class AnomalyService {
                         || id(r.get("creator_id")) == auth.userId()
                         || scope(
                             "repairPlan",
-                            "查看",
+                            PermissionAction.VIEW,
                             eq(id(r.get("equipment_id"))),
                             id(r.get("creator_id"))))
             .map(this::planView)
@@ -710,7 +715,7 @@ public class AnomalyService {
 
   public Object planDetail(long id) {
     var r = planRaw(id, false);
-    planAccess(r, "查看");
+    planAccess(r, PermissionAction.VIEW);
     var v = planView(r);
     v.put("events", events("repairPlan", id));
     return v;
@@ -736,7 +741,7 @@ public class AnomalyService {
   @Transactional
   public Object savePlan(Long pid, Map<String, Object> b) {
     long eqId = id(b.get("equipmentId"));
-    check(scope("repairPlan", pid == null ? "新增" : "编辑", eq(eqId), auth.userId()), "没有维护维修计划权限");
+    check(scope("repairPlan", pid == null ? PermissionAction.CREATE : PermissionAction.EDIT, eq(eqId), auth.userId()), "没有维护维修计划权限");
     String description = required(b, "description", 4000),
         fault =
             references
@@ -762,7 +767,7 @@ public class AnomalyService {
           severity);
     } else {
       var r = planRaw(pid, true);
-      planAccess(r, "编辑");
+      planAccess(r, PermissionAction.EDIT);
       check(Set.of("草稿", "待生成").contains(r.get("status")), "已生成或取消计划不能编辑");
       check(id(r.get("equipment_id")) == eqId, "编辑不能更换设备");
       if (id(r.get("row_version")) != id(b.get("rowVersion"))) conflict();
@@ -775,13 +780,13 @@ public class AnomalyService {
       long aid = id(previous.get("id"));
       if (retained.contains(aid)) continue;
       var anomaly = raw(aid, true);
-      checkAction(anomaly, "安排维修");
+      checkAction(anomaly, PermissionAction.SCHEDULE_REPAIR);
       repository.detachPlanAnomaly(auth.tenantId(), aid);
       event("anomaly", aid, "取消计划关联", Map.of("planId", pid.toString(), "reason", "维修计划调整"));
     }
     for (long aid : ids.stream().map(ExperienceSupport::id).sorted().toList()) {
       var a = raw(aid, true);
-      checkAction(a, "安排维修");
+      checkAction(a, PermissionAction.SCHEDULE_REPAIR);
       check(id(a.get("equipment_id")) == eqId, "只能安排同设备异常");
       check(
           a.get("repair_id") == null
@@ -806,7 +811,7 @@ public class AnomalyService {
     var r = planRaw(pid, true);
     if (id(r.get("row_version")) != id(b.get("rowVersion"))) conflict();
     String action = required(b, "action", 30);
-    planAccess(r, action.equals("cancel") ? "取消" : action.equals("generate") ? "生成工单" : "启用");
+    planAccess(r, action.equals("cancel") ? PermissionAction.CANCEL : action.equals("generate") ? PermissionAction.GENERATE_REPAIR_ORDER : PermissionAction.ENABLE);
     check(Set.of("草稿", "待生成").contains(r.get("status")), "计划状态不允许操作");
     if (action.equals("cancel")) {
       String reason = required(b, "reason", 1000);
@@ -832,7 +837,7 @@ public class AnomalyService {
   public void generate(long pid) {
     var r = planRaw(pid, true);
     check(r.get("status").equals("待生成"), "计划不在待生成状态");
-    planAccess(r, "启用");
+    planAccess(r, PermissionAction.ENABLE);
     var b = new HashMap<String, Object>();
     b.put("faultTypeId", r.get("fault_type_id"));
     b.put("severity", r.get("severity"));
@@ -847,7 +852,7 @@ public class AnomalyService {
   }
 
   public Object ownerChoices() {
-    String action = permissions.allowed("repairPlan", "新增") ? "新增" : "编辑";
+    var action = permissions.allowed("repairPlan", PermissionAction.CREATE) ? PermissionAction.CREATE : PermissionAction.EDIT;
     var scope = permissions.scope("repairPlan", action);
     var choices =
         repository.listOwnerChoices(auth.tenantId()).stream()

@@ -2,6 +2,7 @@ package com.windasoft.eam.service.system;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.domain.common.ActivationStatus;
 import com.windasoft.eam.dto.system.OrgForm;
 import com.windasoft.eam.dto.system.OrganizationView;
 import com.windasoft.eam.entity.system.OrgUnit;
@@ -122,7 +123,7 @@ public class OrganizationService {
     x.setDisplayType("集团".equals(f.type()) ? "集团" : null);
     x.setParentId(f.parentId());
     x.setManager(f.manager() == null ? "" : f.manager().trim());
-    x.setStatus(f.status() == null ? 1 : f.status());
+    x.setStatus(f.status() == null ? ActivationStatus.ENABLED.code() : f.status());
   }
 
   private void lockOrganizations() {
@@ -154,7 +155,7 @@ public class OrganizationService {
         throw new LocalizedArgumentException("server.system.message0027");
     } else {
       var parent = requireOrg(parentId);
-      if (parent.getStatus() != 1)
+      if (!ActivationStatus.isEnabled(parent.getStatus()))
         throw new LocalizedArgumentException("server.system.message0028");
       if (!"部门".equals(type) && "部门".equals(parent.getOrgType()))
         throw new LocalizedArgumentException("server.system.message0029");
@@ -193,7 +194,7 @@ public class OrganizationService {
         x.getDisplayType() == null ? x.getOrgType() : x.getDisplayType(),
         x.getParentId() == null ? "" : String.valueOf(x.getParentId()),
         x.getManager() == null ? "" : x.getManager(),
-        x.getStatus() == 1 ? "启用" : "停用");
+        ActivationStatus.fromFlag(x.getStatus()).label());
   }
 
   private String write(OrganizationView o) {

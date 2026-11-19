@@ -12,6 +12,7 @@ import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.domain.maintenance.MaintenanceDefinitionLimits;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.maintenance.MaintenanceProjectReference;
 import com.windasoft.eam.dto.maintenance.MaintenanceProjectSelection;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardItemView;
@@ -192,7 +193,7 @@ public class MaintenanceProjectService {
       try {
         allowed =
             permissions
-                .maintenance("standards", "查看")
+                .maintenance("standards", PermissionAction.VIEW)
                 .matches(
                     null,
                     standard.departmentId() == null || standard.departmentId().isBlank()

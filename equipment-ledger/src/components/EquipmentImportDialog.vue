@@ -1,4 +1,6 @@
-<script setup lang="ts">import { tr } from '../i18n';
+<script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
+import { tr } from '../i18n';
 
 import { ref } from 'vue';
 import AppDialog from './common/AppDialog.vue';
@@ -30,7 +32,7 @@ const busy = ref(false);
       :object-label="tr('ui.equipment.text0002')"
       presentation="dialog"
       :batch-id="batchId"
-      :can-view-results="auth.can('equipment', '查看')"
+      :can-view-results="auth.can('equipment', PermissionAction.VIEW)"
       @busy-change="busy = $event"
       @batch-change="$emit('batch-change', $event)"
       @back="$emit('update:modelValue', false)"

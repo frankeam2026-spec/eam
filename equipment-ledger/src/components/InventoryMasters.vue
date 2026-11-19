@@ -1,4 +1,6 @@
-<script setup lang="ts">import { tr } from '../i18n';
+<script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
+import { tr } from '../i18n';
 
 import { onUnmounted } from 'vue';
 import { useInventoryMasterList } from '../composables/inventory/useInventoryLists';
@@ -353,13 +355,13 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
 <template>
   <section class="content inventory-master-page">
     <AppListToolbar class="master-toolbar">
-      <ElButton v-if="auth.can(inventoryMenu(kind), '新增')" type="primary" @click="edit()"
+      <ElButton v-if="auth.can(inventoryMenu(kind), PermissionAction.CREATE)" type="primary" @click="edit()"
         ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}</ElButton
       >
       <form class="master-search" @submit.prevent="search">
         <ListToolbarIcons
           mode="filter"
-          :can-export="auth.can(inventoryMenu(kind), '导出')"
+          :can-export="auth.can(inventoryMenu(kind), PermissionAction.EXPORT)"
           :filter-open="filterOpen"
           :columns-open="columnsOpen"
           @toggle-filter="filterOpen = !filterOpen"
@@ -413,7 +415,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
             ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
             ><template #default="{ row: row, $index: tableRowIndex }">
               <ElButton
-                v-if="auth.can(inventoryMenu(kind), '编辑')"
+                v-if="auth.can(inventoryMenu(kind), PermissionAction.EDIT)"
                 link
                 type="primary"
                 @click="edit(row)"
@@ -437,7 +439,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
         </div>
         <ListToolbarIcons
           mode="footer"
-          :can-export="auth.can(inventoryMenu(kind), '导出')"
+          :can-export="auth.can(inventoryMenu(kind), PermissionAction.EXPORT)"
           :filter-open="filterOpen"
           :columns-open="columnsOpen"
           @toggle-columns="columnsOpen = !columnsOpen"
@@ -466,7 +468,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
       <div style="display: flex; gap: 8px; margin-bottom: 12px">
         <ElInput v-model="binCode" :placeholder="tr('ui.equipment.text0470')" maxlength="64" />
         <ElInput v-model="binName" :placeholder="tr('ui.equipment.text0471')" maxlength="120" /><ElButton
-          v-if="auth.can('inventoryWarehouse', binEditing ? '编辑' : '新增')"
+          v-if="auth.can('inventoryWarehouse', binEditing ? PermissionAction.EDIT : PermissionAction.CREATE)"
           type="primary"
           :loading="binBusy"
           @click="saveBin"
@@ -508,7 +510,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
           ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
           ><template #default="{ row: bin, $index: tableRowIndex }">
             <ElButton
-              v-if="auth.can('inventoryWarehouse', '编辑')"
+              v-if="auth.can('inventoryWarehouse', PermissionAction.EDIT)"
               link
               type="primary"
               @click="
@@ -519,7 +521,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
               "
               >{{ tr('ui.equipment.text0207') }}</ElButton
             ><ElButton
-              v-if="auth.can('inventoryWarehouse', '编辑')"
+              v-if="auth.can('inventoryWarehouse', PermissionAction.EDIT)"
               link
               @click="
                 inventoryApi
@@ -604,7 +606,7 @@ type TableColumnRow2 = NonNullable<ReturnType<typeof tableColumnRows2>>[number];
             ><span>{{ tr('ui.equipment.text0479') }}</span
             ><AppDecimalInput
               v-model="form.referencePrice"
-              :disabled="!auth.can('inventoryMaterial', '编辑参考价')"
+              :disabled="!auth.can('inventoryMaterial', PermissionAction.EDIT_REFERENCE_PRICE)"
               inputmode="decimal"
               :placeholder="tr('ui.equipment.text0480')" /></label
           ><label

@@ -1,3 +1,4 @@
+import { PermissionAction } from '../permissionActions';
 import { currentLocale } from '../i18n';
 import { inventoryMenu } from '../inventory';
 import { maintenanceMenu, inspectionMenu } from '../rolePermissions';
@@ -146,13 +147,13 @@ export const router = createRouter({
           path: 'inspection/:kind(standards|daily-plans|periodic-plans)/new',
           name: 'inspection-new',
           component: () => import('../components/InspectionModule.vue'),
-          meta: { page: 'inspection', menu: 'inspection', action: '新增' },
+          meta: { page: 'inspection', menu: 'inspection', action: PermissionAction.CREATE },
         },
         {
           path: 'inspection/:kind(standards|daily-plans|periodic-plans)/:id/edit',
           name: 'inspection-edit',
           component: () => import('../components/InspectionModule.vue'),
-          meta: { page: 'inspection', menu: 'inspection', action: '编辑' },
+          meta: { page: 'inspection', menu: 'inspection', action: PermissionAction.EDIT },
         },
         {
           path: 'inventory/operations/:kind(returns|transfers|counts|openings|reversals)',
@@ -242,13 +243,13 @@ export const router = createRouter({
           path: 'maintenance/:kind(types|standards|plans)/new',
           name: 'maintenance-new',
           component: () => import('../components/MaintenanceModule.vue'),
-          meta: { page: 'maintenance', menu: 'maintenance', action: '新增' },
+          meta: { page: 'maintenance', menu: 'maintenance', action: PermissionAction.CREATE },
         },
         {
           path: 'maintenance/:kind(types|standards|plans)/:id/edit',
           name: 'maintenance-edit',
           component: () => import('../components/MaintenanceModule.vue'),
-          meta: { page: 'maintenance', menu: 'maintenance', action: '编辑' },
+          meta: { page: 'maintenance', menu: 'maintenance', action: PermissionAction.EDIT },
         },
         {
           path: 'repairs/:id',
@@ -266,19 +267,19 @@ export const router = createRouter({
           path: 'equipment/import',
           name: 'equipment-import',
           redirect: (to) => ({ name: 'equipment', query: { ...to.query, import: '1' } }),
-          meta: { page: 'equipment', menu: 'equipment', action: '导入' },
+          meta: { page: 'equipment', menu: 'equipment', action: PermissionAction.IMPORT },
         },
         {
           path: 'equipment/new',
           name: 'equipment-new',
           component: () => import('../pages/EquipmentLedgerPage.vue'),
-          meta: { page: 'equipment', menu: 'equipment', action: '新增' },
+          meta: { page: 'equipment', menu: 'equipment', action: PermissionAction.CREATE },
         },
         {
           path: 'equipment/:id/edit',
           name: 'equipment-edit',
           component: () => import('../pages/EquipmentLedgerPage.vue'),
-          meta: { page: 'equipment', menu: 'equipment', action: '编辑' },
+          meta: { page: 'equipment', menu: 'equipment', action: PermissionAction.EDIT },
         },
         {
           path: 'equipment/:id/history',
@@ -406,14 +407,14 @@ router.beforeEach(async (to) => {
           : (to.meta.menu as string | undefined);
   if (
     to.name === 'inventory-requisition-detail' &&
-    (auth.can('repair', '查看') ||
-      auth.can('maintenanceTask', '查看') ||
-      auth.can('inspectionDailyTask', '查看') ||
-      auth.can('inspectionPeriodicTask', '查看'))
+    (auth.can('repair', PermissionAction.VIEW) ||
+      auth.can('maintenanceTask', PermissionAction.VIEW) ||
+      auth.can('inspectionDailyTask', PermissionAction.VIEW) ||
+      auth.can('inspectionPeriodicTask', PermissionAction.VIEW))
   )
     return true;
   if (to.name === 'inventory-outbound-detail' && to.params.id !== 'new') return true;
-  if (!menu || auth.can(menu, String(to.meta.action || '查看'))) return true;
+  if (!menu || auth.can(menu, String(to.meta.action || PermissionAction.VIEW))) return true;
   const available = [
     ['equipment', 'equipment'],
     ['repairs', 'repair'],

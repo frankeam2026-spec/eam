@@ -9,6 +9,7 @@ import com.windasoft.eam.common.AcceptanceDecision;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.domain.inspection.InspectionTaskAction;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.repository.equipment.EquipmentHistoryRepository;
@@ -78,7 +79,7 @@ public class InspectionTaskService {
     return taskAccess.participant(row);
   }
 
-  boolean access(Map<String, Object> row, String action) {
+  boolean access(Map<String, Object> row, PermissionAction action) {
     return taskAccess.access(row, action);
   }
 
@@ -103,7 +104,7 @@ public class InspectionTaskService {
 
   public Map<String, Object> task(long id) {
     var r = taskRaw(auth.tenantId(), id, false);
-    if (!access(r, "查看")) deny();
+    if (!access(r, PermissionAction.VIEW)) deny();
     var v = taskView(r);
     custom.attach(
         com.windasoft.eam.service.business.BusinessObjects.inspection(text(r, "kind")), v);
@@ -233,7 +234,7 @@ public class InspectionTaskService {
     // row lock, matching the daily-exemption lock order and avoiding cross-flow deadlocks.
     if (InspectionTaskAction.SUBMIT.code().equals(action)) experienceInventoryMutex.enter();
     var row = taskRaw(tenant, id, true);
-    if (!access(row, "查看")) deny();
+    if (!access(row, PermissionAction.VIEW)) deny();
     VersionGuard.checkPayload((Number) row.get("row_version"), body);
     var snap = decode(row.get("snapshot"));
     var result =
@@ -448,7 +449,7 @@ public class InspectionTaskService {
         label = "恢复";
       }
       case TRANSFER -> {
-        if (!access(row, "转派")) deny();
+        if (!access(row, PermissionAction.TRANSFER)) deny();
         require(
             InspectionTaskStatus.allows(operation, state),
             com.windasoft.eam.common.MessageContext.text("server.inspection.message0038"));
@@ -474,7 +475,7 @@ public class InspectionTaskService {
         label = "转派";
       }
       case EXEMPT -> {
-        if (!text(row, "kind").equals("daily") || !access(row, "免检")) deny();
+        if (!text(row, "kind").equals("daily") || !access(row, PermissionAction.EXEMPT)) deny();
         require(
             taskAccess.unexecutedDailyTask(row, result),
             com.windasoft.eam.common.MessageContext.text("daily.error.exemptState"));
@@ -487,7 +488,7 @@ public class InspectionTaskService {
         journal.closeTodos(tenant, id);
       }
       case VOID, DELETE -> {
-        if (!access(row, "删除")) deny();
+        if (!access(row, PermissionAction.DELETE)) deny();
         if (operation == InspectionTaskAction.DELETE && text(row, "kind").equals("daily"))
           require(taskAccess.canDelete(row),
               com.windasoft.eam.common.MessageContext.text("daily.error.deleteState"));

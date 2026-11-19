@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../../permissionActions';
 import { ref } from 'vue';
 import { ElButton, ElInput, ElMessage, ElAlert, ElUpload } from 'element-plus';
 import KnowledgeSourcePreview from './KnowledgeSourcePreview.vue';
@@ -117,7 +118,7 @@ function choose(e: { raw?: File }, kind: 'photo' | 'audio') {
 }
 </script>
 <template>
-  <ElButton v-if="auth.can('knowledge', '查看')" type="primary" link @click="start">{{
+  <ElButton v-if="auth.can('knowledge', PermissionAction.VIEW)" type="primary" link @click="start">{{
     tr('assist.' + mode)
   }}</ElButton
   ><AppDialog

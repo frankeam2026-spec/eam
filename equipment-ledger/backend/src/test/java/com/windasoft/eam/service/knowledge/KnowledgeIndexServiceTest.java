@@ -3,6 +3,7 @@ package com.windasoft.eam.service.knowledge;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.knowledge.KnowledgeDocument;
 import com.windasoft.eam.entity.knowledge.KnowledgeVersion;
@@ -34,7 +35,7 @@ class KnowledgeIndexServiceTest {
 
   KnowledgeIndexService service() {
     when(auth.tenantId()).thenReturn(10L);
-    when(permissions.scope(eq("knowledge"), anyString()))
+    when(permissions.scope(eq("knowledge"), any(PermissionAction.class)))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     var d = new KnowledgeDocument();
     d.setCompanyId(20L);

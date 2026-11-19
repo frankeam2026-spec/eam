@@ -1,3 +1,4 @@
+import { PermissionAction } from './permissionActions';
 import { tr } from './i18n';
 import { currentLocale } from './i18n';
 export type EquipmentRecord = import('./businessConfig').CustomRecord & {
@@ -607,11 +608,13 @@ export function batchEquipment(
     body: JSON.stringify({ ids, operation, value, ownerIds }),
   });
 }
+type EquipmentEditAction = typeof PermissionAction.CREATE | typeof PermissionAction.EDIT;
+
 export function equipmentOwnerCandidates(
   q: string,
   page: number,
   size: number,
-  action: '新增' | '编辑',
+  action: EquipmentEditAction,
 ) {
   return request<{
     data: { id: string; name: string; account: string }[];
@@ -621,7 +624,7 @@ export function equipmentOwnerCandidates(
       new URLSearchParams({ q, page: String(page), size: String(size), action }),
   );
 }
-export function equipmentBatchOptions(action: '新增' | '编辑' = '编辑') {
+export function equipmentBatchOptions(action: EquipmentEditAction = PermissionAction.EDIT) {
   return request<{ departments: OrganizationRecord[]; users: SystemUserRecord[] }>(
     '/equipment/batch-options?action=' + encodeURIComponent(action),
   );

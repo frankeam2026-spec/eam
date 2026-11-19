@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.knowledge;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.knowledge.KnowledgeViews;
 import com.windasoft.eam.entity.knowledge.KnowledgeChunk;
 import com.windasoft.eam.entity.knowledge.KnowledgeDocument;
@@ -59,7 +60,7 @@ public class KnowledgeIndexService {
     this.tx = tx;
   }
 
-  private KnowledgeDocument check(long id, String action, long expected) {
+  private KnowledgeDocument check(long id, PermissionAction action, long expected) {
     var scope = permissions.scope("knowledge", action);
     var d = documents.document(auth.tenantId(), id);
     if (d == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "知识文档不存在");
@@ -74,7 +75,7 @@ public class KnowledgeIndexService {
   }
 
   public KnowledgeViews.Status queue(long id, long expected) {
-    var d = check(id, "编辑", expected);
+    var d = check(id, PermissionAction.EDIT, expected);
     if (!Boolean.TRUE.equals(d.getAppliesToAll()) && equipment.count(auth.tenantId(), id) == 0)
       throw new IllegalArgumentException("请先设置资料适用范围");
     var v = versions.latest(auth.tenantId(), id);
@@ -98,7 +99,7 @@ public class KnowledgeIndexService {
 
   private KnowledgeViews.IndexStatus index(
       long id, long expected, KnowledgeViews.IndexCandidate candidate) throws Exception {
-    var d = check(id, "编辑", expected);
+    var d = check(id, PermissionAction.EDIT, expected);
     var v = versions.latest(auth.tenantId(), id);
     if (v == null || !"READY".equals(v.getParseStatus()))
       throw new IllegalArgumentException("请先完成所有页面的文字解析");
@@ -124,7 +125,7 @@ public class KnowledgeIndexService {
       while (true) {
         var batch = chunks.indexed(tenant, vid, after);
         if (batch.isEmpty()) break;
-        check(id, "编辑", expected);
+        check(id, PermissionAction.EDIT, expected);
         jobs.heartbeat(tenant, vid, model, token);
         var values = embeddings.embed(batch.stream().map(KnowledgeChunk::getTextContent).toList());
         if (!model.equals(embeddings.model())) throw new IllegalStateException("向量模型配置已改变，请重新建立索引");
@@ -158,7 +159,7 @@ public class KnowledgeIndexService {
   public KnowledgeViews.StatusVersion publish(long id, long expected) {
     return tx.execute(
         s -> {
-          var d = check(id, "发布", expected);
+          var d = check(id, PermissionAction.PUBLISH, expected);
           if (!Boolean.TRUE.equals(d.getAppliesToAll())
               && equipment.count(auth.tenantId(), id) == 0)
             throw new IllegalArgumentException("发布前请设置资料适用范围");

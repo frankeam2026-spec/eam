@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
 import DepartmentText from './common/DepartmentText.vue';
 import { tr } from '../i18n';
 
@@ -86,8 +87,8 @@ async function back() {
       workspaceReturn(route.query.returnTo) || { name: 'maintenance', params: { kind: 'tasks' } },
     );
 }
-const canManage = computed(() => auth.can('maintenanceTask', '编辑')),
-  canVoid = computed(() => auth.can('maintenanceTask', '删除'));
+const canManage = computed(() => auth.can('maintenanceTask', PermissionAction.EDIT)),
+  canVoid = computed(() => auth.can('maintenanceTask', PermissionAction.DELETE));
 const timelineOpen = ref(false);
 const taskBody = ref<HTMLElement>();
 const narrowBody = ref(true);
@@ -408,7 +409,7 @@ const dialogTitle = computed(
               <dt>{{ tr('ui.equipment.text0871') }}</dt>
               <dd>
                 <ElLink
-                  v-if="task.equipmentId && auth.can('equipment', '查看')"
+                  v-if="task.equipmentId && auth.can('equipment', PermissionAction.VIEW)"
                   type="primary"
                   :underline="false"
                   :href="

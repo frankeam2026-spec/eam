@@ -1,4 +1,6 @@
-<script setup lang="ts">import { tr } from '../i18n';
+<script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
+import { tr } from '../i18n';
 
 import { onUnmounted } from 'vue';
 import { useInventoryQueryList } from '../composables/inventory/useInventoryLists';
@@ -386,7 +388,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
             </template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow1} -->
           <ElTableColumn
-            v-if="kind === 'balances' && auth.can('inventoryQuery', '冻结')"
+            v-if="kind === 'balances' && auth.can('inventoryQuery', PermissionAction.FREEZE)"
             class-name="operation"
             fixed="right"
             :width="170"
@@ -419,7 +421,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
           mode="footer"
           :filter-open="filterOpen"
           :columns-open="columnsOpen"
-          :can-export="auth.can('inventoryQuery', '导出')"
+          :can-export="auth.can('inventoryQuery', PermissionAction.EXPORT)"
           :export-busy="exportBusy"
           @toggle-columns="columnsOpen = !columnsOpen"
           @export="exportRows"

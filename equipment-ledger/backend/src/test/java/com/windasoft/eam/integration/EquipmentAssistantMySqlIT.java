@@ -18,6 +18,7 @@ import static org.mockito.Mockito.when;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery.Condition;
 import com.windasoft.eam.dto.equipment.EquipmentListQuery.Direction;
@@ -98,7 +99,7 @@ class EquipmentAssistantMySqlIT {
     scope = new PermissionScope(true, null, Set.of(), false);
     when(auth.tenantId()).thenReturn(10001L);
     when(auth.userId()).thenAnswer(c -> user);
-    when(permissions.equipment("查看")).thenAnswer(c -> scope);
+    when(permissions.equipment(PermissionAction.VIEW)).thenAnswer(c -> scope);
     doAnswer(
             c -> {
               AuthorizationQueryPredicates.equipment(
@@ -121,7 +122,7 @@ class EquipmentAssistantMySqlIT {
               return null;
             })
         .when(permissions)
-        .checkEquipment(any(), eq("查看"));
+        .checkEquipment(any(), eq(PermissionAction.VIEW));
     doThrow(new AssertionError("设备查询不得进入AI通用SQL执行器"))
         .when(generic)
         .execute(any(), any(), any(), anyInt(), anyInt());

@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.system;
 
 import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.domain.common.ActivationStatus;
 import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.domain.system.PermissionMenu;
 import com.windasoft.eam.dto.inventory.WarehouseChoice;
@@ -128,7 +129,7 @@ public class RoleManagementService {
     x.setCode(f.code().trim());
     x.setName(f.name().trim());
     x.setDescription(f.description() == null ? "" : f.description().trim());
-    x.setStatus(f.status() == null ? 1 : f.status());
+    x.setStatus(f.status() == null ? ActivationStatus.ENABLED.code() : f.status());
     x.setDataScope("PER_MENU");
     x.setOrganizationIds(List.of());
     x.setLegacyActions(List.of());
@@ -149,7 +150,7 @@ public class RoleManagementService {
       granted = true;
       if (!allowedActions.containsAll(actions) || actions.size() != new HashSet<>(actions).size())
         throw new LocalizedArgumentException("server.system.message0055", menu);
-      if (!actions.contains("查看"))
+      if (!actions.contains(PermissionAction.VIEW.code()))
         throw new LocalizedArgumentException("server.system.message0056", menu);
       var scopes = grant.dataScopes() == null ? List.<String>of() : grant.dataScopes();
       if (scopes.isEmpty()
@@ -182,23 +183,90 @@ public class RoleManagementService {
 
   private Set<String> allowedActions(String menu) {
     return switch (menu) {
-      case "aiSetting" -> Set.of("查看", "编辑");
-      case "knowledge" -> Set.of("查看", "编辑", "发布", "停用");
-      case "businessConfig" -> Set.of("查看", "编辑", "发布");
-      case "workflow" -> Set.of("查看", "编辑", "发布", "停用", "脚本配置", "脚本发布", "脚本试算");
-      case "personalization", "language" -> Set.of("查看");
-      case "workspace" -> Set.of("查看", "团队工作查看");
-      case "notificationPolicy", "notificationChannel" -> Set.of("查看", "编辑");
-      case "notificationDelivery" -> Set.of("查看", "重试");
-      case "printTemplate" -> Set.of("查看", "新增", "编辑", "删除");
-      case "homeTemplate" -> Set.of("查看", "新增", "编辑", "发布", "停用");
-      case "anomaly" -> Set.of("查看", "新增", "消除", "报修", "安排维修", "作废", "导出");
-      case "repairPlan" -> Set.of("查看", "新增", "编辑", "启用", "生成工单", "取消", "导出");
-      case "materialCustody" -> Set.of("查看", "登记暂存", "导出");
-      case "equipment" -> Set.of("查看", "新增", "编辑", "删除", "导入", "导出");
-      case "equipmentTag" -> Set.of("查看", "新增", "编辑", "删除", "打印", "导出");
-      case "category", "org" -> Set.of("查看", "新增", "编辑", "删除");
-      case "repair" -> Set.of("查看", "报修", "编辑", "派工", "处理", "验收", "撤回", "删除", "导出");
+      case "aiSetting" -> PermissionAction.codes(PermissionAction.VIEW, PermissionAction.EDIT);
+      case "knowledge" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.EDIT,
+          PermissionAction.PUBLISH,
+          PermissionAction.DISABLE);
+      case "businessConfig" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.EDIT,
+          PermissionAction.PUBLISH);
+      case "workflow" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.EDIT,
+          PermissionAction.PUBLISH,
+          PermissionAction.DISABLE,
+          PermissionAction.CONFIGURE_SCRIPT,
+          PermissionAction.PUBLISH_SCRIPT,
+          PermissionAction.TRIAL_SCRIPT);
+      case "personalization", "language" -> PermissionAction.codes(PermissionAction.VIEW);
+      case "workspace" -> PermissionAction.codes(PermissionAction.VIEW, PermissionAction.VIEW_TEAM_WORK);
+      case "notificationPolicy", "notificationChannel" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.EDIT);
+      case "notificationDelivery" -> PermissionAction.codes(PermissionAction.VIEW, PermissionAction.RETRY);
+      case "printTemplate" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE);
+      case "homeTemplate" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.PUBLISH,
+          PermissionAction.DISABLE);
+      case "anomaly" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.RESOLVE_ANOMALY,
+          PermissionAction.REPORT,
+          PermissionAction.SCHEDULE_REPAIR,
+          PermissionAction.VOID,
+          PermissionAction.EXPORT);
+      case "repairPlan" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.ENABLE,
+          PermissionAction.GENERATE_REPAIR_ORDER,
+          PermissionAction.CANCEL,
+          PermissionAction.EXPORT);
+      case "materialCustody" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.RECORD_CUSTODY,
+          PermissionAction.EXPORT);
+      case "equipment" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.IMPORT,
+          PermissionAction.EXPORT);
+      case "equipmentTag" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.PRINT,
+          PermissionAction.EXPORT);
+      case "category", "org" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE);
+      case "repair" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.REPORT,
+          PermissionAction.EDIT,
+          PermissionAction.DISPATCH,
+          PermissionAction.PROCESS,
+          PermissionAction.ACCEPT,
+          PermissionAction.WITHDRAW,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT);
       case "maintenanceType",
               "maintenanceStandard",
               "maintenancePlan",
@@ -206,29 +274,171 @@ public class RoleManagementService {
               "inspectionStandard",
               "inspectionDailyPlan",
               "inspectionPeriodicPlan" ->
-          Set.of("查看", "新增", "编辑", "删除", "导出");
-      case "maintenanceTask" -> Set.of("查看", "编辑", "执行", "验收", "删除", "导出");
-      case "inspectionDailyTask" -> Set.of("查看", "执行", "修改结果", "审核", "转派", "免检", "删除", "导出");
-      case "inspectionPeriodicTask" -> Set.of("查看", "执行", "审核", "转派", "删除", "导出");
-      case "inventoryMaterial" -> Set.of("查看", "新增", "编辑", "删除", "导入", "导出", "查看金额", "编辑参考价");
-      case "inventoryWarehouse" -> Set.of("查看", "新增", "编辑", "删除", "导出");
-      case "inventoryReceipt" -> Set.of("查看", "新增", "编辑", "删除", "入库", "导出", "查看金额");
+          PermissionAction.codes(
+              PermissionAction.VIEW,
+              PermissionAction.CREATE,
+              PermissionAction.EDIT,
+              PermissionAction.DELETE,
+              PermissionAction.EXPORT);
+      case "maintenanceTask" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.EDIT,
+          PermissionAction.EXECUTE,
+          PermissionAction.ACCEPT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT);
+      case "inspectionDailyTask" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.EXECUTE,
+          PermissionAction.AMEND_RESULT,
+          PermissionAction.REVIEW,
+          PermissionAction.TRANSFER,
+          PermissionAction.EXEMPT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT);
+      case "inspectionPeriodicTask" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.EXECUTE,
+          PermissionAction.REVIEW,
+          PermissionAction.TRANSFER,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT);
+      case "inventoryMaterial" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.IMPORT,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT,
+          PermissionAction.EDIT_REFERENCE_PRICE);
+      case "inventoryWarehouse" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT);
+      case "inventoryReceipt" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.STOCK_IN,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT);
       case "inventoryOutbound" ->
-          Set.of(
-              "打印", "查看", "新增直接出库", "编辑草稿", "删除草稿", "预留", "释放预留", "确认出库", "关闭剩余需求", "导出", "查看金额");
-      case "inventoryRequisition" -> Set.of("查看", "新增", "编辑", "删除", "出库", "导出", "查看金额");
-      case "inventoryReturn" -> Set.of("查看", "新增", "编辑", "删除", "入库", "导出", "查看金额");
-      case "inventoryTransfer" -> Set.of("查看", "新增", "编辑", "删除", "出库", "入库", "导出", "查看金额");
-      case "inventoryCount" -> Set.of("查看", "新增", "编辑", "删除", "出库", "入库", "导出", "查看金额");
-      case "inventoryOpening" -> Set.of("查看", "新增", "编辑", "删除", "入库", "导入", "导出", "查看金额");
-      case "inventoryReversal" -> Set.of("查看", "新增", "编辑", "删除", "冲销", "导出", "查看金额");
-      case "inventoryQuery" -> Set.of("查看", "导出", "冻结", "查看金额");
-      case "inventory" -> Set.of("查看", "新增", "编辑", "入库", "出库", "导入", "导出");
-      case "requisition" -> Set.of("查看", "申请", "审批", "出库", "撤回", "导出");
-      case "user" -> Set.of("查看", "新增", "编辑", "停用", "分配角色", "删除", "导入", "导出");
-      case "role" -> Set.of("查看", "新增", "编辑", "授权", "删除", "导出");
-      case "location" -> Set.of("查看", "新增", "编辑", "删除", "导出");
-      case "base" -> Set.of("查看", "新增", "编辑", "删除", "导入", "导出");
+          PermissionAction.codes(
+              PermissionAction.PRINT,
+              PermissionAction.VIEW,
+              PermissionAction.CREATE_DIRECT_OUTBOUND,
+              PermissionAction.EDIT_DRAFT,
+              PermissionAction.DELETE_DRAFT,
+              PermissionAction.RESERVE,
+              PermissionAction.RELEASE_RESERVATION,
+              PermissionAction.CONFIRM_ISSUE,
+              PermissionAction.CLOSE_REMAINDER,
+              PermissionAction.EXPORT,
+              PermissionAction.VIEW_AMOUNT);
+      case "inventoryRequisition" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.STOCK_OUT,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT);
+      case "inventoryReturn" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.STOCK_IN,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT);
+      case "inventoryTransfer" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.STOCK_OUT,
+          PermissionAction.STOCK_IN,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT);
+      case "inventoryCount" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.STOCK_OUT,
+          PermissionAction.STOCK_IN,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT);
+      case "inventoryOpening" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.STOCK_IN,
+          PermissionAction.IMPORT,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT);
+      case "inventoryReversal" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.REVERSE,
+          PermissionAction.EXPORT,
+          PermissionAction.VIEW_AMOUNT);
+      case "inventoryQuery" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.EXPORT,
+          PermissionAction.FREEZE,
+          PermissionAction.VIEW_AMOUNT);
+      case "inventory" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.STOCK_IN,
+          PermissionAction.STOCK_OUT,
+          PermissionAction.IMPORT,
+          PermissionAction.EXPORT);
+      case "requisition" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.APPLY,
+          PermissionAction.APPROVE,
+          PermissionAction.STOCK_OUT,
+          PermissionAction.WITHDRAW,
+          PermissionAction.EXPORT);
+      case "user" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DISABLE,
+          PermissionAction.ASSIGN_ROLE,
+          PermissionAction.DELETE,
+          PermissionAction.IMPORT,
+          PermissionAction.EXPORT);
+      case "role" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.AUTHORIZE,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT);
+      case "location" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.EXPORT);
+      case "base" -> PermissionAction.codes(
+          PermissionAction.VIEW,
+          PermissionAction.CREATE,
+          PermissionAction.EDIT,
+          PermissionAction.DELETE,
+          PermissionAction.IMPORT,
+          PermissionAction.EXPORT);
       default -> Set.of();
     };
   }
@@ -332,7 +542,7 @@ public class RoleManagementService {
       for (var raw : x.getLegacyActions()) {
         var parts = String.valueOf(raw).split("\\.", 2);
         if (parts.length != 2) continue;
-        var action = legacyAction(parts[1]);
+        var action = PermissionAction.fromLegacyCode(parts[1]);
         var targets = new HashSet<>(PermissionService.legacyTargets(parts[0]));
         targets.add(parts[0]);
         for (String menu : targets)
@@ -354,7 +564,7 @@ public class RoleManagementService {
                 ? scope
                 : allowedScopes(menu).contains("department") ? "department" : "all";
         var menuActions = new ArrayList<>(new LinkedHashSet<>(entry.getValue()));
-        if (!menuActions.contains("查看")) menuActions.add(0, "查看");
+        if (!menuActions.contains(PermissionAction.VIEW.code())) menuActions.add(0, PermissionAction.VIEW.code());
         grants.put(
             menu,
             new MenuGrantView(
@@ -370,23 +580,8 @@ public class RoleManagementService {
         x.getCode(),
         x.getName(),
         x.getDescription() == null ? "" : x.getDescription(),
-        x.getStatus() == 1 ? "启用" : "停用",
+        ActivationStatus.fromFlag(x.getStatus()).label(),
         grants);
-  }
-
-  private String legacyAction(String action) {
-    return switch (action) {
-      case "view" -> "查看";
-      case "create" -> "新增";
-      case "edit" -> "编辑";
-      case "delete" -> "删除";
-      case "disable" -> "停用";
-      case "dispatch" -> "派工";
-      case "process" -> "处理";
-      case "accept" -> "验收";
-      case "export" -> "导出";
-      default -> action;
-    };
   }
 
   /** 普通角色编辑切换为逐菜单授权，清除旧角色范围；与主体及菜单重写保持同一服务事务。 */

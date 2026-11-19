@@ -1,4 +1,6 @@
-<script setup lang="ts">import { tr } from '../i18n';
+<script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
+import { tr } from '../i18n';
 
 import { ElTableColumn } from 'element-plus';
 import { ElButton, ElInput, ElCheckboxGroup, ElCheckbox } from 'element-plus';
@@ -97,7 +99,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
   <section class="inventory-page">
     <div class="inventory-toolbar">
       <ElButton
-        v-if="auth.can('inventory', '入库')"
+        v-if="auth.can('inventory', PermissionAction.STOCK_IN)"
         class=""
         @click="
           form = { code: '', name: '', model: '', quantity: 1 };
@@ -110,7 +112,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
       <div>
         <ListToolbarIcons
           mode="filter"
-          :can-export="auth.can('inventory', '导出')"
+          :can-export="auth.can('inventory', PermissionAction.EXPORT)"
           :filter-open="filtersOpen"
           :columns-open="columnsOpen"
           @toggle-filter="filtersOpen = !filtersOpen"
@@ -170,7 +172,7 @@ type TableColumnRow1 = NonNullable<ReturnType<typeof tableColumnRows1>>[number];
         ><AppPagination v-model:page="page" v-model:page-size="size" :total="filtered.length" />
         <ListToolbarIcons
           mode="footer"
-          :can-export="auth.can('inventory', '导出')"
+          :can-export="auth.can('inventory', PermissionAction.EXPORT)"
           :filter-open="filtersOpen"
           :columns-open="columnsOpen"
           @toggle-filter="filtersOpen = !filtersOpen"

@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.common.DefinitionNumberService;
@@ -107,7 +108,7 @@ public class InspectionService {
     return projectSource.raw(kind, tenant, id, lock);
   }
 
-  boolean scoped(Map<String, Object> row, String action) {
+  boolean scoped(Map<String, Object> row, PermissionAction action) {
     return projectSource.scoped(row, action);
   }
 
@@ -120,7 +121,7 @@ public class InspectionService {
     require(
         KINDS.contains(kind),
         com.windasoft.eam.common.MessageContext.text("server.system.message0046"));
-    permissions.require(PermissionService.inspectionMenu(kind), "查看");
+    permissions.require(PermissionService.inspectionMenu(kind), PermissionAction.VIEW);
     if (kind.equals("types"))
       return repository.listDefinitions(auth.tenantId(), kind).stream()
           .map(this::view)
@@ -147,7 +148,7 @@ public class InspectionService {
 
   @Transactional(readOnly = true)
   public List<Map<String, Object>> exportRows(String kind, Object selectedIds) {
-    permissions.require(PermissionService.inspectionMenu(kind), "导出");
+    permissions.require(PermissionService.inspectionMenu(kind), PermissionAction.EXPORT);
     var selected = new HashSet<>(ids(selectedIds));
     require(
         selected.size() <= 10000,
@@ -169,8 +170,8 @@ public class InspectionService {
 
   public Map<String, Object> definition(String kind, long id) {
     var r = raw(kind, auth.tenantId(), id, false);
-    if (kind.equals("types")) permissions.require(PermissionService.inspectionMenu(kind), "查看");
-    else if (!scoped(r, "查看")) deny();
+    if (kind.equals("types")) permissions.require(PermissionService.inspectionMenu(kind), PermissionAction.VIEW);
+    else if (!scoped(r, PermissionAction.VIEW)) deny();
     var result = view(r);
     if (kind.equals("daily-plans")) {
       result.put("arrangements", dailyStorage.load(auth.tenantId(), id));
@@ -187,7 +188,7 @@ public class InspectionService {
     require(
         KINDS.contains(kind),
         com.windasoft.eam.common.MessageContext.text("server.system.message0046"));
-    String action = id == null ? "新增" : "编辑";
+    var action = id == null ? PermissionAction.CREATE : PermissionAction.EDIT;
     permissions.require(PermissionService.inspectionMenu(kind), action);
     long tenant = auth.tenantId();
     var existing = id == null ? null : raw(kind, tenant, id, true);
@@ -375,8 +376,8 @@ public class InspectionService {
   @Transactional
   public void delete(String kind, long id) {
     var row = raw(kind, auth.tenantId(), id, true);
-    permissions.require(PermissionService.inspectionMenu(kind), "删除");
-    if (!kind.equals("types") && !scoped(row, "删除")) deny();
+    permissions.require(PermissionService.inspectionMenu(kind), PermissionAction.DELETE);
+    if (!kind.equals("types") && !scoped(row, PermissionAction.DELETE)) deny();
     if (kind.equals("types"))
       require(
           repository.taskTypeReferences(auth.tenantId(), id) == 0,
@@ -422,7 +423,7 @@ public class InspectionService {
 
   public Map<String, Object> choices(boolean paged) {
     require(
-        permissions.anyInspection("查看"),
+        permissions.anyInspection(PermissionAction.VIEW),
         com.windasoft.eam.common.MessageContext.text("server.inspection.message0073"));
     var equipment =
         paged

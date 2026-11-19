@@ -12,6 +12,7 @@ import com.windasoft.eam.common.FieldValidationException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.MessageRef;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.PageResult;
 import com.windasoft.eam.dto.inspection.InspectionDeviceOption;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
@@ -66,7 +67,7 @@ public class DailyInspectionPlanService {
         equipmentQueries.deviceCandidates(
             auth.tenantId(),
             auth.userId(),
-            permissions.inspection("daily", "执行"),
+            permissions.inspection("daily", PermissionAction.EXECUTE),
             keyword,
             effectivePage,
             effectiveSize);
@@ -79,18 +80,18 @@ public class DailyInspectionPlanService {
 
   /** 人工事件已停用，旧客户端仍收到原空页；Void明确无候选模型，不为关闭的能力虚构字段。 */
   public PageResult<Void> dailyEventOptions(String keyword, int page, int size) {
-    permissions.require("inspectionDailyTask", "查看");
-    permissions.require("inspectionDailyTask", "执行");
+    permissions.require("inspectionDailyTask", PermissionAction.VIEW);
+    permissions.require("inspectionDailyTask", PermissionAction.EXECUTE);
     return new PageResult<>(List.of(), Math.max(1, page), Math.max(1, Math.min(200, size)), 0);
   }
 
   /** 编辑预览可能补回原安排的排班，必须先复核原计划，再校验目标部门及设备；否则可借请求部门绕过对象范围。 校验只修改请求副本，不锁定计划、不保存安排，也不创建任务或通知。 */
   @Transactional(readOnly = true)
   public Map<String, Object> dailyPreview(Map<String, Object> body) {
-    permissions.require("inspectionDailyPlan", "查看");
+    permissions.require("inspectionDailyPlan", PermissionAction.VIEW);
     var data = copy(body);
     Long planId = text(data, "id").isBlank() ? null : number(data.get("id"));
-    String action = planId == null ? "新增" : "编辑";
+    var action = planId == null ? PermissionAction.CREATE : PermissionAction.EDIT;
     if (planId != null) {
       var existing = projects.raw("daily-plans", auth.tenantId(), planId, false);
       if (!projects.scoped(existing, action)) {
@@ -131,7 +132,7 @@ public class DailyInspectionPlanService {
   public Map<String, Object> assignmentImpact(Map<String, Object> body) {
     long planId = number(body.get("id"));
     var plan = projects.raw("daily-plans", auth.tenantId(), planId, true);
-    if (!projects.scoped(plan, "编辑")) deny();
+    if (!projects.scoped(plan, PermissionAction.EDIT)) deny();
     VersionGuard.checkPayload((Number) plan.get("row_version"), body);
     dailyPreview(body);
     return Map.of("count", assignments.assignmentImpact(auth.tenantId(), planId, copy(body)));
@@ -140,8 +141,8 @@ public class DailyInspectionPlanService {
   @Transactional
   public Map<String, Object> dailyEvent(long planId, Map<String, Object> body) {
     var plan = projects.raw("daily-plans", auth.tenantId(), planId, true);
-    boolean supervisor = projects.scoped(plan, "编辑");
-    if (!supervisor) permissions.require("inspectionDailyTask", "执行");
+    boolean supervisor = projects.scoped(plan, PermissionAction.EDIT);
+    if (!supervisor) permissions.require("inspectionDailyTask", PermissionAction.EXECUTE);
     body.put("_actorId", Long.toString(auth.userId()));
     body.put("_supervisor", supervisor);
     VersionGuard.checkPayload((Number) plan.get("row_version"), body);

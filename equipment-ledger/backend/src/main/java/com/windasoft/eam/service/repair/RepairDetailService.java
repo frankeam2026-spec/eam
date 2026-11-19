@@ -3,6 +3,7 @@ package com.windasoft.eam.service.repair;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.domain.repair.RepairOrderStatus;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.repair.RepairContext;
 import com.windasoft.eam.dto.repair.RepairWorkflowDetail;
 import com.windasoft.eam.entity.equipment.Equipment;
@@ -132,7 +133,7 @@ public class RepairDetailService {
 
   private boolean canDispatch(RepairOrder row) {
     try {
-      permissions.checkRepair(row, "派工");
+      permissions.checkRepair(row, PermissionAction.DISPATCH);
       return true;
     } catch (ResponseStatusException denied) {
       return false;
@@ -141,7 +142,7 @@ public class RepairDetailService {
 
   private boolean canIssue(long company) {
     try {
-      permissions.checkInventoryCompany(company, "出库");
+      permissions.checkInventoryCompany(company, PermissionAction.STOCK_OUT.code());
       return true;
     } catch (ResponseStatusException denied) {
       return false;

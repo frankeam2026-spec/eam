@@ -70,13 +70,13 @@ public class EquipmentQueryController {
 
   @GetMapping("/owner-candidates")
   public com.windasoft.eam.dto.common.PageResult<EquipmentOptions.Employee> ownerCandidates(
-      @RequestParam(defaultValue = "编辑") String action,
+      @RequestParam(required = false) String action,
       @RequestParam Map<String, String> parameters) {
     return service.ownerCandidates(action, com.windasoft.eam.dto.common.ListQuery.from(parameters));
   }
 
   @GetMapping("/batch-options")
-  public EquipmentOptions batchOptions(@RequestParam(defaultValue = "编辑") String action) {
+  public EquipmentOptions batchOptions(@RequestParam(required = false) String action) {
     return service.batchOptions(action);
   }
 

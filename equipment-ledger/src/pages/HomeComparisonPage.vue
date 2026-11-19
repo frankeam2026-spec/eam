@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
 import DepartmentText from '../components/common/DepartmentText.vue';
 import { tr } from '../i18n';
 
@@ -301,7 +302,7 @@ async function loadTemplate(id?: string) {
         blocks: previous.returnLayout.blocks.filter(
           (b) =>
             state.value?.catalog.includes(b.type) &&
-            (b.scope !== 'team' || auth.can('workspace', '团队工作查看')),
+            (b.scope !== 'team' || auth.can('workspace', PermissionAction.VIEW_TEAM_WORK)),
         ),
       };
     if (id !== undefined && route.query.analysis) void router.replace({ name: 'home2' });
@@ -599,7 +600,7 @@ onUnmounted(() => {
             :first="index === 0"
             :last="index === configured(column.key).length - 1"
             :removable="layout.blocks.length > 1"
-            :team-allowed="auth.can('workspace', '团队工作查看')"
+            :team-allowed="auth.can('workspace', PermissionAction.VIEW_TEAM_WORK)"
             :class="{ 'work-panel': section.type === 'work' }"
             :data-home-work="section.type === 'work' ? true : undefined"
             @update="customization.update"

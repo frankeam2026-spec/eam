@@ -8,6 +8,7 @@ import com.windasoft.eam.common.LocalizedStatusException;
 import com.windasoft.eam.common.MessageContext;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.domain.maintenance.MaintenancePersonRole;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.common.PageResult;
 import com.windasoft.eam.dto.maintenance.MaintenanceStandardRequest;
@@ -97,7 +98,7 @@ public class MaintenanceStandardService {
       throw missing();
     }
     if (!permissions
-        .maintenance(KIND, "查看")
+        .maintenance(KIND, PermissionAction.VIEW)
         .matches(
             null,
             nullableId(result.departmentId()),
@@ -142,7 +143,7 @@ public class MaintenanceStandardService {
 
   @Transactional(readOnly = true)
   public List<MaintenanceStandardRow> all(String conditions) {
-    permissions.require(PermissionService.maintenanceMenu(KIND), "查看");
+    permissions.require(PermissionService.maintenanceMenu(KIND), PermissionAction.VIEW);
     var request = ListQuery.from(Map.of("conditions", conditions));
     var result = new ArrayList<MaintenanceStandardRow>();
     for (int page = 1; ; page++) {
@@ -158,7 +159,7 @@ public class MaintenanceStandardService {
   @Transactional
   public MaintenanceStandardView save(Long id, MaintenanceStandardRequest request) {
     long tenant = auth.tenantId();
-    String action = id == null ? "新增" : "编辑";
+    var action = id == null ? PermissionAction.CREATE : PermissionAction.EDIT;
     permissions.require(PermissionService.maintenanceMenu(KIND), action);
     var old = id == null ? null : standards.find(tenant, id, true);
     if (id != null && old == null) {
@@ -431,9 +432,9 @@ public class MaintenanceStandardService {
     if (row == null) {
       throw missing();
     }
-    permissions.require(PermissionService.maintenanceMenu(KIND), "删除");
+    permissions.require(PermissionService.maintenanceMenu(KIND), PermissionAction.DELETE);
     if (!permissions
-        .maintenance(KIND, "删除")
+        .maintenance(KIND, PermissionAction.DELETE)
         .matches(null, row.getDepartmentId(), row.getCreatorId(), auth.userId())) {
       deny();
     }

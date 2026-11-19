@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.knowledge;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.knowledge.*;
 import com.windasoft.eam.service.system.*;
 import java.util.*;
@@ -27,17 +28,17 @@ public class KnowledgeConversationService {
     this.repository=repository;this.sources=sources;this.answers=answers;this.auth=auth;this.permissions=permissions;this.tx=tx;
   }
   private void owner(long id,boolean lock){
-    permissions.require("knowledge","查看");
+    permissions.require("knowledge",PermissionAction.VIEW);
     if(!repository.owner(auth.tenantId(),auth.userId(),id,lock))throw new ResponseStatusException(HttpStatus.NOT_FOUND,"对话不存在");
   }
-  public Object create(){permissions.require("knowledge","查看");long id=IdWorker.getId();repository.create(auth.tenantId(),auth.userId(),id);return Map.of("id",Long.toString(id));}
-  public Object list(int page,int size){permissions.require("knowledge","查看");return Map.of("data",repository.list(auth.tenantId(),auth.userId(),page,size),"total",repository.count(auth.tenantId(),auth.userId()));}
+  public Object create(){permissions.require("knowledge",PermissionAction.VIEW);long id=IdWorker.getId();repository.create(auth.tenantId(),auth.userId(),id);return Map.of("id",Long.toString(id));}
+  public Object list(int page,int size){permissions.require("knowledge",PermissionAction.VIEW);return Map.of("data",repository.list(auth.tenantId(),auth.userId(),page,size),"total",repository.count(auth.tenantId(),auth.userId()));}
   public void delete(long id){tx.executeWithoutResult(s->{owner(id,true);repository.delete(auth.tenantId(),auth.userId(),id);});}
   public void bind(long id,long equipment){tx.executeWithoutResult(s->{owner(id,true);equipmentQueries.get(equipment);repository.equipment(auth.tenantId(),auth.userId(),id,equipment);});}
   private Map<String,Object> view(Map<String,Object> row){
     long exchange=Long.parseLong(row.get("id").toString());
     var ids=repository.citations(auth.tenantId(),exchange);
-    var citations=sources.chunks(auth.tenantId(),permissions.scope("knowledge","查看"),ids);
+    var citations=sources.chunks(auth.tenantId(),permissions.scope("knowledge",PermissionAction.VIEW),ids);
     boolean revoked=citations.size()!=ids.size();
     var result=new LinkedHashMap<String,Object>();result.put("id",row.get("id"));result.put("question",row.get("question"));result.put("status",row.get("status"));
     result.put("answer",revoked?"此回答的来源权限或发布版本已改变，请重新提问。":Objects.toString(row.get("answer"),""));

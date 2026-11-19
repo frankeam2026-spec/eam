@@ -1,4 +1,6 @@
 package com.windasoft.eam.service.knowledge;
+
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.fasterxml.jackson.databind.*;
 import com.windasoft.eam.service.experience.HomeAnalyticsService;
 import com.windasoft.eam.service.system.PermissionService;
@@ -11,7 +13,7 @@ public class AiAnalyticsService {
   public AiAnalyticsService(HomeAnalyticsService analytics,AiGateway gateway,PermissionService permissions,ObjectMapper json){this.analytics=analytics;this.gateway=gateway;this.permissions=permissions;this.json=json;}
   @SuppressWarnings("unchecked")
   public Object tryAnswer(String question,List<String> previous) throws Exception {
-    if(!permissions.allowed("workspace","查看"))return Map.of("answer","你没有统计查看权限，请联系管理员。","citations",List.of());
+    if(!permissions.allowed("workspace",PermissionAction.VIEW))return Map.of("answer","你没有统计查看权限，请联系管理员。","citations",List.of());
     if(question.contains("故障率"))return Map.of("answer","目前可查询设备报修次数排名，尚无统一的故障率分母。报修次数不等于故障率。你要查看报修次数排名吗？","citations",List.of());
     var catalog=analytics.catalog();
     var body=Map.of("enable_thinking",false,"max_tokens",700,"response_format",Map.of("type","json_object"),"messages",List.of(

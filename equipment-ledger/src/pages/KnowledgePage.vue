@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   ElButton,
@@ -282,7 +283,7 @@ function actions(value: unknown) {
   const row = value as Row;
   if (operating.value) return [];
   const result = [];
-  if (auth.can('knowledge', '编辑')) {
+  if (auth.can('knowledge', PermissionAction.EDIT)) {
     result.push({
       label: tr('knowledge.versions'),
       run: () => {
@@ -292,15 +293,15 @@ function actions(value: unknown) {
     if (row.parseStatus === 'FAILED')
       result.push({ label: tr('knowledge.retryParse'), run: () => operation(row, 'retry-parse') });
   }
-  if (auth.can('knowledge', '编辑'))
+  if (auth.can('knowledge', PermissionAction.EDIT))
     result.push({ label: tr('knowledge.applicability'), run: () => openBinding(row) });
-  if (auth.can('knowledge', '编辑'))
+  if (auth.can('knowledge', PermissionAction.EDIT))
     result.push({ label: tr('knowledge.replace'), run: () => replaceDialog(row) });
-  if (auth.can('knowledge', '编辑') && row.parseStatus === 'READY')
+  if (auth.can('knowledge', PermissionAction.EDIT) && row.parseStatus === 'READY')
     result.push({ label: tr('knowledge.index'), run: () => operation(row, 'index') });
-  if (auth.can('knowledge', '发布') && row.parseStatus === 'READY')
+  if (auth.can('knowledge', PermissionAction.PUBLISH) && row.parseStatus === 'READY')
     result.push({ label: tr('knowledge.publish'), run: () => operation(row, 'publish') });
-  if (auth.can('knowledge', '停用') && row.status === 'PUBLISHED')
+  if (auth.can('knowledge', PermissionAction.DISABLE) && row.status === 'PUBLISHED')
     result.push({ label: tr('knowledge.disable'), run: () => operation(row, 'disable') });
   return result;
 }
@@ -351,10 +352,10 @@ onUnmounted(() => clearInterval(timer));
     >
     <div class="knowledge-toolbar">
       <KnowledgeCaseCreator
-        v-if="auth.can('knowledge', '编辑') && auth.can('repair', '查看')"
+        v-if="auth.can('knowledge', PermissionAction.EDIT) && auth.can('repair', PermissionAction.VIEW)"
         @saved="load"
       />
-      <ElButton v-if="auth.can('knowledge', '编辑')" type="primary" @click="uploadDialog">{{
+      <ElButton v-if="auth.can('knowledge', PermissionAction.EDIT)" type="primary" @click="uploadDialog">{{
         tr('knowledge.upload')
       }}</ElButton>
       <div class="knowledge-search">
@@ -393,16 +394,16 @@ onUnmounted(() => clearInterval(timer));
       >
       <ElTableColumn
         v-if="
-          auth.can('knowledge', '编辑') ||
-          auth.can('knowledge', '发布') ||
-          auth.can('knowledge', '停用')
+          auth.can('knowledge', PermissionAction.EDIT) ||
+          auth.can('knowledge', PermissionAction.PUBLISH) ||
+          auth.can('knowledge', PermissionAction.DISABLE)
         "
         :label="tr('knowledge.actions')"
         fixed="right"
         width="170"
         ><template #default="scope"
           ><ElButton
-            v-if="auth.can('knowledge', '编辑')"
+            v-if="auth.can('knowledge', PermissionAction.EDIT)"
             link
             type="primary"
             :disabled="!!operating"

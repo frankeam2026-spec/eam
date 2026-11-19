@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.equipment.*;
 import com.windasoft.eam.service.equipment.EquipmentQueryService;
 import com.windasoft.eam.service.system.PermissionService;
@@ -26,8 +27,8 @@ class AiEquipmentQueryServiceTest {
             service.answer(new AiQuestionRouter.Intent("EQUIPMENT_COUNT", List.of(), ""), null);
     assertTrue(result.get("answer").toString().contains("153 台"));
     assertFalse(result.containsKey("equipmentRecords"));
-    verify(permissions).require("equipment", "查看");
-    verify(permissions).require("knowledge", "查看");
+    verify(permissions).require("equipment", PermissionAction.VIEW);
+    verify(permissions).require("knowledge", PermissionAction.VIEW);
   }
 
   @Test
@@ -51,7 +52,7 @@ class AiEquipmentQueryServiceTest {
 
   @Test
   void permissionDenialStopsBeforeBusinessReads() {
-    doThrow(new IllegalStateException("denied")).when(permissions).require("equipment", "查看");
+    doThrow(new IllegalStateException("denied")).when(permissions).require("equipment", PermissionAction.VIEW);
     assertThrows(IllegalStateException.class, () -> service.query(List.of(), null, 1, 20));
     verifyNoInteractions(equipment);
   }

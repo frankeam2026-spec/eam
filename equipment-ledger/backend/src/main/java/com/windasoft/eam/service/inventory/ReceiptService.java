@@ -6,6 +6,7 @@ import static com.windasoft.eam.service.inventory.InventoryService.*;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.common.inventory.InventoryMoney;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.inventory.InventoryBalanceRepository;
 import com.windasoft.eam.repository.inventory.InventoryTransactionRepository;
 import com.windasoft.eam.repository.inventory.ReceiptRepository;
@@ -48,17 +49,17 @@ public class ReceiptService {
     this.permissions = permissions;
   }
 
-  private Map<String, Object> receipt(long recordId, boolean lock, String action) {
+  private Map<String, Object> receipt(long recordId, boolean lock, PermissionAction action) {
     return receipt(recordId, lock, action, "inventoryReceipt");
   }
 
-  private Map<String, Object> receipt(long recordId, boolean lock, String action, String menu) {
+  private Map<String, Object> receipt(long recordId, boolean lock, PermissionAction action, String menu) {
     permissions.require(menu, action);
     var found = repository.loadReceipt(auth.tenantId(), recordId, lock);
     require(
         !found.isEmpty(),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0160"));
-    permissions.checkInventoryWarehouse(menu, id(found.getFirst().get("warehouse_id")), action);
+    permissions.checkInventoryWarehouse(menu, id(found.getFirst().get("warehouse_id")), action.code());
     return found.getFirst();
   }
 
@@ -106,7 +107,7 @@ public class ReceiptService {
   }
 
   private Map<String, Object> detailForMenu(long recordId, String menu) {
-    var rendered = masters.view(receipt(recordId, false, "查看", menu));
+    var rendered = masters.view(receipt(recordId, false, PermissionAction.VIEW, menu));
     rendered.put(
         "warehouseName",
         masters.row("warehouses", id(rendered.get("warehouseId")), false).get("name"));
@@ -116,7 +117,7 @@ public class ReceiptService {
     rendered.put(
         "events",
         repository.listEvents(auth.tenantId(), recordId).stream().map(masters::view).toList());
-    if (!permissions.inventoryWarehouseAllowed(menu, id(rendered.get("warehouseId")), "查看金额"))
+    if (!permissions.inventoryWarehouseAllowed(menu, id(rendered.get("warehouseId")), PermissionAction.VIEW_AMOUNT.code()))
       InventoryMoney.hide(rendered);
     custom.attach("inventory_receipt", rendered);
     return rendered;
@@ -131,7 +132,7 @@ public class ReceiptService {
   }
 
   public Object choices() {
-    permissions.require("inventoryReceipt", "查看");
+    permissions.require("inventoryReceipt", PermissionAction.VIEW);
     var result = new LinkedHashMap<String, Object>(masters.stockChoices(false));
     var viewable = permissions.inventoryWarehouses("inventoryReceipt", VIEW);
     var warehouseIds = new HashSet<Long>();
@@ -161,7 +162,7 @@ public class ReceiptService {
   }
 
   public Object materials(String q, int page, int size) {
-    permissions.require("inventoryReceipt", "查看");
+    permissions.require("inventoryReceipt", PermissionAction.VIEW);
     require(
         q.length() <= 200 && page >= 1 && size >= 1 && size <= 100,
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0032"));
@@ -181,8 +182,8 @@ public class ReceiptService {
 
   private Map<String, Object> saveForMenu(Long recordId, Map<String, Object> body, String menu) {
     mutex.enter();
-    permissions.require(menu, recordId == null ? "新增" : "编辑");
-    var previous = recordId == null ? null : receipt(recordId, true, "编辑", menu);
+    permissions.require(menu, recordId == null ? PermissionAction.CREATE : PermissionAction.EDIT);
+    var previous = recordId == null ? null : receipt(recordId, true, PermissionAction.EDIT, menu);
     if (previous != null) {
       require(
           text(previous, "status").equals("草稿"),
@@ -192,7 +193,7 @@ public class ReceiptService {
     long warehouseId = id(body.get("warehouseId"));
     require(warehouseId > 0, com.windasoft.eam.common.MessageContext.text("ui.equipment.text0614"));
     var warehouse = masters.row("warehouses", warehouseId, true);
-    permissions.checkInventoryWarehouse(menu, warehouseId, recordId == null ? "新增" : "编辑");
+    permissions.checkInventoryWarehouse(menu, warehouseId, recordId == null ? PermissionAction.CREATE.code() : PermissionAction.EDIT.code());
     require(
         flag(warehouse.get("enabled")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0035"));
@@ -243,7 +244,7 @@ public class ReceiptService {
       @SuppressWarnings("unchecked")
       var line = (Map<String, Object>) item;
       var old = originalLines.get(id(line.get("id")));
-      if (old != null && !permissions.inventoryWarehouseAllowed(menu, warehouseId, "查看金额")) {
+      if (old != null && !permissions.inventoryWarehouseAllowed(menu, warehouseId, PermissionAction.VIEW_AMOUNT.code())) {
         require(
             id(old.get("material_id")) == id(line.get("materialId")),
             com.windasoft.eam.common.MessageContext.text("server.inventory.message0165"));
@@ -328,7 +329,7 @@ public class ReceiptService {
 
   private Map<String, Object> confirmForMenu(long recordId, Map<String, Object> body, String menu) {
     mutex.enter();
-    var receipt = receipt(recordId, true, "入库", menu);
+    var receipt = receipt(recordId, true, PermissionAction.STOCK_IN, menu);
     if (text(receipt, "status").equals("已入库")) return detailForMenu(recordId, menu);
     require(
         text(receipt, "status").equals("草稿"),
@@ -466,7 +467,7 @@ public class ReceiptService {
   @Transactional
   public void delete(long recordId, Map<String, Object> body) {
     mutex.enter();
-    var raw = receipt(recordId, true, "删除");
+    var raw = receipt(recordId, true, PermissionAction.DELETE);
     require(
         text(raw, "status").equals("草稿"),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0182"));
@@ -488,7 +489,7 @@ public class ReceiptService {
   @Transactional
   public Map<String, Object> allocateFees(long recordId, Map<String, Object> body) {
     mutex.enter();
-    var raw = receipt(recordId, true, "编辑");
+    var raw = receipt(recordId, true, PermissionAction.EDIT);
     require(
         text(raw, "status").equals("草稿"),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0183"));

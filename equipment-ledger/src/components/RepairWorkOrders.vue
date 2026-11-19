@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
 import { isDepartmentCustomColumn } from '../businessConfig';
 import DepartmentValuesText from './common/DepartmentValuesText.vue';
 
@@ -371,7 +372,7 @@ async function transition(row: WorkOrder, action: string) {
   }
 }
 function rowAction(row: WorkOrder) {
-  if (row.status === '待派工' && props.grantedActions.includes('派工')) {
+  if (row.status === '待派工' && props.grantedActions.includes(PermissionAction.DISPATCH)) {
     dispatchTarget.value = row;
     dispatchPicker.value = true;
     return;
@@ -576,7 +577,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
     <AppListToolbar class="repair-toolbar">
       <div class="repair-actions">
         <ElButton
-          v-if="props.grantedActions.includes('报修')"
+          v-if="props.grantedActions.includes(PermissionAction.REPORT)"
           class="repair-primary"
           @click="openCreate"
           type="primary"
@@ -684,13 +685,13 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               <ElButton
                 link
                 type="primary"
-                v-if="(row.status==='待提交'&&row.reporterUserId===repairAuth.user?.id&&props.grantedActions.includes('报修'))||((row.status === '待派工'&&row.approvalGate!=='REQUIRED')&&props.grantedActions.includes('编辑'))"
+                v-if="(row.status==='待提交'&&row.reporterUserId===repairAuth.user?.id&&props.grantedActions.includes(PermissionAction.REPORT))||((row.status === '待派工'&&row.approvalGate!=='REQUIRED')&&props.grantedActions.includes(PermissionAction.EDIT))"
                 @click.stop="openEdit(row)"
               >
                 {{ tr('ui.equipment.text0207') }}</ElButton
               ><ElButton link type="primary" @click.stop="rowAction(row)">{{
                 row.status === '待派工'
-                  ? props.grantedActions.includes('派工')
+                  ? props.grantedActions.includes(PermissionAction.DISPATCH)
                     ? tr('ui.equipment.text1053')
                     : tr('ui.equipment.text0206')
                   : row.status === '待接单'
@@ -716,7 +717,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         <AppPagination v-model:page="page" v-model:page-size="pageSize" :total="total" />
         <ListToolbarIcons
           mode="footer"
-          :can-export="props.grantedActions.includes('导出')"
+          :can-export="props.grantedActions.includes(PermissionAction.EXPORT)"
           :export-busy="exporting"
           :columns-open="showColumns"
           @toggle-columns="showColumns = !showColumns"
@@ -861,7 +862,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               <div class="repair-transition-actions">
                 <template v-if="active.status === '待派工'"
                   ><ElButton
-                    v-if="props.grantedActions.includes('派工')"
+                    v-if="props.grantedActions.includes(PermissionAction.DISPATCH)"
                     class="repair-primary"
                     :disabled="submitting || uploading"
                     @click="transition(active, 'dispatch')"
@@ -869,7 +870,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   >
                     {{ tr('ui.equipment.text1073') }}</ElButton
                   ><ElButton
-                    v-if="props.grantedActions.includes('撤回')"
+                    v-if="props.grantedActions.includes(PermissionAction.WITHDRAW)"
                     class="repair-danger"
                     :disabled="submitting || uploading"
                     @click="transition(active, 'cancel')"
@@ -880,7 +881,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   </ElButton></template
                 ><template v-else-if="active.status === '处理中'"
                   ><ElButton
-                    v-if="props.grantedActions.includes('处理')"
+                    v-if="props.grantedActions.includes(PermissionAction.PROCESS)"
                     class="repair-primary"
                     :disabled="submitting || uploading"
                     @click="transition(active, 'complete')"
@@ -888,7 +889,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   >
                     {{ tr('ui.equipment.text1075') }}</ElButton
                   ><ElButton
-                    v-if="props.grantedActions.includes('处理')"
+                    v-if="props.grantedActions.includes(PermissionAction.PROCESS)"
                     class="repair-secondary"
                     :disabled="submitting || uploading"
                     @click="transition(active, 'suspend')"
@@ -897,7 +898,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   </ElButton></template
                 ><template v-else-if="active.status === '挂起'"
                   ><ElButton
-                    v-if="props.grantedActions.includes('处理')"
+                    v-if="props.grantedActions.includes(PermissionAction.PROCESS)"
                     class="repair-primary"
                     :disabled="submitting || uploading"
                     @click="transition(active, 'resume')"
@@ -907,7 +908,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   </ElButton></template
                 ><template v-else-if="active.status === '待验收'"
                   ><ElButton
-                    v-if="props.grantedActions.includes('验收')"
+                    v-if="props.grantedActions.includes(PermissionAction.ACCEPT)"
                     class="repair-primary"
                     :disabled="submitting || uploading"
                     @click="transition(active, 'accept')"
@@ -915,7 +916,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                   >
                     {{ tr('ui.equipment.text1077') }}</ElButton
                   ><ElButton
-                    v-if="props.grantedActions.includes('验收')"
+                    v-if="props.grantedActions.includes(PermissionAction.ACCEPT)"
                     class="repair-secondary"
                     :disabled="submitting || uploading"
                     @click="transition(active, 'return')"

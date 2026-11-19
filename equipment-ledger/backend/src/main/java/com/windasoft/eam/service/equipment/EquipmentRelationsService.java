@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.windasoft.eam.common.FieldValidationException;
 import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.equipment.EquipmentBomMaterialQuery;
 import com.windasoft.eam.dto.equipment.EquipmentBomMaterials;
 import com.windasoft.eam.entity.basedata.BaseItem;
@@ -125,20 +126,20 @@ public class EquipmentRelationsService {
     Long company;
     if (parentId != null) {
       var parent = device(parentId);
-      permissions.checkEquipment(parent, "编辑");
+      permissions.checkEquipment(parent, PermissionAction.EDIT);
       company = parent.getCompanyOrgId();
       if (departmentId != null) {
         var dept = permissions.requireDepartment(departmentId);
-        permissions.checkEquipmentDepartment(dept.getId(), "编辑");
+        permissions.checkEquipmentDepartment(dept.getId(), PermissionAction.EDIT.code());
         company = permissions.companyOfOrganization(dept.getId());
         var target = new Equipment();
         target.setCompanyOrgId(company);
         checkMove(parent, target);
       }
     } else {
-      permissions.require("equipment", "新增");
+      permissions.require("equipment", PermissionAction.CREATE);
       var dept = permissions.requireDepartment(departmentId);
-      permissions.checkEquipmentDepartment(dept.getId(), "新增");
+      permissions.checkEquipmentDepartment(dept.getId(), PermissionAction.CREATE.code());
       company = permissions.companyOfOrganization(dept.getId());
     }
     var excluded = new HashSet<Long>();
@@ -165,7 +166,7 @@ public class EquipmentRelationsService {
             size,
             query -> {
               permissions.filterEquipment(query);
-              permissions.filterEquipment(query, "编辑");
+              permissions.filterEquipment(query, PermissionAction.EDIT.code());
             });
     return Map.of(
         "data",
@@ -194,8 +195,8 @@ public class EquipmentRelationsService {
   }
 
   public EquipmentBomMaterials materials(EquipmentBomMaterialQuery query) {
-    if (!permissions.allowed("equipment", "新增")) {
-      permissions.require("equipment", "编辑");
+    if (!permissions.allowed("equipment", PermissionAction.CREATE)) {
+      permissions.require("equipment", PermissionAction.EDIT);
     }
 
     long total = materialRepository.countEnabledCandidates(auth.tenantId(), query.keyword());
@@ -288,8 +289,8 @@ public class EquipmentRelationsService {
         throw new LocalizedArgumentException(
             "server.equipment.message0019");
       var child = device(id);
-      permissions.checkEquipment(child, "查看");
-      permissions.checkEquipment(child, "编辑");
+      permissions.checkEquipment(child, PermissionAction.VIEW);
+      permissions.checkEquipment(child, PermissionAction.EDIT);
       if (!Objects.equals(parent.getCompanyOrgId(), child.getCompanyOrgId()))
         throw new LocalizedArgumentException(
             "server.equipment.message0020");

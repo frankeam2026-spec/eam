@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.dto.workflow.WorkflowDefinition;
 import com.windasoft.eam.dto.workflow.WorkflowDefinition.*;
@@ -76,7 +77,7 @@ class WorkflowMySqlIT {
               u.setDisplayName("workflow tester");
               return u;
             });
-    when(permissions.scope(eq("workflow"), anyString()))
+    when(permissions.scope(eq("workflow"), any(PermissionAction.class)))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     when(permissions.companyAllowed(eq("workflow"), anyString(), anyLong())).thenReturn(true);
     when(permissions.companyDepartments(anyLong()))

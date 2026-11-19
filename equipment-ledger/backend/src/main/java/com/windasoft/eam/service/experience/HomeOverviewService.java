@@ -3,6 +3,7 @@ package com.windasoft.eam.service.experience;
 import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.experience.HomeContracts.LayoutForm;
 import com.windasoft.eam.dto.experience.HomeContracts.Overview;
 import com.windasoft.eam.dto.experience.HomeContracts.Selected;
@@ -65,7 +66,7 @@ public class HomeOverviewService {
 
   boolean visible(Map<String, Object> b, Set<String> available) {
     return available.contains(text(b, "type"))
-        && (!text(b, "scope").equals("team") || permissions.allowed("workspace", "团队工作查看"));
+        && (!text(b, "scope").equals("team") || permissions.allowed("workspace", PermissionAction.VIEW_TEAM_WORK));
   }
 
   Map<String, Object> defaults(Selected selected, Set<String> available) {
@@ -84,7 +85,7 @@ public class HomeOverviewService {
       if (!available.contains(type) || seen.contains(type)) continue;
       if (!type.equals("work")
           && text(original, "scope").equals("team")
-          && !permissions.allowed("workspace", "团队工作查看")) continue;
+          && !permissions.allowed("workspace", PermissionAction.VIEW_TEAM_WORK)) continue;
       seen.add(type);
       var block = new LinkedHashMap<>(original);
       block.put("id", "overview-" + type);
@@ -127,7 +128,7 @@ public class HomeOverviewService {
 
   Map<String, Object> normalize(Map<String, Object> input, Set<String> available) {
     return OverviewLayoutSchema.normalize(
-        input, available, permissions.allowed("workspace", "团队工作查看"), home::normalize);
+        input, available, permissions.allowed("workspace", PermissionAction.VIEW_TEAM_WORK), home::normalize);
   }
 
   /** 选择模板仍复用首页授权，个人总览以完整复合键读取，不借管理模板权限扩大范围。 */

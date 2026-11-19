@@ -3,6 +3,7 @@ package com.windasoft.eam.service.maintenance;
 import static com.windasoft.eam.common.maintenance.MaintenanceSupport.deny;
 import static com.windasoft.eam.common.maintenance.MaintenanceSupport.require;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.maintenance.MaintenanceDownload;
 import com.windasoft.eam.dto.maintenance.MaintenanceFileView;
 import com.windasoft.eam.dto.maintenance.MaintenanceUpload;
@@ -44,7 +45,7 @@ public class MaintenanceFileService {
    * 上传只登记当前用户的附件，不建立计划或任务关联。文件复制不受数据库事务回滚保护， 复制或登记失败时删除本次 UUID 对应的文件，并保留原异常；HTTP 包装由 Controller 完成。
    */
   public MaintenanceFileView upload(MaintenanceUpload file) throws IOException {
-    require(permissions.anyMaintenance("查看"), "没有保养访问权限");
+    require(permissions.anyMaintenance(PermissionAction.VIEW), "没有保养访问权限");
     require(!file.empty() && file.size() <= MAX_UPLOAD_BYTES, "请选择不超过20MB的附件");
     String name = Path.of(Objects.toString(file.name(), "附件")).getFileName().toString();
     int dot = name.lastIndexOf('.');

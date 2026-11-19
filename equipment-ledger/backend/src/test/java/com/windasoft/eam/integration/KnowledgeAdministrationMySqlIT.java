@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.knowledge.KnowledgeChunkRepository;
 import com.windasoft.eam.repository.knowledge.KnowledgeDocumentRepository;
@@ -114,7 +115,7 @@ class KnowledgeAdministrationMySqlIT {
     company = IdWorker.getId();
     when(auth.tenantId()).thenReturn(tenant);
     when(auth.userId()).thenReturn(73001L);
-    when(permissions.scope(Mockito.anyString(), Mockito.anyString()))
+    when(permissions.scope(Mockito.anyString(), Mockito.any(PermissionAction.class)))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     db.update(
         "INSERT INTO eam_org_unit(id,tenant_id,name,code,org_type,status) VALUES(?,?,?,?,?,1)",
@@ -224,7 +225,7 @@ class KnowledgeAdministrationMySqlIT {
         org.springframework.web.server.ResponseStatusException.class,
         () -> documents.original(id, version));
     when(auth.tenantId()).thenReturn(tenant);
-    when(permissions.scope("knowledge", "查看"))
+    when(permissions.scope("knowledge", PermissionAction.VIEW))
         .thenReturn(new PermissionScope(false, null, Set.of(), false));
     assertEquals(0, documents.list("", 1, 20).total());
     org.junit.jupiter.api.Assertions.assertThrows(

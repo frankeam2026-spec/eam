@@ -1,5 +1,6 @@
 <script setup lang="ts">import { enumLabel } from '../i18n';
 import { tr } from '../i18n';
+import { PermissionAction } from '../permissionActions';
 
 import AppListToolbar from '../components/common/AppListToolbar.vue';
 import { ElMenu, ElMenuItem, ElMenuItemGroup, ElTableColumn } from 'element-plus';
@@ -66,7 +67,7 @@ const router = useRouter();
 
 const route = useRoute();
 
-function can(menu: string, action = '查看') {
+function can(menu: string, action: string = PermissionAction.VIEW) {
   return grantedActions.value[menu]?.includes(action) === true;
 }
 

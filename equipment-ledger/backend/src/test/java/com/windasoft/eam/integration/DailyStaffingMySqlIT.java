@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.repository.inspection.DailyArrangementRepository;
@@ -70,7 +71,7 @@ class DailyStaffingMySqlIT {
               u.setDisplayName("staffing tester " + actor.get());
               return u;
             });
-    when(permissions.inspection(anyString(), anyString()))
+    when(permissions.inspection(anyString(), any(PermissionAction.class)))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     when(permissions.companyOfOrganization(anyLong(), any())).thenReturn(71002L);
     when(permissions.companyOfOrganization(any())).thenReturn(71002L);
@@ -666,10 +667,10 @@ class DailyStaffingMySqlIT {
     var p = plan("open");
     long id = task(p);
     var t = tasks.task(id);
-    when(permissions.inspection("daily", "删除")).thenReturn(new PermissionScope(false, null, Set.of(), false));
+    when(permissions.inspection("daily", PermissionAction.DELETE)).thenReturn(new PermissionScope(false, null, Set.of(), false));
     assertEquals(false, tasks.task(id).get("canDelete"));
     assertThrows(Exception.class, () -> tasks.action(id, "delete", Map.of("rowVersion", t.get("rowVersion"), "description", "not allowed")));
-    when(permissions.inspection("daily", "删除")).thenReturn(new PermissionScope(true, null, Set.of(), false));
+    when(permissions.inspection("daily", PermissionAction.DELETE)).thenReturn(new PermissionScope(true, null, Set.of(), false));
     tasks.action(id, "start", Map.of("rowVersion", t.get("rowVersion")));
     db.update("UPDATE eam_inspection_task SET status='已过期',row_version=row_version+1 WHERE id=?", id);
     var expired = tasks.task(id);

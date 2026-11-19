@@ -1,5 +1,6 @@
 package com.windasoft.eam.service.planning;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.*;
 import com.windasoft.eam.repository.common.*;
 import com.windasoft.eam.repository.inspection.InspectionListRepository;
@@ -48,9 +49,9 @@ public class PlanningSelectorService {
 
   private void access(String module) {
     if (module.equals("maintenance")) {
-      if (!permissions.anyMaintenance("查看")) permissions.require("maintenanceTask", "查看");
+      if (!permissions.anyMaintenance(PermissionAction.VIEW)) permissions.require("maintenanceTask", PermissionAction.VIEW);
     } else if (module.equals("inspection")) {
-      if (!permissions.anyInspection("查看")) permissions.require("inspectionDailyTask", "查看");
+      if (!permissions.anyInspection(PermissionAction.VIEW)) permissions.require("inspectionDailyTask", PermissionAction.VIEW);
     } else
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.common.message0054");
   }
@@ -66,8 +67,8 @@ public class PlanningSelectorService {
       try {
         var scope =
             module.equals("maintenance")
-                ? permissions.maintenance(kind, "查看")
-                : permissions.inspection(kind, "查看");
+                ? permissions.maintenance(kind, PermissionAction.VIEW)
+                : permissions.inspection(kind, PermissionAction.VIEW);
         access =
             access.or(
                 SqlScopes.scope(
@@ -127,7 +128,7 @@ public class PlanningSelectorService {
         standardIds.isEmpty()
                 || !permissions.allowed(
                     module.equals("maintenance") ? "maintenanceStandard" : "inspectionStandard",
-                    "查看")
+                    PermissionAction.VIEW)
             ? List.of()
             : standards(module, q, null, standardIds).data());
   }
@@ -168,7 +169,7 @@ public class PlanningSelectorService {
               auth.tenantId(),
               auth.userId(),
               "standards",
-              permissions.maintenance("standards", "查看"),
+              permissions.maintenance("standards", PermissionAction.VIEW),
               false,
               null,
               query,
@@ -180,7 +181,7 @@ public class PlanningSelectorService {
           query.size(),
           maintenance.count(selected));
     }
-    var scope = permissions.inspection("standards", "查看");
+    var scope = permissions.inspection("standards", PermissionAction.VIEW);
     var selected =
         inspection.select(
             auth.tenantId(),

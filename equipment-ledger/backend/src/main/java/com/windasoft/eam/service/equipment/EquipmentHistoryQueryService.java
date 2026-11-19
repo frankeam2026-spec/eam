@@ -1,5 +1,6 @@
 package com.windasoft.eam.service.equipment;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.equipment.EquipmentHistoryView;
 import com.windasoft.eam.dto.equipment.EquipmentView;
 import com.windasoft.eam.entity.equipment.Equipment;
@@ -46,7 +47,7 @@ public class EquipmentHistoryQueryService {
             .filter(
                 row -> {
                   try {
-                    permissions.checkRepair(row, "查看");
+                    permissions.checkRepair(row, PermissionAction.VIEW);
                     return true;
                   } catch (ResponseStatusException denied) {
                     return false;

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.repair.RepairUpload;
 import com.windasoft.eam.entity.repair.RepairUploadRecord;
 import com.windasoft.eam.repository.repair.*;
@@ -45,7 +46,7 @@ class RepairFileAuthorizationTest {
     when(auth.tenantId()).thenReturn(10001L);
     when(auth.userId()).thenReturn(73001L);
     var permissions = mock(PermissionService.class);
-    when(permissions.allowed("repair", "报修")).thenReturn(true);
+    when(permissions.allowed("repair", PermissionAction.REPORT)).thenReturn(true);
     doThrow(new DataAccessResourceFailureException("test failure")).when(uploads).register(any());
     var service =
         new RepairFileService(

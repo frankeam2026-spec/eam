@@ -1,5 +1,6 @@
 package com.windasoft.eam.service.knowledge;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.knowledge.KnowledgeSearchRepository;
 import com.windasoft.eam.service.system.*;
 import java.util.*;
@@ -22,7 +23,7 @@ public class KnowledgeRetrievalService {
   }
   public List<Map<String,Object>> retrieve(String question,Long equipment) throws Exception {
     if(question==null || question.isBlank() || question.length()>2000)throw new IllegalArgumentException("问题须为1至2000个字符");
-    var scope=permissions.scope("knowledge","查看");
+    var scope=permissions.scope("knowledge",PermissionAction.VIEW);
     String model=embeddings.model();
     if(equipment!=null)equipmentQueries.get(equipment);
     var versions=equipment==null?repository.versions(auth.tenantId(),scope,model):repository.versions(auth.tenantId(),scope,model,equipment);
@@ -35,7 +36,7 @@ public class KnowledgeRetrievalService {
     for(var ranking:List.of(semantic,lexical))for(int i=0;i<ranking.size();i++)scores.merge(ranking.get(i),1.0/(60+i+1),Double::sum);
     var ids=scores.keySet().stream().sorted(Comparator.<Long>comparingDouble(scores::get).reversed().thenComparingLong(Long::longValue)).limit(12).toList();
     // Never trust vector payload authorization; re-read current publication and grants.
-    var rows=repository.chunks(auth.tenantId(),permissions.scope("knowledge","查看"),ids);
+    var rows=repository.chunks(auth.tenantId(),permissions.scope("knowledge",PermissionAction.VIEW),ids);
     var byId=new HashMap<String,Map<String,Object>>();rows.forEach(r->byId.put(r.get("chunkId").toString(),r));
     return ids.stream().map(id->byId.get(Long.toString(id))).filter(Objects::nonNull).limit(6).toList();
   }
@@ -49,8 +50,8 @@ public class KnowledgeRetrievalService {
   }
   public void recheck(List<Map<String,Object>> sources,Long equipment){
     var ids=sources.stream().map(s->Long.parseLong(s.get("chunkId").toString())).toList();
-    if(repository.chunks(auth.tenantId(),permissions.scope("knowledge","查看"),ids).size()!=ids.size())
+    if(repository.chunks(auth.tenantId(),permissions.scope("knowledge",PermissionAction.VIEW),ids).size()!=ids.size())
       throw new IllegalStateException("资料权限或发布版本已改变，请重新提问");
-    if(equipment!=null){equipmentQueries.get(equipment);var versions=repository.versions(auth.tenantId(),permissions.scope("knowledge","查看"),embeddings.model(),equipment);if(sources.stream().anyMatch(s->!versions.contains(Long.parseLong(s.get("versionId").toString()))))throw new IllegalStateException("资料适用设备已改变，请重新提问");}
+    if(equipment!=null){equipmentQueries.get(equipment);var versions=repository.versions(auth.tenantId(),permissions.scope("knowledge",PermissionAction.VIEW),embeddings.model(),equipment);if(sources.stream().anyMatch(s->!versions.contains(Long.parseLong(s.get("versionId").toString()))))throw new IllegalStateException("资料适用设备已改变，请重新提问");}
   }
 }

@@ -6,6 +6,7 @@ import com.windasoft.eam.domain.repair.RepairApprovalGate;
 import com.windasoft.eam.domain.repair.RepairEventLabel;
 import com.windasoft.eam.domain.repair.RepairNoticeKind;
 import com.windasoft.eam.domain.repair.RepairOrderStatus;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.repair.RepairApprovalValues;
 import com.windasoft.eam.dto.workflow.WorkflowHistoryRound;
 import com.windasoft.eam.entity.repair.RepairOrder;
@@ -139,7 +140,7 @@ public class RepairApprovalService {
     var row = lock(id);
     if (!Objects.equals(row.getReporterUserId(), auth.userId()))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅报修人可以重新提交");
-    permissions.checkRepair(row, "报修");
+    permissions.checkRepair(row, PermissionAction.REPORT);
     VersionGuard.check(row.getRowVersion(), version);
     if (!RepairOrderStatus.PENDING_SUBMISSION.code().equals(row.getStatus()))
       throw new IllegalArgumentException("只有退回的报修可以重新提交");

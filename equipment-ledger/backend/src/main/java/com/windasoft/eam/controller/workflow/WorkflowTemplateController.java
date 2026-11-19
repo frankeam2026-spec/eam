@@ -54,7 +54,7 @@ public class WorkflowTemplateController {
   }
 
   @GetMapping("/companies")
-  public DataResponse<List<Company>> companies(@RequestParam(defaultValue = "查看") String action) {
+  public DataResponse<List<Company>> companies(@RequestParam(required = false) String action) {
     return new DataResponse<>(service.companies(action));
   }
 

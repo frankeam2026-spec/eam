@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
 import { tr, enumLabel } from '../i18n';
 
 import PagedChoiceField from './common/PagedChoiceField.vue';
@@ -122,7 +123,7 @@ const ownerOptions = computed(() => [
   ...(editing.value?.owners || []).filter((u) => !employees.value.some((x) => x.id === u.id)),
 ]);
 const loadOwnerCandidates = (q: string, page: number, size: number) =>
-  equipmentOwnerCandidates(q, page, size, props.isNew ? '新增' : '编辑');
+  equipmentOwnerCandidates(q, page, size, props.isNew ? PermissionAction.CREATE : PermissionAction.EDIT);
 function rememberOwners(rows: SelectorRow[]) {
   employees.value = [
     ...new Map(
@@ -201,7 +202,7 @@ const organizations = ref<OrganizationRecord[]>([]);
 const organizationError = ref('');
 async function loadOrganizations() {
   try {
-    const result = await equipmentBatchOptions(props.isNew ? '新增' : '编辑');
+    const result = await equipmentBatchOptions(props.isNew ? PermissionAction.CREATE : PermissionAction.EDIT);
     organizations.value = result.departments;
     employees.value = result.users;
     if (

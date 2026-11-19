@@ -3,6 +3,7 @@ package com.windasoft.eam.service.experience;
 import static com.windasoft.eam.common.experience.ExperienceSupport.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.experience.AnomalyDownload;
 import com.windasoft.eam.dto.experience.AnomalyUpload;
 import com.windasoft.eam.repository.experience.AnomalyFileRepository;
@@ -36,8 +37,8 @@ public class AnomalyFileService {
 
   public Object upload(AnomalyUpload file) throws Exception {
     check(
-        permissions.allowed("anomaly", "新增")
-            || permissions.allowed("anomaly", "消除")
+        permissions.allowed("anomaly", PermissionAction.CREATE)
+            || permissions.allowed("anomaly", PermissionAction.RESOLVE_ANOMALY)
             || permissions.menuActions().containsKey("maintenanceTask")
             || permissions.menuActions().containsKey("inspectionDailyTask")
             || permissions.menuActions().containsKey("inspectionPeriodicTask"),

@@ -14,6 +14,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.controller.equipment.EquipmentSelectionController;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.entity.equipment.Equipment;
 import com.windasoft.eam.entity.inventory.Material;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
@@ -90,7 +91,7 @@ class EquipmentBomMaterialsMySqlIT {
   void fixture() {
     when(auth.tenantId()).thenReturn(TENANT);
     when(auth.userId()).thenReturn(73001L);
-    when(permissions.allowed("equipment", "新增")).thenReturn(true);
+    when(permissions.allowed("equipment", PermissionAction.CREATE)).thenReturn(true);
     for (int i = 0; i < 5; i++) {
       db.update(
           "INSERT INTO inv_material(id,tenant_id,code,name,unit,model,category,enabled)"
@@ -392,12 +393,12 @@ class EquipmentBomMaterialsMySqlIT {
 
   @Test
   void editPermissionIsStillAnAlternativeAndDenialRunsNoSelect() throws Exception {
-    when(permissions.allowed("equipment", "新增")).thenReturn(false);
+    when(permissions.allowed("equipment", PermissionAction.CREATE)).thenReturn(false);
     mvc.perform(get("/api/v1/equipment/bom-materials")).andExpect(status().isOk());
-    verify(permissions).require("equipment", "编辑");
+    verify(permissions).require("equipment", PermissionAction.EDIT);
     doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN))
         .when(permissions)
-        .require("equipment", "编辑");
+        .require("equipment", PermissionAction.EDIT);
     long before = selects();
     mvc.perform(get("/api/v1/equipment/bom-materials")).andExpect(status().isForbidden());
     assertEquals(0L, selects() - before);

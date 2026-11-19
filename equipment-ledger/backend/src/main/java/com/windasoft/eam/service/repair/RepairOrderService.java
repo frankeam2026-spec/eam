@@ -6,6 +6,7 @@ import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.domain.repair.RepairApprovalGate;
 import com.windasoft.eam.domain.repair.RepairOrderStatus;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.repair.RepairAction;
 import com.windasoft.eam.dto.repair.RepairForm;
 import com.windasoft.eam.dto.repair.RepairOrderView;
@@ -77,7 +78,7 @@ public class RepairOrderService {
     var row = new RepairOrder();
     copy(form, row);
     setEquipmentAndReporter(row, form.equipmentCode());
-    permissions.checkRepair(row, "报修");
+    permissions.checkRepair(row, PermissionAction.REPORT);
     String month =
         LocalDate.now(ZoneId.of("Asia/Shanghai")).format(DateTimeFormatter.ofPattern("yyyyMM"));
     numbers.nextMonthlyNumber("repair-" + auth.tenantId(), month);
@@ -121,7 +122,7 @@ public class RepairOrderService {
     boolean ownReturned =
         RepairOrderStatus.PENDING_SUBMISSION.code().equals(row.getStatus())
             && Objects.equals(row.getReporterUserId(), auth.userId());
-    permissions.checkRepair(row, ownReturned ? "报修" : "编辑");
+    permissions.checkRepair(row, ownReturned ? PermissionAction.REPORT : PermissionAction.EDIT);
     VersionGuard.check(row.getRowVersion(), rowVersion);
     Long originalCompany = row.getCompanyOrgId();
     if (!ownReturned
@@ -130,7 +131,7 @@ public class RepairOrderService {
       throw new LocalizedArgumentException("server.repair.message0041");
     copy(form, row);
     setEquipment(row, form.equipmentCode());
-    permissions.checkRepair(row, ownReturned ? "报修" : "编辑");
+    permissions.checkRepair(row, ownReturned ? PermissionAction.REPORT : PermissionAction.EDIT);
     approvals.requireCompanyChangeAllowed(originalCompany, row);
     VersionGuard.updated(repository.update(row));
     relations.saveReport(row);
@@ -174,12 +175,12 @@ public class RepairOrderService {
     }
     var row = require(id);
     String next;
-    String requiredAction =
+    PermissionAction requiredAction =
         switch (request.action()) {
-          case "dispatch" -> "派工";
-          case "complete", "suspend", "resume" -> "处理";
-          case "accept", "reject", "return" -> "验收";
-          case "cancel" -> "撤回";
+          case "dispatch" -> PermissionAction.DISPATCH;
+          case "complete", "suspend", "resume" -> PermissionAction.PROCESS;
+          case "accept", "reject", "return" -> PermissionAction.ACCEPT;
+          case "cancel" -> PermissionAction.WITHDRAW;
           default -> throw new LocalizedArgumentException("server.repair.message0025");
         };
     permissions.checkRepair(row, requiredAction);
@@ -265,7 +266,7 @@ public class RepairOrderService {
   private void setEquipment(RepairOrder row, String code) {
     var equipment = equipmentRows.findByCode(auth.tenantId(), code);
     if (equipment == null) throw new LocalizedArgumentException("server.common.message0064");
-    permissions.checkEquipment(equipment, "查看");
+    permissions.checkEquipment(equipment, PermissionAction.VIEW);
     row.setEquipmentId(equipment.getId());
     row.setCompanyOrgId(equipment.getCompanyOrgId());
     row.setEquipmentCode(equipment.getEquipmentCode());

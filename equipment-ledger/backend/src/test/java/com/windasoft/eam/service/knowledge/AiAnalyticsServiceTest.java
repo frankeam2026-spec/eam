@@ -1,4 +1,6 @@
 package com.windasoft.eam.service.knowledge;
+
+import com.windasoft.eam.domain.system.PermissionAction;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,7 +10,7 @@ import java.util.*;
 import org.junit.jupiter.api.Test;
 class AiAnalyticsServiceTest {
   @Test void faultRateNeverSilentlyBecomesReportCount() throws Exception {
-    var metrics=mock(HomeAnalyticsService.class);var gateway=mock(AiGateway.class);var permissions=mock(PermissionService.class);when(permissions.allowed("workspace","查看")).thenReturn(true);
+    var metrics=mock(HomeAnalyticsService.class);var gateway=mock(AiGateway.class);var permissions=mock(PermissionService.class);when(permissions.allowed("workspace",PermissionAction.VIEW)).thenReturn(true);
     var service=new AiAnalyticsService(metrics,gateway,permissions,new ObjectMapper());
     var result=(Map<?,?>)service.tryAnswer("上月故障率排行",List.of());assertTrue(result.get("answer").toString().contains("分母"));verifyNoInteractions(metrics,gateway);
   }

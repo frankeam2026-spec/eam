@@ -11,6 +11,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.experience.HomeTemplateVersionRepository;
 import com.windasoft.eam.repository.inspection.InspectionDefinitionStorage;
 import com.windasoft.eam.repository.maintenance.MaintenanceTypeRepository;
@@ -123,10 +124,10 @@ class InspectionQualityMySqlIT {
   @Test
   void templatesRemainIdempotentAndPermissionDenialCannotSeed() {
     var denied = new ResponseStatusException(HttpStatus.FORBIDDEN);
-    doThrow(denied).when(permissions).require("homeTemplate", "查看");
+    doThrow(denied).when(permissions).require("homeTemplate", PermissionAction.VIEW);
     assertThrows(ResponseStatusException.class, home::templates);
     assertEquals(0L, count("eam_home_template"));
-    Mockito.doNothing().when(permissions).require("homeTemplate", "查看");
+    Mockito.doNothing().when(permissions).require("homeTemplate", PermissionAction.VIEW);
     var first = home.templates();
     long templates = count("eam_home_template");
     assertTrue(templates > 0);
@@ -185,7 +186,7 @@ class InspectionQualityMySqlIT {
         .when(maintenanceRepository)
         .list(TENANT);
     assertEquals(List.of(), maintenance.exportRows("types"));
-    Mockito.verify(permissions).require("maintenanceType", "导出");
-    Mockito.verify(permissions).require("maintenanceType", "查看");
+    Mockito.verify(permissions).require("maintenanceType", PermissionAction.EXPORT);
+    Mockito.verify(permissions).require("maintenanceType", PermissionAction.VIEW);
   }
 }

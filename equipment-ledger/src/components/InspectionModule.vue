@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
 import ReminderPolicyField from './common/ReminderPolicyField.vue';
 import AppHelpTip from './common/AppHelpTip.vue';
 import { isDepartmentCustomColumn } from '../businessConfig';
@@ -634,10 +635,10 @@ async function approveExemption() {
 }
 function planMoreActions(row: InspectionDefinition | InspectionTask) {
   return [
-    ...(daily.value && auth.can('inspectionDailyTask', '免检')
+    ...(daily.value && auth.can('inspectionDailyTask', PermissionAction.EXEMPT)
       ? [{ label: tr('daily.rangeExemption'), run: () => openExemption(row) }]
       : []),
-    ...(can('删除')
+    ...(can(PermissionAction.DELETE)
       ? [{ label: tr('ui.equipment.text0146'), danger: true, run: () => remove(row) }]
       : []),
   ];
@@ -1120,7 +1121,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       <div class="task-list-content">
         <AppListToolbar class="inspection-toolbar">
           <div class="inspection-toolbar-actions">
-            <ElButton v-if="!isTasks && can('新增')" type="primary" @click="open()"
+            <ElButton v-if="!isTasks && can(PermissionAction.CREATE)" type="primary" @click="open()"
               ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}</ElButton
             ><ElButton v-if="isTasks" :disabled="!selected.length" @click="openBatchReview">{{
               tr('ui.equipment.text0294')
@@ -1308,7 +1309,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                       ></template
                     ><template v-else
                       ><ElButton
-                        v-if="can('编辑')"
+                        v-if="can(PermissionAction.EDIT)"
                         class="inspection-text-button"
                         @click="open(r)"
                         type="primary"
@@ -1316,7 +1317,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                       >
                         {{ tr('ui.equipment.text0207') }}</ElButton
                       ><ElButton
-                        v-if="can('新增')"
+                        v-if="can(PermissionAction.CREATE)"
                         class="inspection-text-button"
                         @click="copy(r)"
                         type="primary"
@@ -1326,12 +1327,12 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                       ><RowMoreActions
                         v-if="
                           daily
-                            ? can('编辑') || auth.can('inspectionDailyTask', '免检') || can('删除')
-                            : can('删除') && can('编辑') && can('新增')
+                            ? can(PermissionAction.EDIT) || auth.can('inspectionDailyTask', PermissionAction.EXEMPT) || can(PermissionAction.DELETE)
+                            : can(PermissionAction.DELETE) && can(PermissionAction.EDIT) && can(PermissionAction.CREATE)
                         "
                         :actions="planMoreActions(r)"
                       /><ElButton
-                        v-else-if="can('删除')"
+                        v-else-if="can(PermissionAction.DELETE)"
                         class="inspection-text-button danger"
                         @click="remove(r)"
                         type="danger"
@@ -1359,7 +1360,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               :total="listTotal"
             /><ListToolbarIcons
               mode="footer"
-              :can-export="can('导出')"
+              :can-export="can(PermissionAction.EXPORT)"
               :filter-open="false"
               :columns-open="columnsOpen"
               @toggle-columns="columnsOpen = !columnsOpen"
@@ -1865,8 +1866,8 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           :choices="choices"
           :errors="dailyErrors"
           :project-options="dailyProjectOptions"
-          :can-create-team="can('新增')"
-          :can-edit-team="can('编辑')"
+          :can-create-team="can(PermissionAction.CREATE)"
+          :can-edit-team="can(PermissionAction.EDIT)"
           @people="rememberPeople"
         />
         <div v-if="!standard" v-show="!daily || dailyEditorTab === 'basic'">
@@ -2158,7 +2159,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 <ElButton
                   class="inspection-text-button"
                   :disabled="busy"
-                  v-if="auth.can('inspectionType', '编辑')"
+                  v-if="auth.can('inspectionType', PermissionAction.EDIT)"
                   @click="typeForm = { ...emptyInspection(), ...t }"
                   native-type="button"
                   type="primary"
@@ -2169,7 +2170,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 <ElButton
                   class="inspection-text-button danger"
                   :disabled="busy"
-                  v-if="auth.can('inspectionType', '删除')"
+                  v-if="auth.can('inspectionType', PermissionAction.DELETE)"
                   @click="deleteType(t)"
                   native-type="button"
                   type="danger"
@@ -2237,7 +2238,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             >{{ typeForm.id ? tr('ui.equipment.text0415') : tr('ui.equipment.text0076') }}</ElButton
           >
           <ElButton
-            v-if="auth.can('inspectionType', typeForm.id ? '编辑' : '新增')"
+            v-if="auth.can('inspectionType', typeForm.id ? PermissionAction.EDIT : PermissionAction.CREATE)"
             type="primary"
             :loading="busy"
             @click="saveType"

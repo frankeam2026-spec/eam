@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PermissionAction } from '../permissionActions';
 import { isDepartmentCustomColumn } from '../businessConfig';
 import DepartmentValuesText from './common/DepartmentValuesText.vue';
 function departmentCustomIds(fields: unknown, key: string) {
@@ -219,7 +220,7 @@ const direct = computed(() => form.value.sourceKind === '直接出库');
 const writable = computed(
   () =>
     form.value.status === '草稿' &&
-    (direct.value ? can(form.value.id ? '编辑草稿' : '新增直接出库') : can('确认出库')),
+    (direct.value ? can(form.value.id ? PermissionAction.EDIT_DRAFT : PermissionAction.CREATE_DIRECT_OUTBOUND) : can(PermissionAction.CONFIRM_ISSUE)),
 );
 const guard = useUnsavedChanges(
   () => form.value,
@@ -312,7 +313,7 @@ const fields = computed(() =>
         Object.entries({
           ...documentFields,
           ...Object.fromEntries(extensionColumns.value.map((c) => [c.key, c.label])),
-        }).filter(([k]) => k !== 'totalAmount' || can('查看金额')),
+        }).filter(([k]) => k !== 'totalAmount' || can(PermissionAction.VIEW_AMOUNT)),
       ),
 );
 const columns = ref<string[]>([]);
@@ -421,7 +422,7 @@ async function load() {
   try {
     if (editing.value) {
       invalidateList();
-      if (can('查看')) {
+      if (can(PermissionAction.VIEW)) {
         const options = await request<{ data: typeof choices.value }>(
           '/inventory/outbounds/choices?paged=true',
         );
@@ -439,7 +440,7 @@ async function load() {
               ).data
             : empty()
           : (await request<{ data: Outbound }>(`/inventory/outbounds/${route.params.id}`)).data;
-      if (loaded.warehouseId && can('查看')) {
+      if (loaded.warehouseId && can(PermissionAction.VIEW)) {
         const [people, tasks] = await Promise.all([
           loaded.recipientId
             ? request<SelectorPage<SelectorRow>>(
@@ -530,9 +531,9 @@ function select(id: string, checked: boolean) {
 }
 function pendingActions(r: Pending) {
   return [
-    ...(can('预留') ? [{ get label() { return tr('ui.equipment.text0537'); }, run: () => requestAction(r, 'reserve') }] : []),
-    ...(can('释放预留') ? [{ get label() { return tr('ui.equipment.text0538'); }, run: () => requestAction(r, 'release') }] : []),
-    ...(can('关闭剩余需求')
+    ...(can(PermissionAction.RESERVE) ? [{ get label() { return tr('ui.equipment.text0537'); }, run: () => requestAction(r, 'reserve') }] : []),
+    ...(can(PermissionAction.RELEASE_RESERVATION) ? [{ get label() { return tr('ui.equipment.text0538'); }, run: () => requestAction(r, 'release') }] : []),
+    ...(can(PermissionAction.CLOSE_REMAINDER)
       ? [{ get label() { return tr('ui.equipment.text0539'); }, danger: true, run: () => requestAction(r, 'close-remaining') }]
       : []),
   ];
@@ -950,10 +951,10 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
       />
       <AppListToolbar class="outbound-toolbar">
         <div class="outbound-actions">
-          <ElButton type="primary" v-if="can('新增直接出库')" :title="tr('ui.equipment.text0545')" @click="newDirect"
+          <ElButton type="primary" v-if="can(PermissionAction.CREATE_DIRECT_OUTBOUND)" :title="tr('ui.equipment.text0545')" @click="newDirect"
             ><AppIcon name="Plus" /> {{ tr('ui.equipment.text0149') }}</ElButton
           ><ElButton
-            v-if="pending && can('确认出库')"
+            v-if="pending && can(PermissionAction.CONFIRM_ISSUE)"
             :disabled="!selected.length"
             @click="issue()"
             >{{ selected.length > 1 ? tr('ui.equipment.text0546') : tr('ui.equipment.text0504') }}</ElButton
@@ -1023,7 +1024,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0145') }}</div></template
               ><template #default="{ row: r, $index: tableRowIndex }">
                 <template v-if="pending"
-                  ><ElButton v-if="can('确认出库')" link type="primary" @click="issue([r.id])"
+                  ><ElButton v-if="can(PermissionAction.CONFIRM_ISSUE)" link type="primary" @click="issue([r.id])"
                     >{{ tr('ui.equipment.text0504') }}</ElButton
                   ><ElButton
                     link
@@ -1034,21 +1035,21 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 ><template v-else
                   ><ElButton link type="primary" @click="openDocument(r.id)">{{ tr('ui.equipment.text0206') }}</ElButton
                   ><ElButton
-                    v-if="r.status === '草稿' && can('编辑草稿')"
+                    v-if="r.status === '草稿' && can(PermissionAction.EDIT_DRAFT)"
                     link
                     type="primary"
                     @click="openDocument(r.id)"
                     >{{ tr('ui.equipment.text0207') }}</ElButton
                   >
                   <ElButton
-                    v-if="can('打印') && (r.status !== '草稿' || !can('编辑草稿'))"
+                    v-if="can(PermissionAction.PRINT) && (r.status !== '草稿' || !can(PermissionAction.EDIT_DRAFT))"
                     link
                     type="primary"
                     @click="openPrint(r)"
                     >{{ tr('ui.equipment.text0549') }}</ElButton
                   >
                   <RowMoreActions
-                    v-if="can('打印') && r.status === '草稿' && can('编辑草稿')"
+                    v-if="can(PermissionAction.PRINT) && r.status === '草稿' && can(PermissionAction.EDIT_DRAFT)"
                     :actions="[{ label: '打印', run: () => openPrint(r) }]"
                   />
                 </template> </template></ElTableColumn
@@ -1069,7 +1070,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
             mode="footer"
             :filter-open="false"
             :columns-open="columnsOpen"
-            :can-export="can('导出')"
+            :can-export="can(PermissionAction.EXPORT)"
             @toggle-columns="columnsOpen = !columnsOpen"
             @export="exportRows"
             ><template #columns
@@ -1120,7 +1121,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         </div>
         <div class="outbound-actions">
           <ElButton
-            v-if="form.id && can('打印')"
+            v-if="form.id && can(PermissionAction.PRINT)"
             :disabled="busy || guard.dirty.value"
             :title="guard.dirty.value ? tr('ui.equipment.text0557') : tr('ui.equipment.text0558')"
             @click="openPrint(form)"
@@ -1128,20 +1129,20 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           >
 
           <ElButton
-            v-if="form.id && writable && can('删除草稿')"
+            v-if="form.id && writable && can(PermissionAction.DELETE_DRAFT)"
             type="danger"
             text
             @click="removeDraft"
             >{{ tr('ui.equipment.text0146') }}</ElButton
           ><ElButton
-            v-if="form.status === '已出库' && auth.can('inventoryReturn', '新增')"
+            v-if="form.status === '已出库' && auth.can('inventoryReturn', PermissionAction.CREATE)"
             @click="correction('returns')"
             >{{ tr('ui.equipment.text0505') }}</ElButton
           ><ElButton
             v-if="
               form.status === '已出库' &&
               !form.id.startsWith('g') &&
-              auth.can('inventoryReversal', '新增')
+              auth.can('inventoryReversal', PermissionAction.CREATE)
             "
             @click="correction('reversals')"
             >{{ tr('ui.equipment.text0559') }}</ElButton
@@ -1428,13 +1429,13 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                     {{ number(a.usedQuantity) }} / {{ number(a.returnedQuantity) }}
                   </template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
-                <ElTableColumn v-if="can('查看金额')" :min-width="150" class-name="numeric"
+                <ElTableColumn v-if="can(PermissionAction.VIEW_AMOUNT)" :min-width="150" class-name="numeric"
                   ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0590') }}</div></template
                   ><template #default="{ row: a, $index: i }">{{
                     number(a.unitCost)
                   }}</template></ElTableColumn
                 ><!-- @vue-generic {TableColumnRow3} -->
-                <ElTableColumn v-if="can('查看金额')" :min-width="150" class-name="numeric"
+                <ElTableColumn v-if="can(PermissionAction.VIEW_AMOUNT)" :min-width="150" class-name="numeric"
                   ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0591') }}</div></template
                   ><template #default="{ row: a, $index: i }">{{
                     number(a.amount)
@@ -1454,7 +1455,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
                 ></AppBusinessTable
               >
             </div>
-            <div v-if="can('查看金额')" class="outbound-total">
+            <div v-if="can(PermissionAction.VIEW_AMOUNT)" class="outbound-total">
               {{ tr('ui.equipment.text0595') }}{{ number(form.totalAmount) }}
             </div>
           </section>
@@ -1474,7 +1475,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
         ><ElButton :disabled="busy" @click="back">{{ writable ? tr('ui.equipment.text0157') : tr('ui.equipment.text0208') }}</ElButton
         ><ElButton v-if="writable" :loading="busy" @click="save">{{ tr('ui.equipment.text0159') }}</ElButton
         ><ElButton
-          v-if="writable && can('确认出库')"
+          v-if="writable && can(PermissionAction.CONFIRM_ISSUE)"
           type="primary"
           :loading="busy"
           @click="showPreview"
@@ -1529,13 +1530,13 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
               number(a.quantity)
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow4} -->
-          <ElTableColumn v-if="can('查看金额')" :min-width="150" class-name="numeric"
+          <ElTableColumn v-if="can(PermissionAction.VIEW_AMOUNT)" :min-width="150" class-name="numeric"
             ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0590') }}</div></template
             ><template #default="{ row: a, $index: i }">{{
               number(a.unitCost)
             }}</template></ElTableColumn
           ><!-- @vue-generic {TableColumnRow4} -->
-          <ElTableColumn v-if="can('查看金额')" :min-width="150" class-name="numeric"
+          <ElTableColumn v-if="can(PermissionAction.VIEW_AMOUNT)" :min-width="150" class-name="numeric"
             ><template #header><div class="table-header-label">{{ tr('ui.equipment.text0591') }}</div></template
             ><template #default="{ row: a, $index: i }">{{
               number(a.amount)
@@ -1543,7 +1544,7 @@ const { filterAnchor, editingFilter, showFilter, replaceFilters, confirmFilter }
           ></AppBusinessTable
         >
       </div>
-      <div v-if="can('查看金额')" class="outbound-total">
+      <div v-if="can(PermissionAction.VIEW_AMOUNT)" class="outbound-total">
         {{ tr('ui.equipment.text0595') }}{{ number(preview?.totalAmount) }}
       </div>
       <template #footer

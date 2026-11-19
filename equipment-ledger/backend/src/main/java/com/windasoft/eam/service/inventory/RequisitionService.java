@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.inventory.InventorySelectorRow;
 import com.windasoft.eam.dto.inventory.RequisitionDetail;
 import com.windasoft.eam.dto.inventory.RequisitionDraftForm;
@@ -171,7 +172,7 @@ public class RequisitionService {
                   && workflow.approved("repair_report", taskId)),
           "报修尚未审批通过，不能领料");
       if (checkAccess) {
-        permissions.checkRepair(repository.findRepair(taskId), "查看");
+        permissions.checkRepair(repository.findRepair(taskId), PermissionAction.VIEW);
       }
       company = permissions.companyOfOrganization(source.departmentOrgId());
       if (company == null) {
@@ -196,7 +197,7 @@ public class RequisitionService {
     return new Task(company, source.code(), source.status());
   }
 
-  private Map<String, Object> row(long requestId, boolean lock, String action) {
+  private Map<String, Object> row(long requestId, boolean lock, PermissionAction action) {
     var rows = repository.loadRequest(auth.tenantId(), requestId, lock);
     require(
         !rows.isEmpty(),
@@ -206,16 +207,26 @@ public class RequisitionService {
     return raw;
   }
 
-  private void checkAccess(long requestId, long applicantId, long warehouseId, String action) {
-    if (!(action.equals("查看") && workflow.participant("requisition", requestId))
-        && !(applicantId == auth.userId() && Set.of("查看", "新增", "编辑").contains(action))) {
-      if (Set.of("出库", "预留", "释放预留", "确认出库", "关闭剩余需求").contains(action)) {
-        permissions.checkInventoryWarehouse(
-            "inventoryOutbound", warehouseId, action.equals("出库") ? "确认出库" : action);
-      } else if (action.equals("查看")
-          && permissions.inventoryWarehouseAllowed("inventoryOutbound", warehouseId, "查看")) {
+  /** 保留申请人与审批参与者的原查看范围；出库动作按出库菜单校验仓库权限。 */
+  private void checkAccess(
+      long requestId, long applicantId, long warehouseId, PermissionAction action) {
+    if (!(action == PermissionAction.VIEW && workflow.participant("requisition", requestId))
+        && !(applicantId == auth.userId()
+            && Set.of(PermissionAction.VIEW, PermissionAction.CREATE, PermissionAction.EDIT)
+                .contains(action))) {
+      if (Set.of(
+              PermissionAction.STOCK_OUT, PermissionAction.RESERVE,
+              PermissionAction.RELEASE_RESERVATION, PermissionAction.CONFIRM_ISSUE,
+              PermissionAction.CLOSE_REMAINDER)
+          .contains(action)) {
+        var warehouseAction =
+            action == PermissionAction.STOCK_OUT ? PermissionAction.CONFIRM_ISSUE : action;
+        permissions.checkInventoryWarehouse("inventoryOutbound", warehouseId, warehouseAction.code());
+      } else if (action == PermissionAction.VIEW
+          && permissions.inventoryWarehouseAllowed(
+              "inventoryOutbound", warehouseId, PermissionAction.VIEW.code())) {
       } else {
-        permissions.checkInventoryWarehouse("inventoryRequisition", warehouseId, action);
+        permissions.checkInventoryWarehouse("inventoryRequisition", warehouseId, action.code());
       }
     }
   }
@@ -230,9 +241,9 @@ public class RequisitionService {
             .filter(
                 user ->
                     permissions.inventoryWarehouseUser(
-                            user, "inventoryOutbound", id(warehouse.get("id")), "确认出库")
+                            user, "inventoryOutbound", id(warehouse.get("id")), PermissionAction.CONFIRM_ISSUE.code())
                         && permissions.inventoryWarehouseUser(
-                            user, "inventoryOutbound", id(warehouse.get("id")), "查看"))
+                            user, "inventoryOutbound", id(warehouse.get("id")), PermissionAction.VIEW.code()))
             .toList();
 
     for (long recipient : recipients)
@@ -303,12 +314,12 @@ public class RequisitionService {
     require(
         header != null,
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0213"));
-    checkAccess(requestId, header.getApplicantId(), header.getWarehouseId(), "查看");
+    checkAccess(requestId, header.getApplicantId(), header.getWarehouseId(), PermissionAction.VIEW);
     var warehouse = requiredWarehouse(header.getWarehouseId(), false);
     boolean showMoney =
-        permissions.inventoryWarehouseAllowed("inventoryOutbound", header.getWarehouseId(), "查看金额")
+        permissions.inventoryWarehouseAllowed("inventoryOutbound", header.getWarehouseId(), PermissionAction.VIEW_AMOUNT.code())
             || permissions.inventoryWarehouseAllowed(
-                "inventoryRequisition", header.getWarehouseId(), "查看金额");
+                "inventoryRequisition", header.getWarehouseId(), PermissionAction.VIEW_AMOUNT.code());
     var allocations =
         drafts.allocations(auth.tenantId(), requestId).stream()
             .collect(
@@ -370,7 +381,7 @@ public class RequisitionService {
               && Objects.equals(order.getAssigneeUserId(), auth.userId())
               && Set.of("处理中", "挂起").contains(order.getStatus()),
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0214"));
-      permissions.checkRepair(order, "查看");
+      permissions.checkRepair(order, PermissionAction.VIEW);
     } else {
       var view = kind.equals("保养") ? maintenance.task(taskId) : inspectionTasks.task(taskId);
       require(
@@ -393,14 +404,14 @@ public class RequisitionService {
                     taskKind,
                     taskId)
                 .data();
-    boolean create = permissions.allowed("inventoryRequisition", "新增");
+    boolean create = permissions.allowed("inventoryRequisition", PermissionAction.CREATE);
     var warehouses =
         repository.listApplicantWarehouseChoices(auth.tenantId()).stream()
             .filter(
                 w ->
                     !create
                         || permissions.inventoryWarehouseAllowed(
-                            "inventoryRequisition", id(w.get("id")), "新增"))
+                            "inventoryRequisition", id(w.get("id")), PermissionAction.CREATE.code()))
             .map(masters::view)
             .filter(
                 w ->
@@ -440,7 +451,7 @@ public class RequisitionService {
     for (var r : repository.listRepairs(auth.tenantId())) {
       if (!active(r.getStatus())) continue;
       try {
-        permissions.checkRepair(r, "查看");
+        permissions.checkRepair(r, PermissionAction.VIEW);
         var t = task("维修", r.getId(), false, false);
         tasks.add(
             Map.of(
@@ -463,11 +474,11 @@ public class RequisitionService {
     for (String kind : List.of("保养", "点巡检"))
       for (var r :
           kind.equals("保养")
-              ? (permissions.allowed("maintenanceTask", "查看")
+              ? (permissions.allowed("maintenanceTask", PermissionAction.VIEW)
                   ? maintenance.tasks()
                   : List.<Map<String, Object>>of())
-              : ((permissions.allowed("inspectionDailyTask", "查看")
-                      || permissions.allowed("inspectionPeriodicTask", "查看"))
+              : ((permissions.allowed("inspectionDailyTask", PermissionAction.VIEW)
+                      || permissions.allowed("inspectionPeriodicTask", PermissionAction.VIEW))
                   ? inspectionLists.tasks()
                   : List.<Map<String, Object>>of())) {
         if (!active(text(r, "status"))) continue;
@@ -490,7 +501,7 @@ public class RequisitionService {
                 "name",
                 text(r, "equipmentName")));
       }
-    boolean canCreate = permissions.allowed("inventoryRequisition", "新增");
+    boolean canCreate = permissions.allowed("inventoryRequisition", PermissionAction.CREATE);
     if (!canCreate)
       tasks.removeIf(
           t -> {
@@ -509,7 +520,7 @@ public class RequisitionService {
                 w ->
                     !canCreate
                         || permissions.inventoryWarehouseAllowed(
-                            "inventoryRequisition", id(w.get("id")), "新增"))
+                            "inventoryRequisition", id(w.get("id")), PermissionAction.CREATE.code()))
             .map(masters::view)
             .filter(
                 w ->
@@ -530,8 +541,8 @@ public class RequisitionService {
         active(t.status()),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0216"));
     var warehouse = masters.row("warehouses", warehouseId, false);
-    if (!permissions.allowed("inventoryRequisition", "新增")) checkTaskApplicant(taskKind, taskId);
-    else permissions.checkInventoryWarehouse("inventoryRequisition", warehouseId, "新增");
+    if (!permissions.allowed("inventoryRequisition", PermissionAction.CREATE)) checkTaskApplicant(taskKind, taskId);
+    else permissions.checkInventoryWarehouse("inventoryRequisition", warehouseId, PermissionAction.CREATE.code());
     require(
         flag(warehouse.get("enabled")) && id(warehouse.get("company_id")) == t.company(),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0217"));
@@ -581,7 +592,7 @@ public class RequisitionService {
     require(
         previous != null,
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0213"));
-    checkAccess(requestId, previous.getApplicantId(), previous.getWarehouseId(), "新增");
+    checkAccess(requestId, previous.getApplicantId(), previous.getWarehouseId(), PermissionAction.CREATE);
     require(
         previous.getApplicantId() == auth.userId(),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0219"));
@@ -598,10 +609,10 @@ public class RequisitionService {
         active(task.status()),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0221"));
     var warehouse = requiredWarehouse(form.warehouseId(), true);
-    if (!permissions.allowed("inventoryRequisition", "新增")) {
+    if (!permissions.allowed("inventoryRequisition", PermissionAction.CREATE)) {
       checkTaskApplicant(form.taskKind().value(), form.taskId());
     } else {
-      permissions.checkInventoryWarehouse("inventoryRequisition", warehouse.id(), "新增");
+      permissions.checkInventoryWarehouse("inventoryRequisition", warehouse.id(), PermissionAction.CREATE.code());
     }
     require(
         warehouse.enabled() && warehouse.companyId() == task.company(),
@@ -669,7 +680,7 @@ public class RequisitionService {
   @Transactional
   public Map<String, Object> submit(long requestId, Map<String, Object> body) {
     mutex.enter();
-    var raw = row(requestId, true, "新增");
+    var raw = row(requestId, true, PermissionAction.CREATE);
     require(
         id(raw.get("applicant_id")) == auth.userId(),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0226"));
@@ -699,7 +710,7 @@ public class RequisitionService {
   }
 
   public Object stockPool(long requestId) {
-    var raw = row(requestId, false, "出库");
+    var raw = row(requestId, false, PermissionAction.STOCK_OUT);
     return repository
         .listReservableStock(
             auth.tenantId(),
@@ -714,7 +725,7 @@ public class RequisitionService {
   @Transactional
   public Map<String, Object> reserve(long requestId, Map<String, Object> body) {
     mutex.enter();
-    var raw = row(requestId, true, "预留");
+    var raw = row(requestId, true, PermissionAction.RESERVE);
     requireApproval(raw);
     require(
         FULFILLABLE_STATUSES.contains(text(raw, "status")),
@@ -828,7 +839,7 @@ public class RequisitionService {
   @Transactional
   public Map<String, Object> release(long requestId, Map<String, Object> body) {
     mutex.enter();
-    var raw = row(requestId, true, "释放预留");
+    var raw = row(requestId, true, PermissionAction.RELEASE_RESERVATION);
     require(
         FULFILLABLE_STATUSES.contains(text(raw, "status")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0236"));
@@ -855,10 +866,10 @@ public class RequisitionService {
   @Transactional
   public Map<String, Object> cancel(long requestId, Map<String, Object> body) {
     mutex.enter();
-    var raw = row(requestId, true, "查看");
+    var raw = row(requestId, true, PermissionAction.VIEW);
     if (id(raw.get("applicant_id")) != auth.userId())
       permissions.checkInventoryWarehouse(
-          "inventoryOutbound", id(raw.get("warehouse_id")), "关闭剩余需求");
+          "inventoryOutbound", id(raw.get("warehouse_id")), PermissionAction.CLOSE_REMAINDER.code());
     if (text(raw, "status").equals("已取消")) return detail(requestId);
     require(
         Set.of("草稿", "待预留", "部分预留", "已预留").contains(text(raw, "status")),
@@ -877,7 +888,7 @@ public class RequisitionService {
   @Transactional
   public void delete(long recordId, Map<String, Object> body) {
     mutex.enter();
-    var raw = row(recordId, true, "删除");
+    var raw = row(recordId, true, PermissionAction.DELETE);
     require(
         text(raw, "status").equals("草稿"),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0182"));
@@ -902,7 +913,7 @@ public class RequisitionService {
         : reserved.compareTo((BigDecimal) quantities.get("remaining")) >= 0 ? "已预留" : "部分预留";
   }
 
-  Map<String, Object> outboundRequest(long requestId, boolean lock, String action) {
+  Map<String, Object> outboundRequest(long requestId, boolean lock, PermissionAction action) {
     var r = row(requestId, lock, action);
     requireApproval(r);
     require(
@@ -940,7 +951,7 @@ public class RequisitionService {
     for (var r : repository.listRepairs(auth.tenantId())) {
       if (!active(r.getStatus())) continue;
       try {
-        permissions.checkRepair(r, "查看");
+        permissions.checkRepair(r, PermissionAction.VIEW);
         var t = task("维修", r.getId(), false, false);
         output.add(
             Map.of(
@@ -962,11 +973,11 @@ public class RequisitionService {
     for (String kind : List.of("保养", "点巡检")) {
       var rows =
           kind.equals("保养")
-              ? (permissions.allowed("maintenanceTask", "查看")
+              ? (permissions.allowed("maintenanceTask", PermissionAction.VIEW)
                   ? maintenance.tasks()
                   : List.<Map<String, Object>>of())
-              : ((permissions.allowed("inspectionDailyTask", "查看")
-                      || permissions.allowed("inspectionPeriodicTask", "查看"))
+              : ((permissions.allowed("inspectionDailyTask", PermissionAction.VIEW)
+                      || permissions.allowed("inspectionPeriodicTask", PermissionAction.VIEW))
                   ? inspectionLists.tasks()
                   : List.<Map<String, Object>>of());
       for (var r : rows)
@@ -988,7 +999,7 @@ public class RequisitionService {
   }
 
   void outboundCompleted(long requestId, String code) {
-    var r = row(requestId, true, "确认出库");
+    var r = row(requestId, true, PermissionAction.CONFIRM_ISSUE);
     boolean complete = repository.countUnissuedLines(auth.tenantId(), requestId) == 0;
     repository.updateIssueProgress(complete ? "已完成" : "部分发料", auth.tenantId(), requestId);
     event(requestId, "确认出库 · " + code);
@@ -1005,9 +1016,9 @@ public class RequisitionService {
   @Transactional
   public Object closeRemaining(long requestId, Map<String, Object> body) {
     mutex.enter();
-    var r = row(requestId, true, "查看");
+    var r = row(requestId, true, PermissionAction.VIEW);
     if (id(r.get("applicant_id")) != auth.userId())
-      permissions.checkInventoryWarehouse("inventoryOutbound", id(r.get("warehouse_id")), "关闭剩余需求");
+      permissions.checkInventoryWarehouse("inventoryOutbound", id(r.get("warehouse_id")), PermissionAction.CLOSE_REMAINDER.code());
     require(
         FULFILLABLE_STATUSES.contains(text(r, "status")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0242"));

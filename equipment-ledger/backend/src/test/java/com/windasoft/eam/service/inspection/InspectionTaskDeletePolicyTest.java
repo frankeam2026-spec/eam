@@ -3,6 +3,7 @@ package com.windasoft.eam.service.inspection;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.service.system.*;
 import java.util.*;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,7 @@ class InspectionTaskDeletePolicyTest {
   void exemptionRequiresTheSameNoExecutionEvidenceAsDeletion() {
     var auth = mock(AuthContext.class);
     var permissions = mock(PermissionService.class);
-    when(permissions.inspection("daily", "免检"))
+    when(permissions.inspection("daily", PermissionAction.EXEMPT))
         .thenReturn(new com.windasoft.eam.dto.system.PermissionScope(true, null, Set.of(), false));
     var policy = new InspectionTaskAccessService(new ObjectMapper(), auth, permissions);
     var row = Map.<String, Object>of("kind", "daily", "status", "待执行");

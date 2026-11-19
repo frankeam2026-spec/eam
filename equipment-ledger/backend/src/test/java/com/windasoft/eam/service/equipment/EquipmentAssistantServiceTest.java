@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.LocalizedArgumentException;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.Aggregate;
 import com.windasoft.eam.dto.equipment.EquipmentAssistantQuery.All;
@@ -62,7 +63,7 @@ class EquipmentAssistantServiceTest {
   void setup() {
     when(auth.tenantId()).thenReturn(10001L);
     when(auth.userId()).thenReturn(73001L);
-    when(permissions.equipment("查看")).thenReturn(new PermissionScope(true, null, Set.of(), false));
+    when(permissions.equipment(PermissionAction.VIEW)).thenReturn(new PermissionScope(true, null, Set.of(), false));
     when(queries.ambiguousName(anyLong(), anyLong(), any(), any(), any(), any()))
         .thenReturn(Optional.empty());
     when(queries.execute(anyLong(), anyLong(), any(), any(), any(), any()))
@@ -121,8 +122,8 @@ class EquipmentAssistantServiceTest {
   void validTypedPlanUsesTrustedScopeAndKeepsSqlInTheRepository() {
     var request = count(new Condition(Field.OWNER_ID, Comparison.EQ, List.of(Reference.ME)));
     assertInstanceOf(EquipmentAssistantResult.Count.class, service.query(request).data());
-    verify(permissions).require("equipment", "查看");
-    var scope = permissions.equipment("查看");
+    verify(permissions).require("equipment", PermissionAction.VIEW);
+    var scope = permissions.equipment(PermissionAction.VIEW);
     verify(queries).execute(eq(10001L), eq(73001L), eq(scope), same(request), any(), isNull());
   }
 
@@ -294,7 +295,7 @@ class EquipmentAssistantServiceTest {
   void permissionFailureDoesNotReachTheRepository() {
     doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN))
         .when(permissions)
-        .require("equipment", "查看");
+        .require("equipment", PermissionAction.VIEW);
     assertThrows(ResponseStatusException.class, () -> service.query(count(new All())));
     verifyNoInteractions(queries);
   }

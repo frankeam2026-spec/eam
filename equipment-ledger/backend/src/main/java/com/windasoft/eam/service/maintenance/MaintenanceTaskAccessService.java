@@ -1,6 +1,7 @@
 package com.windasoft.eam.service.maintenance;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.maintenance.MaintenanceTaskData;
 import com.windasoft.eam.dto.maintenance.MaintenanceTaskSnapshot;
 import com.windasoft.eam.service.system.AuthContext;
@@ -23,17 +24,17 @@ public class MaintenanceTaskAccessService {
   }
 
   /** 任务人员具有原查看例外；验收仍同时核对验收权限，不提升为设备或计划的查看权限。 */
-  public boolean allowed(MaintenanceTaskData row, String action) {
+  public boolean allowed(MaintenanceTaskData row, PermissionAction action) {
     var snapshot = json.convertValue(row.snapshot(), MaintenanceTaskSnapshot.class);
     var owners = users(snapshot.getOwners());
     var reviewers = users(snapshot.getReviewers());
-    if (action.equals("查看")
+    if (action == PermissionAction.VIEW
         && (owners.contains(auth.userId()) || reviewers.contains(auth.userId()))) {
       return true;
     }
     try {
       var scope = permissions.maintenance(action);
-      if (action.equals("验收") && scope.owner() && reviewers.contains(auth.userId())) {
+      if (action == PermissionAction.ACCEPT && scope.owner() && reviewers.contains(auth.userId())) {
         return true;
       }
       return scope.matches(row.companyId(), row.departmentId(), row.ownerId(), auth.userId());

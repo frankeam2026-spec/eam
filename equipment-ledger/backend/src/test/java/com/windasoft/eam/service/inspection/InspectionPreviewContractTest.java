@@ -1,5 +1,6 @@
 package com.windasoft.eam.service.inspection;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -16,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.ApiExceptionHandler;
 import com.windasoft.eam.controller.inspection.InspectionController;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.service.business.BusinessQueryService;
@@ -48,10 +50,10 @@ class InspectionPreviewContractTest {
   void setup() {
     when(auth.tenantId()).thenReturn(7L);
     when(auth.userId()).thenReturn(13L);
-    when(permissions.inspection(eq("daily-plans"), anyString()))
+    when(permissions.inspection(eq("daily-plans"), any(PermissionAction.class)))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     when(projects.raw("daily-plans", 7L, 99L, false)).thenReturn(existing);
-    when(projects.scoped(existing, "编辑")).thenReturn(true);
+    when(projects.scoped(existing, PermissionAction.EDIT)).thenReturn(true);
     when(generation.preview(eq(7L), anyMap(), eq(7)))
         .thenReturn(Map.of("total", 0, "rows", List.of()));
     var service =
@@ -101,7 +103,7 @@ class InspectionPreviewContractTest {
 
   @Test
   void editedPreviewRejectsForbiddenOriginalPlanBeforeReadingArrangements() throws Exception {
-    when(projects.scoped(existing, "编辑")).thenReturn(false);
+    when(projects.scoped(existing, PermissionAction.EDIT)).thenReturn(false);
     send(request("99"), 403);
     verify(arrangements, never()).validate(anyLong(), anyLong(), anyMap());
     verify(generation, never()).preview(anyLong(), anyMap(), anyInt());
@@ -109,7 +111,7 @@ class InspectionPreviewContractTest {
 
   @Test
   void editedPreviewStillChecksTargetDepartmentAfterOriginalPlan() throws Exception {
-    when(permissions.inspection("daily-plans", "编辑"))
+    when(permissions.inspection("daily-plans", PermissionAction.EDIT))
         .thenReturn(new PermissionScope(false, null, Set.of(), false));
     send(request("99"), 403);
     verify(generation, never()).preview(anyLong(), anyMap(), anyInt());

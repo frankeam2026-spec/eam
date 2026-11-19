@@ -3,6 +3,7 @@ package com.windasoft.eam.repository.inventory;
 import static com.windasoft.eam.repository.common.SqlListFilters.Kind.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.common.ActivationStatus;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.repository.common.*;
 import java.util.*;
@@ -29,7 +30,9 @@ public class InventoryListRepository {
     String table = InventoryMasterRepository.table(kind), from = "FROM " + table + " t";
     var fields = new LinkedHashMap<String, SqlListFilters.Field>();
     for (String key : List.of("code", "name", "remark")) fields.put(key, f("t." + key, TEXT));
-    fields.put("enabled", f("CASE WHEN t.enabled=1 THEN '启用' ELSE '停用' END", CHOICE));
+    fields.put(
+        "enabled",
+        f(SqlListFilters.activationLabel("t.enabled=" + ActivationStatus.ENABLED.code()), CHOICE));
     String projection = "t.*";
     var predicate = SqlPredicate.of("t.tenant_id=?", tenant);
     if (kind.equals("materials")) {

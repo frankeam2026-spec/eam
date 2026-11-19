@@ -6,6 +6,7 @@ import com.windasoft.eam.domain.inspection.InspectionTaskAction;
 import com.windasoft.eam.domain.inspection.InspectionTaskStatus;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.repository.inspection.InspectionRepository;
 import com.windasoft.eam.service.system.*;
 import java.time.*;
@@ -94,11 +95,11 @@ public class InspectionViewAssembler {
     v.put(
         "canTransfer",
         InspectionTaskStatus.allows(InspectionTaskAction.TRANSFER, text(row, "status"))
-            && access.access(row, "转派"));
+            && access.access(row, PermissionAction.TRANSFER));
     v.put(
         "canVoid",
         InspectionTaskStatus.allows(InspectionTaskAction.VOID, text(row, "status"))
-            && access.access(row, "删除"));
+            && access.access(row, PermissionAction.DELETE));
     v.put("canDelete", access.canDelete(row));
     var items = rows(v.get("items"));
     var answers = rows(result.get("items"));

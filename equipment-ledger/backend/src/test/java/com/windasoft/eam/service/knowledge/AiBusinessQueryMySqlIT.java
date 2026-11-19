@@ -4,12 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -63,8 +65,10 @@ class AiBusinessQueryMySqlIT {
     when(auth.tenantId()).thenReturn(10001L);
     when(auth.userId()).thenReturn(73001L);
     when(permissions.allowed(anyString(), anyString())).thenReturn(true);
+    when(permissions.allowed(anyString(), any(PermissionAction.class))).thenReturn(true);
     var scope = new PermissionScope(true, null, Set.of(), false);
     when(permissions.scope(anyString(), anyString())).thenReturn(scope);
+    when(permissions.scope(anyString(), any(PermissionAction.class))).thenReturn(scope);
     when(permissions.equipment("查看")).thenReturn(scope);
     when(permissions.maintenance(anyString(), anyString())).thenReturn(scope);
     when(permissions.inspection(anyString(), anyString())).thenReturn(scope);

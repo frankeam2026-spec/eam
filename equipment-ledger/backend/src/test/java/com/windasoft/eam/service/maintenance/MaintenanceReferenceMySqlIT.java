@@ -30,6 +30,7 @@ import com.windasoft.eam.controller.maintenance.MaintenancePlanController;
 import com.windasoft.eam.controller.maintenance.MaintenanceStandardController;
 import com.windasoft.eam.controller.maintenance.MaintenanceTaskController;
 import com.windasoft.eam.controller.maintenance.MaintenanceTypeController;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.common.ListQuery;
 import com.windasoft.eam.dto.knowledge.AiBusinessPlan;
 import com.windasoft.eam.dto.maintenance.MaintenanceAssistantRequest;
@@ -229,8 +230,8 @@ class MaintenanceReferenceMySqlIT {
     when(extensions.read(eq("maintenance_task"), anyLong()))
         .thenReturn(new BusinessValueService.Values(Map.of(), Map.of(), 0));
     var all = new PermissionScope(true, null, Set.of(), false);
-    when(permissions.maintenance(anyString())).thenReturn(all);
-    when(permissions.maintenance(anyString(), anyString())).thenReturn(all);
+    when(permissions.maintenance(any(PermissionAction.class))).thenReturn(all);
+    when(permissions.maintenance(anyString(), any(PermissionAction.class))).thenReturn(all);
     for (int i = 0; i < 4; i++) {
       db.update(
           "INSERT INTO eam_org_unit(id,tenant_id,name,code,org_type,status,deleted,parent_id)"
@@ -595,7 +596,7 @@ class MaintenanceReferenceMySqlIT {
   void stockChoicesKeepCompanyUnionHttpNumbersAndPagedOmission() throws Exception {
     ContractTypes.assertExplicit(MaintenanceLegacyStockOption.class);
     stocks();
-    when(permissions.anyMaintenance("查看")).thenReturn(true);
+    when(permissions.anyMaintenance(PermissionAction.VIEW)).thenReturn(true);
     stockView("standards", new PermissionScope(false, ORG, Set.of(ORG), false));
     stockView("plans", new PermissionScope(false, ORG + 1, Set.of(), false));
     var mvc =
@@ -637,7 +638,7 @@ class MaintenanceReferenceMySqlIT {
     stocks();
     definitionStorage.insert(TYPE, TENANT, "types", "STOCK-TYPE", "保养类型", ORG, USER, "{}");
     stockView("standards", new PermissionScope(false, ORG, Set.of(ORG), false));
-    when(permissions.maintenance("standards", "新增"))
+    when(permissions.maintenance("standards", PermissionAction.CREATE))
         .thenReturn(new PermissionScope(false, ORG + 1, Set.of(ORG), false));
     var denied =
         assertThrows(
@@ -645,7 +646,7 @@ class MaintenanceReferenceMySqlIT {
             () -> definitions.save("standards", null, spareStandard(9007199254741661L)));
     assertEquals(403, denied.getStatusCode().value());
     assertEquals(0L, count("eam_maintenance_standard"));
-    when(permissions.maintenance("standards", "新增"))
+    when(permissions.maintenance("standards", PermissionAction.CREATE))
         .thenReturn(new PermissionScope(false, ORG, Set.of(ORG), false));
     assertThrows(
         IllegalArgumentException.class,
@@ -734,7 +735,7 @@ class MaintenanceReferenceMySqlIT {
         jsonText(Map.of("items", List.of(item))));
     assertTrue(lists.hasFile(PDF));
     validation.validAttachments(fileReference(PDF), false);
-    when(permissions.maintenance("standards", "查看"))
+    when(permissions.maintenance("standards", PermissionAction.VIEW))
         .thenReturn(new PermissionScope(false, null, Set.of(), false));
     assertFalse(lists.hasFile(PDF));
     db.update(
@@ -759,7 +760,7 @@ class MaintenanceReferenceMySqlIT {
     assertThrows(IllegalArgumentException.class, () -> fileService.download(FOREIGN_FILE));
     saveExecution(TENANT, TASK, jsonText(Map.of("attachments", fileReference(PDF))));
     db.update("DELETE FROM eam_maintenance_task_person WHERE tenant_id=?", TENANT);
-    when(permissions.maintenance("tasks", "查看"))
+    when(permissions.maintenance("tasks", PermissionAction.VIEW))
         .thenReturn(new PermissionScope(false, null, Set.of(), false));
     assertFalse(lists.hasFile(PDF), "不能借另一授权范围下载任务文件");
   }
@@ -850,7 +851,7 @@ class MaintenanceReferenceMySqlIT {
                 false));
     refs.add(refs.getFirst());
     assertEquals(100, projects.planProjects(cycle, TENANT, new Equipment(), true).size());
-    when(permissions.maintenance("standards", "查看"))
+    when(permissions.maintenance("standards", PermissionAction.VIEW))
         .thenReturn(new PermissionScope(false, null, Set.of(), false));
     assertThrows(
         ResponseStatusException.class,
@@ -1002,7 +1003,7 @@ class MaintenanceReferenceMySqlIT {
 
   @Test
   void organizationContextAndChoiceUsersKeepExistingFieldsAndActiveRules() {
-    when(permissions.anyMaintenance("查看")).thenReturn(true);
+    when(permissions.anyMaintenance(PermissionAction.VIEW)).thenReturn(true);
     var choices = json.valueToTree(definitions.choices(false));
     var orgs = choices.path("organizations");
     assertEquals(1, orgs.size());
@@ -1052,7 +1053,7 @@ class MaintenanceReferenceMySqlIT {
     assertEquals(Long.toString(TASK), table.data().getFirst().get("id"));
     assertTrue(table.columns().contains("equipmentName"));
     var none = new PermissionScope(false, null, Set.of(), false);
-    when(permissions.maintenance("tasks", "查看")).thenReturn(none);
+    when(permissions.maintenance("tasks", PermissionAction.VIEW)).thenReturn(none);
     // 原列表允许参与人查看，即使菜单范围为空；不能把AI查询简单收紧为只看公司权限。
     assertEquals(1L, ((MaintenanceAssistantResult.Table) lists.queryAssistant(request)).total());
     db.update("DELETE FROM eam_maintenance_task_person WHERE tenant_id=?", TENANT);
@@ -1301,7 +1302,7 @@ class MaintenanceReferenceMySqlIT {
     assertThrows(IllegalArgumentException.class, () -> standardService.delete(standard));
     item.put("id", "stock-item");
     body.put("departmentId", Long.toString(ORG + 1));
-    when(permissions.maintenance("standards", "编辑"))
+    when(permissions.maintenance("standards", PermissionAction.EDIT))
         .thenReturn(new PermissionScope(false, null, Set.of(ORG), false));
     assertEquals(
         403,
@@ -1603,23 +1604,23 @@ class MaintenanceReferenceMySqlIT {
             .value());
     body.put("rowVersion", 2);
     var none = new PermissionScope(false, null, Set.of(), false);
-    when(permissions.maintenance("plans", "查看")).thenReturn(none);
+    when(permissions.maintenance("plans", PermissionAction.VIEW)).thenReturn(none);
     assertEquals(
         403,
         assertThrows(ResponseStatusException.class, () -> planService.get(id))
             .getStatusCode()
             .value());
     assertEquals(0L, lists.queryPlans(query, false).page().total());
-    when(permissions.maintenance("plans", "导出"))
+    when(permissions.maintenance("plans", PermissionAction.EXPORT))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     assertEquals(0L, lists.queryPlans(query, true).page().total(), "导出范围不能覆盖更窄的查看范围");
-    when(permissions.maintenance("plans", "编辑")).thenReturn(none);
+    when(permissions.maintenance("plans", PermissionAction.EDIT)).thenReturn(none);
     assertEquals(
         403,
         assertThrows(ResponseStatusException.class, () -> definitions.save("plans", id, body))
             .getStatusCode()
             .value());
-    when(permissions.maintenance("plans", "查看"))
+    when(permissions.maintenance("plans", PermissionAction.VIEW))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     when(auth.tenantId()).thenReturn(TENANT + 1);
     assertEquals(
@@ -2290,8 +2291,8 @@ SELECT tenant_id,?,role_code,user_id,sort_no FROM eam_maintenance_task_person WH
 
   private void stockView(String kind, PermissionScope scope) {
     String menu = PermissionService.maintenanceMenu(kind);
-    when(permissions.allowed(menu, "查看")).thenReturn(true);
-    when(permissions.maintenance(kind, "查看")).thenReturn(scope);
+    when(permissions.allowed(menu, PermissionAction.VIEW)).thenReturn(true);
+    when(permissions.maintenance(kind, PermissionAction.VIEW)).thenReturn(scope);
     when(permissions.companyAllowed(eq(menu), eq("查看"), anyLong()))
         .thenAnswer(call -> scope.all() || scope.companyIds().contains(call.getArgument(2)));
   }

@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.equipment.EquipmentQueryRepository;
 import com.windasoft.eam.service.system.AuthContext;
@@ -49,7 +50,7 @@ class DailyInspectionPlanServiceTest {
     when(auth.userId()).thenReturn(13L);
     var plan = Map.<String, Object>of("row_version", 4L);
     when(projects.raw("daily-plans", 7L, 99L, true)).thenReturn(plan);
-    when(projects.scoped(plan, "编辑")).thenReturn(true);
+    when(projects.scoped(plan, PermissionAction.EDIT)).thenReturn(true);
     when(generation.manualEvent(eq(7L), eq(plan), anyMap())).thenReturn(Map.of("created", 1));
     var body = new LinkedHashMap<String, Object>(Map.of("rowVersion", 4L));
 
@@ -83,7 +84,7 @@ class DailyInspectionPlanServiceTest {
 
     when(auth.tenantId()).thenReturn(7L);
     when(auth.userId()).thenReturn(13L);
-    when(permissions.inspection("daily-plans", "新增"))
+    when(permissions.inspection("daily-plans", PermissionAction.CREATE))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     when(permissions.companyOfOrganization(3L)).thenReturn(2L);
     var body =
@@ -122,7 +123,7 @@ class DailyInspectionPlanServiceTest {
 
     when(auth.tenantId()).thenReturn(7L);
     when(auth.userId()).thenReturn(13L);
-    when(permissions.inspection("daily-plans", "新增"))
+    when(permissions.inspection("daily-plans", PermissionAction.CREATE))
         .thenReturn(new PermissionScope(true, null, Set.of(), false));
     when(permissions.companyOfOrganization(3L)).thenReturn(2L);
     var equipment =
@@ -143,7 +144,7 @@ class DailyInspectionPlanServiceTest {
             "details", List.of(detail));
 
     assertEquals(Map.of("count", 1), service.dailyPreview(body));
-    verify(validation).checkEquipment(equipment, "daily-plans", "新增");
+    verify(validation).checkEquipment(equipment, "daily-plans", PermissionAction.CREATE);
     verify(projects).projects(eq(7L), anyMap(), eq(true));
   }
 }
