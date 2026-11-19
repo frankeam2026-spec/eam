@@ -267,15 +267,6 @@ public class ReceiptRepository {
         batchId);
   }
 
-  public int addBalance(Object qty, long tenantId, Object id) {
-    return db.update(
-        "UPDATE inv_balance SET quantity=quantity+?,row_version=row_version+1 WHERE tenant_id=?"
-            + " AND id=?",
-        qty,
-        tenantId,
-        id);
-  }
-
   public int insertCostLayer(
       long recordId,
       long tenantId,
@@ -297,33 +288,6 @@ public class ReceiptRepository {
         qty6,
         unitCost,
         amount);
-  }
-
-  public int insertTransaction(
-      long recordId,
-      long tenantId,
-      Object companyId,
-      Object warehouseId,
-      Object id,
-      Object recordId6,
-      Object id7,
-      Object qty,
-      Object amount,
-      long userId) {
-    return db.update(
-        "INSERT INTO"
-            + " inv_transaction(id,tenant_id,company_id,warehouse_id,balance_id,document_id,source_line_id,kind,quantity,amount,actor_id)"
-            + " VALUES(?,?,?,?,?,?,?,'入库',?,?,?)",
-        recordId,
-        tenantId,
-        companyId,
-        warehouseId,
-        id,
-        recordId6,
-        id7,
-        qty,
-        amount,
-        userId);
   }
 
   public int updateLineCost(

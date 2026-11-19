@@ -20,6 +20,24 @@ public class MaterialRepository {
     this.db = db;
   }
 
+  /** 主数据更新已在库存事务内校验旧版本并锁定原行，写入后递增版本。 */
+  public void saveMaster(long tenant, long id, Material row, boolean create) {
+    if (create) {
+      row.setTenantId(tenant);
+      row.setId(id);
+      mapper.insert(row);
+      return;
+    }
+    var update =
+        new LambdaUpdateWrapper<Material>()
+            .eq(Material::getTenantId, tenant)
+            .eq(Material::getId, id)
+            .setSql("row_version=row_version+1");
+    if (row.getReferencePrice() == null) update.set(Material::getReferencePrice, null);
+    if (row.getCategoryId() == null) update.set(Material::getCategoryId, null);
+    mapper.update(row, update);
+  }
+
   public long countEnabledCandidates(long tenant, String keyword) {
     return mapper.selectCount(enabledCandidates(tenant, keyword));
   }

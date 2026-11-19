@@ -456,30 +456,6 @@ public class OutboundRepository {
         issueId);
   }
 
-  public int takeBalance(
-      Object qty, Object value, long tenantId, Object balanceId, Object qty5, Object value6) {
-    return db.update(
-        "UPDATE inv_balance SET"
-            + " quantity=quantity-?,reserved_quantity=reserved_quantity-?,row_version=row_version+1"
-            + " WHERE tenant_id=? AND id=? AND quantity>=? AND reserved_quantity>=?",
-        qty,
-        value,
-        tenantId,
-        balanceId,
-        qty5,
-        value6);
-  }
-
-  public int consumeReservation(Object qty, long tenantId, Object reservationId, Object qty4) {
-    return db.update(
-        "UPDATE inv_reservation SET remaining_quantity=remaining_quantity-? WHERE"
-            + " tenant_id=? AND id=? AND remaining_quantity>=?",
-        qty,
-        tenantId,
-        reservationId,
-        qty4);
-  }
-
   public int consumeCostLayer(
       Object qty, Object amount, long tenantId, Object costLayerId, Object qty5, Object amount6) {
     return db.update(
@@ -532,33 +508,6 @@ public class OutboundRepository {
         qty,
         amount,
         unitCost);
-  }
-
-  public int insertTransaction(
-      long recordId,
-      long tenantId,
-      Object companyId,
-      Object warehouseId,
-      Object balanceId,
-      Object issueId,
-      Object allocation,
-      Object value,
-      Object value9,
-      long userId) {
-    return db.update(
-        "INSERT INTO"
-            + " inv_transaction(id,tenant_id,company_id,warehouse_id,balance_id,document_id,source_line_id,kind,quantity,amount,actor_id)"
-            + " VALUES(?,?,?,?,?,?,?,'出库',?,?,?)",
-        recordId,
-        tenantId,
-        companyId,
-        warehouseId,
-        balanceId,
-        issueId,
-        allocation,
-        value,
-        value9,
-        userId);
   }
 
   public int confirmIssue(

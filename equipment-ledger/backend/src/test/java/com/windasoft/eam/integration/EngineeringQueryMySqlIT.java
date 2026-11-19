@@ -26,6 +26,7 @@ import com.windasoft.eam.repository.experience.HomeTemplateVersionRoleRepository
 import com.windasoft.eam.repository.inspection.InspectionExecutionStorage;
 import com.windasoft.eam.repository.inspection.InspectionListRepository;
 import com.windasoft.eam.repository.inventory.InventoryListRepository;
+import com.windasoft.eam.repository.inventory.InventoryUsageRepository;
 import com.windasoft.eam.repository.inventory.OutboundRepository;
 import com.windasoft.eam.repository.maintenance.MaintenanceListRepository;
 import com.windasoft.eam.repository.system.UserListRepository;
@@ -36,6 +37,8 @@ import com.windasoft.eam.service.inspection.InspectionService;
 import com.windasoft.eam.service.inspection.InspectionTaskService;
 import com.windasoft.eam.service.inventory.InventoryFlowService;
 import com.windasoft.eam.service.inventory.InventoryListService;
+import com.windasoft.eam.service.inventory.InventoryQueryService;
+import com.windasoft.eam.service.inventory.InventoryReservationCleanupService;
 import com.windasoft.eam.service.inventory.InventoryService;
 import com.windasoft.eam.service.inventory.OutboundService;
 import com.windasoft.eam.service.inventory.ReceiptService;
@@ -48,6 +51,7 @@ import com.windasoft.eam.service.repair.RepairQueryService;
 import com.windasoft.eam.service.repair.RepairWorkflowService;
 import com.windasoft.eam.service.system.SystemExecution;
 import com.windasoft.eam.support.RelationalTaskFixtures;
+import com.windasoft.eam.support.SelectQueryLogger;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.math.BigDecimal;
@@ -71,6 +75,7 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
+import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -99,7 +104,12 @@ class EngineeringQueryMySqlIT {
             "jdbc:mysql://(127\\.0\\.0\\.1|localhost)(:[0-9]+)?/eam_engineering_test(\\?.*)?"))
       throw new IllegalStateException(
           "Integration tests require the isolated eam_engineering_test database");
-    properties.add("spring.datasource.url", () -> url);
+    properties.add(
+        "spring.datasource.url",
+        () ->
+            url
+                + (url.contains("?") ? "&" : "?")
+                + "profileSQL=true&logger=com.windasoft.eam.support.SelectQueryLogger");
     properties.add(
         "spring.datasource.username",
         () -> System.getenv().getOrDefault("EAM_ENGINEERING_DB_USER", "eam"));
@@ -113,6 +123,7 @@ class EngineeringQueryMySqlIT {
 
   @Autowired InspectionListRepository inspections;
   @Autowired InventoryListRepository inventory;
+  @Autowired InventoryUsageRepository inventoryUsage;
   @Autowired UserListRepository userLists;
   @Autowired BusinessQueryRepository extensions;
   @Autowired MaintenanceListService maintenanceLists;
@@ -123,6 +134,9 @@ class EngineeringQueryMySqlIT {
   @Autowired InspectionTaskService inspectionTasks;
   @Autowired InventoryService inventoryMasters;
   @Autowired InventoryListService inventoryLists;
+  @Autowired InventoryQueryService stockQueries;
+  @Autowired InventoryReservationCleanupService reservationCleanup;
+  @Autowired SqlSessionTemplate sqlSession;
   @Autowired ReceiptService receiptCommands;
   @Autowired OutboundService outboundCommands;
   @Autowired EquipmentCommandService equipmentCommands;
@@ -406,6 +420,14 @@ class EngineeringQueryMySqlIT {
     assertEquals(10005, inventory.count(selected));
     recordPlan("inventory-list", selected.from(), selected.predicate(), selected.order());
     assertEquals(5, inventory.page(selected, q).size());
+    SystemExecution.run(
+        engineeringUser(),
+        () -> {
+          var exported = inventoryMasters.export("materials", "QA-MAT-00", "{}");
+          assertEquals(1000, exported.size());
+          assertEquals(1000L, exported.stream().map(row -> row.get("id")).distinct().count());
+          return null;
+        });
     assertEquals(
         0,
         inventory.count(
@@ -967,6 +989,33 @@ class EngineeringQueryMySqlIT {
             var after = stockQuantity(materialId);
             outboundCommands.confirm(id, confirmation);
             assertEquals(after, stockQuantity(materialId));
+            var allocationId =
+                db.queryForObject(
+                    "SELECT id FROM inv_issue_allocation WHERE tenant_id=10001 AND issue_id=? ORDER BY id LIMIT 1",
+                    Long.class,
+                    id);
+            var allocation = inventoryUsage.loadAllocation(10001, allocationId).getFirst();
+            assertTrue(allocation.quantity().signum() > 0);
+            assertEquals("CNY", allocation.currency());
+            assertEquals(0, inventoryUsage.usedAmount(10001, allocationId).signum());
+            db.update(
+                """
+                INSERT INTO inv_usage
+                    (id,tenant_id,allocation_id,material_id,quantity,kind,actor_name,confirmation_key,cost_amount)
+                VALUES(?,10001,?,?,1,'使用','测试',?,?)
+                """,
+                allocationId,
+                allocationId,
+                allocation.materialId(),
+                "qa-usage-" + id,
+                new BigDecimal("0.10"));
+            assertEquals(new BigDecimal("0.10"), inventoryUsage.usedAmount(10001, allocationId));
+            db.update("UPDATE inv_usage SET cost_amount=NULL WHERE id=?", allocationId);
+            assertThrows(
+                IllegalArgumentException.class,
+                () -> inventoryUsage.usedAmount(10001, allocationId));
+            assertTrue(inventoryUsage.loadAllocation(10002, allocationId).isEmpty());
+
             var amount = new BigDecimal(issued.get("totalAmount").toString());
             assertEquals(new BigDecimal(quantity.equals("4") ? "41.39" : "11.01"), amount);
             total = total.add(amount);
@@ -1404,6 +1453,235 @@ class EngineeringQueryMySqlIT {
   }
 
   @Test
+  void masterWritesKeepAuditNullsAndVersions() {
+    db.update(
+        """
+        INSERT INTO eam_base_item(id,tenant_id,item_type,code,name)
+        VALUES(994030001,10001,'MATERIAL_CATEGORY','QA-CATEGORY','测试物料分类')
+        """);
+    SystemExecution.run(
+        engineeringUser(),
+        () -> {
+          var material = new LinkedHashMap<String, Object>();
+          material.put("code", "QA-TYPED-MATERIAL");
+          material.put("name", "测试物料");
+          material.put("unitId", "3001");
+          material.put("categoryId", "994030001");
+          material.put("usageType", "消耗型");
+          material.put("referencePrice", "2.50");
+          material.put("enabled", true);
+          var saved = inventoryMasters.save("materials", null, material);
+          long materialId = Long.parseLong(saved.get("id").toString());
+          material.put("rowVersion", saved.get("rowVersion"));
+          material.remove("categoryId");
+          material.remove("referencePrice");
+          var changed = inventoryMasters.save("materials", materialId, material);
+          assertEquals("", changed.get("categoryId"));
+          assertNull(changed.get("referencePrice"));
+          assertEquals(1, changed.get("rowVersion"));
+          var events =
+              db.queryForList(
+                  """
+          SELECT JSON_UNQUOTE(JSON_EXTRACT(details_json,'$.after.categoryId')) category_id,
+                 JSON_TYPE(JSON_EXTRACT(details_json,'$.after.referencePrice')) price_type
+          FROM inv_master_event WHERE tenant_id=10001 AND resource_id=? ORDER BY id
+          """,
+                  materialId);
+          assertEquals("994030001", events.getFirst().get("category_id"));
+          assertEquals("STRING", events.getFirst().get("price_type"));
+          assertEquals("", events.getLast().get("category_id"));
+          assertEquals("NULL", events.getLast().get("price_type"));
+
+          var warehouse =
+              inventoryMasters.save(
+                  "warehouses",
+                  null,
+                  Map.of(
+                      "code",
+                      "QA-TYPED-WAREHOUSE",
+                      "name",
+                      "测试仓库",
+                      "companyId",
+                      "71002",
+                      "managerId",
+                      "73001",
+                      "allocationRule",
+                      "FIFO",
+                      "enabled",
+                      true));
+          long warehouseId = Long.parseLong(warehouse.get("id").toString());
+          assertEquals(
+              1L,
+              db.queryForObject(
+                  "SELECT COUNT(*) FROM inv_bin WHERE tenant_id=10001 AND warehouse_id=? AND code='DEFAULT'",
+                  Long.class,
+                  warehouseId));
+          var updated =
+              inventoryMasters.save(
+                  "warehouses",
+                  warehouseId,
+                  Map.of(
+                      "name",
+                      "测试仓库",
+                      "companyId",
+                      "71002",
+                      "allocationRule",
+                      "FIFO",
+                      "enabled",
+                      true,
+                      "rowVersion",
+                      warehouse.get("rowVersion")));
+          assertEquals("", updated.get("managerId"));
+          return null;
+        });
+  }
+
+  @Test
+  void cleanupReleasesReservationsOnceAndOnlyClosesTheRequisitionTodo() {
+    warehouseFixtures();
+    db.update(
+        """
+        INSERT INTO inv_requisition
+            (id,tenant_id,code,company_id,warehouse_id,task_kind,task_id,task_code,
+             applicant_id,applicant_name,status)
+        VALUES(994020001,10001,'QA-CLEANUP',71002,890000001,'维修',994020000,'QA-MISSING',73001,'测试','已预留')
+        """);
+    db.update(
+        """
+        INSERT INTO inv_balance
+            (id,tenant_id,company_id,warehouse_id,bin_id,material_id,quantity,reserved_quantity)
+        VALUES(994020002,10001,71002,890000001,994020002,994020002,10,3)
+        """);
+    db.update(
+        """
+        INSERT INTO inv_reservation
+            (id,tenant_id,requisition_id,requisition_line_id,balance_id,quantity,remaining_quantity)
+        VALUES(994020003,10001,994020001,994020009,994020002,3,3)
+        """);
+    db.update(
+        """
+        INSERT INTO inv_inbox(id,tenant_id,user_id,document_id,route_kind,kind,title,is_todo)
+        VALUES(994020004,10001,73001,994020001,'requisitions','待办','领料待办',1),
+              (994020005,10001,73001,994020001,'requisitions','通知','领料通知',0),
+              (994020006,10001,73001,994020001,'receipts','待办','入库待办',1)
+        """);
+
+    reservationCleanup.cleanup();
+    reservationCleanup.cleanup();
+
+    assertEquals(
+        "已关闭",
+        db.queryForObject("SELECT status FROM inv_requisition WHERE id=994020001", String.class));
+    assertEquals(
+        1,
+        db.queryForObject(
+            "SELECT row_version FROM inv_requisition WHERE id=994020001", Integer.class));
+    assertEquals(
+        1,
+        db.queryForObject(
+            "SELECT row_version FROM inv_balance WHERE id=994020002 AND quantity=10 AND reserved_quantity=0",
+            Integer.class));
+    assertEquals(
+        0,
+        db.queryForObject(
+                "SELECT remaining_quantity FROM inv_reservation WHERE id=994020003",
+                BigDecimal.class)
+            .signum());
+    assertEquals(
+        List.of(994020004L),
+        db.queryForList(
+            "SELECT id FROM inv_inbox WHERE document_id=994020001 AND done=1", Long.class));
+    assertEquals(
+        1L,
+        db.queryForObject(
+            "SELECT COUNT(*) FROM inv_document_event WHERE document_id=994020001", Long.class));
+  }
+
+  @Test
+  void stockQueriesKeepWireFieldsAndResolveWarehouseGrantsOnce() {
+    warehouseFixtures();
+    db.update(
+        """
+        INSERT INTO inv_material(id,tenant_id,code,name,unit)
+        VALUES(994010001,10001,'QA-STOCK-SCOPE','查询授权物料','件')
+        """);
+    db.update(
+        """
+        INSERT INTO inv_bin(id,tenant_id,warehouse_id,code,name)
+        VALUES(994010011,10001,890000001,'QA-A','A库位'),
+              (994010012,10001,890000002,'QA-B','B库位')
+        """);
+    db.update(
+        """
+        INSERT INTO inv_balance(id,tenant_id,company_id,warehouse_id,bin_id,material_id,quantity)
+        VALUES(994010021,10001,71002,890000001,994010011,994010001,5),
+              (994010022,10001,71006,890000002,994010012,994010001,7)
+        """);
+    var grantId =
+        db.queryForObject(
+            """
+        SELECT p.id FROM eam_sys_role_menu_permission p
+        JOIN eam_sys_role r ON r.id=p.role_id AND r.tenant_id=p.tenant_id
+        WHERE p.tenant_id=10001 AND r.code='SYS_ADMIN' AND p.menu_key='inventoryQuery'
+        """,
+            Long.class);
+    for (String table :
+        List.of("eam_role_menu_action", "eam_role_menu_scope", "eam_role_menu_target"))
+      db.update("DELETE FROM " + table + " WHERE tenant_id=10001 AND grant_id=?", grantId);
+    db.update(
+        "INSERT INTO eam_role_menu_action VALUES(10001,?,'查看',0),(10001,?,'导出',1)",
+        grantId,
+        grantId);
+    db.update("INSERT INTO eam_role_menu_scope VALUES(10001,?,'company',0)", grantId);
+
+    SystemExecution.run(
+        engineeringUser(),
+        () -> {
+          long baseline;
+          sqlSession.clearCache();
+          SelectQueryLogger.start();
+          try {
+            var result =
+                json.valueToTree(stockQueries.list("balances", "QA-STOCK-SCOPE", "{}", 1, 10));
+            assertEquals(1, result.at("/page/total").asInt());
+            assertEquals(1, result.path("page").size());
+            var row = result.at("/data/0");
+            assertEquals("994010021", row.path("id").asText());
+            assertEquals("890000001", row.path("warehouseId").asText());
+            assertEquals("5.000000", row.path("availableQuantity").textValue());
+            assertTrue(row.path("productionDate").isNull());
+            assertFalse(row.has("remainingCost"));
+            baseline = SelectQueryLogger.stop();
+          } finally {
+            SelectQueryLogger.clear();
+          }
+          assertTrue(baseline > 0);
+          for (long id = 994010100; id < 994010120; id++) {
+            db.update(
+                "INSERT INTO inv_warehouse(id,tenant_id,company_id,code,name) VALUES(?,10001,71006,?,?)",
+                id,
+                "QA-EXTRA-" + id,
+                "其他公司仓库");
+          }
+          sqlSession.clearCache();
+          SelectQueryLogger.start();
+          try {
+            assertEquals(
+                1, stockQueries.list("balances", "QA-STOCK-SCOPE", "{}", 1, 10).page().total());
+            assertEquals(baseline, SelectQueryLogger.stop());
+          } finally {
+            SelectQueryLogger.clear();
+          }
+          assertEquals(1, stockQueries.export("balances", "QA-STOCK-SCOPE", "{}").size());
+          db.update("INSERT INTO eam_role_menu_action VALUES(10001,?,'查看金额',2)", grantId);
+          sqlSession.clearCache();
+          var export = json.valueToTree(stockQueries.export("balances", "QA-STOCK-SCOPE", "{}"));
+          assertTrue(export.at("/0/remainingCost").isNull());
+          return null;
+        });
+  }
+
+  @Test
   void inventoryServiceEnforcesCompanyAndHidesAmountsInListExportAndFilters() {
     warehouseFixtures();
     db.update(
@@ -1784,6 +2062,26 @@ class EngineeringQueryMySqlIT {
               inventoryFlows.confirm(
                   "transfers", transferId, Map.of("rowVersion", transfer.get("rowVersion")), false);
           assertEquals("在途", sent.get("status"));
+          var transit =
+              json.valueToTree(stockQueries.list("transit", "QA-RELATIONAL-FLOW", "{}", 1, 10));
+          assertEquals(1, transit.at("/page/total").asInt());
+          assertEquals(Long.toString(transferId), transit.at("/data/0/sourceId").asText());
+          assertEquals("1.500000", transit.at("/data/0/quantity").asText());
+          assertEquals("工程同公司仓库", transit.at("/data/0/targetWarehouseName").asText());
+          var layers =
+              json.valueToTree(stockQueries.list("layers", "QA-RELATIONAL-FLOW", "{}", 1, 10));
+          assertTrue(layers.at("/data/0/receivedAt").isTextual());
+          var transactions =
+              json.valueToTree(
+                  stockQueries.list("transactions", "QA-RELATIONAL-FLOW", "{}", 1, 10));
+          assertTrue(transactions.at("/data/0/createdAt").isTextual());
+          assertTrue(transactions.at("/data/0/sourceId").isTextual());
+          var choices = inventoryFlows.choices("reversals");
+          assertTrue(
+              ((List<?>) choices.get("correctionSources"))
+                  .stream()
+                      .map(Map.class::cast)
+                      .anyMatch(row -> Long.toString(transferId).equals(row.get("id"))));
           inventoryFlows.confirm(
               "transfers", transferId, Map.of("rowVersion", sent.get("rowVersion")), true);
           assertEquals(new BigDecimal("5.000000"), allStockQuantity(materialId));

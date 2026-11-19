@@ -13,7 +13,7 @@ import com.windasoft.eam.entity.system.RoleMenuPermission;
 import com.windasoft.eam.entity.system.RoleMenuScope;
 import com.windasoft.eam.entity.system.RoleMenuTarget;
 import com.windasoft.eam.entity.system.SystemRole;
-import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
+import com.windasoft.eam.repository.inventory.WarehouseRepository;
 import com.windasoft.eam.repository.system.OrgUnitRepository;
 import com.windasoft.eam.repository.system.RoleLegacyActionRepository;
 import com.windasoft.eam.repository.system.RoleManagementRepository;
@@ -42,7 +42,7 @@ public class RoleManagementService {
   private final RoleLegacyActionRepository roleLegacyAction;
   private final RoleOrganizationRepository roleOrganization;
   private final OrgUnitRepository orgUnits;
-  private final InventoryQueryRepository inventoryQueries;
+  private final WarehouseRepository warehouseRepository;
   private final AuthContext auth;
   private final PermissionService permissions;
 
@@ -54,7 +54,7 @@ public class RoleManagementService {
       RoleLegacyActionRepository roleLegacyAction,
       RoleOrganizationRepository roleOrganization,
       OrgUnitRepository orgUnits,
-      InventoryQueryRepository inventoryQueries,
+      WarehouseRepository warehouseRepository,
       AuthContext auth,
       PermissionService permissions) {
     this.repository = repository;
@@ -64,14 +64,14 @@ public class RoleManagementService {
     this.roleLegacyAction = roleLegacyAction;
     this.roleOrganization = roleOrganization;
     this.orgUnits = orgUnits;
-    this.inventoryQueries = inventoryQueries;
+    this.warehouseRepository = warehouseRepository;
     this.auth = auth;
     this.permissions = permissions;
   }
 
   public List<WarehouseChoice> roleWarehouses() {
     permissions.require(PermissionMenu.ROLE, PermissionAction.AUTHORIZE);
-    return inventoryQueries.warehouseChoices(auth.tenantId());
+    return warehouseRepository.warehouseChoices(auth.tenantId());
   }
 
   public List<RoleView> roles() {
@@ -163,7 +163,7 @@ public class RoleManagementService {
       if (scopes.contains("warehouse")) {
         if (ids.isEmpty() || ids.size() != new HashSet<>(ids).size())
           throw new LocalizedArgumentException("server.system.message0059");
-        long warehouses = inventoryQueries.warehouseCount(auth.tenantId(), ids);
+        long warehouses = warehouseRepository.countIds(auth.tenantId(), ids);
         if (warehouses != ids.size())
           throw new LocalizedArgumentException("server.system.message0060");
       } else if (scopes.contains("selected") || scopes.contains("companies")) {

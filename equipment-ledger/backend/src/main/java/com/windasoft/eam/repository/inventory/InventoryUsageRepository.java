@@ -1,9 +1,12 @@
 package com.windasoft.eam.repository.inventory;
 
-import com.windasoft.eam.entity.repair.RepairOrder;
+import com.windasoft.eam.common.LocalizedArgumentException;
 import com.windasoft.eam.dto.equipment.EquipmentInstalledSpareView;
+import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
+import java.math.BigDecimal;
 import java.util.*;
+import org.springframework.jdbc.core.DataClassRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -119,9 +122,27 @@ public class InventoryUsageRepository {
         taskId);
   }
 
-  public List<Map<String, Object>> loadAllocation(long tenantId, Object allocation) {
-    return db.queryForList(
-        "SELECT a.*,(SELECT c.currency FROM inv_cost_layer c WHERE c.tenant_id=a.tenant_id AND"
+  public record UsageAllocation(
+      String taskKind,
+      Long taskId,
+      String usageType,
+      BigDecimal quantity,
+      BigDecimal usedQuantity,
+      BigDecimal returnedQuantity,
+      BigDecimal amount,
+      BigDecimal returnedAmount,
+      Long requisitionId,
+      long materialId,
+      String materialName,
+      String currency,
+      long companyId,
+      Long departmentId) {}
+
+  /** 锁定发料 allocation 和既有来源关联，避免用料与退料并发超过实发数量。 */
+  public List<UsageAllocation> loadAllocation(long tenantId, long allocation) {
+    return db.query(
+        "SELECT a.quantity,a.used_quantity,a.returned_quantity,a.amount,a.returned_amount,"
+            + " (SELECT c.currency FROM inv_cost_layer c WHERE c.tenant_id=a.tenant_id AND"
             + " c.id=a.cost_layer_id) currency,i.company_id,COALESCE(ol.department_id,CASE"
             + " r.task_kind WHEN '维修' THEN (SELECT t.department_org_id FROM eam_repair_order t"
             + " WHERE t.tenant_id=r.tenant_id AND t.id=r.task_id) WHEN '保养' THEN (SELECT"
@@ -138,31 +159,35 @@ public class InventoryUsageRepository {
             + " inv_requisition_line rl ON rl.tenant_id=a.tenant_id AND rl.id=a.requisition_line_id"
             + " LEFT JOIN inv_requisition r ON r.tenant_id=rl.tenant_id AND r.id=rl.requisition_id"
             + " WHERE a.tenant_id=? AND a.id=? AND i.reversed=0 FOR UPDATE",
+        DataClassRowMapper.newInstance(UsageAllocation.class),
         tenantId,
         allocation);
   }
 
-  public List<Map<String, Object>> findUsageByKey(long tenantId, Object key) {
-    return db.queryForList(
+  public record UsageConfirmation(
+      long allocationId, BigDecimal quantity, Long equipmentId, String attribution) {}
+
+  public List<UsageConfirmation> findUsageByKey(long tenantId, String key) {
+    return db.query(
         "SELECT allocation_id,quantity,equipment_id,attribution FROM inv_usage WHERE tenant_id=?"
             + " AND confirmation_key=?",
+        DataClassRowMapper.newInstance(UsageConfirmation.class),
         tenantId,
         key);
   }
 
-  public java.math.BigDecimal usedAmount(long tenant, Object allocation) {
-    Integer missing =
-        db.queryForObject(
-            "SELECT COUNT(*) FROM inv_usage WHERE tenant_id=? AND allocation_id=? AND cost_amount"
-                + " IS NULL",
-            Integer.class,
-            tenant,
-            allocation);
-    if (missing != null && missing > 0)
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0009");
+  /** 历史用料缺失任何一笔成本时仍阻止分摊；同一次读取同时判断完整性和总额。 */
+  public BigDecimal usedAmount(long tenant, long allocation) {
     return db.queryForObject(
-        "SELECT COALESCE(SUM(cost_amount),0) FROM inv_usage WHERE tenant_id=? AND allocation_id=?",
-        java.math.BigDecimal.class,
+        """
+        SELECT CASE WHEN COUNT(*)=COUNT(cost_amount) THEN COALESCE(SUM(cost_amount),0) END
+        FROM inv_usage WHERE tenant_id=? AND allocation_id=?
+        """,
+        (row, index) -> {
+          var cost = row.getBigDecimal(1);
+          if (cost == null) throw new LocalizedArgumentException("server.inventory.message0009");
+          return cost;
+        },
         tenant,
         allocation);
   }

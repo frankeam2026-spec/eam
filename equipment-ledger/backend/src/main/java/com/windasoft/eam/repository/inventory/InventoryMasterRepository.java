@@ -27,32 +27,6 @@ public class InventoryMasterRepository {
     table(kind);
   }
 
-  private void validateFields(String kind, Map<String, Object> fields) {
-    var allowed = new HashSet<>(Set.of("code", "name", "remark", "enabled"));
-    switch (kind) {
-      case "materials" ->
-          allowed.addAll(
-              Set.of(
-                  "model",
-                  "unit_id",
-                  "unit",
-                  "category_id",
-                  "category",
-                  "usage_type",
-                  "reference_price",
-                  "batch_enabled",
-                  "expiry_enabled",
-                  "allocation_rule"));
-      case "warehouses" -> allowed.addAll(Set.of("company_id", "manager_id", "allocation_rule"));
-      case "bins" -> allowed.add("warehouse_id");
-      default ->
-          throw new com.windasoft.eam.common.LocalizedArgumentException(
-              "server.inventory.message0010");
-    }
-    if (!allowed.containsAll(fields.keySet()))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0011");
-  }
-
   public static String table(String kind) {
     return switch (kind) {
       case "materials" -> "inv_material";
@@ -84,36 +58,11 @@ public class InventoryMasterRepository {
         companyId);
   }
 
-  public List<Map<String, Object>> listMasters(long tenantId, String kind) {
-    return db.queryForList(
-        "SELECT * FROM " + table(kind) + " WHERE tenant_id=? ORDER BY code,id", tenantId);
-  }
-
   public List<Map<String, Object>> lookupParent(long tenantId, Object parent, String source) {
     if (!Set.of("eam_org_unit", "inv_warehouse").contains(source))
       throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0012");
     return db.queryForList(
         "SELECT name FROM " + source + " WHERE tenant_id=? AND id=?", tenantId, parent);
-  }
-
-  public List<Map<String, Object>> findUserName(long tenantId, Object managerId) {
-    return db.queryForList(
-        "SELECT display_name FROM eam_sys_user WHERE tenant_id=? AND id=?", tenantId, managerId);
-  }
-
-  public List<Map<String, Object>> findFirstBin(long tenantId, Object warehouseId) {
-    return db.queryForList(
-        "SELECT id FROM inv_bin WHERE tenant_id=? AND warehouse_id=? ORDER BY id LIMIT 1",
-        tenantId,
-        warehouseId);
-  }
-
-  public int insertDefaultBin(Object binId, long tenantId, Object warehouseId) {
-    return db.update(
-        "INSERT INTO inv_bin(id,tenant_id,warehouse_id,code,name) VALUES(?,?,?,'DEFAULT','默认库位')",
-        binId,
-        tenantId,
-        warehouseId);
   }
 
   public List<Map<String, Object>> listCompanies(long tenantId) {
@@ -226,30 +175,6 @@ public class InventoryMasterRepository {
             + " status=1",
         tenantId,
         manager);
-  }
-
-  public int insertMaster(String kind, Map<String, Object> fields, List<Object> params) {
-    validateFields(kind, fields);
-    return db.update(
-        "INSERT INTO "
-            + table(kind)
-            + " ("
-            + String.join(",", fields.keySet())
-            + ",id,tenant_id) VALUES ("
-            + String.join(",", Collections.nCopies(params.size(), "?"))
-            + ")",
-        params.toArray());
-  }
-
-  public int updateMaster(String kind, Map<String, Object> fields, List<Object> params) {
-    validateFields(kind, fields);
-    return db.update(
-        "UPDATE "
-            + table(kind)
-            + " SET "
-            + String.join(",", fields.keySet().stream().map(k -> k + "=?").toList())
-            + ",row_version=row_version+1 WHERE tenant_id=? AND id=?",
-        params.toArray());
   }
 
   public int insertMasterEvent(

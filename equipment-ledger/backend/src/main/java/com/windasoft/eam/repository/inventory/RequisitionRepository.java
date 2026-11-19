@@ -6,6 +6,7 @@ import com.windasoft.eam.repository.repair.RepairOrderMapper;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -81,6 +82,34 @@ public class RequisitionRepository {
     this.db = db;
     this.counter = counter;
     this.repairs = repairs;
+  }
+
+  /** 清理扫描兼容存量任务类型：历史非维修/保养编码仍按点巡检视图解析。 */
+  public String cleanupTaskStatus(long tenant, long taskId, String kind) {
+    String sql =
+        switch (kind) {
+          case "维修" ->
+              "SELECT status FROM eam_repair_order WHERE tenant_id=? AND id=? AND deleted=0";
+          case "保养" -> "SELECT status FROM v_maintenance_task WHERE tenant_id=? AND id=?";
+          default ->
+              "SELECT status FROM v_inspection_task WHERE tenant_id=? AND id=? AND deleted=0";
+        };
+    var rows =
+        db.query(
+            sql, (row, index) -> Objects.toString(row.getString("status"), ""), tenant, taskId);
+    return rows.isEmpty() ? null : rows.getFirst();
+  }
+
+  public void insertCleanupEvent(long id, long tenant, long requestId) {
+    db.update(
+        """
+        INSERT INTO inv_document_event
+            (id,tenant_id,document_kind,document_id,action,actor_id,actor_name)
+        VALUES(?,?,'领料',?,'任务结束，释放预留并关闭申请',0,'系统')
+        """,
+        id,
+        tenant,
+        requestId);
   }
 
   public List<Map<String, Object>> loadRequest(long tenantId, Object requestId, boolean lock) {
@@ -325,49 +354,11 @@ public class RequisitionRepository {
         expiryEnabled);
   }
 
-  public int addReservedQuantity(Object qty, long tenantId, Object id) {
-    return db.update(
-        "UPDATE inv_balance SET reserved_quantity=reserved_quantity+?,row_version=row_version+1"
-            + " WHERE tenant_id=? AND id=?",
-        qty,
-        tenantId,
-        id);
-  }
-
-  public int insertReservation(
-      long recordId,
-      long tenantId,
-      Object requestId,
-      Object id,
-      Object id5,
-      Object qty,
-      Object qty7) {
-    return db.update(
-        "INSERT INTO"
-            + " inv_reservation(id,tenant_id,requisition_id,requisition_line_id,balance_id,quantity,remaining_quantity)"
-            + " VALUES(?,?,?,?,?,?,?)",
-        recordId,
-        tenantId,
-        requestId,
-        id,
-        id5,
-        qty,
-        qty7);
-  }
-
   public int updateReservationStatus(Object value, long tenantId, Object requestId) {
     return db.update(
         "UPDATE inv_requisition SET status=?,row_version=row_version+1 WHERE tenant_id=? AND"
             + " id=?",
         value,
-        tenantId,
-        requestId);
-  }
-
-  public List<Map<String, Object>> lockReservations(long tenantId, Object requestId) {
-    return db.queryForList(
-        "SELECT * FROM inv_reservation WHERE tenant_id=? AND requisition_id=? AND"
-            + " remaining_quantity>0 ORDER BY balance_id,id FOR UPDATE",
         tenantId,
         requestId);
   }
@@ -382,38 +373,11 @@ public class RequisitionRepository {
         requestId);
   }
 
-  public Map<String, Object> lockBalance(long tenantId, Object balanceId) {
-    return db.queryForMap(
-        "SELECT id FROM inv_balance WHERE tenant_id=? AND id=? FOR UPDATE", tenantId, balanceId);
-  }
-
-  public int releaseBalance(Object remainingQuantity, long tenantId, Object balanceId) {
-    return db.update(
-        "UPDATE inv_balance SET reserved_quantity=reserved_quantity-?,row_version=row_version+1"
-            + " WHERE tenant_id=? AND id=?",
-        remainingQuantity,
-        tenantId,
-        balanceId);
-  }
-
-  public int releaseReservation(long tenantId, Object id) {
-    return db.update(
-        "UPDATE inv_reservation SET remaining_quantity=0 WHERE tenant_id=? AND id=?", tenantId, id);
-  }
-
   public BigDecimal sumIssuedForCancel(long tenantId, Object requestId) {
     return db.queryForObject(
         "SELECT COALESCE(SUM(issued_quantity),0) FROM inv_requisition_line WHERE"
             + " tenant_id=? AND requisition_id=?",
         BigDecimal.class,
-        tenantId,
-        requestId);
-  }
-
-  public List<Map<String, Object>> lockReservationsForCancel(long tenantId, Object requestId) {
-    return db.queryForList(
-        "SELECT * FROM inv_reservation WHERE tenant_id=? AND requisition_id=? AND"
-            + " remaining_quantity>0 ORDER BY balance_id,id FOR UPDATE",
         tenantId,
         requestId);
   }
@@ -504,14 +468,6 @@ public class RequisitionRepository {
         recordId);
     if (notifications != null) notifications.captureSource("inv_inbox", tenantId, recordId);
     return count;
-  }
-
-  public List<Map<String, Object>> lockReservationsForClose(long tenantId, Object requestId) {
-    return db.queryForList(
-        "SELECT * FROM inv_reservation WHERE tenant_id=? AND requisition_id=? AND"
-            + " remaining_quantity>0 ORDER BY balance_id,id FOR UPDATE",
-        tenantId,
-        requestId);
   }
 
   public int closeRequest(long tenantId, Object requestId) {

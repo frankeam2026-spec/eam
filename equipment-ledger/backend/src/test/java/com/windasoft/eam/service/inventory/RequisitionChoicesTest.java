@@ -21,10 +21,12 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
+import com.windasoft.eam.repository.inventory.InventoryBalanceRepository;
+import com.windasoft.eam.repository.inventory.InventoryReservationRepository;
 import com.windasoft.eam.repository.inventory.RequisitionRepository;
 import com.windasoft.eam.repository.repair.RepairOrderMapper;
-import com.windasoft.eam.service.inspection.InspectionTaskService;
 import com.windasoft.eam.service.inspection.InspectionListService;
+import com.windasoft.eam.service.inspection.InspectionTaskService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -111,7 +113,9 @@ class RequisitionChoicesTest {
             mock(InventoryMutex.class),
             mock(OutboundService.class),
             drafts,
-            mock(InventorySelectorService.class));
+            mock(InventorySelectorService.class),
+            mock(InventoryBalanceRepository.class),
+            mock(InventoryReservationRepository.class));
   }
 
   @SuppressWarnings("unchecked")

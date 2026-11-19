@@ -1,11 +1,15 @@
 package com.windasoft.eam.service.inventory;
 
+import static com.windasoft.eam.domain.system.PermissionAction.VIEW;
 import static com.windasoft.eam.service.inventory.InventoryService.*;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.common.inventory.InventoryMoney;
+import com.windasoft.eam.repository.inventory.InventoryBalanceRepository;
+import com.windasoft.eam.repository.inventory.InventoryReservationRepository;
+import com.windasoft.eam.repository.inventory.InventoryTransactionRepository;
 import com.windasoft.eam.repository.inventory.OutboundRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -25,6 +29,9 @@ public class OutboundService {
   @org.springframework.beans.factory.annotation.Autowired
   private com.windasoft.eam.service.business.BusinessValueService custom;
 
+  private final InventoryTransactionRepository transactions;
+  private final InventoryBalanceRepository balances;
+  private final InventoryReservationRepository reservations;
   private final OutboundRepository repository;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -45,7 +52,13 @@ public class OutboundService {
       InventoryService masters,
       InventoryMutex mutex,
       ObjectMapper json,
-      RequisitionService requests) {
+      RequisitionService requests,
+      InventoryTransactionRepository transactions,
+      InventoryBalanceRepository balances,
+      InventoryReservationRepository reservations) {
+    this.transactions = transactions;
+    this.balances = balances;
+    this.reservations = reservations;
     this.repository = repository;
     this.auth = auth;
     this.permissions = permissions;
@@ -206,9 +219,10 @@ public class OutboundService {
 
   public Object choices(boolean paged) {
     permissions.require(MENU, "查看");
+    var allowedWarehouses = permissions.inventoryWarehouses(MENU, VIEW);
     var warehouses =
         repository.listWarehouses(auth.tenantId()).stream()
-            .filter(w -> permissions.inventoryWarehouseAllowed(MENU, id(w.get("id")), "查看"))
+            .filter(w -> allowedWarehouses.contains(id(w.get("id"))))
             .map(masters::view)
             .toList();
     var companies = new HashSet<Long>();
@@ -809,20 +823,14 @@ public class OutboundService {
       long allocation = IdWorker.getId();
       boolean held = id(a.get("reservationId")) != 0;
       int changed =
-          repository.takeBalance(
-              qty,
-              held ? qty : BigDecimal.ZERO,
-              auth.tenantId(),
-              id(a.get("balanceId")),
-              qty,
-              held ? qty : BigDecimal.ZERO);
+          balances.takeForIssue(
+              auth.tenantId(), id(a.get("balanceId")), qty, held ? qty : BigDecimal.ZERO);
       require(
           changed == 1,
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0070"));
       if (held)
         require(
-            repository.consumeReservation(qty, auth.tenantId(), id(a.get("reservationId")), qty)
-                == 1,
+            reservations.consume(auth.tenantId(), id(a.get("reservationId")), qty) == 1,
             com.windasoft.eam.common.MessageContext.text("server.inventory.message0071"));
       require(
           repository.consumeCostLayer(
@@ -848,14 +856,14 @@ public class OutboundService {
           qty,
           amount,
           a.get("unitCost"));
-      repository.insertTransaction(
-          IdWorker.getId(),
+      transactions.append(
           auth.tenantId(),
-          r.get("company_id"),
-          r.get("warehouse_id"),
+          id(r.get("company_id")),
+          id(r.get("warehouse_id")),
           id(a.get("balanceId")),
           issueId,
           allocation,
+          "出库",
           qty.negate(),
           amount.negate(),
           auth.userId());

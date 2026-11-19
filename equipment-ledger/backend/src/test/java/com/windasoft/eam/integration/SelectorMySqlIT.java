@@ -302,7 +302,7 @@ class SelectorMySqlIT {
               "",
               null);
       assertEquals(10007, result.page().total());
-      result.data().forEach(row -> assertTrue(ids.add(row.get("kind") + ":" + row.get("id"))));
+      result.data().forEach(row -> assertTrue(ids.add(row.kind() + ":" + row.id())));
     }
     assertEquals(10007, ids.size());
     var probe = org.mockito.Mockito.spy(db);

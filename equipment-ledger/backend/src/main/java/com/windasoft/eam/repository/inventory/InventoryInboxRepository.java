@@ -30,6 +30,18 @@ public class InventoryInboxRepository {
             .set(InventoryInbox::getDone, 1));
   }
 
+  /** 任务失效时只关闭关联领料待办，保留普通通知和其他单据的待办。 */
+  public void completeRequisition(long tenant, long requestId) {
+    mapper.update(
+        null,
+        new LambdaUpdateWrapper<InventoryInbox>()
+            .eq(InventoryInbox::getTenantId, tenant)
+            .eq(InventoryInbox::getDocumentId, requestId)
+            .eq(InventoryInbox::getRouteKind, "requisitions")
+            .eq(InventoryInbox::getIsTodo, 1)
+            .set(InventoryInbox::getDone, 1));
+  }
+
   /** 工作中心只标记当前租户、当前用户未读的消息，空ID表示本人的全部消息。 */
   public void markWorkRead(long tenant, long user, String id) {
     mapper.update(

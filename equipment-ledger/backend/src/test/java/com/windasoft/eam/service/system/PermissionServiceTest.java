@@ -14,7 +14,7 @@ import com.windasoft.eam.entity.system.RoleMenuPermission;
 import com.windasoft.eam.entity.system.SystemRole;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
-import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
+import com.windasoft.eam.repository.inventory.WarehouseRepository;
 import com.windasoft.eam.repository.system.AuthorizationRepository;
 import com.windasoft.eam.repository.system.OrgUnitMapper;
 import com.windasoft.eam.repository.system.RoleMenuPermissionMapper;
@@ -70,7 +70,7 @@ class PermissionServiceTest {
     service =
         new PermissionService(
             auth,
-            mock(InventoryQueryRepository.class),
+            mock(WarehouseRepository.class),
             repository,
             new OrganizationScopeService(auth, repository));
   }

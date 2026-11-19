@@ -1,14 +1,19 @@
 package com.windasoft.eam.service.inventory;
 
+import static com.windasoft.eam.domain.system.PermissionAction.VIEW;
+import static com.windasoft.eam.domain.system.PermissionAction.VIEW_AMOUNT;
 import static com.windasoft.eam.service.inventory.InventoryService.*;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
-import com.windasoft.eam.domain.inventory.InventoryReversalSourceKind;
 import com.windasoft.eam.common.inventory.InventoryMoney;
+import com.windasoft.eam.domain.inventory.InventoryReversalSourceKind;
+import com.windasoft.eam.repository.inventory.InventoryBalanceRepository;
 import com.windasoft.eam.repository.inventory.InventoryOperationRepository;
+import com.windasoft.eam.repository.inventory.InventoryTransactionRepository;
+import com.windasoft.eam.repository.inventory.WarehouseRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import java.math.*;
@@ -17,17 +22,20 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class InventoryFlowService {
   @org.springframework.beans.factory.annotation.Autowired private InventoryListService listQueries;
+  private final InventoryBalanceRepository balances;
+  private final InventoryTransactionRepository transactions;
   private final InventoryOperationRepository repository;
   private final InventoryService masters;
   private final AuthContext auth;
   private final PermissionService permissions;
   private final ObjectMapper json;
   private final ReceiptService receipts;
+  private final InventoryMutex mutex;
+  private final WarehouseRepository warehouseRepository;
 
   static String menu(String kind) {
     return "inventory"
@@ -55,18 +63,21 @@ public class InventoryFlowService {
       AuthContext auth,
       PermissionService permissions,
       ObjectMapper json,
-      ReceiptService receipts) {
+      ReceiptService receipts,
+      InventoryBalanceRepository balances,
+      InventoryTransactionRepository transactions,
+      InventoryMutex mutex,
+      WarehouseRepository warehouseRepository) {
+    this.balances = balances;
+    this.transactions = transactions;
     this.repository = repository;
     this.masters = masters;
     this.auth = auth;
     this.permissions = permissions;
     this.json = json;
     this.receipts = receipts;
-  }
-
-  public void lock() {
-    repository.insertTenantLock(auth.tenantId());
-    repository.lockTenant(auth.tenantId());
+    this.mutex = mutex;
+    this.warehouseRepository = warehouseRepository;
   }
 
   private String encode(Object value) {
@@ -213,88 +224,64 @@ public class InventoryFlowService {
         : listQueries.operations(kind, q, filters, page, size, false);
   }
 
-  public Object choices(String kind) {
-    permissions.require(menu(kind), "查看");
+  @Transactional(readOnly = true)
+  public Map<String, Object> choices(String kind) {
+    String menu = menu(kind);
+    permissions.require(menu, "查看");
     require(
         NAMES.containsKey(kind),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0022"));
-    @SuppressWarnings("unchecked")
+    long tenant = auth.tenantId();
+    var candidates = warehouseRepository.scopeRows(tenant);
+    var allowed = permissions.inventoryWarehouses(menu, VIEW, candidates);
+    var money = permissions.inventoryWarehouses(menu, VIEW_AMOUNT, candidates);
+    var companies = new HashSet<Long>();
+    for (var warehouse : candidates)
+      if (allowed.contains(warehouse.getId())) companies.add(warehouse.getCompanyId());
+
     var result = new LinkedHashMap<String, Object>(masters.stockChoices());
     result.put(
         "warehouses",
-        ((List<Map<String, Object>>) result.get("warehouses"))
-            .stream()
-                .filter(
-                    w -> permissions.inventoryWarehouseAllowed(menu(kind), id(w.get("id")), "查看"))
-                .toList());
-    var balances = new ArrayList<Map<String, Object>>();
-    for (var b : repository.listStock(auth.tenantId())) {
-      try {
-        permissions.checkInventoryWarehouse(menu(kind), id(b.get("warehouse_id")), "查看");
-        balances.add(masters.view(b));
-      } catch (ResponseStatusException denied) {
-        if (denied.getStatusCode().value() != 403) throw denied;
-      }
-    }
-    result.put("balances", balances);
-    var allocations = new ArrayList<Map<String, Object>>();
-    for (var a : repository.listReturnableAllocations(auth.tenantId())) {
-      try {
-        permissions.checkInventoryWarehouse(menu(kind), id(a.get("warehouse_id")), "查看");
-        var item = masters.view(a);
-        if (!permissions.inventoryWarehouseAllowed(menu(kind), id(a.get("warehouse_id")), "查看金额"))
-          InventoryMoney.hide(item);
-        allocations.add(item);
-      } catch (ResponseStatusException denied) {
-        if (denied.getStatusCode().value() != 403) throw denied;
-      }
-    }
-    result.put("allocations", allocations);
+        ((List<?>) result.get("warehouses"))
+            .stream().filter(row -> allowed.contains(id(((Map<?, ?>) row).get("id")))).toList());
     result.put(
-        "receipts",
-        repository.listReceipts(auth.tenantId()).stream()
-            .filter(
-                r -> {
-                  try {
-                    permissions.checkInventoryWarehouse(
-                        menu(kind), id(r.get("warehouse_id")), "查看");
-                    return true;
-                  } catch (ResponseStatusException e) {
-                    return false;
-                  }
+        "balances", repository.listStock(tenant, allowed).stream().map(masters::view).toList());
+    result.put(
+        "allocations",
+        repository.listReturnableAllocations(tenant, allowed).stream()
+            .map(
+                row -> {
+                  var item = masters.view(row);
+                  if (!money.contains(id(row.get("warehouse_id")))) InventoryMoney.hide(item);
+                  return item;
                 })
-            .map(masters::view)
             .toList());
-    var correctionSources = new ArrayList<Map<String, Object>>();
-    for (var source :
-        repository.listReversalSources(auth.tenantId(), auth.tenantId(), auth.tenantId()))
-      if (permissions.inventoryWarehouseAllowed(menu(kind), id(source.get("warehouse_id")), "查看"))
-        correctionSources.add(masters.view(source));
-    result.put("correctionSources", correctionSources);
+    result.put(
+        "receipts", repository.listReceipts(tenant, allowed).stream().map(masters::view).toList());
+    result.put(
+        "correctionSources",
+        repository.listReversalSources(tenant, allowed).stream().map(masters::view).toList());
+    var legacy = repository.listLegacyStock(tenant);
+    boolean unassigned =
+        legacy.stream().anyMatch(row -> id(row.get("company_id")) == 0)
+            && permissions.scope("inventoryOpening", "查看").all();
     result.put(
         "legacy",
-        repository.listLegacyStock(auth.tenantId()).stream()
+        legacy.stream()
             .filter(
-                r -> {
-                  if (id(r.get("company_id")) == 0)
-                    return permissions.scope("inventoryOpening", "查看").all();
-                  return repository
-                      .listCompanyWarehouses(auth.tenantId(), r.get("company_id"))
-                      .stream()
-                      .anyMatch(
-                          w ->
-                              permissions.inventoryWarehouseAllowed(
-                                  menu(kind), id(w.get("id")), "查看"));
+                row -> {
+                  long company = id(row.get("company_id"));
+                  return company == 0 ? unassigned : companies.contains(company);
                 })
             .map(masters::view)
             .toList());
-    if (!permissions.allowed(menu(kind), "查看金额")) InventoryMoney.hide(result);
+    if (!permissions.allowed(menu, "查看金额")) InventoryMoney.hide(result);
     return result;
   }
 
   @Transactional
   public Map<String, Object> save(String kind, Long doc, Map<String, Object> body) {
-    lock();
+    mutex.enter();
     require(
         NAMES.containsKey(kind),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0022"));
@@ -572,7 +559,7 @@ public class InventoryFlowService {
    */
   @Transactional
   public Map<String, Object> requestSurplusReturn(long allocation, Map<String, Object> body) {
-    lock();
+    mutex.enter();
     var available = repository.lockPersonalReturnAllocation(auth.tenantId(), allocation);
     require(
         available.size() == 1,
@@ -679,12 +666,11 @@ public class InventoryFlowService {
       String kind,
       BigDecimal qty,
       BigDecimal amount) {
-    repository.insertTransaction(
-        IdWorker.getId(),
+    transactions.append(
         auth.tenantId(),
-        balance.get("company_id"),
-        balance.get("warehouse_id"),
-        balance.get("id"),
+        id(balance.get("company_id")),
+        id(balance.get("warehouse_id")),
+        id(balance.get("id")),
         doc,
         allocation,
         kind,
@@ -704,7 +690,7 @@ public class InventoryFlowService {
       Object received,
       String kind) {
     long layer = IdWorker.getId();
-    repository.addBalance(qty, auth.tenantId(), balance);
+    balances.changeQuantity(auth.tenantId(), balance, qty);
     repository.insertCostLayer(
         layer,
         auth.tenantId(),
@@ -813,14 +799,14 @@ public class InventoryFlowService {
     require(
         need.signum() == 0,
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0128"));
-    repository.takeBalance(qty, auth.tenantId(), b.get("id"));
+    balances.changeQuantity(auth.tenantId(), id(b.get("id")), qty.negate());
     return result;
   }
 
   @Transactional
   public Map<String, Object> confirm(
       String kind, long doc, Map<String, Object> body, boolean receive) {
-    lock();
+    mutex.enter();
     var raw =
         operation(
             kind,
@@ -1156,7 +1142,7 @@ public class InventoryFlowService {
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0149"));
     long allocation = IdWorker.getId();
     repository.closeCostLayer(auth.tenantId(), layerId);
-    repository.takeBalanceForReversal(qty, auth.tenantId(), b.get("id"));
+    balances.changeQuantity(auth.tenantId(), id(b.get("id")), qty.negate());
     repository.insertReversalMovement(
         allocation,
         auth.tenantId(),
@@ -1273,7 +1259,7 @@ public class InventoryFlowService {
 
   @Transactional
   public void delete(String kind, long doc, Map<String, Object> body) {
-    lock();
+    mutex.enter();
     var r = operation(kind, doc, true, "删除");
     require(
         text(r, "status").equals("草稿"),
@@ -1289,7 +1275,7 @@ public class InventoryFlowService {
 
   @Transactional
   public Object freeze(long balanceId, Map<String, Object> body) {
-    lock();
+    mutex.enter();
     permissions.require("inventoryQuery", "冻结");
     permissions.checkInventoryWarehouse("inventoryQuery", balanceIdWarehouse(balanceId), "冻结");
     var b = balance(balanceId, true);
@@ -1315,7 +1301,7 @@ public class InventoryFlowService {
             target);
     var qty = (BigDecimal) b.get("quantity");
     repository.moveCostLayers(destination, auth.tenantId(), balanceId);
-    repository.addMergedBalance(qty, auth.tenantId(), destination);
+    balances.changeQuantity(auth.tenantId(), destination, qty);
     repository.clearMergedBalance(auth.tenantId(), balanceId);
     repository.insertMasterEvent(
         IdWorker.getId(),

@@ -145,11 +145,11 @@ public class InventoryUsageService {
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0247"));
     var a = found.getFirst();
     require(
-        text(a, "task_kind").equals(kind) && id(a.get("task_id")) == taskId,
+        kind.equals(a.taskKind()) && Objects.equals(a.taskId(), taskId),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0248"));
     var qty = InventoryFlowService.decimal(body.get("quantity"), false);
 
-    boolean install = text(a, "usage_type").equals("可安装");
+    boolean install = "可安装".equals(a.usageType());
     var equipment = (List<Map<String, Object>>) source.get("equipment");
     String requested = Objects.toString(body.get("equipmentId"), "");
     long eq = requested.isBlank() ? 0 : id(requested);
@@ -175,46 +175,39 @@ public class InventoryUsageService {
     var previous = repository.findUsageByKey(auth.tenantId(), key);
     if (!previous.isEmpty()) {
       require(
-          id(previous.getFirst().get("allocation_id")) == allocation
-              && ((BigDecimal) previous.getFirst().get("quantity")).compareTo(qty) == 0,
+          previous.getFirst().allocationId() == allocation
+              && previous.getFirst().quantity().compareTo(qty) == 0,
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0252"));
       require(
           Objects.equals(
-                  Objects.toString(previous.getFirst().get("equipment_id"), "0"), Long.toString(eq))
-              && text(previous.getFirst(), "attribution").equals(attribution),
+                  Objects.toString(previous.getFirst().equipmentId(), "0"), Long.toString(eq))
+              && Objects.toString(previous.getFirst().attribution(), "").trim().equals(attribution),
           com.windasoft.eam.common.MessageContext.text("server.inventory.message0253"));
       return list(kind, taskId);
     }
-    var available =
-        ((BigDecimal) a.get("quantity"))
-            .subtract((BigDecimal) a.get("used_quantity"))
-            .subtract((BigDecimal) a.get("returned_quantity"));
+    var available = a.quantity().subtract(a.usedQuantity()).subtract(a.returnedQuantity());
     require(
         qty.compareTo(available) <= 0,
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0254"));
     BigDecimal remainingCost =
-        ((BigDecimal) a.get("amount"))
-            .subtract((BigDecimal) a.get("returned_amount"))
+        a.amount()
+            .subtract(a.returnedAmount())
             .subtract(repository.usedAmount(auth.tenantId(), allocation));
     require(
         remainingCost.signum() >= 0,
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0255"));
     BigDecimal cost =
         com.windasoft.eam.common.inventory.UsageCost.portion(
-            (BigDecimal) a.get("quantity"),
-            (BigDecimal) a.get("amount"),
-            qty,
-            available,
-            remainingCost);
+            a.quantity(), a.amount(), qty, available, remainingCost);
     long usage = IdWorker.getId();
     repository.addUsedQuantity(qty, auth.tenantId(), allocation);
     repository.insertUsage(
         usage,
         auth.tenantId(),
         allocation,
-        a.get("requisition_id"),
+        a.requisitionId(),
         install ? eq : null,
-        a.get("material_id"),
+        a.materialId(),
         qty,
         install ? "安装" : "使用",
         install ? "在用" : "已使用",
@@ -227,14 +220,14 @@ public class InventoryUsageService {
         eq > 0 ? eq : null,
         attribution,
         cost,
-        a.get("currency"),
-        a.get("company_id"),
-        a.get("department_id"));
+        a.currency(),
+        a.companyId(),
+        a.departmentId());
     if (install)
       history(
           eq,
           Objects.toString(source.get("code")),
-          "换上 " + a.get("material_name") + " × " + qty,
+          "换上 " + a.materialName() + " × " + qty,
           "在用",
           "已安装");
     event(
@@ -243,7 +236,7 @@ public class InventoryUsageService {
         install ? "换上备件" : "使用物料",
         Map.of(
             "name",
-            a.get("material_name"),
+            a.materialName(),
             "quantity",
             qty.toPlainString(),
             "allocationId",

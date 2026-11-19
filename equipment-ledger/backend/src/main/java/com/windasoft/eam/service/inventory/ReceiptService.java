@@ -1,10 +1,13 @@
 package com.windasoft.eam.service.inventory;
 
+import static com.windasoft.eam.domain.system.PermissionAction.VIEW;
 import static com.windasoft.eam.service.inventory.InventoryService.*;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.windasoft.eam.common.VersionGuard;
 import com.windasoft.eam.common.inventory.InventoryMoney;
+import com.windasoft.eam.repository.inventory.InventoryBalanceRepository;
+import com.windasoft.eam.repository.inventory.InventoryTransactionRepository;
 import com.windasoft.eam.repository.inventory.ReceiptRepository;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -23,6 +26,8 @@ public class ReceiptService {
   private com.windasoft.eam.service.business.BusinessValueService custom;
 
   @org.springframework.beans.factory.annotation.Autowired private InventoryListService listQueries;
+  private final InventoryBalanceRepository balances;
+  private final InventoryTransactionRepository transactions;
   private final ReceiptRepository repository;
   private final InventoryService masters;
   private final AuthContext auth;
@@ -32,7 +37,11 @@ public class ReceiptService {
       ReceiptRepository repository,
       InventoryService masters,
       AuthContext auth,
-      PermissionService permissions) {
+      PermissionService permissions,
+      InventoryBalanceRepository balances,
+      InventoryTransactionRepository transactions) {
+    this.balances = balances;
+    this.transactions = transactions;
     this.repository = repository;
     this.masters = masters;
     this.auth = auth;
@@ -124,13 +133,13 @@ public class ReceiptService {
   public Object choices() {
     permissions.require("inventoryReceipt", "查看");
     var result = new LinkedHashMap<String, Object>(masters.stockChoices(false));
+    var viewable = permissions.inventoryWarehouses("inventoryReceipt", VIEW);
     var warehouseIds = new HashSet<Long>();
     var companyIds = new HashSet<Long>();
     var warehouses = new ArrayList<Object>();
     for (var value : (List<?>) result.get("warehouses")) {
       var warehouse = (Map<String, Object>) value;
-      if (!permissions.inventoryWarehouseAllowed("inventoryReceipt", id(warehouse.get("id")), "查看"))
-        continue;
+      if (!viewable.contains(id(warehouse.get("id")))) continue;
       warehouseIds.add(id(warehouse.get("id")));
       companyIds.add(id(warehouse.get("companyId")));
       warehouses.add(warehouse);
@@ -412,7 +421,7 @@ public class ReceiptService {
               bin.get("id"),
               material.get("id"),
               batchId);
-      repository.addBalance(qty, auth.tenantId(), balance.get("id"));
+      balances.changeQuantity(auth.tenantId(), id(balance.get("id")), qty);
       repository.insertCostLayer(
           IdWorker.getId(),
           auth.tenantId(),
@@ -422,14 +431,14 @@ public class ReceiptService {
           qty,
           unitCost,
           amount);
-      repository.insertTransaction(
-          IdWorker.getId(),
+      transactions.append(
           auth.tenantId(),
-          receipt.get("company_id"),
-          receipt.get("warehouse_id"),
-          balance.get("id"),
+          id(receipt.get("company_id")),
+          id(receipt.get("warehouse_id")),
+          id(balance.get("id")),
           recordId,
-          line.get("id"),
+          id(line.get("id")),
+          "入库",
           qty,
           amount,
           auth.userId());

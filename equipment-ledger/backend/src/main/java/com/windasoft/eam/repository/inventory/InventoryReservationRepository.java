@@ -1,100 +1,65 @@
 package com.windasoft.eam.repository.inventory;
 
-import java.util.*;
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.windasoft.eam.entity.inventory.InventoryReservation;
+import java.math.BigDecimal;
+import java.util.List;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class InventoryReservationRepository {
-  private final JdbcTemplate db;
+  private final InventoryReservationMapper mapper;
 
-  public InventoryReservationRepository(JdbcTemplate db) {
-    this.db = db;
+  public InventoryReservationRepository(InventoryReservationMapper mapper) {
+    this.mapper = mapper;
   }
 
-  public List<Map<String, Object>> listTenantIds() {
-    return db.queryForList(
-        "SELECT DISTINCT tenant_id FROM inv_requisition WHERE deleted=0 AND status IN"
-            + " ('待预留','部分预留','已预留','部分发料')");
+  public void create(
+      long id, long tenant, long requestId, long lineId, long balanceId, BigDecimal quantity) {
+    var reservation = new InventoryReservation();
+    reservation.setId(id);
+    reservation.setTenantId(tenant);
+    reservation.setRequisitionId(requestId);
+    reservation.setRequisitionLineId(lineId);
+    reservation.setBalanceId(balanceId);
+    reservation.setQuantity(quantity);
+    reservation.setRemainingQuantity(quantity);
+    mapper.insert(reservation);
   }
 
-  public int insertLock(Object t) {
-    return db.update(
-        "INSERT INTO inv_tenant_lock(tenant_id) VALUES(?) ON DUPLICATE KEY UPDATE"
-            + " tenant_id=tenant_id",
-        t);
+  /** 释放前按仓位和预留行固定顺序加锁，随后按相同仓位顺序更新库存余额。 */
+  public List<InventoryReservation> lockRemaining(long tenant, long requestId) {
+    return mapper.selectList(
+        new LambdaQueryWrapper<InventoryReservation>()
+            .select(
+                InventoryReservation::getId,
+                InventoryReservation::getBalanceId,
+                InventoryReservation::getRemainingQuantity)
+            .eq(InventoryReservation::getTenantId, tenant)
+            .eq(InventoryReservation::getRequisitionId, requestId)
+            .gt(InventoryReservation::getRemainingQuantity, BigDecimal.ZERO)
+            .orderByAsc(InventoryReservation::getBalanceId, InventoryReservation::getId)
+            .last("FOR UPDATE"));
   }
 
-  public Map<String, Object> lockTenant(Object t) {
-    return db.queryForMap("SELECT tenant_id FROM inv_tenant_lock WHERE tenant_id=? FOR UPDATE", t);
+  /** 预览与确认之间预留可能变化，扣减只接受当前足够的预留并返回更新结果。 */
+  public int consume(long tenant, long id, BigDecimal quantity) {
+    return mapper.update(
+        null,
+        new LambdaUpdateWrapper<InventoryReservation>()
+            .eq(InventoryReservation::getTenantId, tenant)
+            .eq(InventoryReservation::getId, id)
+            .ge(InventoryReservation::getRemainingQuantity, quantity)
+            .setSql("remaining_quantity=remaining_quantity-{0}", quantity));
   }
 
-  public List<Map<String, Object>> lockRequests(Object t) {
-    return db.queryForList(
-        "SELECT * FROM inv_requisition WHERE tenant_id=? AND deleted=0 AND status IN"
-            + " ('待预留','部分预留','已预留','部分发料') ORDER BY id FOR UPDATE",
-        t);
-  }
-
-  public List<Map<String, Object>> loadTask(Object t, Object taskId, String kind, String table) {
-    if (!Set.of("eam_repair_order", "v_maintenance_task", "v_inspection_task").contains(table))
-      throw new com.windasoft.eam.common.LocalizedArgumentException("server.inventory.message0003");
-    return db.queryForList(
-        "SELECT status"
-            + (kind.equals("保养") ? "" : ",deleted")
-            + " FROM "
-            + table
-            + " WHERE tenant_id=? AND id=?",
-        t,
-        taskId);
-  }
-
-  public List<Map<String, Object>> lockReservations(Object t, Object id) {
-    return db.queryForList(
-        "SELECT * FROM inv_reservation WHERE tenant_id=? AND requisition_id=? AND"
-            + " remaining_quantity>0 ORDER BY balance_id,id FOR UPDATE",
-        t,
-        id);
-  }
-
-  public int releaseBalance(Object remainingQuantity, Object t, Object balanceId) {
-    return db.update(
-        "UPDATE inv_balance SET"
-            + " reserved_quantity=reserved_quantity-?,row_version=row_version+1 WHERE"
-            + " tenant_id=? AND id=?",
-        remainingQuantity,
-        t,
-        balanceId);
-  }
-
-  public int releaseReservation(Object t, Object id) {
-    return db.update(
-        "UPDATE inv_reservation SET remaining_quantity=0 WHERE tenant_id=? AND id=?", t, id);
-  }
-
-  public int closeRequest(Object t, Object id) {
-    return db.update(
-        "UPDATE inv_requisition SET status='已关闭',row_version=row_version+1 WHERE"
-            + " tenant_id=? AND id=?",
-        t,
-        id);
-  }
-
-  public int closeTodos(Object t, Object id) {
-    return db.update(
-        "UPDATE inv_inbox SET done=1 WHERE tenant_id=? AND document_id=? AND"
-            + " route_kind='requisitions' AND is_todo=1",
-        t,
-        id);
-  }
-
-  public int insertSystemEvent(long recordId, Object t, Object id) {
-    return db.update(
-        "INSERT INTO"
-            + " inv_document_event(id,tenant_id,document_kind,document_id,action,actor_id,actor_name)"
-            + " VALUES(?,?,'领料',?,'任务结束，释放预留并关闭申请',0,'系统')",
-        recordId,
-        t,
-        id);
+  public void release(long tenant, long id) {
+    mapper.update(
+        null,
+        new LambdaUpdateWrapper<InventoryReservation>()
+            .eq(InventoryReservation::getTenantId, tenant)
+            .eq(InventoryReservation::getId, id)
+            .set(InventoryReservation::getRemainingQuantity, BigDecimal.ZERO));
   }
 }

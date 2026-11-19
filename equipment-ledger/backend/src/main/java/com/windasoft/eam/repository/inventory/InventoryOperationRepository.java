@@ -1,7 +1,9 @@
 package com.windasoft.eam.repository.inventory;
 
+import com.windasoft.eam.repository.common.SqlScopes;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
 import java.util.*;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -140,18 +142,6 @@ public class InventoryOperationRepository {
         "SELECT * FROM v_inv_operation WHERE tenant_id=? AND id=? AND deleted=0", tenantId, source);
   }
 
-  public int insertTenantLock(long tenantId) {
-    return db.update(
-        "INSERT INTO inv_tenant_lock(tenant_id) VALUES(?) ON DUPLICATE KEY UPDATE"
-            + " tenant_id=tenant_id",
-        tenantId);
-  }
-
-  public Map<String, Object> lockTenant(long tenantId) {
-    return db.queryForMap(
-        "SELECT tenant_id FROM inv_tenant_lock WHERE tenant_id=? FOR UPDATE", tenantId);
-  }
-
   public int insertEvent(
       long recordId,
       long tenantId,
@@ -193,18 +183,21 @@ public class InventoryOperationRepository {
         doc);
   }
 
-  public List<Map<String, Object>> listStock(long tenantId) {
+  public List<Map<String, Object>> listStock(long tenantId, Set<Long> warehouses) {
+    var access = SqlScopes.in("s.warehouse_id", warehouses);
     return db.queryForList(
         "SELECT s.*,m.code material_code,m.name material_name,m.unit,b.name bin_name,pc.code"
             + " batch_code FROM inv_balance s JOIN inv_material m ON m.tenant_id=s.tenant_id"
             + " AND m.id=s.material_id JOIN inv_bin b ON b.tenant_id=s.tenant_id AND"
             + " b.id=s.bin_id LEFT JOIN inv_batch pc ON pc.tenant_id=s.tenant_id AND"
-            + " pc.id=s.batch_id WHERE s.tenant_id=? ORDER BY"
-            + " s.warehouse_id,m.code,b.code,s.id",
-        tenantId);
+            + " pc.id=s.batch_id WHERE s.tenant_id=? AND "
+            + access.sql()
+            + " ORDER BY s.warehouse_id,m.code,b.code,s.id",
+        scopedArgs(tenantId, access.arguments()));
   }
 
-  public List<Map<String, Object>> listReturnableAllocations(long tenantId) {
+  public List<Map<String, Object>> listReturnableAllocations(long tenantId, Set<Long> warehouses) {
+    var access = SqlScopes.in("i.warehouse_id", warehouses);
     return db.queryForList(
         "SELECT a.*,a.quantity-a.used_quantity-a.returned_quantity available_quantity,i.code"
             + " issue_code,i.warehouse_id,i.company_id,COALESCE(ol.task_kind,r.task_kind)"
@@ -219,29 +212,41 @@ public class InventoryOperationRepository {
             + " inv_material m ON m.tenant_id=s.tenant_id AND m.id=s.material_id LEFT JOIN"
             + " inv_batch pc ON pc.tenant_id=s.tenant_id AND pc.id=s.batch_id WHERE"
             + " a.tenant_id=? AND i.reversed=0 AND"
-            + " a.quantity>a.used_quantity+a.returned_quantity ORDER BY i.created_at DESC,a.id",
-        tenantId);
+            + " a.quantity>a.used_quantity+a.returned_quantity AND "
+            + access.sql()
+            + " ORDER BY i.created_at DESC,a.id",
+        scopedArgs(tenantId, access.arguments()));
   }
 
-  public List<Map<String, Object>> listReceipts(long tenantId) {
+  public List<Map<String, Object>> listReceipts(long tenantId, Set<Long> warehouses) {
+    var access = SqlScopes.in("warehouse_id", warehouses);
     return db.queryForList(
         "SELECT id,code,warehouse_id FROM inv_receipt WHERE tenant_id=? AND status='已入库'"
-            + " AND deleted=0",
-        tenantId);
+            + " AND deleted=0 AND "
+            + access.sql(),
+        scopedArgs(tenantId, access.arguments()));
   }
 
-  public List<Map<String, Object>> listReversalSources(
-      long tenantId, long tenantId2, long tenantId3) {
+  public List<Map<String, Object>> listReversalSources(long tenantId, Set<Long> warehouses) {
+    var access = SqlScopes.in("warehouse_id", warehouses);
+    var args = new ArrayList<Object>(List.of(tenantId, tenantId, tenantId));
+    args.addAll(access.arguments());
     return db.queryForList(
-        "SELECT id,code,warehouse_id,'receipt' source_kind FROM inv_receipt WHERE tenant_id=?"
+        "SELECT * FROM (SELECT id,code,warehouse_id,'receipt' source_kind FROM inv_receipt WHERE tenant_id=?"
             + " AND status='已入库' AND deleted=0 UNION ALL SELECT id,code,warehouse_id,'issue'"
             + " source_kind FROM inv_issue WHERE tenant_id=? AND reversed=0 AND status='已出库'"
             + " AND deleted=0 UNION ALL SELECT id,code,warehouse_id,kind source_kind FROM"
             + " v_inv_operation WHERE tenant_id=? AND status IN ('已完成','在途') AND"
-            + " kind<>'reversals' AND deleted=0",
-        tenantId,
-        tenantId2,
-        tenantId3);
+            + " kind<>'reversals' AND deleted=0) sources WHERE "
+            + access.sql(),
+        args.toArray());
+  }
+
+  private Object[] scopedArgs(long tenant, List<Object> scopeArgs) {
+    var args = new ArrayList<Object>();
+    args.add(tenant);
+    args.addAll(scopeArgs);
+    return args.toArray();
   }
 
   public List<Map<String, Object>> listLegacyStock(long tenantId) {
@@ -251,11 +256,6 @@ public class InventoryOperationRepository {
             + " x.tenant_id=s.tenant_id AND x.stock_id=s.id WHERE s.tenant_id=? AND"
             + " (x.stock_id IS NULL OR x.migration_status='待初始化')",
         tenantId);
-  }
-
-  public List<Map<String, Object>> listCompanyWarehouses(long tenantId, Object companyId) {
-    return db.queryForList(
-        "SELECT id FROM inv_warehouse WHERE tenant_id=? AND company_id=?", tenantId, companyId);
   }
 
   public int countMaterialStock(long tenantId, Object material) {
@@ -388,44 +388,6 @@ public class InventoryOperationRepository {
         state);
   }
 
-  public int insertTransaction(
-      long recordId,
-      long tenantId,
-      Object companyId,
-      Object warehouseId,
-      Object id,
-      Object doc,
-      Object allocation,
-      Object kind,
-      Object qty,
-      Object amount,
-      long userId) {
-    return db.update(
-        "INSERT INTO"
-            + " inv_transaction(id,tenant_id,company_id,warehouse_id,balance_id,document_id,source_line_id,kind,quantity,amount,actor_id)"
-            + " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-        recordId,
-        tenantId,
-        companyId,
-        warehouseId,
-        id,
-        doc,
-        allocation,
-        kind,
-        qty,
-        amount,
-        userId);
-  }
-
-  public int addBalance(Object qty, long tenantId, Object balance) {
-    return db.update(
-        "UPDATE inv_balance SET quantity=quantity+?,row_version=row_version+1 WHERE tenant_id=? AND"
-            + " id=?",
-        qty,
-        tenantId,
-        balance);
-  }
-
   public int insertCostLayer(
       Object layer,
       long tenantId,
@@ -524,15 +486,6 @@ public class InventoryOperationRepository {
         value8,
         originReceivedAt,
         unit);
-  }
-
-  public int takeBalance(Object qty, long tenantId, Object id) {
-    return db.update(
-        "UPDATE inv_balance SET quantity=quantity-?,row_version=row_version+1 WHERE tenant_id=? AND"
-            + " id=?",
-        qty,
-        tenantId,
-        id);
   }
 
   public List<Map<String, Object>> lockOutgoingMovements(long tenantId, Object doc) {
@@ -760,15 +713,6 @@ public class InventoryOperationRepository {
         layerId);
   }
 
-  public int takeBalanceForReversal(Object qty, long tenantId, Object id) {
-    return db.update(
-        "UPDATE inv_balance SET quantity=quantity-?,row_version=row_version+1 WHERE tenant_id=? AND"
-            + " id=?",
-        qty,
-        tenantId,
-        id);
-  }
-
   public int insertReversalMovement(
       Object allocation,
       long tenantId,
@@ -913,15 +857,6 @@ public class InventoryOperationRepository {
         destination,
         tenantId,
         balanceId);
-  }
-
-  public int addMergedBalance(Object qty, long tenantId, Object destination) {
-    return db.update(
-        "UPDATE inv_balance SET quantity=quantity+?,row_version=row_version+1 WHERE tenant_id=? AND"
-            + " id=?",
-        qty,
-        tenantId,
-        destination);
   }
 
   public int clearMergedBalance(long tenantId, Object balanceId) {

@@ -7,12 +7,13 @@ import com.windasoft.eam.domain.system.PermissionAction;
 import com.windasoft.eam.domain.system.PermissionMenu;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.entity.equipment.Equipment;
+import com.windasoft.eam.entity.inventory.Warehouse;
 import com.windasoft.eam.entity.repair.RepairOrder;
 import com.windasoft.eam.entity.system.OrgUnit;
 import com.windasoft.eam.entity.system.SystemRole;
 import com.windasoft.eam.entity.system.SystemUser;
 import com.windasoft.eam.entity.system.UserRoleLink;
-import com.windasoft.eam.repository.inventory.InventoryQueryRepository;
+import com.windasoft.eam.repository.inventory.WarehouseRepository;
 import com.windasoft.eam.repository.system.AuthorizationQueryPredicates;
 import com.windasoft.eam.repository.system.AuthorizationRepository;
 import java.util.*;
@@ -25,16 +26,16 @@ import org.springframework.web.server.ResponseStatusException;
 public class PermissionService {
   private final AuthorizationRepository repository;
   private final AuthContext auth;
-  private final InventoryQueryRepository inventoryQueries;
+  private final WarehouseRepository warehouseRepository;
   private final OrganizationScopeService organizationScopes;
 
   public PermissionService(
       AuthContext auth,
-      InventoryQueryRepository inventoryQueries,
+      WarehouseRepository warehouseRepository,
       AuthorizationRepository repository,
       OrganizationScopeService organizationScopes) {
     this.auth = auth;
-    this.inventoryQueries = inventoryQueries;
+    this.warehouseRepository = warehouseRepository;
     this.repository = repository;
     this.organizationScopes = organizationScopes;
   }
@@ -553,37 +554,78 @@ public class PermissionService {
     }
   }
 
+  /** 一次解析动作授权，再与同租户的真实仓库匹配；导出和金额权限仍分别计算。 */
+  public Set<Long> inventoryWarehouses(
+      String menu, PermissionAction action, Collection<Warehouse> candidates) {
+    var ids = new HashSet<Long>();
+    if (candidates.isEmpty()) return ids;
+    try {
+      var scope = warehouseScope(auth.user().getOrgId(), scopes(menu, action.code()));
+      long tenant = auth.tenantId();
+      for (var row : candidates) {
+        if (Objects.equals(row.getTenantId(), tenant) && scope.matches(row)) ids.add(row.getId());
+      }
+      return ids;
+    } catch (ResponseStatusException e) {
+      if (e.getStatusCode().value() != 403) throw e;
+      return ids;
+    }
+  }
+
+  public Set<Long> inventoryWarehouses(String menu, PermissionAction action) {
+    return inventoryWarehouses(menu, action, warehouseRepository.scopeRows(auth.tenantId()));
+  }
+
   public boolean inventoryWarehouseUser(long userId, String menu, long warehouse, String action) {
     var users = repository.userOrganization(auth.tenantId(), userId);
-    var warehouses = inventoryQueries.warehouseCompany(auth.tenantId(), warehouse);
+    var row = warehouseRepository.scopeRow(auth.tenantId(), warehouse);
     if (users.size() != 1
-        || warehouses.size() != 1
+        || row == null
         || ((Number) users.getFirst().get("status")).intValue() != 1) return false;
-    Object orgId = users.getFirst().get("org_id");
-    Long company = orgId == null ? null : companyOfOrganization(((Number) orgId).longValue());
-    long sourceCompany = ((Number) warehouses.getFirst().get("company_id")).longValue();
+    var orgId = (Number) users.getFirst().get("org_id");
     try {
-      for (var grant : scopesFor(userId, menu, action))
-        if (grant.scopes.contains("all")
-            || scopeFor(orgId == null ? null : ((Number) orgId).longValue(), List.of(grant))
-                .companyIds()
-                .contains(sourceCompany)
-            || grant.scopes.contains("warehouse") && grant.orgIds.contains(warehouse)) return true;
-    } catch (ResponseStatusException denied) {
+      return warehouseScope(
+              orgId == null ? null : orgId.longValue(), scopesFor(userId, menu, action))
+          .matches(row);
+    } catch (ResponseStatusException e) {
+      if (e.getStatusCode().value() != 403) throw e;
       return false;
     }
-    return false;
   }
 
   public void checkInventoryWarehouse(String menu, long warehouseId, String action) {
-    var w = inventoryQueries.warehouseCompany(auth.tenantId(), warehouseId);
-    if (w.size() != 1) deny();
-    long company = ((Number) w.getFirst().get("company_id")).longValue();
-    for (var grant : scopes(menu, action))
-      if (grant.scopes.contains("all")
-          || scopeFor(auth.user().getOrgId(), List.of(grant)).companyIds().contains(company)
-          || grant.scopes.contains("warehouse") && grant.orgIds.contains(warehouseId)) return;
-    deny();
+    var row = warehouseRepository.scopeRow(auth.tenantId(), warehouseId);
+    if (row == null || !warehouseScope(auth.user().getOrgId(), scopes(menu, action)).matches(row))
+      deny();
+  }
+
+  private record WarehouseScope(boolean all, Set<Long> companies, Set<Long> warehouses) {
+    boolean matches(Warehouse row) {
+      return all || companies.contains(row.getCompanyId()) || warehouses.contains(row.getId());
+    }
+  }
+
+  /** 仓库授权只使用公司和显式仓库范围，部门或本人授权不能扩大到整仓。 */
+  private WarehouseScope warehouseScope(Long userOrg, List<Grant> grants) {
+    if (grants.stream().anyMatch(grant -> grant.scopes.contains("all"))) {
+      return new WarehouseScope(true, Set.of(), Set.of());
+    }
+    boolean currentCompany = false;
+    boolean childCompanies = false;
+    var companies = new HashSet<Long>();
+    var warehouses = new HashSet<Long>();
+    for (var grant : grants) {
+      currentCompany |= grant.scopes.contains("company");
+      childCompanies |= grant.scopes.contains("companyTree");
+      if (grant.scopes.contains("companies")) companies.addAll(grant.orgIds);
+      if (grant.scopes.contains("warehouse")) warehouses.addAll(grant.orgIds);
+    }
+    if (currentCompany || childCompanies) {
+      var company = companyOfOrganization(userOrg);
+      if (currentCompany && company != null) companies.add(company);
+      if (childCompanies) companies.addAll(companyTree(company));
+    }
+    return new WarehouseScope(false, companies, warehouses);
   }
 
   public void checkInventoryCompany(long companyId, String action) {

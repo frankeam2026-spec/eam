@@ -1,16 +1,17 @@
 package com.windasoft.eam.repository;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
-import com.windasoft.eam.repository.inventory.InventoryMasterRepository;
 import com.windasoft.eam.repository.inventory.InventoryOperationRepository;
-import com.windasoft.eam.repository.inventory.InventoryReservationRepository;
+import com.windasoft.eam.repository.inventory.RequisitionRepository;
 import com.windasoft.eam.repository.system.ReminderRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 
 class SqlIdentifierSafetyTest {
   @Test
@@ -18,13 +19,23 @@ class SqlIdentifierSafetyTest {
     var db = mock(JdbcTemplate.class);
     var reminders = new ReminderRepository(db);
     var operations = new InventoryOperationRepository(db, null, null);
-    var reservations = new InventoryReservationRepository(db);
     String unsafe = "inv_receipt WHERE 1=1 --";
     assertThrows(IllegalArgumentException.class, () -> reminders.ids(unsafe, 0, 20));
     assertThrows(IllegalArgumentException.class, () -> operations.loadSource(10001, 1, unsafe));
-    assertThrows(
-        IllegalArgumentException.class, () -> reservations.loadTask(10001, 1, "维修", unsafe));
     verifyNoInteractions(db);
+  }
+
+  @Test
+  void cleanupTaskKindIsNeverInterpolatedAsATable() {
+    var db = mock(JdbcTemplate.class);
+    var requests = new RequisitionRepository(db, null, null);
+    requests.cleanupTaskStatus(10001, 1, "eam_repair_order WHERE 1=1 --");
+    verify(db)
+        .query(
+            eq("SELECT status FROM v_inspection_task WHERE tenant_id=? AND id=? AND deleted=0"),
+            org.mockito.ArgumentMatchers.<RowMapper<String>>any(),
+            eq(10001L),
+            eq(1L));
   }
 
   @Test
@@ -36,17 +47,4 @@ class SqlIdentifierSafetyTest {
     verify(db).queryForList("SELECT * FROM inv_receipt WHERE tenant_id=? AND id=?", 10001L, unsafe);
   }
 
-  @Test
-  void unsupportedMasterColumnsCannotReachJdbc() {
-    var db = mock(JdbcTemplate.class);
-    var masters = new InventoryMasterRepository(db, null);
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            masters.insertMaster(
-                "materials",
-                java.util.Map.of("name) VALUES ('x'); --", "value"),
-                java.util.List.of("value")));
-    verifyNoInteractions(db);
-  }
 }

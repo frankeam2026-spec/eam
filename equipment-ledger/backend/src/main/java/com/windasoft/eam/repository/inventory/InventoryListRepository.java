@@ -20,14 +20,6 @@ public class InventoryListRepository {
 
   public record Selection(String projection, String from, SqlPredicate predicate, String order) {}
 
-  public Set<Long> warehouseIds(long tenant) {
-    var ids = new HashSet<Long>();
-    for (var row :
-        lists.distinct("t.id", "FROM inv_warehouse t", SqlPredicate.of("t.tenant_id=?", tenant)))
-      ids.add(((Number) row.get("id")).longValue());
-    return ids;
-  }
-
   private static SqlListFilters.Field f(String sql, SqlListFilters.Kind type) {
     return new SqlListFilters.Field(sql, type);
   }

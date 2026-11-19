@@ -1,6 +1,9 @@
 package com.windasoft.eam.repository.inventory;
 
-import com.windasoft.eam.dto.common.*;
+import com.windasoft.eam.dto.common.ListQuery;
+import com.windasoft.eam.dto.common.PageResult;
+import com.windasoft.eam.dto.inventory.InventorySelectorRow.Task;
+import com.windasoft.eam.dto.inventory.InventorySelectorRow.User;
 import com.windasoft.eam.dto.system.PermissionScope;
 import com.windasoft.eam.repository.common.*;
 import java.util.*;
@@ -30,7 +33,7 @@ public class InventorySelectorRepository {
         .or(SqlScopes.jsonMember("JSON_EXTRACT(t.snapshot,'$.reviewers')", user));
   }
 
-  public PageResult<Map<String, Object>> tasks(
+  public PageResult<Task> tasks(
       long tenant,
       long user,
       ListQuery q,
@@ -150,17 +153,23 @@ public class InventorySelectorRepository {
     paged.add(q.size());
     paged.add((long) (q.page() - 1) * q.size());
     var rows =
-        db.queryForList(
+        db.query(
             ORGS
                 + "SELECT * FROM ("
                 + union
                 + ") candidates ORDER BY kind,code,id LIMIT ? OFFSET ?",
+            (row, index) ->
+                new Task(
+                    row.getString("id"),
+                    row.getString("kind"),
+                    row.getString("code"),
+                    row.getString("name"),
+                    row.getString("companyId")),
             paged.toArray());
     return new PageResult<>(rows, q.page(), q.size(), total);
   }
 
-  public PageResult<Map<String, Object>> users(
-      long tenant, long company, ListQuery q, Set<Long> ids) {
+  public PageResult<User> users(long tenant, long company, ListQuery q, Set<Long> ids) {
     var args = new ArrayList<Object>(List.of(tenant, tenant));
     var where =
         SqlPredicate.of(
@@ -180,12 +189,19 @@ public class InventorySelectorRepository {
     args.add(q.size());
     args.add((long) (q.page() - 1) * q.size());
     return new PageResult<>(
-        db.queryForList(
+        db.query(
             ORGS
                 + "SELECT CAST(t.id AS CHAR) id,t.display_name name,t.account,COALESCE(d.name,'')"
                 + " department,CAST(o.company_id AS CHAR) companyId"
                 + from
                 + " ORDER BY t.display_name,t.id LIMIT ? OFFSET ?",
+            (row, index) ->
+                new User(
+                    row.getString("id"),
+                    row.getString("name"),
+                    row.getString("account"),
+                    row.getString("department"),
+                    row.getString("companyId")),
             args.toArray()),
         q.page(),
         q.size(),

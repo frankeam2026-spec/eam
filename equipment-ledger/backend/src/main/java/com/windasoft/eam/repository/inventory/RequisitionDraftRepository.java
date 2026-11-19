@@ -3,6 +3,7 @@ package com.windasoft.eam.repository.inventory;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.windasoft.eam.dto.inventory.RequisitionDetail;
+import com.windasoft.eam.dto.inventory.RequisitionStatus;
 import com.windasoft.eam.entity.inventory.RequisitionHeader;
 import com.windasoft.eam.entity.inventory.RequisitionLine;
 import java.util.List;
@@ -27,6 +28,53 @@ public class RequisitionDraftRepository {
     this.lines = lines;
     this.db = db;
     this.details = details;
+  }
+
+  private static final List<RequisitionStatus> CLEANUP_STATUSES =
+      List.of(
+          RequisitionStatus.AWAITING_RESERVATION,
+          RequisitionStatus.PARTIALLY_RESERVED,
+          RequisitionStatus.RESERVED,
+          RequisitionStatus.PARTIALLY_ISSUED);
+
+  private LambdaQueryWrapper<RequisitionHeader> pendingReservations() {
+    return new LambdaQueryWrapper<RequisitionHeader>()
+        .eq(RequisitionHeader::getDeleted, false)
+        .in(RequisitionHeader::getStatus, CLEANUP_STATUSES);
+  }
+
+  public List<Long> tenantsWithPendingReservations() {
+    return headers
+        .selectList(
+            pendingReservations()
+                .select(RequisitionHeader::getTenantId)
+                .groupBy(RequisitionHeader::getTenantId))
+        .stream()
+        .map(RequisitionHeader::getTenantId)
+        .toList();
+  }
+
+  /** 后台清理与领料写入共用租户库存锁，按申请编号锁定待发料记录。 */
+  public List<RequisitionHeader> lockPendingReservations(long tenant) {
+    return headers.selectList(
+        pendingReservations()
+            .select(
+                RequisitionHeader::getId,
+                RequisitionHeader::getTaskKind,
+                RequisitionHeader::getTaskId)
+            .eq(RequisitionHeader::getTenantId, tenant)
+            .orderByAsc(RequisitionHeader::getId)
+            .last("FOR UPDATE"));
+  }
+
+  public void closeExpiredReservation(long tenant, long id) {
+    headers.update(
+        null,
+        new LambdaUpdateWrapper<RequisitionHeader>()
+            .eq(RequisitionHeader::getTenantId, tenant)
+            .eq(RequisitionHeader::getId, id)
+            .set(RequisitionHeader::getStatus, RequisitionStatus.CLOSED)
+            .setSql("row_version=row_version+1"));
   }
 
   public List<RequisitionDetail.Line> lines(long tenant, long id) {

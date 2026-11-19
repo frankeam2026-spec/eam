@@ -6,7 +6,11 @@ import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.repository.equipment.NumberCounterMapper;
+import com.windasoft.eam.repository.inventory.InventoryBinRepository;
 import com.windasoft.eam.repository.inventory.InventoryMasterRepository;
+import com.windasoft.eam.repository.inventory.MaterialRepository;
+import com.windasoft.eam.repository.inventory.WarehouseRepository;
+import com.windasoft.eam.service.basedata.BaseDataReferenceService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
 import org.junit.jupiter.api.Test;
@@ -27,7 +31,13 @@ class InventoryMaterialNumberTest {
             auth,
             mock(PermissionService.class),
             new ObjectMapper(),
-            mock(com.windasoft.eam.service.basedata.BaseDataReferenceService.class));
+            mock(BaseDataReferenceService.class),
+            mock(InventoryMutex.class),
+            mock(InventoryBinRepository.class),
+            mock(MaterialRepository.class),
+            mock(WarehouseRepository.class),
+            mock(InventoryViewAssembler.class),
+            mock(InventoryListService.class));
     assertEquals("WL00001", service.number("materials"));
     verify(counter).nextMonthlyNumber("inv-materials-lifetime-10001", "all");
   }
@@ -47,7 +57,13 @@ class InventoryMaterialNumberTest {
             auth,
             mock(PermissionService.class),
             new ObjectMapper(),
-            mock(com.windasoft.eam.service.basedata.BaseDataReferenceService.class));
+            mock(BaseDataReferenceService.class),
+            mock(InventoryMutex.class),
+            mock(InventoryBinRepository.class),
+            mock(MaterialRepository.class),
+            mock(WarehouseRepository.class),
+            mock(InventoryViewAssembler.class),
+            mock(InventoryListService.class));
     assertEquals("WL100000", service.number("materials"));
     verify(counter, times(2)).nextMonthlyNumber("inv-materials-lifetime-10001", "all");
   }

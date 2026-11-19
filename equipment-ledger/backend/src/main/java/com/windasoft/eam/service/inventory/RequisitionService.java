@@ -9,16 +9,20 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.windasoft.eam.common.VersionGuard;
+import com.windasoft.eam.dto.inventory.InventorySelectorRow;
 import com.windasoft.eam.dto.inventory.RequisitionDetail;
-import com.windasoft.eam.dto.inventory.RequisitionStatus;
 import com.windasoft.eam.dto.inventory.RequisitionDraftForm;
+import com.windasoft.eam.dto.inventory.RequisitionStatus;
 import com.windasoft.eam.dto.workflow.WorkflowHistoryRound;
+import com.windasoft.eam.entity.inventory.InventoryReservation;
 import com.windasoft.eam.entity.inventory.RequisitionHeader;
 import com.windasoft.eam.entity.inventory.RequisitionLine;
+import com.windasoft.eam.repository.inventory.InventoryBalanceRepository;
+import com.windasoft.eam.repository.inventory.InventoryReservationRepository;
 import com.windasoft.eam.repository.inventory.RequisitionDraftRepository;
 import com.windasoft.eam.repository.inventory.RequisitionRepository;
-import com.windasoft.eam.service.inspection.InspectionTaskService;
 import com.windasoft.eam.service.inspection.InspectionListService;
+import com.windasoft.eam.service.inspection.InspectionTaskService;
 import com.windasoft.eam.service.maintenance.MaintenanceService;
 import com.windasoft.eam.service.system.AuthContext;
 import com.windasoft.eam.service.system.PermissionService;
@@ -67,6 +71,8 @@ public class RequisitionService {
   private final InventorySelectorService selectors;
 
   private final RequisitionRepository repository;
+  private final InventoryBalanceRepository balances;
+  private final InventoryReservationRepository reservations;
   private final InventoryService masters;
   private final AuthContext auth;
   private final PermissionService permissions;
@@ -89,7 +95,9 @@ public class RequisitionService {
       InventoryMutex mutex,
       @Lazy OutboundService outbounds,
       RequisitionDraftRepository drafts,
-      InventorySelectorService selectors) {
+      InventorySelectorService selectors,
+      InventoryBalanceRepository balances,
+      InventoryReservationRepository reservations) {
     this.repository = repository;
     this.masters = masters;
     this.auth = auth;
@@ -104,6 +112,8 @@ public class RequisitionService {
     this.outbounds = outbounds;
     this.drafts = drafts;
     this.selectors = selectors;
+    this.balances = balances;
+    this.reservations = reservations;
   }
 
   private boolean active(String status) {
@@ -372,9 +382,9 @@ public class RequisitionService {
 
   public Object choices(boolean paged, String taskKind, Long taskId) {
     if (!paged) return choices();
-    var selected =
+    List<InventorySelectorRow.Task> selected =
         taskId == null || taskKind.isBlank()
-            ? List.<Map<String, Object>>of()
+            ? List.of()
             : selectors
                 .tasks(
                     "requisition",
@@ -395,7 +405,11 @@ public class RequisitionService {
             .filter(
                 w ->
                     selected.stream()
-                        .anyMatch(t -> text(t, "companyId").equals(text(w, "companyId"))))
+                        .anyMatch(
+                            t ->
+                                Objects.toString(t.companyId(), "")
+                                    .trim()
+                                    .equals(text(w, "companyId"))))
             .toList();
     return Map.of(
         "warehouses",
@@ -795,15 +809,10 @@ public class RequisitionService {
             qty.compareTo(available) <= 0 && qty.compareTo(need) <= 0,
             com.windasoft.eam.common.MessageContext.text("server.inventory.message0235"));
         if (qty.signum() == 0) continue;
-        repository.addReservedQuantity(qty, auth.tenantId(), balance.get("id"));
-        repository.insertReservation(
-            IdWorker.getId(),
-            auth.tenantId(),
-            requestId,
-            line.get("id"),
-            balance.get("id"),
-            qty,
-            qty);
+        long balanceId = id(balance.get("id"));
+        this.balances.changeReserved(auth.tenantId(), balanceId, qty);
+        reservations.create(
+            IdWorker.getId(), auth.tenantId(), requestId, id(line.get("id")), balanceId, qty);
         need = need.subtract(qty);
         changed = true;
       }
@@ -823,7 +832,7 @@ public class RequisitionService {
     require(
         FULFILLABLE_STATUSES.contains(text(raw, "status")),
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0236"));
-    var rows = repository.lockReservations(auth.tenantId(), requestId);
+    var rows = reservations.lockRemaining(auth.tenantId(), requestId);
     if (rows.isEmpty()) return detail(requestId);
     VersionGuard.checkPayload((Number) raw.get("row_version"), body);
     releaseRows(rows);
@@ -832,12 +841,14 @@ public class RequisitionService {
     return detail(requestId);
   }
 
-  private void releaseRows(List<Map<String, Object>> rows) {
+  /** 调用方已持有租户库存锁和预留行锁，继续按仓位顺序锁余额并归还数量。 */
+  private void releaseRows(List<InventoryReservation> rows) {
+    long tenant = auth.tenantId();
     for (var reservation : rows) {
-      repository.lockBalance(auth.tenantId(), reservation.get("balance_id"));
-      repository.releaseBalance(
-          reservation.get("remaining_quantity"), auth.tenantId(), reservation.get("balance_id"));
-      repository.releaseReservation(auth.tenantId(), reservation.get("id"));
+      balances.lock(tenant, reservation.getBalanceId());
+      balances.changeReserved(
+          tenant, reservation.getBalanceId(), reservation.getRemainingQuantity().negate());
+      reservations.release(tenant, reservation.getId());
     }
   }
 
@@ -856,8 +867,7 @@ public class RequisitionService {
     require(
         repository.sumIssuedForCancel(auth.tenantId(), requestId).signum() == 0,
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0238"));
-    var reservations = repository.lockReservationsForCancel(auth.tenantId(), requestId);
-    releaseRows(reservations);
+    releaseRows(reservations.lockRemaining(auth.tenantId(), requestId));
     repository.cancelRequest(auth.tenantId(), requestId);
     closeWarehouseTodos(requestId);
     event(requestId, "取消申请");
@@ -1005,7 +1015,7 @@ public class RequisitionService {
     require(
         !text(body, "reason").isBlank() && text(body, "reason").length() <= 1000,
         com.windasoft.eam.common.MessageContext.text("server.inventory.message0243"));
-    releaseRows(repository.lockReservationsForClose(auth.tenantId(), requestId));
+    releaseRows(reservations.lockRemaining(auth.tenantId(), requestId));
     repository.closeRequest(auth.tenantId(), requestId);
     closeWarehouseTodos(requestId);
     repository.insertCloseEvent(
